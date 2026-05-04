@@ -28,6 +28,7 @@ import (
 	_ "github.com/sivchari/kumo/internal/service/cloudtrail"
 	_ "github.com/sivchari/kumo/internal/service/cloudwatch"
 	_ "github.com/sivchari/kumo/internal/service/cloudwatchlogs"
+	_ "github.com/sivchari/kumo/internal/service/codecommit"
 	_ "github.com/sivchari/kumo/internal/service/codeconnections"
 	_ "github.com/sivchari/kumo/internal/service/codeguruprofiler"
 	_ "github.com/sivchari/kumo/internal/service/codegurureviewer"
