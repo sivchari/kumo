@@ -376,3 +376,67 @@ func TestCloudWatchLogs_DescribeLogStreams(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields("Arn", "CreationTime", "FirstEventTimestamp", "LastEventTimestamp", "LastIngestionTime", "UploadSequenceToken", "ResultMetadata")).Assert(t.Name(), descResult)
 }
+
+func TestCloudWatchLogs_RetentionPolicy(t *testing.T) {
+	client := newCloudWatchLogsClient(t)
+	ctx := t.Context()
+	groupName := "/test/retention-policy"
+
+	if _, err := client.CreateLogGroup(ctx, &cloudwatchlogs.CreateLogGroupInput{
+		LogGroupName: aws.String(groupName),
+	}); err != nil {
+		t.Fatalf("CreateLogGroup: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteLogGroup(context.Background(), &cloudwatchlogs.DeleteLogGroupInput{
+			LogGroupName: aws.String(groupName),
+		})
+	})
+
+	descBefore, err := client.DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+		LogGroupNamePrefix: aws.String(groupName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := descBefore.LogGroups[0].RetentionInDays; got != nil {
+		t.Errorf("default RetentionInDays = %d, want nil", *got)
+	}
+
+	if _, err := client.PutRetentionPolicy(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
+		LogGroupName:    aws.String(groupName),
+		RetentionInDays: aws.Int32(30),
+	}); err != nil {
+		t.Fatalf("PutRetentionPolicy: %v", err)
+	}
+
+	descAfter, err := client.DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+		LogGroupNamePrefix: aws.String(groupName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := descAfter.LogGroups[0].RetentionInDays; got == nil || *got != 30 {
+		t.Errorf("after Put, RetentionInDays = %v, want 30", got)
+	}
+
+	if _, err := client.DeleteRetentionPolicy(ctx, &cloudwatchlogs.DeleteRetentionPolicyInput{
+		LogGroupName: aws.String(groupName),
+	}); err != nil {
+		t.Fatalf("DeleteRetentionPolicy: %v", err)
+	}
+
+	descCleared, err := client.DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+		LogGroupNamePrefix: aws.String(groupName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := descCleared.LogGroups[0].RetentionInDays; got != nil {
+		t.Errorf("after Delete, RetentionInDays = %d, want nil", *got)
+	}
+}

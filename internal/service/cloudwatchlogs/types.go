@@ -52,6 +52,17 @@ type DeleteLogGroupRequest struct {
 	LogGroupName string `json:"logGroupName"`
 }
 
+// PutRetentionPolicyRequest is the request for PutRetentionPolicy.
+type PutRetentionPolicyRequest struct {
+	LogGroupName    string `json:"logGroupName"`
+	RetentionInDays int32  `json:"retentionInDays"`
+}
+
+// DeleteRetentionPolicyRequest is the request for DeleteRetentionPolicy.
+type DeleteRetentionPolicyRequest struct {
+	LogGroupName string `json:"logGroupName"`
+}
+
 // CreateLogStreamRequest is the request for CreateLogStream.
 type CreateLogStreamRequest struct {
 	LogGroupName  string `json:"logGroupName"`

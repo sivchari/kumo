@@ -33,6 +33,8 @@ type Storage interface {
 	FilterLogEvents(ctx context.Context, req *FilterLogEventsRequest) (*FilterLogEventsResponse, error)
 	DescribeLogGroups(ctx context.Context, req *DescribeLogGroupsRequest) (*DescribeLogGroupsResponse, error)
 	DescribeLogStreams(ctx context.Context, req *DescribeLogStreamsRequest) (*DescribeLogStreamsResponse, error)
+	PutRetentionPolicy(ctx context.Context, groupName string, retentionInDays int32) error
+	DeleteRetentionPolicy(ctx context.Context, groupName string) error
 }
 
 // LogStreamData holds log stream data with events.
@@ -755,4 +757,45 @@ func sumEventBytes(events []InputLogEvent) int64 {
 	}
 
 	return total
+}
+
+// PutRetentionPolicy sets the retention period (in days) for a log group.
+// AWS accepts a fixed set of values (1, 3, 5, 7, 14, 30, 60, 90, 120, 150,
+// 180, 365, 400, 545, 731, 1827, 3653) but does not reject other positive
+// integers; the kumo emulator stores whatever value the caller supplied.
+func (m *MemoryStorage) PutRetentionPolicy(_ context.Context, groupName string, retentionInDays int32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	group, ok := m.LogGroups[groupName]
+	if !ok {
+		return &LogsError{
+			Code:    "ResourceNotFoundException",
+			Message: fmt.Sprintf("The specified log group %s does not exist.", groupName),
+		}
+	}
+
+	v := retentionInDays
+	group.Group.RetentionInDays = &v
+
+	return nil
+}
+
+// DeleteRetentionPolicy clears the retention period on a log group, returning
+// the group to "never expire".
+func (m *MemoryStorage) DeleteRetentionPolicy(_ context.Context, groupName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	group, ok := m.LogGroups[groupName]
+	if !ok {
+		return &LogsError{
+			Code:    "ResourceNotFoundException",
+			Message: fmt.Sprintf("The specified log group %s does not exist.", groupName),
+		}
+	}
+
+	group.Group.RetentionInDays = nil
+
+	return nil
 }

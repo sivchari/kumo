@@ -239,6 +239,60 @@ func (s *Service) DescribeLogStreams(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, resp)
 }
 
+// PutRetentionPolicy handles the PutRetentionPolicy action.
+func (s *Service) PutRetentionPolicy(w http.ResponseWriter, r *http.Request) {
+	var req PutRetentionPolicyRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.LogGroupName == "" {
+		writeLogsError(w, errInvalidParameter, "1 validation error detected: Value at 'logGroupName' failed to satisfy constraint: Member must not be null", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.RetentionInDays <= 0 {
+		writeLogsError(w, errInvalidParameter, "1 validation error detected: Value at 'retentionInDays' failed to satisfy constraint: Member must be greater than 0", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.PutRetentionPolicy(r.Context(), req.LogGroupName, req.RetentionInDays); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// DeleteRetentionPolicy handles the DeleteRetentionPolicy action.
+func (s *Service) DeleteRetentionPolicy(w http.ResponseWriter, r *http.Request) {
+	var req DeleteRetentionPolicyRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.LogGroupName == "" {
+		writeLogsError(w, errInvalidParameter, "1 validation error detected: Value at 'logGroupName' failed to satisfy constraint: Member must not be null", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.DeleteRetentionPolicy(r.Context(), req.LogGroupName); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 // This method implements the JSONProtocolService interface.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +318,10 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.DescribeLogGroups(w, r)
 	case "DescribeLogStreams":
 		s.DescribeLogStreams(w, r)
+	case "PutRetentionPolicy":
+		s.PutRetentionPolicy(w, r)
+	case "DeleteRetentionPolicy":
+		s.DeleteRetentionPolicy(w, r)
 	default:
 		writeLogsError(w, errInvalidAction, "The action "+action+" is not valid for this web service", http.StatusBadRequest)
 	}
