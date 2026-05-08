@@ -18,6 +18,7 @@ import (
 	_ "github.com/sivchari/kumo/internal/service/backup"
 	_ "github.com/sivchari/kumo/internal/service/batch"
 	_ "github.com/sivchari/kumo/internal/service/ce"
+	_ "github.com/sivchari/kumo/internal/service/cloudcontrol"
 	_ "github.com/sivchari/kumo/internal/service/cloudformation"
 	_ "github.com/sivchari/kumo/internal/service/cloudfront"
 	_ "github.com/sivchari/kumo/internal/service/cloudtrail"

@@ -57,6 +57,14 @@ func (s *Service) Name() string {
 	return "s3"
 }
 
+// Storage exposes the underlying storage so other services that need to
+// operate on the same bucket store (notably the cloudcontrol service,
+// which proxies AWS::S3::Bucket through the existing S3 storage) can
+// read and mutate it without going back through HTTP.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
 // RegisterRoutes registers the S3 routes.
 func (s *Service) RegisterRoutes(r service.Router) {
 	// Bucket operations
