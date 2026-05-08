@@ -73,6 +73,7 @@ type Storage interface {
 	DeleteSecurityGroup(ctx context.Context, groupID, groupName string) error
 	AuthorizeSecurityGroupIngress(ctx context.Context, groupID, groupName string, permissions []IPPermission) error
 	AuthorizeSecurityGroupEgress(ctx context.Context, groupID string, permissions []IPPermission) error
+	DescribeSecurityGroups(ctx context.Context, groupIDs, groupNames []string) ([]*SecurityGroup, error)
 
 	// Key Pair operations
 	CreateKeyPair(ctx context.Context, keyName, keyType string) (*KeyPair, error)
@@ -514,6 +515,40 @@ func (m *MemoryStorage) AuthorizeSecurityGroupEgress(_ context.Context, groupID 
 	sg.EgressRules = append(sg.EgressRules, permissions...)
 
 	return nil
+}
+
+// DescribeSecurityGroups returns SGs filtered by GroupId / GroupName,
+// or every SG when both filters are empty.
+func (m *MemoryStorage) DescribeSecurityGroups(_ context.Context, groupIDs, groupNames []string) ([]*SecurityGroup, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(groupIDs) == 0 && len(groupNames) == 0 {
+		out := make([]*SecurityGroup, 0, len(m.SecurityGroups))
+		for _, sg := range m.SecurityGroups {
+			out = append(out, sg)
+		}
+
+		return out, nil
+	}
+
+	out := make([]*SecurityGroup, 0)
+
+	for _, id := range groupIDs {
+		if sg, ok := m.SecurityGroups[id]; ok {
+			out = append(out, sg)
+		}
+	}
+
+	for _, name := range groupNames {
+		for _, sg := range m.SecurityGroups {
+			if sg.GroupName == name {
+				out = append(out, sg)
+			}
+		}
+	}
+
+	return out, nil
 }
 
 // CreateKeyPair creates a new key pair.

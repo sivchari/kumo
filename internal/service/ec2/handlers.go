@@ -267,6 +267,18 @@ func (s *Service) AuthorizeSecurityGroupIngress(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// The form-to-JSON converter doesn't expand
+	// IpPermissions.N.{IpProtocol,FromPort,ToPort,IpRanges.M.CidrIp}
+	// into a slice — the dotted keys land at the top level and never
+	// unmarshal into req.IPPermissions. Re-parse the form directly so
+	// the ingress rules actually reach storage. (Same bug class as the
+	// RegisterTargets / CreateListener / CreateRule fixes.)
+	if err := r.ParseForm(); err == nil {
+		if perms := parseIPPermissionsFromForm(r.Form); len(perms) > 0 {
+			req.IPPermissions = perms
+		}
+	}
+
 	err := s.storage.AuthorizeSecurityGroupIngress(r.Context(), req.GroupID, req.GroupName, req.IPPermissions)
 	if err != nil {
 		handleError(w, err)
@@ -294,6 +306,14 @@ func (s *Service) AuthorizeSecurityGroupEgress(w http.ResponseWriter, r *http.Re
 		writeError(w, errInvalidParameter, "GroupId is required", http.StatusBadRequest)
 
 		return
+	}
+
+	// Same form-converter limitation as AuthorizeSecurityGroupIngress
+	// above; re-parse so egress rules survive into storage.
+	if err := r.ParseForm(); err == nil {
+		if perms := parseIPPermissionsFromForm(r.Form); len(perms) > 0 {
+			req.IPPermissions = perms
+		}
 	}
 
 	err := s.storage.AuthorizeSecurityGroupEgress(r.Context(), req.GroupID, req.IPPermissions)
@@ -1408,6 +1428,9 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"DeleteSecurityGroup":           s.DeleteSecurityGroup,
 		"AuthorizeSecurityGroupIngress": s.AuthorizeSecurityGroupIngress,
 		"AuthorizeSecurityGroupEgress":  s.AuthorizeSecurityGroupEgress,
+		"DescribeSecurityGroups":        s.DescribeSecurityGroups,
+		"RevokeSecurityGroupIngress":    s.RevokeSecurityGroupIngress,
+		"RevokeSecurityGroupEgress":     s.RevokeSecurityGroupEgress,
 		// Key pair operations
 		"CreateKeyPair":    s.CreateKeyPair,
 		"DeleteKeyPair":    s.DeleteKeyPair,
@@ -1631,6 +1654,192 @@ func convertToXMLRouteTable(rt *RouteTable) XMLRouteTable {
 		RouteSet:       XMLRouteSet{Items: routes},
 		AssociationSet: XMLRouteTableAssociationSet{Items: associations},
 		TagSet:         XMLTagSet{Items: tags},
+	}
+}
+
+// RevokeSecurityGroupIngress / RevokeSecurityGroupEgress are accepted
+// as no-ops. terraform-aws issues these on every Create to clear the
+// default 0.0.0.0/0 egress rule before applying user rules; without a
+// 200 response the resource fails to create and downstream Authorize
+// calls never happen. We don't track egress today, so the no-op is
+// behaviourally equivalent to the cleanup terraform expects.
+func (s *Service) RevokeSecurityGroupIngress(w http.ResponseWriter, _ *http.Request) {
+	writeEC2XMLResponse(w, struct {
+		XMLName   xml.Name `xml:"RevokeSecurityGroupIngressResponse"`
+		Xmlns     string   `xml:"xmlns,attr"`
+		RequestID string   `xml:"requestId"`
+		Return    bool     `xml:"return"`
+	}{Xmlns: ec2XMLNS, RequestID: uuid.New().String(), Return: true})
+}
+
+// RevokeSecurityGroupEgress mirrors the ingress no-op above.
+func (s *Service) RevokeSecurityGroupEgress(w http.ResponseWriter, _ *http.Request) {
+	writeEC2XMLResponse(w, struct {
+		XMLName   xml.Name `xml:"RevokeSecurityGroupEgressResponse"`
+		Xmlns     string   `xml:"xmlns,attr"`
+		RequestID string   `xml:"requestId"`
+		Return    bool     `xml:"return"`
+	}{Xmlns: ec2XMLNS, RequestID: uuid.New().String(), Return: true})
+}
+
+// DescribeSecurityGroups handles the DescribeSecurityGroups action.
+// Filters honoured: GroupId.N, GroupName.N. Without either, every SG
+// in storage is returned.
+func (s *Service) DescribeSecurityGroups(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	groupIDs := parseIndexedListFromForm(r.Form, "GroupId")
+	groupNames := parseIndexedListFromForm(r.Form, "GroupName")
+
+	sgs, err := s.storage.DescribeSecurityGroups(r.Context(), groupIDs, groupNames)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	items := make([]XMLSecurityGroup, 0, len(sgs))
+	for _, sg := range sgs {
+		items = append(items, convertToXMLSecurityGroup(sg))
+	}
+
+	writeEC2XMLResponse(w, XMLDescribeSecurityGroupsResponse{
+		Xmlns:             ec2XMLNS,
+		RequestID:         uuid.New().String(),
+		SecurityGroupInfo: XMLSecurityGroupInfo{Items: items},
+	})
+}
+
+// convertToXMLSecurityGroup is the SecurityGroup → wire-shape adapter.
+// The IngressRules / EgressRules are copied through ipPermission()
+// which handles the IpRanges nested list.
+func convertToXMLSecurityGroup(sg *SecurityGroup) XMLSecurityGroup {
+	tags := make([]XMLTag, 0, len(sg.Tags))
+	for _, t := range sg.Tags {
+		tags = append(tags, XMLTag(t))
+	}
+
+	return XMLSecurityGroup{
+		OwnerID:             defaultAccountID,
+		GroupID:             sg.GroupID,
+		GroupName:           sg.GroupName,
+		GroupDescription:    sg.Description,
+		VpcID:               sg.VpcID,
+		IPPermissions:       XMLIPPermissionSet{Items: ipPermissionsToXML(sg.IngressRules)},
+		IPPermissionsEgress: XMLIPPermissionSet{Items: ipPermissionsToXML(sg.EgressRules)},
+		TagSet:              XMLTagSet{Items: tags},
+	}
+}
+
+// ipPermissionsToXML translates each IPPermission into its wire form.
+func ipPermissionsToXML(perms []IPPermission) []XMLIPPermission {
+	out := make([]XMLIPPermission, 0, len(perms))
+
+	for _, p := range perms {
+		ranges := make([]XMLIPRange, 0, len(p.IPRanges))
+		for _, r := range p.IPRanges {
+			ranges = append(ranges, XMLIPRange(r))
+		}
+
+		out = append(out, XMLIPPermission{
+			IPProtocol: p.IPProtocol,
+			FromPort:   p.FromPort,
+			ToPort:     p.ToPort,
+			IPRanges:   XMLIPRanges{Items: ranges},
+		})
+	}
+
+	return out
+}
+
+// parseIPPermissionsFromForm reads the AWS Query wire shape for an
+// IpPermissions list — IpPermissions.N.{IpProtocol,FromPort,ToPort}
+// plus IpPermissions.N.IpRanges.M.CidrIp — into the slice the storage
+// layer expects. The shared form-to-JSON converter only handles flat
+// indexed scalar lists, not the nested member.N.<field> shape, so the
+// (Authorize|Revoke)SecurityGroup{Ingress,Egress} handlers need this
+// helper to recover the rules from r.Form directly.
+func parseIPPermissionsFromForm(form map[string][]string) []IPPermission {
+	byIdx := make(map[int]*IPPermission)
+
+	for key, values := range form {
+		applyIPPermissionFormEntry(byIdx, key, values)
+	}
+
+	indexes := make([]int, 0, len(byIdx))
+	for n := range byIdx {
+		indexes = append(indexes, n)
+	}
+
+	sort.Ints(indexes)
+
+	out := make([]IPPermission, 0, len(indexes))
+	for _, n := range indexes {
+		out = append(out, *byIdx[n])
+	}
+
+	return out
+}
+
+// applyIPPermissionFormEntry is a single-key apply for the
+// IpPermissions.N.X form shape. Only keys under that prefix are
+// considered; everything else is ignored so unrelated form fields
+// (e.g. GroupId) don't pollute the result.
+func applyIPPermissionFormEntry(byIdx map[int]*IPPermission, key string, values []string) {
+	suffix, ok := strings.CutPrefix(key, "IpPermissions.")
+	if !ok || len(values) == 0 {
+		return
+	}
+
+	dot := strings.Index(suffix, ".")
+	if dot < 0 {
+		return
+	}
+
+	n, err := strconv.Atoi(suffix[:dot])
+	if err != nil || n < 1 {
+		return
+	}
+
+	entry, exists := byIdx[n]
+	if !exists {
+		entry = &IPPermission{}
+		byIdx[n] = entry
+	}
+
+	setIPPermissionField(entry, suffix[dot+1:], values[0])
+}
+
+// setIPPermissionField applies one .X field on a single permission.
+// IpRanges is special-cased: each IpRanges.M.CidrIp encountered grows
+// the slice, so out-of-order M values still produce one entry each.
+func setIPPermissionField(entry *IPPermission, field, value string) {
+	switch {
+	case field == "IpProtocol":
+		entry.IPProtocol = value
+	case field == "FromPort":
+		if v, err := strconv.Atoi(value); err == nil {
+			entry.FromPort = v
+		}
+	case field == "ToPort":
+		if v, err := strconv.Atoi(value); err == nil {
+			entry.ToPort = v
+		}
+	case strings.HasPrefix(field, "IpRanges."):
+		rest := strings.TrimPrefix(field, "IpRanges.")
+
+		rdot := strings.Index(rest, ".")
+		if rdot < 0 {
+			return
+		}
+
+		if rest[rdot+1:] == "CidrIp" {
+			entry.IPRanges = append(entry.IPRanges, IPRange{CidrIP: value})
+		}
 	}
 }
 

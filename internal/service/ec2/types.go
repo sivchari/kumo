@@ -283,6 +283,64 @@ type XMLAuthorizeSecurityGroupEgressResponse struct {
 	Return    bool     `xml:"return"`
 }
 
+// DescribeSecurityGroupsRequest carries the optional GroupId / GroupName
+// filters; an empty pair returns every SG.
+type DescribeSecurityGroupsRequest struct {
+	GroupIDs   []string `json:"GroupIds,omitempty"`
+	GroupNames []string `json:"GroupNames,omitempty"`
+}
+
+// XMLDescribeSecurityGroupsResponse is the AWS Query wire shape: a
+// securityGroupInfo container of <item> elements.
+type XMLDescribeSecurityGroupsResponse struct {
+	XMLName           xml.Name             `xml:"DescribeSecurityGroupsResponse"`
+	Xmlns             string               `xml:"xmlns,attr"`
+	RequestID         string               `xml:"requestId"`
+	SecurityGroupInfo XMLSecurityGroupInfo `xml:"securityGroupInfo"`
+}
+
+// XMLSecurityGroupInfo wraps the per-SG <item> list.
+type XMLSecurityGroupInfo struct {
+	Items []XMLSecurityGroup `xml:"item"`
+}
+
+// XMLSecurityGroup is one SG on the wire. Field names use the
+// lowercase-camel form AWS publishes for the legacy EC2 XML protocol.
+type XMLSecurityGroup struct {
+	OwnerID             string             `xml:"ownerId"`
+	GroupID             string             `xml:"groupId"`
+	GroupName           string             `xml:"groupName"`
+	GroupDescription    string             `xml:"groupDescription"`
+	VpcID               string             `xml:"vpcId,omitempty"`
+	IPPermissions       XMLIPPermissionSet `xml:"ipPermissions"`
+	IPPermissionsEgress XMLIPPermissionSet `xml:"ipPermissionsEgress"`
+	TagSet              XMLTagSet          `xml:"tagSet"`
+}
+
+// XMLIPPermissionSet is a list of IP permissions.
+type XMLIPPermissionSet struct {
+	Items []XMLIPPermission `xml:"item"`
+}
+
+// XMLIPPermission is one ingress / egress rule on the wire.
+type XMLIPPermission struct {
+	IPProtocol string      `xml:"ipProtocol"`
+	FromPort   int         `xml:"fromPort"`
+	ToPort     int         `xml:"toPort"`
+	IPRanges   XMLIPRanges `xml:"ipRanges"`
+}
+
+// XMLIPRanges wraps the per-CIDR <item> list.
+type XMLIPRanges struct {
+	Items []XMLIPRange `xml:"item"`
+}
+
+// XMLIPRange is one CIDR entry.
+type XMLIPRange struct {
+	CidrIP      string `xml:"cidrIp"`
+	Description string `xml:"description,omitempty"`
+}
+
 // XMLCreateKeyPairResponse is the XML response for CreateKeyPair.
 type XMLCreateKeyPairResponse struct {
 	XMLName        xml.Name `xml:"CreateKeyPairResponse"`
