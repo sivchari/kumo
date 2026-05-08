@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -636,8 +637,11 @@ func (m *MemoryStorage) CreateRule(_ context.Context, listenerArn, priority stri
 		return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + listenerArn + "' not found"}
 	}
 
+	// AWS rule ARNs replace ":listener/" with ":listener-rule/" and append
+	// a unique rule id; reproducing that format keeps the AWS provider's
+	// ARN parser from mis-routing the parent listener ARN.
 	rule := Rule{
-		RuleArn:    listenerArn + "/" + uuidLite(),
+		RuleArn:    ruleArnFromListenerArn(listenerArn) + "/" + uuidLite(),
 		Priority:   priority,
 		Conditions: append([]RuleCondition(nil), conditions...),
 		Actions:    append([]Action(nil), actions...),
@@ -689,7 +693,7 @@ func (m *MemoryStorage) DescribeRules(_ context.Context, listenerArn string, rul
 // alongside explicitly-created rules.
 func defaultRuleFor(listener *Listener) Rule {
 	return Rule{
-		RuleArn:   listener.ListenerArn + "/default",
+		RuleArn:   ruleArnFromListenerArn(listener.ListenerArn) + "/default",
 		Priority:  "default",
 		Actions:   append([]Action(nil), listener.DefaultActions...),
 		IsDefault: true,
@@ -992,4 +996,18 @@ func (m *MemoryStorage) DescribeTargetHealth(_ context.Context, targetGroupArn s
 	}
 
 	return out, nil
+}
+
+// ruleArnFromListenerArn rewrites ":listener/" to ":listener-rule/" so the
+// generated rule ARN matches the AWS-published wire format. Any input that
+// doesn't contain that segment is returned unchanged.
+func ruleArnFromListenerArn(listenerArn string) string {
+	const segment = ":listener/"
+
+	idx := strings.Index(listenerArn, segment)
+	if idx < 0 {
+		return listenerArn
+	}
+
+	return listenerArn[:idx] + ":listener-rule/" + listenerArn[idx+len(segment):]
 }

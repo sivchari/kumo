@@ -776,10 +776,7 @@ func parseRulePrioritiesFromForm(form map[string][]string) map[string]string {
 func convertRuleToXML(rule *Rule) XMLRule {
 	conds := make([]XMLRuleCondition, 0, len(rule.Conditions))
 	for _, c := range rule.Conditions {
-		conds = append(conds, XMLRuleCondition{
-			Field:  c.Field,
-			Values: XMLRuleValues{Members: append([]string(nil), c.Values...)},
-		})
+		conds = append(conds, conditionToXML(c))
 	}
 
 	actions := make([]XMLAction, 0, len(rule.Actions))
@@ -794,6 +791,35 @@ func convertRuleToXML(rule *Rule) XMLRule {
 		Actions:    XMLActions{Members: actions},
 		IsDefault:  rule.IsDefault,
 	}
+}
+
+// conditionToXML serializes one condition with both the legacy Values field
+// and the typed config child the AWS provider expects to be non-nil.
+func conditionToXML(c RuleCondition) XMLRuleCondition {
+	values := XMLRuleValues{Members: append([]string(nil), c.Values...)}
+	cfg := &XMLRuleValuesConfig{Values: values}
+	out := XMLRuleCondition{Field: c.Field, Values: values}
+
+	switch c.Field {
+	case "host-header":
+		out.HostHeaderConfig = cfg
+	case "path-pattern":
+		out.PathPatternConfig = cfg
+	case "http-request-method":
+		out.HTTPRequestMethodConfig = cfg
+	case "source-ip":
+		out.SourceIPConfig = cfg
+	case "http-header":
+		out.HTTPHeaderConfig = &XMLHTTPHeaderConfig{Values: values}
+	case "query-string":
+		// Query-string values are key/value pairs; we don't model the
+		// per-pair structure yet, so emit an empty members list rather
+		// than passing the raw strings through (which would mislead the
+		// SDK into expecting Key/Value children).
+		out.QueryStringConfig = &XMLQueryStringConfig{}
+	}
+
+	return out
 }
 
 func convertRulesToXML(rules []Rule) []XMLRule {

@@ -491,15 +491,54 @@ type XMLRuleConditions struct {
 	Members []XMLRuleCondition `xml:"member"`
 }
 
-// XMLRuleCondition represents a condition in XML format.
+// XMLRuleCondition represents a condition in XML format. AWS returns each
+// condition with both the legacy Values element AND a typed config child
+// (PathPatternConfig, HostHeaderConfig, …). The AWS provider dereferences
+// the typed config without nil-checking, so we surface a non-nil pointer
+// for whichever field matches the condition's Field, even when its values
+// are empty.
 type XMLRuleCondition struct {
-	Field  string        `xml:"Field"`
-	Values XMLRuleValues `xml:"Values"`
+	Field                   string                `xml:"Field"`
+	Values                  XMLRuleValues         `xml:"Values"`
+	HostHeaderConfig        *XMLRuleValuesConfig  `xml:"HostHeaderConfig,omitempty"`
+	PathPatternConfig       *XMLRuleValuesConfig  `xml:"PathPatternConfig,omitempty"`
+	HTTPHeaderConfig        *XMLHTTPHeaderConfig  `xml:"HttpHeaderConfig,omitempty"`
+	HTTPRequestMethodConfig *XMLRuleValuesConfig  `xml:"HttpRequestMethodConfig,omitempty"`
+	QueryStringConfig       *XMLQueryStringConfig `xml:"QueryStringConfig,omitempty"`
+	SourceIPConfig          *XMLRuleValuesConfig  `xml:"SourceIpConfig,omitempty"`
 }
 
 // XMLRuleValues contains a list of values for a condition.
 type XMLRuleValues struct {
 	Members []string `xml:"member"`
+}
+
+// XMLRuleValuesConfig is the typed value-list wrapper used by the
+// host-header / path-pattern / http-request-method / source-ip configs.
+type XMLRuleValuesConfig struct {
+	Values XMLRuleValues `xml:"Values"`
+}
+
+// XMLHTTPHeaderConfig is the typed config for http-header conditions.
+type XMLHTTPHeaderConfig struct {
+	HTTPHeaderName string        `xml:"HttpHeaderName"`
+	Values         XMLRuleValues `xml:"Values"`
+}
+
+// XMLQueryStringConfig is the typed config for query-string conditions.
+type XMLQueryStringConfig struct {
+	Values XMLQueryStringKVPairs `xml:"Values"`
+}
+
+// XMLQueryStringKVPairs holds the key/value pairs for a query-string match.
+type XMLQueryStringKVPairs struct {
+	Members []XMLQueryStringKV `xml:"member"`
+}
+
+// XMLQueryStringKV is one key=value pair in a query-string condition.
+type XMLQueryStringKV struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
 }
 
 // XMLResponseMetadata contains response metadata.
