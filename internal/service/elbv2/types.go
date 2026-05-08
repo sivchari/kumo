@@ -74,11 +74,44 @@ type Listener struct {
 	Rules           []Rule
 }
 
-// Action represents a listener action.
+// Action represents a listener action. The legacy single-target form
+// (Type=forward + TargetGroupArn) and the weighted form (Type=forward +
+// ForwardConfig with multiple TargetGroupTuples) are both expressible:
+// AWS clients send one or the other, never both, and Describe responses
+// echo back whichever was supplied.
 type Action struct {
 	Type           string
 	TargetGroupArn string
 	Order          int
+	// ForwardConfig is set when the action uses weighted target groups
+	// (the canary / blue-green pattern). nil means "use TargetGroupArn".
+	ForwardConfig *ForwardActionConfig
+}
+
+// ForwardActionConfig groups multiple target groups under one forward
+// action with relative weights. Used by ALB canary / blue-green
+// deployments — the listener splits traffic across TargetGroups by the
+// supplied Weight ratio.
+type ForwardActionConfig struct {
+	TargetGroups     []TargetGroupTuple
+	StickinessConfig *TargetGroupStickinessConfig
+}
+
+// TargetGroupTuple is one (target group, weight) pair inside a
+// ForwardActionConfig. Weight is the relative share of traffic routed
+// to TargetGroupArn; the AWS console expresses the canonical 100-total
+// form but real ALB normalises across whatever weights are supplied.
+type TargetGroupTuple struct {
+	TargetGroupArn string
+	Weight         int
+}
+
+// TargetGroupStickinessConfig controls whether requests for the same
+// client are pinned to the same target group during a weighted forward.
+// Without it, every request is independently weight-sampled.
+type TargetGroupStickinessConfig struct {
+	Enabled         bool
+	DurationSeconds int
 }
 
 // Rule represents a listener rule for path/host-based routing.
@@ -402,11 +435,42 @@ type XMLActions struct {
 	Members []XMLAction `xml:"member"`
 }
 
-// XMLAction represents an action in XML format.
+// XMLAction represents an action in XML format. ForwardConfig is a
+// pointer so it serialises out only when an explicit weighted forward
+// was supplied; clients using the legacy single-target form (just
+// TargetGroupArn) get a response that matches what they sent.
 type XMLAction struct {
-	Type           string `xml:"Type"`
-	TargetGroupArn string `xml:"TargetGroupArn,omitempty"`
-	Order          int    `xml:"Order,omitempty"`
+	Type           string                  `xml:"Type"`
+	TargetGroupArn string                  `xml:"TargetGroupArn,omitempty"`
+	Order          int                     `xml:"Order,omitempty"`
+	ForwardConfig  *XMLForwardActionConfig `xml:"ForwardConfig,omitempty"`
+}
+
+// XMLForwardActionConfig is the XML wire shape for a multi-target-group
+// forward (the canary / blue-green pattern). TargetGroups is required;
+// TargetGroupStickinessConfig is optional.
+type XMLForwardActionConfig struct {
+	TargetGroups                XMLTargetGroupTuples            `xml:"TargetGroups"`
+	TargetGroupStickinessConfig *XMLTargetGroupStickinessConfig `xml:"TargetGroupStickinessConfig,omitempty"`
+}
+
+// XMLTargetGroupTuples wraps the member-list shape AWS uses for arrays.
+type XMLTargetGroupTuples struct {
+	Members []XMLTargetGroupTuple `xml:"member"`
+}
+
+// XMLTargetGroupTuple is one (target group, weight) pair on the wire.
+type XMLTargetGroupTuple struct {
+	TargetGroupArn string `xml:"TargetGroupArn"`
+	Weight         int    `xml:"Weight"`
+}
+
+// XMLTargetGroupStickinessConfig is the wire shape for the sticky-target
+// option on a weighted forward. AWS surfaces DurationSeconds even when
+// Enabled is false, but the value is only meaningful when Enabled=true.
+type XMLTargetGroupStickinessConfig struct {
+	Enabled         bool `xml:"Enabled"`
+	DurationSeconds int  `xml:"DurationSeconds,omitempty"`
 }
 
 // XMLCreateRuleResponse is the XML response for CreateRule.

@@ -15,6 +15,11 @@ import (
 )
 
 // Error codes for ELB.
+// fieldTargetGroupArn is the AWS Query form key for a single target
+// group ARN; reused as both a top-level form field and an action /
+// forward-config sub-field.
+const fieldTargetGroupArn = "TargetGroupArn"
+
 const (
 	errInvalidParameter = "InvalidParameterValue"
 	errInternalError    = "InternalError"
@@ -336,6 +341,19 @@ func (s *Service) CreateListener(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// readELBJSONRequest goes through the form-to-JSON converter, which
+	// flattens nested wire keys like
+	// DefaultActions.member.N.ForwardConfig.TargetGroups.member.M.Weight
+	// into dotted top-level keys that don't unmarshal back into the
+	// CreateListenerRequest struct. Re-parse the form directly so the
+	// listener's default actions — including weighted forward configs —
+	// survive into storage.
+	if err := r.ParseForm(); err == nil {
+		if acts := parseELBActionsFromForm(r.Form, "DefaultActions"); len(acts) > 0 {
+			req.DefaultActions = acts
+		}
+	}
+
 	listener, err := s.storage.CreateListener(r.Context(), &req)
 	if err != nil {
 		handleELBError(w, err)
@@ -600,15 +618,19 @@ func parseActionsFromForm(form map[string][]string, prefix string) []Action {
 			byIdx[n] = entry
 		}
 
-		switch suffix[dot+1:] {
-		case "Type":
+		field := suffix[dot+1:]
+
+		switch {
+		case field == "Type":
 			entry.Type = values[0]
-		case "TargetGroupArn":
+		case field == fieldTargetGroupArn:
 			entry.TargetGroupArn = values[0]
-		case "Order":
+		case field == "Order":
 			if v, err := strconv.Atoi(values[0]); err == nil {
 				entry.Order = v
 			}
+		case strings.HasPrefix(field, "ForwardConfig."):
+			applyForwardConfigField(entry, field[len("ForwardConfig."):], values[0])
 		}
 	}
 
@@ -625,6 +647,104 @@ func parseActionsFromForm(form map[string][]string, prefix string) []Action {
 	}
 
 	return out
+}
+
+// applyForwardConfigField populates a single field on an Action's
+// ForwardActionConfig from a flattened form key. The key is everything
+// after "ForwardConfig." — typical inputs are
+// "TargetGroups.member.1.TargetGroupArn",
+// "TargetGroups.member.1.Weight", and
+// "TargetGroupStickinessConfig.Enabled". Lazily allocates ForwardConfig
+// the first time any nested field is seen so plain non-weighted actions
+// don't get a non-nil ForwardConfig attached.
+func applyForwardConfigField(entry *Action, field, value string) {
+	if entry.ForwardConfig == nil {
+		entry.ForwardConfig = &ForwardActionConfig{}
+	}
+
+	switch {
+	case strings.HasPrefix(field, "TargetGroups.member."):
+		applyTargetGroupTupleField(entry.ForwardConfig, field[len("TargetGroups.member."):], value)
+	case strings.HasPrefix(field, "TargetGroupStickinessConfig."):
+		applyStickinessField(entry.ForwardConfig, field[len("TargetGroupStickinessConfig."):], value)
+	}
+}
+
+// maxTargetGroupTuples caps the number of TargetGroups a single
+// ForwardConfig can hold. Real ALB allows at most 5; we leave headroom
+// for tests that exercise many target groups but reject anything that
+// looks like a slice-grow DoS (an attacker supplying a member.N with a
+// huge N would otherwise allocate len(N) zero-valued tuples — at 24 B
+// each, member.1e9 is 24 GB).
+const maxTargetGroupTuples = 100
+
+// AWS rejects per-target weights outside [0, 1000]. kumo enforces the
+// same range at the parser so storage never holds a weight the SDK
+// would refuse to acknowledge on read.
+const (
+	minTargetGroupWeight = 0
+	maxTargetGroupWeight = 1000
+)
+
+// applyTargetGroupTupleField parses one
+// TargetGroups.member.<N>.{TargetGroupArn,Weight} key into the matching
+// slot in cfg.TargetGroups. The slice is grown on demand so members
+// supplied out of index order land in the right position; missing
+// indexes stay zero and get filtered out at the end of parsing. Indexes
+// above maxTargetGroupTuples are dropped silently to bound allocation.
+func applyTargetGroupTupleField(cfg *ForwardActionConfig, field, value string) {
+	dot := strings.Index(field, ".")
+	if dot < 0 {
+		return
+	}
+
+	idx, err := strconv.Atoi(field[:dot])
+	if err != nil || idx < 1 || idx > maxTargetGroupTuples {
+		return
+	}
+
+	// Grow in one shot rather than appending 1 element at a time. With
+	// the cap=100 limit the worst case was ~88µs per request walking
+	// the loop; allocating to the target length up front turns it into
+	// O(1) amortised. Out-of-order member.N keys still land at the
+	// right slot because each call re-checks length.
+	if n := idx - len(cfg.TargetGroups); n > 0 {
+		cfg.TargetGroups = append(cfg.TargetGroups, make([]TargetGroupTuple, n)...)
+	}
+
+	target := &cfg.TargetGroups[idx-1]
+
+	switch field[dot+1:] {
+	case fieldTargetGroupArn:
+		target.TargetGroupArn = value
+	case "Weight":
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return
+		}
+
+		if v < minTargetGroupWeight || v > maxTargetGroupWeight {
+			return
+		}
+
+		target.Weight = v
+	}
+}
+
+// applyStickinessField populates the StickinessConfig sub-struct.
+func applyStickinessField(cfg *ForwardActionConfig, field, value string) {
+	if cfg.StickinessConfig == nil {
+		cfg.StickinessConfig = &TargetGroupStickinessConfig{}
+	}
+
+	switch field {
+	case "Enabled":
+		cfg.StickinessConfig.Enabled = value == "true"
+	case "DurationSeconds":
+		if v, err := strconv.Atoi(value); err == nil {
+			cfg.StickinessConfig.DurationSeconds = v
+		}
+	}
 }
 
 // ruleConditionAcc accumulates one Conditions.member.N entry being parsed.
@@ -781,7 +901,7 @@ func convertRuleToXML(rule *Rule) XMLRule {
 
 	actions := make([]XMLAction, 0, len(rule.Actions))
 	for _, a := range rule.Actions {
-		actions = append(actions, XMLAction(a))
+		actions = append(actions, convertActionToXML(a))
 	}
 
 	return XMLRule{
@@ -924,11 +1044,48 @@ func convertToXMLTargetGroup(tg *TargetGroup) XMLTargetGroup {
 	}
 }
 
+// convertActionToXML serialises an Action for the wire. The legacy
+// single-target form (TargetGroupArn) and the weighted form
+// (ForwardConfig with TargetGroupTuples) are both honoured; whichever
+// the caller supplied gets echoed back. Order is included only when
+// non-zero so single-action listeners don't emit a redundant <Order>0.
+func convertActionToXML(a Action) XMLAction {
+	out := XMLAction{
+		Type:           a.Type,
+		TargetGroupArn: a.TargetGroupArn,
+		Order:          a.Order,
+	}
+
+	if a.ForwardConfig == nil {
+		return out
+	}
+
+	tuples := make([]XMLTargetGroupTuple, 0, len(a.ForwardConfig.TargetGroups))
+	for _, t := range a.ForwardConfig.TargetGroups {
+		tuples = append(tuples, XMLTargetGroupTuple(t))
+	}
+
+	cfg := &XMLForwardActionConfig{
+		TargetGroups: XMLTargetGroupTuples{Members: tuples},
+	}
+
+	if s := a.ForwardConfig.StickinessConfig; s != nil {
+		cfg.TargetGroupStickinessConfig = &XMLTargetGroupStickinessConfig{
+			Enabled:         s.Enabled,
+			DurationSeconds: s.DurationSeconds,
+		}
+	}
+
+	out.ForwardConfig = cfg
+
+	return out
+}
+
 // convertToXMLListener converts a Listener to XMLListener.
 func convertToXMLListener(l *Listener) XMLListener {
 	actions := make([]XMLAction, 0, len(l.DefaultActions))
 	for _, a := range l.DefaultActions {
-		actions = append(actions, XMLAction(a))
+		actions = append(actions, convertActionToXML(a))
 	}
 
 	return XMLListener{
@@ -1402,14 +1559,18 @@ func applyELBActionFormEntry(byIdx map[int]*Action, prefix, key string, values [
 		byIdx[n] = entry
 	}
 
-	switch suffix[dot+1:] {
-	case "Type":
+	field := suffix[dot+1:]
+
+	switch {
+	case field == "Type":
 		entry.Type = values[0]
-	case "TargetGroupArn":
+	case field == "TargetGroupArn":
 		entry.TargetGroupArn = values[0]
-	case "Order":
+	case field == "Order":
 		if v, err := strconv.Atoi(values[0]); err == nil {
 			entry.Order = v
 		}
+	case strings.HasPrefix(field, "ForwardConfig."):
+		applyForwardConfigField(entry, field[len("ForwardConfig."):], values[0])
 	}
 }
