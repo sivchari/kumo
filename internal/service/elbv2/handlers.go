@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -203,23 +205,25 @@ func (s *Service) DescribeTargetGroups(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterTargets handles the RegisterTargets action.
+// RegisterTargets handles the RegisterTargets action. The Query form pattern
+// Targets.member.N.{Id,Port,AvailabilityZone} is read directly from r.Form
+// because the generic form-to-JSON converter does not understand the nested
+// member.N.<field> shape and would emit flat dotted keys instead.
 func (s *Service) RegisterTargets(w http.ResponseWriter, r *http.Request) {
-	var req RegisterTargetsRequest
-	if err := readELBJSONRequest(r, &req); err != nil {
-		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
 
 		return
 	}
 
-	if req.TargetGroupArn == "" {
+	tgArn := r.Form.Get("TargetGroupArn")
+	if tgArn == "" {
 		writeELBError(w, errInvalidParameter, "TargetGroupArn is required", http.StatusBadRequest)
 
 		return
 	}
 
-	err := s.storage.RegisterTargets(r.Context(), req.TargetGroupArn, req.Targets)
-	if err != nil {
+	if err := s.storage.RegisterTargets(r.Context(), tgArn, parseELBTargetsFromForm(r.Form)); err != nil {
 		handleELBError(w, err)
 
 		return
@@ -234,21 +238,20 @@ func (s *Service) RegisterTargets(w http.ResponseWriter, r *http.Request) {
 
 // DeregisterTargets handles the DeregisterTargets action.
 func (s *Service) DeregisterTargets(w http.ResponseWriter, r *http.Request) {
-	var req DeregisterTargetsRequest
-	if err := readELBJSONRequest(r, &req); err != nil {
-		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
 
 		return
 	}
 
-	if req.TargetGroupArn == "" {
+	tgArn := r.Form.Get("TargetGroupArn")
+	if tgArn == "" {
 		writeELBError(w, errInvalidParameter, "TargetGroupArn is required", http.StatusBadRequest)
 
 		return
 	}
 
-	err := s.storage.DeregisterTargets(r.Context(), req.TargetGroupArn, req.Targets)
-	if err != nil {
+	if err := s.storage.DeregisterTargets(r.Context(), tgArn, parseELBTargetsFromForm(r.Form)); err != nil {
 		handleELBError(w, err)
 
 		return
@@ -259,6 +262,63 @@ func (s *Service) DeregisterTargets(w http.ResponseWriter, r *http.Request) {
 		Result:           XMLDeregisterTargetsResult{},
 		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
 	})
+}
+
+// parseELBTargetsFromForm reads Targets.member.N.{Id,Port,AvailabilityZone}.
+func parseELBTargetsFromForm(form map[string][]string) []Target {
+	byIdx := make(map[int]*Target)
+
+	for key, values := range form {
+		applyELBTargetFormEntry(byIdx, key, values)
+	}
+
+	indexes := make([]int, 0, len(byIdx))
+	for n := range byIdx {
+		indexes = append(indexes, n)
+	}
+
+	sort.Ints(indexes)
+
+	out := make([]Target, 0, len(indexes))
+	for _, n := range indexes {
+		out = append(out, *byIdx[n])
+	}
+
+	return out
+}
+
+func applyELBTargetFormEntry(byIdx map[int]*Target, key string, values []string) {
+	suffix, ok := strings.CutPrefix(key, "Targets.member.")
+	if !ok || len(values) == 0 {
+		return
+	}
+
+	dot := strings.Index(suffix, ".")
+	if dot < 0 {
+		return
+	}
+
+	n, err := strconv.Atoi(suffix[:dot])
+	if err != nil {
+		return
+	}
+
+	entry, exists := byIdx[n]
+	if !exists {
+		entry = &Target{}
+		byIdx[n] = entry
+	}
+
+	switch suffix[dot+1:] {
+	case "Id":
+		entry.ID = values[0]
+	case "Port":
+		if v, err := strconv.Atoi(values[0]); err == nil {
+			entry.Port = v
+		}
+	case "AvailabilityZone":
+		entry.AvailabilityZone = values[0]
+	}
 }
 
 // CreateListener handles the CreateListener action.
