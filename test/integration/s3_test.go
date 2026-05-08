@@ -1461,3 +1461,99 @@ func TestS3_PutObject_KeyWithLeadingSlash(t *testing.T) {
 		t.Errorf("body = %q, want %q", string(gotBody), "hello")
 	}
 }
+
+func TestS3_PublicAccessBlock(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-pab-bucket"
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	if _, err := client.PutPublicAccessBlock(ctx, &s3.PutPublicAccessBlockInput{
+		Bucket: aws.String(bucket),
+		PublicAccessBlockConfiguration: &types.PublicAccessBlockConfiguration{
+			BlockPublicAcls:       aws.Bool(true),
+			IgnorePublicAcls:      aws.Bool(true),
+			BlockPublicPolicy:     aws.Bool(true),
+			RestrictPublicBuckets: aws.Bool(true),
+		},
+	}); err != nil {
+		t.Fatalf("failed to put public access block: %v", err)
+	}
+
+	getResult, err := client.GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatalf("failed to get public access block: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get", getResult)
+
+	if _, err := client.DeletePublicAccessBlock(ctx, &s3.DeletePublicAccessBlockInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		t.Fatalf("failed to delete public access block: %v", err)
+	}
+
+	if _, err := client.GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
+		Bucket: aws.String(bucket),
+	}); err == nil {
+		t.Fatal("expected NoSuchPublicAccessBlockConfiguration after delete, got nil")
+	}
+}
+
+func TestS3_BucketEncryption(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-sse-bucket"
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	if _, err := client.PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
+		Bucket: aws.String(bucket),
+		ServerSideEncryptionConfiguration: &types.ServerSideEncryptionConfiguration{
+			Rules: []types.ServerSideEncryptionRule{
+				{
+					ApplyServerSideEncryptionByDefault: &types.ServerSideEncryptionByDefault{
+						SSEAlgorithm: types.ServerSideEncryptionAes256,
+					},
+					BucketKeyEnabled: aws.Bool(true),
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("failed to put bucket encryption: %v", err)
+	}
+
+	getResult, err := client.GetBucketEncryption(ctx, &s3.GetBucketEncryptionInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatalf("failed to get bucket encryption: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get", getResult)
+
+	if _, err := client.DeleteBucketEncryption(ctx, &s3.DeleteBucketEncryptionInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		t.Fatalf("failed to delete bucket encryption: %v", err)
+	}
+
+	if _, err := client.GetBucketEncryption(ctx, &s3.GetBucketEncryptionInput{
+		Bucket: aws.String(bucket),
+	}); err == nil {
+		t.Fatal("expected ServerSideEncryptionConfigurationNotFoundError after delete, got nil")
+	}
+}

@@ -330,3 +330,36 @@ type CORSRule struct {
 	ExposeHeaders  []string `json:"exposeHeaders,omitempty"  xml:"ExposeHeader"`
 	MaxAgeSeconds  int      `json:"maxAgeSeconds,omitempty"  xml:"MaxAgeSeconds"`
 }
+
+// PublicAccessBlockConfiguration is the request/response body for the
+// public access block APIs.
+type PublicAccessBlockConfiguration struct {
+	XMLName               xml.Name `xml:"PublicAccessBlockConfiguration"`
+	Xmlns                 string   `xml:"xmlns,attr,omitempty"`
+	BlockPublicAcls       bool     `xml:"BlockPublicAcls"`
+	IgnorePublicAcls      bool     `xml:"IgnorePublicAcls"`
+	BlockPublicPolicy     bool     `xml:"BlockPublicPolicy"`
+	RestrictPublicBuckets bool     `xml:"RestrictPublicBuckets"`
+}
+
+// ServerSideEncryptionConfiguration is the request/response body for the
+// bucket-encryption APIs.
+type ServerSideEncryptionConfiguration struct {
+	XMLName xml.Name                    `xml:"ServerSideEncryptionConfiguration"`
+	Xmlns   string                      `xml:"xmlns,attr,omitempty"`
+	Rules   []ServerSideEncryptionRuleX `xml:"Rule"`
+}
+
+// ServerSideEncryptionRuleX is the XML representation of a single SSE rule.
+// (Suffixed with X to avoid colliding with storage's ServerSideEncryptionRule.)
+type ServerSideEncryptionRuleX struct {
+	ApplyServerSideEncryptionByDefault *ApplyServerSideEncryptionByDefault `xml:"ApplyServerSideEncryptionByDefault,omitempty"`
+	BucketKeyEnabled                   bool                                `xml:"BucketKeyEnabled,omitempty"`
+}
+
+// ApplyServerSideEncryptionByDefault holds the default SSE algorithm and
+// optional KMS key id.
+type ApplyServerSideEncryptionByDefault struct {
+	SSEAlgorithm   string `xml:"SSEAlgorithm"`
+	KMSMasterKeyID string `xml:"KMSMasterKeyID,omitempty"`
+}

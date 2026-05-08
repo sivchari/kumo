@@ -62,7 +62,7 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	// Bucket operations
 	r.Handle("GET", "/", s.ListBuckets)
 	r.Handle("PUT", "/{bucket}", s.handleBucketPut)
-	r.Handle("DELETE", "/{bucket}", s.DeleteBucket)
+	r.Handle("DELETE", "/{bucket}", s.handleBucketDelete)
 	r.Handle("HEAD", "/{bucket}", s.HeadBucket)
 
 	// Bucket-level GET handles ListObjects, ListMultipartUploads, versioning queries

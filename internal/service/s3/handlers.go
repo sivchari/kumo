@@ -106,6 +106,18 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := r.URL.Query()["publicAccessBlock"]; ok {
+		s.GetPublicAccessBlock(w, r)
+
+		return
+	}
+
+	if _, ok := r.URL.Query()["encryption"]; ok {
+		s.GetBucketEncryption(w, r)
+
+		return
+	}
+
 	if _, ok := r.URL.Query()["versions"]; ok {
 		s.ListObjectVersions(w, r)
 
@@ -969,7 +981,204 @@ func (s *Service) handleBucketPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := r.URL.Query()["publicAccessBlock"]; ok {
+		s.PutPublicAccessBlock(w, r)
+
+		return
+	}
+
+	if _, ok := r.URL.Query()["encryption"]; ok {
+		s.PutBucketEncryption(w, r)
+
+		return
+	}
+
 	s.CreateBucket(w, r)
+}
+
+// handleBucketDelete dispatches DELETE /{bucket} requests based on query parameters.
+func (s *Service) handleBucketDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := r.URL.Query()["publicAccessBlock"]; ok {
+		s.DeletePublicAccessBlock(w, r)
+
+		return
+	}
+
+	if _, ok := r.URL.Query()["encryption"]; ok {
+		s.DeleteBucketEncryption(w, r)
+
+		return
+	}
+
+	s.DeleteBucket(w, r)
+}
+
+// PutPublicAccessBlock handles PUT /{bucket}?publicAccessBlock.
+func (s *Service) PutPublicAccessBlock(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeS3Error(w, r, "InvalidRequest", "Failed to read request body", http.StatusBadRequest)
+
+		return
+	}
+
+	var cfg PublicAccessBlockConfiguration
+	if err := xml.Unmarshal(body, &cfg); err != nil {
+		writeS3Error(w, r, "MalformedXML", "The request body is malformed XML", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.PutPublicAccessBlock(r.Context(), bucket, PublicAccessBlockConfig{
+		BlockPublicAcls:       cfg.BlockPublicAcls,
+		IgnorePublicAcls:      cfg.IgnorePublicAcls,
+		BlockPublicPolicy:     cfg.BlockPublicPolicy,
+		RestrictPublicBuckets: cfg.RestrictPublicBuckets,
+	}); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetPublicAccessBlock handles GET /{bucket}?publicAccessBlock.
+func (s *Service) GetPublicAccessBlock(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	cfg, err := s.storage.GetPublicAccessBlock(r.Context(), bucket)
+	if err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	writeXMLResponse(w, PublicAccessBlockConfiguration{
+		Xmlns:                 s3Namespace,
+		BlockPublicAcls:       cfg.BlockPublicAcls,
+		IgnorePublicAcls:      cfg.IgnorePublicAcls,
+		BlockPublicPolicy:     cfg.BlockPublicPolicy,
+		RestrictPublicBuckets: cfg.RestrictPublicBuckets,
+	})
+}
+
+// DeletePublicAccessBlock handles DELETE /{bucket}?publicAccessBlock.
+func (s *Service) DeletePublicAccessBlock(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	if err := s.storage.DeletePublicAccessBlock(r.Context(), bucket); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// PutBucketEncryption handles PUT /{bucket}?encryption.
+func (s *Service) PutBucketEncryption(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeS3Error(w, r, "InvalidRequest", "Failed to read request body", http.StatusBadRequest)
+
+		return
+	}
+
+	var cfg ServerSideEncryptionConfiguration
+	if err := xml.Unmarshal(body, &cfg); err != nil {
+		writeS3Error(w, r, "MalformedXML", "The request body is malformed XML", http.StatusBadRequest)
+
+		return
+	}
+
+	rules := make([]ServerSideEncryptionRule, 0, len(cfg.Rules))
+
+	for _, rule := range cfg.Rules {
+		stored := ServerSideEncryptionRule{BucketKeyEnabled: rule.BucketKeyEnabled}
+		if rule.ApplyServerSideEncryptionByDefault != nil {
+			stored.SSEAlgorithm = rule.ApplyServerSideEncryptionByDefault.SSEAlgorithm
+			stored.KMSMasterKeyID = rule.ApplyServerSideEncryptionByDefault.KMSMasterKeyID
+		}
+
+		rules = append(rules, stored)
+	}
+
+	if err := s.storage.PutBucketEncryption(r.Context(), bucket, ServerSideEncryptionConfig{Rules: rules}); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetBucketEncryption handles GET /{bucket}?encryption.
+func (s *Service) GetBucketEncryption(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	cfg, err := s.storage.GetBucketEncryption(r.Context(), bucket)
+	if err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	xmlRules := make([]ServerSideEncryptionRuleX, 0, len(cfg.Rules))
+
+	for _, rule := range cfg.Rules {
+		xmlRule := ServerSideEncryptionRuleX{BucketKeyEnabled: rule.BucketKeyEnabled}
+		if rule.SSEAlgorithm != "" {
+			xmlRule.ApplyServerSideEncryptionByDefault = &ApplyServerSideEncryptionByDefault{
+				SSEAlgorithm:   rule.SSEAlgorithm,
+				KMSMasterKeyID: rule.KMSMasterKeyID,
+			}
+		}
+
+		xmlRules = append(xmlRules, xmlRule)
+	}
+
+	writeXMLResponse(w, ServerSideEncryptionConfiguration{
+		Xmlns: s3Namespace,
+		Rules: xmlRules,
+	})
+}
+
+// DeleteBucketEncryption handles DELETE /{bucket}?encryption.
+func (s *Service) DeleteBucketEncryption(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	if err := s.storage.DeleteBucketEncryption(r.Context(), bucket); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeBucketErrorOrInternal maps a BucketError to its HTTP status code,
+// falling back to 500 for non-bucket errors. Used by sub-resource handlers.
+func writeBucketErrorOrInternal(w http.ResponseWriter, r *http.Request, err error) {
+	var bucketErr *BucketError
+	if errors.As(err, &bucketErr) {
+		status := http.StatusBadRequest
+
+		switch bucketErr.Code {
+		case "NoSuchBucket", "NoSuchPublicAccessBlockConfiguration", "ServerSideEncryptionConfigurationNotFoundError":
+			status = http.StatusNotFound
+		}
+
+		writeS3Error(w, r, bucketErr.Code, bucketErr.Message, status)
+
+		return
+	}
+
+	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 }
 
 // writeXMLResponse writes an XML response with HTTP 200 OK status.

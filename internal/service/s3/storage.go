@@ -61,6 +61,14 @@ type Storage interface {
 	IsEventBridgeEnabled(ctx context.Context, bucket string) bool
 	SetCORSConfiguration(ctx context.Context, bucket string, rules []CORSRule)
 	GetCORSRules(ctx context.Context, bucket string) []CORSRule
+
+	PutPublicAccessBlock(ctx context.Context, bucket string, cfg PublicAccessBlockConfig) error
+	GetPublicAccessBlock(ctx context.Context, bucket string) (*PublicAccessBlockConfig, error)
+	DeletePublicAccessBlock(ctx context.Context, bucket string) error
+
+	PutBucketEncryption(ctx context.Context, bucket string, cfg ServerSideEncryptionConfig) error
+	GetBucketEncryption(ctx context.Context, bucket string) (*ServerSideEncryptionConfig, error)
+	DeleteBucketEncryption(ctx context.Context, bucket string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -90,13 +98,35 @@ type MemoryStorage struct {
 type MemoryBucket struct {
 	Name               string                      `json:"name"`
 	CreationDate       time.Time                   `json:"creationDate"`
-	Objects            map[string]*Object          `json:"objects"`             // current/latest version per key
-	Versions           map[string][]*Object        `json:"versions"`            // all versions per key (newest first)
-	VersioningStatus   string                      `json:"versioningStatus"`    // "", "Enabled", "Suspended"
-	VersionIDCounter   uint64                      `json:"versionIdcounter"`    // counter for generating version IDs
-	MultipartUploads   map[string]*MultipartUpload `json:"-"`                   // uploadID -> MultipartUpload
-	EventBridgeEnabled bool                        `json:"eventBridgeEnabled"`  // EventBridge notification
-	CORSRules          []CORSRule                  `json:"corsRules,omitempty"` // CORS configuration
+	Objects            map[string]*Object          `json:"objects"`                     // current/latest version per key
+	Versions           map[string][]*Object        `json:"versions"`                    // all versions per key (newest first)
+	VersioningStatus   string                      `json:"versioningStatus"`            // "", "Enabled", "Suspended"
+	VersionIDCounter   uint64                      `json:"versionIdcounter"`            // counter for generating version IDs
+	MultipartUploads   map[string]*MultipartUpload `json:"-"`                           // uploadID -> MultipartUpload
+	EventBridgeEnabled bool                        `json:"eventBridgeEnabled"`          // EventBridge notification
+	CORSRules          []CORSRule                  `json:"corsRules,omitempty"`         // CORS configuration
+	PublicAccessBlock  *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"` // public access block configuration
+	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
+}
+
+// PublicAccessBlockConfig stores the four PAB flags.
+type PublicAccessBlockConfig struct {
+	BlockPublicAcls       bool `json:"blockPublicAcls"`
+	IgnorePublicAcls      bool `json:"ignorePublicAcls"`
+	BlockPublicPolicy     bool `json:"blockPublicPolicy"`
+	RestrictPublicBuckets bool `json:"restrictPublicBuckets"`
+}
+
+// ServerSideEncryptionConfig stores the bucket SSE configuration.
+type ServerSideEncryptionConfig struct {
+	Rules []ServerSideEncryptionRule `json:"rules"`
+}
+
+// ServerSideEncryptionRule represents a single SSE rule.
+type ServerSideEncryptionRule struct {
+	SSEAlgorithm     string `json:"sseAlgorithm"`               // AES256 / aws:kms / aws:kms:dsse
+	KMSMasterKeyID   string `json:"kmsMasterKeyId,omitempty"`   // optional KMS key
+	BucketKeyEnabled bool   `json:"bucketKeyEnabled,omitempty"` // S3 Bucket Keys
 }
 
 // NewMemoryStorage creates a new in-memory S3 storage.
@@ -1089,6 +1119,114 @@ func (s *MemoryStorage) GetCORSRules(_ context.Context, bucket string) []CORSRul
 	if b, exists := s.Buckets[bucket]; exists {
 		return b.CORSRules
 	}
+
+	return nil
+}
+
+// PutPublicAccessBlock stores a bucket's public access block configuration.
+func (s *MemoryStorage) PutPublicAccessBlock(_ context.Context, bucket string, cfg PublicAccessBlockConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	c := cfg
+	b.PublicAccessBlock = &c
+
+	return nil
+}
+
+// GetPublicAccessBlock returns a bucket's public access block configuration.
+func (s *MemoryStorage) GetPublicAccessBlock(_ context.Context, bucket string) (*PublicAccessBlockConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if b.PublicAccessBlock == nil {
+		return nil, &BucketError{
+			Code:       "NoSuchPublicAccessBlockConfiguration",
+			Message:    "The public access block configuration was not found",
+			BucketName: bucket,
+		}
+	}
+
+	c := *b.PublicAccessBlock
+
+	return &c, nil
+}
+
+// DeletePublicAccessBlock removes a bucket's public access block configuration.
+func (s *MemoryStorage) DeletePublicAccessBlock(_ context.Context, bucket string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	b.PublicAccessBlock = nil
+
+	return nil
+}
+
+// PutBucketEncryption stores a bucket's server-side encryption configuration.
+func (s *MemoryStorage) PutBucketEncryption(_ context.Context, bucket string, cfg ServerSideEncryptionConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	c := ServerSideEncryptionConfig{Rules: append([]ServerSideEncryptionRule(nil), cfg.Rules...)}
+	b.Encryption = &c
+
+	return nil
+}
+
+// GetBucketEncryption returns a bucket's server-side encryption configuration.
+func (s *MemoryStorage) GetBucketEncryption(_ context.Context, bucket string) (*ServerSideEncryptionConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if b.Encryption == nil {
+		return nil, &BucketError{
+			Code:       "ServerSideEncryptionConfigurationNotFoundError",
+			Message:    "The server side encryption configuration was not found",
+			BucketName: bucket,
+		}
+	}
+
+	c := ServerSideEncryptionConfig{Rules: append([]ServerSideEncryptionRule(nil), b.Encryption.Rules...)}
+
+	return &c, nil
+}
+
+// DeleteBucketEncryption removes a bucket's server-side encryption configuration.
+func (s *MemoryStorage) DeleteBucketEncryption(_ context.Context, bucket string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	b.Encryption = nil
 
 	return nil
 }
