@@ -2,7 +2,6 @@ package cloudcontrol
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -40,7 +39,7 @@ func (s *Service) CreateResource(w http.ResponseWriter, r *http.Request) {
 		RequestToken:    requestToken(input.ClientToken),
 		Operation:       "CREATE",
 		OperationStatus: "SUCCESS",
-		EventTime:       time.Now().UTC(),
+		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
 	}})
 }
@@ -119,7 +118,7 @@ func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 		RequestToken:    requestToken(input.ClientToken),
 		Operation:       "UPDATE",
 		OperationStatus: "SUCCESS",
-		EventTime:       time.Now().UTC(),
+		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
 	}})
 }
@@ -161,7 +160,7 @@ func (s *Service) DeleteResource(w http.ResponseWriter, r *http.Request) {
 		RequestToken:    requestToken(input.ClientToken),
 		Operation:       "DELETE",
 		OperationStatus: "SUCCESS",
-		EventTime:       time.Now().UTC(),
+		EventTime:       nowEpoch(),
 	}})
 }
 
@@ -218,7 +217,7 @@ func (s *Service) GetResourceRequestStatus(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, ProgressEventOutput{ProgressEvent: ProgressEvent{
 		RequestToken:    input.RequestToken,
 		OperationStatus: "SUCCESS",
-		EventTime:       time.Now().UTC(),
+		EventTime:       nowEpoch(),
 	}})
 }
 

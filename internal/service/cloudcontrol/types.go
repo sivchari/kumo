@@ -68,17 +68,27 @@ type GetResourceRequestStatusInput struct {
 // ProgressEvent is the wire shape Cloud Control returns from every
 // asynchronous operation. kumo runs all operations synchronously, so we
 // always return SUCCESS — the field is still populated for SDK
-// compatibility.
+// compatibility. EventTime is encoded as Unix-epoch seconds (a float)
+// because the AWS JSON 1.0 protocol decodes timestamps as numbers; an
+// RFC3339 string trips the SDK's `expected Timestamp to be a JSON Number`
+// check.
 type ProgressEvent struct {
-	TypeName        string    `json:"TypeName,omitempty"`
-	Identifier      string    `json:"Identifier,omitempty"`
-	RequestToken    string    `json:"RequestToken,omitempty"`
-	Operation       string    `json:"Operation,omitempty"`
-	OperationStatus string    `json:"OperationStatus,omitempty"`
-	EventTime       time.Time `json:"EventTime,omitempty"`
-	ResourceModel   string    `json:"ResourceModel,omitempty"`
-	StatusMessage   string    `json:"StatusMessage,omitempty"`
-	ErrorCode       string    `json:"ErrorCode,omitempty"`
+	TypeName        string  `json:"TypeName,omitempty"`
+	Identifier      string  `json:"Identifier,omitempty"`
+	RequestToken    string  `json:"RequestToken,omitempty"`
+	Operation       string  `json:"Operation,omitempty"`
+	OperationStatus string  `json:"OperationStatus,omitempty"`
+	EventTime       float64 `json:"EventTime,omitempty"`
+	ResourceModel   string  `json:"ResourceModel,omitempty"`
+	StatusMessage   string  `json:"StatusMessage,omitempty"`
+	ErrorCode       string  `json:"ErrorCode,omitempty"`
+}
+
+// nowEpoch returns the current time encoded the way the AWS JSON 1.0
+// protocol expects timestamps: Unix-epoch seconds with sub-second
+// precision in the fractional part.
+func nowEpoch() float64 {
+	return float64(time.Now().UnixNano()) / 1e9
 }
 
 // CreateResourceOutput / UpdateResourceOutput / DeleteResourceOutput all
