@@ -50,6 +50,18 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	// Invalidation operations.
 	r.Handle("POST", "/2020-05-31/distribution/{id}/invalidation", s.CreateInvalidation)
 	r.Handle("GET", "/2020-05-31/distribution/{id}/invalidation/{invalidationId}", s.GetInvalidation)
+
+	// CloudFront Functions operations. CreateFunction / ListFunctions
+	// share the /function path with method-based dispatch; the rest are
+	// keyed by Name with optional /describe / /publish / /test suffixes.
+	r.Handle("POST", "/2020-05-31/function", s.CreateFunction)
+	r.Handle("GET", "/2020-05-31/function", s.ListFunctions)
+	r.Handle("GET", "/2020-05-31/function/{Name}", s.GetFunction)
+	r.Handle("GET", "/2020-05-31/function/{Name}/describe", s.DescribeFunction)
+	r.Handle("PUT", "/2020-05-31/function/{Name}", s.UpdateFunction)
+	r.Handle("POST", "/2020-05-31/function/{Name}/publish", s.PublishFunction)
+	r.Handle("POST", "/2020-05-31/function/{Name}/test", s.TestFunction)
+	r.Handle("DELETE", "/2020-05-31/function/{Name}", s.DeleteFunction)
 }
 
 // Close saves the storage state if persistence is enabled.
