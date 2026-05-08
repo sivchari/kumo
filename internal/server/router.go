@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/google/uuid"
@@ -156,6 +157,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"healthy"}`))
 
 		return
+	}
+
+	// Clean the URL path to prevent Go's ServeMux from returning 301 redirects
+	// for paths with double slashes (e.g., /bucket//key). S3 keys can start with
+	// "/" which produces double slashes in path-style URLs. We clean the path
+	// ourselves so the mux sees an already-clean path and serves it directly.
+	if cleaned := path.Clean(req.URL.Path); cleaned != req.URL.Path {
+		req = req.Clone(req.Context())
+		req.URL.Path = cleaned
 	}
 
 	// Check if the request matches a prefix router first.

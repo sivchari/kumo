@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1477,8 +1478,16 @@ func (s *Service) GetObjectTagging(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tagging := Tagging{TagSet: TagSet{Tags: make([]Tag, 0, len(tags))}}
-	for k, v := range tags {
-		tagging.TagSet.Tags = append(tagging.TagSet.Tags, Tag{Key: k, Value: v})
+
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		tagging.TagSet.Tags = append(tagging.TagSet.Tags, Tag{Key: k, Value: tags[k]})
 	}
 
 	w.Header().Set("Content-Type", "application/xml")

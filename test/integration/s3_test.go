@@ -1387,7 +1387,7 @@ func TestS3_PutAndGetObjectTagging(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Get tags.
+	// Get tags and verify sorted order via golden test.
 	tagOutput, err := client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -1396,22 +1396,7 @@ func TestS3_PutAndGetObjectTagging(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(tagOutput.TagSet) != 2 {
-		t.Fatalf("expected 2 tags, got %d", len(tagOutput.TagSet))
-	}
-
-	tagMap := make(map[string]string)
-	for _, tag := range tagOutput.TagSet {
-		tagMap[*tag.Key] = *tag.Value
-	}
-
-	if tagMap["env"] != "test" {
-		t.Errorf("tag env = %q, want %q", tagMap["env"], "test")
-	}
-
-	if tagMap["team"] != "platform" {
-		t.Errorf("tag team = %q, want %q", tagMap["team"], "platform")
-	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), tagOutput.TagSet)
 
 	// Verify body not overwritten.
 	getOutput, err := client.GetObject(ctx, &s3.GetObjectInput{
@@ -1425,5 +1410,54 @@ func TestS3_PutAndGetObjectTagging(t *testing.T) {
 	body, _ := io.ReadAll(getOutput.Body)
 	if string(body) != "original-body" {
 		t.Errorf("body = %q, want %q", string(body), "original-body")
+	}
+}
+
+func TestS3_PutObject_KeyWithLeadingSlash(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-leading-slash-bucket"
+	key := "/path/to/object.txt"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+	})
+
+	// PutObject with a key that starts with "/" produces a double slash in
+	// path-style URLs (e.g., /bucket//path/to/object.txt). Go's ServeMux
+	// would return 301 for this without the path cleaning fix.
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+		Body:   strings.NewReader("hello"),
+	})
+	if err != nil {
+		t.Fatalf("PutObject with leading slash key failed: %v", err)
+	}
+
+	getOutput, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatalf("GetObject with leading slash key failed: %v", err)
+	}
+
+	gotBody, _ := io.ReadAll(getOutput.Body)
+	if string(gotBody) != "hello" {
+		t.Errorf("body = %q, want %q", string(gotBody), "hello")
 	}
 }
