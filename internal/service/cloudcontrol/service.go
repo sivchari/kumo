@@ -26,11 +26,12 @@ func init() {
 // operation to a per-resource-type Handler registered in the type registry.
 type Service struct {
 	registry *Registry
+	progress *progressTracker
 }
 
 // New creates a new Cloud Control service backed by the given registry.
 func New(reg *Registry) *Service {
-	return &Service{registry: reg}
+	return &Service{registry: reg, progress: newProgressTracker()}
 }
 
 // Name returns the service name.

@@ -147,28 +147,32 @@ func (h *awsIAMRole) List(ctx context.Context) ([]ResourceDescription, error) {
 	return out, nil
 }
 
-// roleStateJSON serialises a Role for read responses. The
-// AssumeRolePolicyDocument is wrapped back into a JSON string-as-string
-// (matching how AWS Cloud Control surfaces it) when the stored value is
-// a literal JSON document.
+// roleStateJSON serialises a Role for read responses. The full
+// CloudFormation schema is emitted (with null / empty defaults for what
+// kumo doesn't model — managed policies, permissions boundary, inline
+// policies, tags) because terraform-provider-awscc treats every Computed
+// property as "must be known after apply".
 func roleStateJSON(r *iam.Role) ([]byte, error) {
-	policy := json.RawMessage(nil)
-
+	var policy any
 	if r.AssumeRolePolicyDocument != "" {
-		// Stored value is itself JSON; embed as RawMessage so the wire
-		// surface is the structured form.
 		policy = json.RawMessage(r.AssumeRolePolicyDocument)
 	}
 
-	return json.Marshal(roleProperties{
-		RoleName:                 r.RoleName,
-		Arn:                      r.Arn,
-		RoleID:                   r.RoleID,
-		Path:                     r.Path,
-		Description:              r.Description,
-		MaxSessionDuration:       r.MaxSessionDuration,
-		AssumeRolePolicyDocument: policy,
-	})
+	state := map[string]any{
+		"RoleName":                 r.RoleName,
+		"Arn":                      r.Arn,
+		"RoleId":                   r.RoleID,
+		"Path":                     r.Path,
+		"Description":              r.Description,
+		"MaxSessionDuration":       r.MaxSessionDuration,
+		"AssumeRolePolicyDocument": policy,
+		"ManagedPolicyArns":        []any{},
+		"PermissionsBoundary":      nil,
+		"Policies":                 []any{},
+		"Tags":                     []any{},
+	}
+
+	return json.Marshal(state)
 }
 
 // assumeRolePolicyAsString accepts either a JSON string or a structured

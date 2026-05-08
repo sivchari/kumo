@@ -33,7 +33,7 @@ func (s *Service) CreateResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, ProgressEventOutput{ProgressEvent: ProgressEvent{
+	ev := ProgressEvent{
 		TypeName:        input.TypeName,
 		Identifier:      identifier,
 		RequestToken:    requestToken(input.ClientToken),
@@ -41,7 +41,9 @@ func (s *Service) CreateResource(w http.ResponseWriter, r *http.Request) {
 		OperationStatus: "SUCCESS",
 		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
-	}})
+	}
+	s.progress.record(ev)
+	writeJSON(w, ProgressEventOutput{ProgressEvent: ev})
 }
 
 // GetResource returns the current state of the resource. Cloud Control
@@ -112,7 +114,7 @@ func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, ProgressEventOutput{ProgressEvent: ProgressEvent{
+	ev := ProgressEvent{
 		TypeName:        input.TypeName,
 		Identifier:      input.Identifier,
 		RequestToken:    requestToken(input.ClientToken),
@@ -120,7 +122,9 @@ func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 		OperationStatus: "SUCCESS",
 		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
-	}})
+	}
+	s.progress.record(ev)
+	writeJSON(w, ProgressEventOutput{ProgressEvent: ev})
 }
 
 // DeleteResource removes the resource. NotFound is reported as
@@ -154,14 +158,16 @@ func (s *Service) DeleteResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, ProgressEventOutput{ProgressEvent: ProgressEvent{
+	ev := ProgressEvent{
 		TypeName:        input.TypeName,
 		Identifier:      input.Identifier,
 		RequestToken:    requestToken(input.ClientToken),
 		Operation:       "DELETE",
 		OperationStatus: "SUCCESS",
 		EventTime:       nowEpoch(),
-	}})
+	}
+	s.progress.record(ev)
+	writeJSON(w, ProgressEventOutput{ProgressEvent: ev})
 }
 
 // ListResources returns every resource of the given type. Pagination is
@@ -204,12 +210,21 @@ func (s *Service) ListResources(w http.ResponseWriter, r *http.Request) {
 
 // GetResourceRequestStatus is invoked by clients polling an asynchronous
 // operation. kumo executes everything synchronously, so by the time a
-// caller asks, the operation is already done — return SUCCESS with the
-// echoed RequestToken so the SDK's polling loop terminates immediately.
+// caller asks, the operation is already done — we look up the original
+// CreateResource / UpdateResource / DeleteResource ProgressEvent and
+// re-emit it. Without echoing back the original Identifier + TypeName
+// the awscc terraform provider can't follow the create with a
+// GetResource and "unknown after apply" never resolves.
 func (s *Service) GetResourceRequestStatus(w http.ResponseWriter, r *http.Request) {
 	var input GetResourceRequestStatusInput
 	if err := readJSON(r, &input); err != nil {
 		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	if ev, ok := s.progress.lookup(input.RequestToken); ok {
+		writeJSON(w, ProgressEventOutput{ProgressEvent: ev})
 
 		return
 	}

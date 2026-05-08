@@ -134,13 +134,33 @@ func (h *awsEC2Subnet) List(ctx context.Context) ([]ResourceDescription, error) 
 	return out, nil
 }
 
-// subnetStateJSON serialises a Subnet for read responses.
+// subnetStateJSON serialises a Subnet for read responses. The full
+// CloudFormation schema is emitted (with null / empty defaults for what
+// kumo doesn't model) because terraform-provider-awscc requires every
+// Computed property to be resolved after apply.
 func subnetStateJSON(s *ec2.Subnet) ([]byte, error) {
-	return json.Marshal(subnetProperties{
-		SubnetID:            s.SubnetID,
-		VpcID:               s.VpcID,
-		CidrBlock:           s.CidrBlock,
-		AvailabilityZone:    s.AvailabilityZone,
-		MapPublicIpOnLaunch: s.MapPublicIPOnLaunch,
-	})
+	state := map[string]any{
+		"SubnetId":                      s.SubnetID,
+		"VpcId":                         s.VpcID,
+		"CidrBlock":                     s.CidrBlock,
+		"AvailabilityZone":              s.AvailabilityZone,
+		"AvailabilityZoneId":            "",
+		"AvailableIpAddressCount":       s.AvailableIPAddressCount,
+		"AssignIpv6AddressOnCreation":   false,
+		"EnableDns64":                   false,
+		"Ipv4IpamPoolId":                nil,
+		"Ipv4NetmaskLength":             nil,
+		"Ipv6CidrBlock":                 nil,
+		"Ipv6CidrBlocks":                []any{},
+		"Ipv6IpamPoolId":                nil,
+		"Ipv6Native":                    false,
+		"Ipv6NetmaskLength":             nil,
+		"MapPublicIpOnLaunch":           s.MapPublicIPOnLaunch,
+		"NetworkAclAssociationId":       "",
+		"OutpostArn":                    nil,
+		"PrivateDnsNameOptionsOnLaunch": nil,
+		"Tags":                          []any{},
+	}
+
+	return json.Marshal(state)
 }

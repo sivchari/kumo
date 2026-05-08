@@ -10,31 +10,22 @@ import (
 )
 
 // awsS3Bucket adapts the AWS::S3::Bucket Cloud Control resource type to
-// kumo's existing S3 storage. Only the BucketName property is honoured —
-// the other AWS::S3::Bucket properties (versioning, tags, public access
-// block, encryption …) are stored as opaque sub-resources by the S3
-// service today, and Cloud Control wiring for those can be added later
-// without changing the Create/Read/Delete contract.
+// kumo's existing S3 storage. The Properties payload is full-schema:
+// every CloudFormation-modelled property is emitted (with null / empty
+// defaults when kumo doesn't model it yet) so terraform-provider-awscc's
+// "unknown after apply" plan resolves cleanly.
 type awsS3Bucket struct{}
 
 func init() {
 	registerDefaultHandler(&awsS3Bucket{})
 }
 
-// TypeName is the canonical CloudFormation type identifier.
 func (*awsS3Bucket) TypeName() string { return "AWS::S3::Bucket" }
 
-// s3Storage resolves the live S3 storage at request time so we always
-// share the same bucket store as the s3 service. Doing it lazily avoids
-// init-order coupling between the cloudcontrol and s3 packages.
 func (*awsS3Bucket) s3Storage() (s3.Storage, error) {
 	return lookupStorage[s3.Storage]("s3")
 }
 
-// Create extracts BucketName from the desired-state JSON and creates the
-// bucket via the existing S3 storage. The identifier Cloud Control uses
-// from this point on is the bucket name itself (S3 buckets have no
-// separate ARN-based identifier in the CloudFormation model).
 func (h *awsS3Bucket) Create(ctx context.Context, desiredState []byte) (string, []byte, error) {
 	var props struct {
 		BucketName string `json:"BucketName"`
@@ -57,17 +48,9 @@ func (h *awsS3Bucket) Create(ctx context.Context, desiredState []byte) (string, 
 		return "", nil, err
 	}
 
-	state, err := json.Marshal(map[string]any{"BucketName": props.BucketName})
-	if err != nil {
-		return "", nil, err
-	}
-
-	return props.BucketName, state, nil
+	return props.BucketName, s3BucketStateJSON(props.BucketName), nil
 }
 
-// Read confirms the bucket exists and returns a minimal state document.
-// The wider set of AWS::S3::Bucket properties is unmodelled — surfacing
-// just BucketName matches what the awscc provider treats as required.
 func (h *awsS3Bucket) Read(ctx context.Context, identifier string) ([]byte, error) {
 	storage, err := h.s3Storage()
 	if err != nil {
@@ -83,19 +66,13 @@ func (h *awsS3Bucket) Read(ctx context.Context, identifier string) ([]byte, erro
 		return nil, &NotFoundError{Message: "bucket " + identifier + " does not exist"}
 	}
 
-	return json.Marshal(map[string]any{"BucketName": identifier})
+	return s3BucketStateJSON(identifier), nil
 }
 
-// Update is a no-op today. AWS::S3::Bucket has only one updatable scalar
-// (BucketName, which is actually replace-only) and the rest of the
-// settings live in sub-resource APIs that this PR does not yet expose.
 func (h *awsS3Bucket) Update(ctx context.Context, identifier string, _ []byte) ([]byte, error) {
 	return h.Read(ctx, identifier)
 }
 
-// Delete removes the bucket. NotFound is mapped to NotFoundError so the
-// dispatcher returns ResourceNotFoundException — matching real Cloud
-// Control which rejects deletes against absent resources.
 func (h *awsS3Bucket) Delete(ctx context.Context, identifier string) error {
 	storage, err := h.s3Storage()
 	if err != nil {
@@ -114,7 +91,6 @@ func (h *awsS3Bucket) Delete(ctx context.Context, identifier string) error {
 	return storage.DeleteBucket(ctx, identifier)
 }
 
-// List returns one ResourceDescription per existing bucket.
 func (h *awsS3Bucket) List(ctx context.Context) ([]ResourceDescription, error) {
 	storage, err := h.s3Storage()
 	if err != nil {
@@ -129,13 +105,48 @@ func (h *awsS3Bucket) List(ctx context.Context) ([]ResourceDescription, error) {
 	out := make([]ResourceDescription, 0, len(buckets))
 
 	for _, b := range buckets {
-		props, err := json.Marshal(map[string]any{"BucketName": b.Name})
-		if err != nil {
-			return nil, err
-		}
-
-		out = append(out, ResourceDescription{Identifier: b.Name, Properties: props})
+		out = append(out, ResourceDescription{Identifier: b.Name, Properties: s3BucketStateJSON(b.Name)})
 	}
 
 	return out, nil
+}
+
+// s3BucketStateJSON emits the full AWS::S3::Bucket CloudFormation schema
+// for the named bucket. Sub-resources kumo doesn't model (encryption,
+// lifecycle, replication, …) come back as JSON null so the awscc
+// provider's "(known after apply)" plan resolves without a placeholder
+// being left behind.
+func s3BucketStateJSON(name string) []byte {
+	state := map[string]any{
+		"BucketName":                       name,
+		"Arn":                              "arn:aws:s3:::" + name,
+		"DomainName":                       name + ".s3.amazonaws.com",
+		"DualStackDomainName":              name + ".s3.dualstack.us-east-1.amazonaws.com",
+		"RegionalDomainName":               name + ".s3.us-east-1.amazonaws.com",
+		"WebsiteURL":                       "http://" + name + ".s3-website-us-east-1.amazonaws.com",
+		"AccelerateConfiguration":          nil,
+		"AccessControl":                    nil,
+		"AnalyticsConfigurations":          nil,
+		"BucketEncryption":                 nil,
+		"CorsConfiguration":                nil,
+		"IntelligentTieringConfigurations": nil,
+		"InventoryConfigurations":          nil,
+		"LifecycleConfiguration":           nil,
+		"LoggingConfiguration":             nil,
+		"MetadataTableConfiguration":       nil,
+		"MetricsConfigurations":            nil,
+		"NotificationConfiguration":        nil,
+		"ObjectLockConfiguration":          nil,
+		"ObjectLockEnabled":                false,
+		"OwnershipControls":                nil,
+		"PublicAccessBlockConfiguration":   nil,
+		"ReplicationConfiguration":         nil,
+		"Tags":                             []any{},
+		"VersioningConfiguration":          nil,
+		"WebsiteConfiguration":             nil,
+	}
+
+	out, _ := json.Marshal(state)
+
+	return out
 }

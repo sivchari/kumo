@@ -137,13 +137,23 @@ func (h *awsEC2VPC) List(ctx context.Context) ([]ResourceDescription, error) {
 }
 
 // vpcStateJSON is the shared serialiser for read paths so Create / Read /
-// List all produce the same wire shape.
+// List all produce the same wire shape. The full CloudFormation schema
+// is emitted (with null / empty defaults for what kumo doesn't model)
+// because terraform-provider-awscc treats every Computed property as
+// "must be known after apply".
 func vpcStateJSON(v *ec2.Vpc) ([]byte, error) {
-	return json.Marshal(vpcProperties{
-		VpcID:              v.VpcID,
-		CidrBlock:          v.CidrBlock,
-		InstanceTenancy:    v.InstanceTenancy,
-		EnableDnsHostnames: v.EnableDNSHostnames,
-		EnableDnsSupport:   v.EnableDNSSupport,
-	})
+	state := map[string]any{
+		"VpcId":                 v.VpcID,
+		"CidrBlock":             v.CidrBlock,
+		"InstanceTenancy":       v.InstanceTenancy,
+		"EnableDnsHostnames":    v.EnableDNSHostnames,
+		"EnableDnsSupport":      v.EnableDNSSupport,
+		"CidrBlockAssociations": []any{},
+		"DefaultNetworkAcl":     "",
+		"DefaultSecurityGroup":  "",
+		"Ipv6CidrBlocks":        []any{},
+		"Tags":                  []any{},
+	}
+
+	return json.Marshal(state)
 }
