@@ -789,3 +789,81 @@ func TestIAM_OpenIDConnectProvider(t *testing.T) {
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "CreateDate")).Assert(t.Name()+"_get_after_update", getAfter)
 }
+
+func TestIAM_InstanceProfileLifecycle(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+	roleName := "test-ip-role"
+	profileName := "test-ip-profile"
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}); err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteRole(context.Background(), &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+	})
+
+	createRes, err := client.CreateInstanceProfile(ctx, &iam.CreateInstanceProfileInput{
+		InstanceProfileName: aws.String(profileName),
+	})
+	if err != nil {
+		t.Fatalf("CreateInstanceProfile: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "InstanceProfileId", "Arn", "CreateDate")).Assert(t.Name()+"_create", createRes)
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteInstanceProfile(context.Background(), &iam.DeleteInstanceProfileInput{
+			InstanceProfileName: aws.String(profileName),
+		})
+	})
+
+	if _, err := client.AddRoleToInstanceProfile(ctx, &iam.AddRoleToInstanceProfileInput{
+		InstanceProfileName: aws.String(profileName),
+		RoleName:            aws.String(roleName),
+	}); err != nil {
+		t.Fatalf("AddRoleToInstanceProfile: %v", err)
+	}
+
+	getRes, err := client.GetInstanceProfile(ctx, &iam.GetInstanceProfileInput{
+		InstanceProfileName: aws.String(profileName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(getRes.InstanceProfile.Roles); got != 1 || *getRes.InstanceProfile.Roles[0].RoleName != roleName {
+		t.Errorf("after AddRole, profile.Roles = %d entries, want 1 with name %q", got, roleName)
+	}
+
+	listRes, err := client.ListInstanceProfilesForRole(ctx, &iam.ListInstanceProfilesForRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(listRes.InstanceProfiles); got != 1 || *listRes.InstanceProfiles[0].InstanceProfileName != profileName {
+		t.Errorf("ListInstanceProfilesForRole returned %d entries, want 1 with profile %q", got, profileName)
+	}
+
+	if _, err := client.RemoveRoleFromInstanceProfile(ctx, &iam.RemoveRoleFromInstanceProfileInput{
+		InstanceProfileName: aws.String(profileName),
+		RoleName:            aws.String(roleName),
+	}); err != nil {
+		t.Fatalf("RemoveRoleFromInstanceProfile: %v", err)
+	}
+
+	getAfter, err := client.GetInstanceProfile(ctx, &iam.GetInstanceProfileInput{
+		InstanceProfileName: aws.String(profileName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(getAfter.InstanceProfile.Roles); got != 0 {
+		t.Errorf("after RemoveRole, profile.Roles = %d entries, want 0", got)
+	}
+}

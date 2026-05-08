@@ -67,6 +67,14 @@ type Storage interface {
 	CreateAccessKey(ctx context.Context, userName string) (*AccessKey, error)
 	DeleteAccessKey(ctx context.Context, userName, accessKeyID string) error
 	ListAccessKeys(ctx context.Context, userName string, maxItems int) ([]AccessKeyMetadata, error)
+
+	CreateInstanceProfile(ctx context.Context, name, path string) (*InstanceProfile, error)
+	DeleteInstanceProfile(ctx context.Context, name string) error
+	GetInstanceProfile(ctx context.Context, name string) (*InstanceProfile, error)
+	ListInstanceProfiles(ctx context.Context, pathPrefix string, maxItems int) ([]InstanceProfile, error)
+	ListInstanceProfilesForRoleReal(ctx context.Context, roleName string) ([]InstanceProfile, error)
+	AddRoleToInstanceProfile(ctx context.Context, profileName, roleName string) error
+	RemoveRoleFromInstanceProfile(ctx context.Context, profileName, roleName string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -87,25 +95,27 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu            sync.RWMutex                     `json:"-"`
-	Users         map[string]*User                 `json:"users"`
-	Roles         map[string]*Role                 `json:"roles"`
-	Policies      map[string]*Policy               `json:"policies"`      // key is ARN
-	AccessKeys    map[string]map[string]*AccessKey `json:"accessKeys"`    // userName -> accessKeyID -> AccessKey
-	OIDCProviders map[string]*OIDCProvider         `json:"oidcProviders"` // key is ARN
-	accountID     string
-	dataDir       string
+	mu               sync.RWMutex                     `json:"-"`
+	Users            map[string]*User                 `json:"users"`
+	Roles            map[string]*Role                 `json:"roles"`
+	Policies         map[string]*Policy               `json:"policies"`         // key is ARN
+	AccessKeys       map[string]map[string]*AccessKey `json:"accessKeys"`       // userName -> accessKeyID -> AccessKey
+	OIDCProviders    map[string]*OIDCProvider         `json:"oidcProviders"`    // key is ARN
+	InstanceProfiles map[string]*InstanceProfile      `json:"instanceProfiles"` // key is name
+	accountID        string
+	dataDir          string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
-		Users:         make(map[string]*User),
-		Roles:         make(map[string]*Role),
-		Policies:      make(map[string]*Policy),
-		AccessKeys:    make(map[string]map[string]*AccessKey),
-		OIDCProviders: make(map[string]*OIDCProvider),
-		accountID:     "123456789012",
+		Users:            make(map[string]*User),
+		Roles:            make(map[string]*Role),
+		Policies:         make(map[string]*Policy),
+		AccessKeys:       make(map[string]map[string]*AccessKey),
+		OIDCProviders:    make(map[string]*OIDCProvider),
+		InstanceProfiles: make(map[string]*InstanceProfile),
+		accountID:        "123456789012",
 	}
 	for _, o := range opts {
 		o(s)
@@ -164,6 +174,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.OIDCProviders == nil {
 		s.OIDCProviders = make(map[string]*OIDCProvider)
+	}
+
+	if s.InstanceProfiles == nil {
+		s.InstanceProfiles = make(map[string]*InstanceProfile)
 	}
 
 	return nil
@@ -1011,4 +1025,153 @@ func stripScheme(url string) string {
 	}
 
 	return url
+}
+
+// CreateInstanceProfile creates a new instance profile.
+func (s *MemoryStorage) CreateInstanceProfile(_ context.Context, name, path string) (*InstanceProfile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.InstanceProfiles[name]; exists {
+		return nil, &Error{
+			Code:    errEntityAlreadyExists,
+			Message: fmt.Sprintf("Instance profile with name %s already exists.", name),
+		}
+	}
+
+	if path == "" {
+		path = defaultPath
+	}
+
+	profile := &InstanceProfile{
+		InstanceProfileName: name,
+		InstanceProfileID:   generateID("AIP"),
+		Arn:                 fmt.Sprintf("arn:aws:iam::%s:instance-profile%s%s", s.accountID, path, name),
+		Path:                path,
+		CreateDate:          time.Now().UTC(),
+	}
+	s.InstanceProfiles[name] = profile
+
+	return profile, nil
+}
+
+// DeleteInstanceProfile removes an instance profile by name.
+func (s *MemoryStorage) DeleteInstanceProfile(_ context.Context, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	profile, ok := s.InstanceProfiles[name]
+	if !ok {
+		return &Error{Code: errNoSuchEntity, Message: fmt.Sprintf("Instance profile %s does not exist.", name)}
+	}
+
+	if len(profile.Roles) > 0 {
+		return &Error{Code: errDeleteConflict, Message: fmt.Sprintf("Cannot delete instance profile %s; remove roles first.", name)}
+	}
+
+	delete(s.InstanceProfiles, name)
+
+	return nil
+}
+
+// GetInstanceProfile returns the instance profile by name.
+func (s *MemoryStorage) GetInstanceProfile(_ context.Context, name string) (*InstanceProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	profile, ok := s.InstanceProfiles[name]
+	if !ok {
+		return nil, &Error{Code: errNoSuchEntity, Message: fmt.Sprintf("Instance profile %s does not exist.", name)}
+	}
+
+	return profile, nil
+}
+
+// ListInstanceProfiles returns all instance profiles, optionally filtered by path prefix.
+func (s *MemoryStorage) ListInstanceProfiles(_ context.Context, pathPrefix string, _ int) ([]InstanceProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]InstanceProfile, 0, len(s.InstanceProfiles))
+
+	for _, p := range s.InstanceProfiles {
+		if pathPrefix != "" && !strings.HasPrefix(p.Path, pathPrefix) {
+			continue
+		}
+
+		out = append(out, *p)
+	}
+
+	return out, nil
+}
+
+// ListInstanceProfilesForRoleReal returns all profiles that contain the role.
+// (Suffix Real to avoid collision with the existing stub method that returns
+// an empty list — the stub is kept for backward-compat with the original PR.)
+func (s *MemoryStorage) ListInstanceProfilesForRoleReal(_ context.Context, roleName string) ([]InstanceProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, ok := s.Roles[roleName]; !ok {
+		return nil, &Error{Code: errNoSuchEntity, Message: fmt.Sprintf("The role with name %s cannot be found.", roleName)}
+	}
+
+	out := make([]InstanceProfile, 0)
+
+	for _, p := range s.InstanceProfiles {
+		for i := range p.Roles {
+			if p.Roles[i].RoleName == roleName {
+				out = append(out, *p)
+
+				break
+			}
+		}
+	}
+
+	return out, nil
+}
+
+// AddRoleToInstanceProfile attaches a role to a profile.
+func (s *MemoryStorage) AddRoleToInstanceProfile(_ context.Context, profileName, roleName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	profile, ok := s.InstanceProfiles[profileName]
+	if !ok {
+		return &Error{Code: errNoSuchEntity, Message: fmt.Sprintf("Instance profile %s does not exist.", profileName)}
+	}
+
+	if len(profile.Roles) > 0 {
+		return &Error{Code: errLimitExceeded, Message: fmt.Sprintf("Instance profile %s already has a role attached.", profileName)}
+	}
+
+	role, ok := s.Roles[roleName]
+	if !ok {
+		return &Error{Code: errNoSuchEntity, Message: fmt.Sprintf("The role with name %s cannot be found.", roleName)}
+	}
+
+	profile.Roles = append(profile.Roles, *role)
+
+	return nil
+}
+
+// RemoveRoleFromInstanceProfile detaches a role from a profile.
+func (s *MemoryStorage) RemoveRoleFromInstanceProfile(_ context.Context, profileName, roleName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	profile, ok := s.InstanceProfiles[profileName]
+	if !ok {
+		return &Error{Code: errNoSuchEntity, Message: fmt.Sprintf("Instance profile %s does not exist.", profileName)}
+	}
+
+	for i := range profile.Roles {
+		if profile.Roles[i].RoleName == roleName {
+			profile.Roles = append(profile.Roles[:i], profile.Roles[i+1:]...)
+
+			return nil
+		}
+	}
+
+	return &Error{Code: errNoSuchEntity, Message: fmt.Sprintf("Role %s is not attached to instance profile %s.", roleName, profileName)}
 }

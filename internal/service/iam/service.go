@@ -66,17 +66,25 @@ func (s *Service) initActionHandlers() {
 		"DeleteAccessKey": s.DeleteAccessKey,
 		"ListAccessKeys":  s.ListAccessKeys,
 		// Inline role policies
-		"PutRolePolicy":            s.PutRolePolicy,
-		"GetRolePolicy":            s.GetRolePolicy,
-		"DeleteRolePolicy":         s.DeleteRolePolicy,
-		"ListRolePolicies":         s.ListRolePolicies,
-		"ListAttachedRolePolicies": s.ListAttachedRolePolicies,
+		"PutRolePolicy":               s.PutRolePolicy,
+		"GetRolePolicy":               s.GetRolePolicy,
+		"DeleteRolePolicy":            s.DeleteRolePolicy,
+		"ListRolePolicies":            s.ListRolePolicies,
+		"ListAttachedRolePolicies":    s.ListAttachedRolePolicies,
+		"ListInstanceProfilesForRole": s.ListInstanceProfilesForRole,
 		// OpenID Connect provider
 		"CreateOpenIDConnectProvider":           s.CreateOpenIDConnectProvider,
 		"GetOpenIDConnectProvider":              s.GetOpenIDConnectProvider,
 		"DeleteOpenIDConnectProvider":           s.DeleteOpenIDConnectProvider,
 		"ListOpenIDConnectProviders":            s.ListOpenIDConnectProviders,
 		"UpdateOpenIDConnectProviderThumbprint": s.UpdateOpenIDConnectProviderThumbprint,
+		// Instance profiles
+		"CreateInstanceProfile":         s.CreateInstanceProfile,
+		"DeleteInstanceProfile":         s.DeleteInstanceProfile,
+		"GetInstanceProfile":            s.GetInstanceProfile,
+		"ListInstanceProfiles":          s.ListInstanceProfiles,
+		"AddRoleToInstanceProfile":      s.AddRoleToInstanceProfile,
+		"RemoveRoleFromInstanceProfile": s.RemoveRoleFromInstanceProfile,
 	}
 }
 

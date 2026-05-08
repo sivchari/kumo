@@ -485,6 +485,151 @@ func (s *Service) ListAccessKeys(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListInstanceProfilesForRole returns the profiles attached to a role.
+func (s *Service) ListInstanceProfilesForRole(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	if roleName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	profiles, err := s.storage.ListInstanceProfilesForRoleReal(r.Context(), roleName)
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, ListInstanceProfilesForRoleResponseV2{
+		ListInstanceProfilesForRoleResult: ListInstanceProfilesForRoleResultV2{InstanceProfiles: profiles},
+		ResponseMetadata:                  ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// CreateInstanceProfile handles the CreateInstanceProfile action.
+func (s *Service) CreateInstanceProfile(w http.ResponseWriter, r *http.Request) {
+	name := getFormValue(r, "InstanceProfileName")
+	if name == "" {
+		writeIAMError(w, errInvalidParameter, "InstanceProfileName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	profile, err := s.storage.CreateInstanceProfile(r.Context(), name, getFormValue(r, "Path"))
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, CreateInstanceProfileResponse{
+		CreateInstanceProfileResult: CreateInstanceProfileResult{InstanceProfile: *profile},
+		ResponseMetadata:            ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DeleteInstanceProfile handles the DeleteInstanceProfile action.
+func (s *Service) DeleteInstanceProfile(w http.ResponseWriter, r *http.Request) {
+	name := getFormValue(r, "InstanceProfileName")
+	if name == "" {
+		writeIAMError(w, errInvalidParameter, "InstanceProfileName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.DeleteInstanceProfile(r.Context(), name); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, DeleteInstanceProfileResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// GetInstanceProfile handles the GetInstanceProfile action.
+func (s *Service) GetInstanceProfile(w http.ResponseWriter, r *http.Request) {
+	name := getFormValue(r, "InstanceProfileName")
+	if name == "" {
+		writeIAMError(w, errInvalidParameter, "InstanceProfileName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	profile, err := s.storage.GetInstanceProfile(r.Context(), name)
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, GetInstanceProfileResponse{
+		GetInstanceProfileResult: GetInstanceProfileResult{InstanceProfile: *profile},
+		ResponseMetadata:         ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// ListInstanceProfiles handles the ListInstanceProfiles action.
+func (s *Service) ListInstanceProfiles(w http.ResponseWriter, r *http.Request) {
+	profiles, err := s.storage.ListInstanceProfiles(r.Context(), getFormValue(r, "PathPrefix"), parseMaxItems(r))
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, ListInstanceProfilesResponse{
+		ListInstanceProfilesResult: ListInstanceProfilesResult{InstanceProfiles: profiles},
+		ResponseMetadata:           ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// AddRoleToInstanceProfile handles the AddRoleToInstanceProfile action.
+func (s *Service) AddRoleToInstanceProfile(w http.ResponseWriter, r *http.Request) {
+	profileName := getFormValue(r, "InstanceProfileName")
+	roleName := getFormValue(r, "RoleName")
+
+	if profileName == "" || roleName == "" {
+		writeIAMError(w, errInvalidParameter, "InstanceProfileName and RoleName are required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AddRoleToInstanceProfile(r.Context(), profileName, roleName); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, AddRoleToInstanceProfileResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// RemoveRoleFromInstanceProfile handles the RemoveRoleFromInstanceProfile action.
+func (s *Service) RemoveRoleFromInstanceProfile(w http.ResponseWriter, r *http.Request) {
+	profileName := getFormValue(r, "InstanceProfileName")
+	roleName := getFormValue(r, "RoleName")
+
+	if profileName == "" || roleName == "" {
+		writeIAMError(w, errInvalidParameter, "InstanceProfileName and RoleName are required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.RemoveRoleFromInstanceProfile(r.Context(), profileName, roleName); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, RemoveRoleFromInstanceProfileResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
 // PutRolePolicy handles the PutRolePolicy action.
 func (s *Service) PutRolePolicy(w http.ResponseWriter, r *http.Request) {
 	roleName := getFormValue(r, "RoleName")

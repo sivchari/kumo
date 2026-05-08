@@ -38,6 +38,82 @@ type OIDCProvider struct {
 	CreateDate     time.Time `xml:"CreateDate"`
 }
 
+// InstanceProfile represents an IAM instance profile.
+type InstanceProfile struct {
+	InstanceProfileName string    `xml:"InstanceProfileName"`
+	InstanceProfileID   string    `xml:"InstanceProfileId"`
+	Arn                 string    `xml:"Arn"`
+	Path                string    `xml:"Path"`
+	CreateDate          time.Time `xml:"CreateDate"`
+	Roles               []Role    `xml:"Roles>member,omitempty"`
+	Tags                []Tag     `xml:"Tags>member,omitempty"`
+}
+
+// CreateInstanceProfileResponse is the response for CreateInstanceProfile.
+type CreateInstanceProfileResponse struct {
+	CreateInstanceProfileResult CreateInstanceProfileResult `xml:"CreateInstanceProfileResult"`
+	ResponseMetadata            ResponseMetadata            `xml:"ResponseMetadata"`
+}
+
+// CreateInstanceProfileResult contains the new InstanceProfile.
+type CreateInstanceProfileResult struct {
+	InstanceProfile InstanceProfile `xml:"InstanceProfile"`
+}
+
+// GetInstanceProfileResponse is the response for GetInstanceProfile.
+type GetInstanceProfileResponse struct {
+	GetInstanceProfileResult GetInstanceProfileResult `xml:"GetInstanceProfileResult"`
+	ResponseMetadata         ResponseMetadata         `xml:"ResponseMetadata"`
+}
+
+// GetInstanceProfileResult contains the looked-up InstanceProfile.
+type GetInstanceProfileResult struct {
+	InstanceProfile InstanceProfile `xml:"InstanceProfile"`
+}
+
+// DeleteInstanceProfileResponse is the response for DeleteInstanceProfile.
+type DeleteInstanceProfileResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// ListInstanceProfilesResponse is the response for ListInstanceProfiles.
+type ListInstanceProfilesResponse struct {
+	ListInstanceProfilesResult ListInstanceProfilesResult `xml:"ListInstanceProfilesResult"`
+	ResponseMetadata           ResponseMetadata           `xml:"ResponseMetadata"`
+}
+
+// ListInstanceProfilesResult contains the list of InstanceProfiles.
+type ListInstanceProfilesResult struct {
+	InstanceProfiles []InstanceProfile `xml:"InstanceProfiles>member"`
+	IsTruncated      bool              `xml:"IsTruncated"`
+	Marker           string            `xml:"Marker,omitempty"`
+}
+
+// ListInstanceProfilesForRoleResultV2 is the real response for
+// ListInstanceProfilesForRole replacing the empty stub.
+type ListInstanceProfilesForRoleResultV2 struct {
+	InstanceProfiles []InstanceProfile `xml:"InstanceProfiles>member"`
+	IsTruncated      bool              `xml:"IsTruncated"`
+	Marker           string            `xml:"Marker,omitempty"`
+}
+
+// ListInstanceProfilesForRoleResponseV2 wraps the real response.
+type ListInstanceProfilesForRoleResponseV2 struct {
+	ListInstanceProfilesForRoleResult ListInstanceProfilesForRoleResultV2 `xml:"ListInstanceProfilesForRoleResult"`
+	ResponseMetadata                  ResponseMetadata                    `xml:"ResponseMetadata"`
+}
+
+// AddRoleToInstanceProfileResponse is the response for AddRoleToInstanceProfile.
+type AddRoleToInstanceProfileResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// RemoveRoleFromInstanceProfileResponse is the response for
+// RemoveRoleFromInstanceProfile.
+type RemoveRoleFromInstanceProfileResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
 // Policy represents an IAM policy.
 type Policy struct {
 	PolicyName       string    `xml:"PolicyName"`
