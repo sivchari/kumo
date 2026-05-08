@@ -22,7 +22,7 @@
           "Value": "test"
         }
       ],
-      "VpcId": "vpc-f2db9e0b-3a30-43d"
+      "VpcId": "vpc-2aa58f61-59e9-402"
     }
   ],
   "ResultMetadata": {}

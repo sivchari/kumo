@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1319,6 +1320,13 @@ func (m *MemoryStorage) DescribeTags(_ context.Context, filters map[string][]str
 			})
 		}
 	}
+
+	sort.Slice(descriptions, func(i, j int) bool {
+		if descriptions[i].ResourceID != descriptions[j].ResourceID {
+			return descriptions[i].ResourceID < descriptions[j].ResourceID
+		}
+		return descriptions[i].Key < descriptions[j].Key
+	})
 
 	return descriptions, nil
 }

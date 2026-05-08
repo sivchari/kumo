@@ -2,16 +2,16 @@
   "NextToken": null,
   "Tags": [
     {
-      "Key": "Name",
-      "ResourceId": "vpc-f2db9e0b-3a30-43d",
-      "ResourceType": "vpc",
-      "Value": "kumo-tag-test"
-    },
-    {
       "Key": "Env",
-      "ResourceId": "vpc-f2db9e0b-3a30-43d",
+      "ResourceId": "vpc-2aa58f61-59e9-402",
       "ResourceType": "vpc",
       "Value": "test"
+    },
+    {
+      "Key": "Name",
+      "ResourceId": "vpc-2aa58f61-59e9-402",
+      "ResourceType": "vpc",
+      "Value": "kumo-tag-test"
     }
   ],
   "ResultMetadata": {}
