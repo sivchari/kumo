@@ -21,13 +21,16 @@ func init() {
 	registerDefaultHandler(&awsEC2VPC{})
 }
 
-// vpcProperties is the JSON shape AWS::EC2::VPC uses on the wire.
+// vpcProperties is the JSON shape AWS::EC2::VPC uses on the wire. JSON
+// tags are PascalCase to match AWS CloudFormation; the Go field names
+// stay idiomatic (DNS upper-cased) even though the JSON spelling uses
+// "Dns".
 type vpcProperties struct {
 	VpcID              string `json:"VpcId,omitempty"`
 	CidrBlock          string `json:"CidrBlock,omitempty"`
 	InstanceTenancy    string `json:"InstanceTenancy,omitempty"`
-	EnableDnsHostnames bool   `json:"EnableDnsHostnames,omitempty"`
-	EnableDnsSupport   bool   `json:"EnableDnsSupport,omitempty"`
+	EnableDNSHostnames bool   `json:"EnableDnsHostnames,omitempty"`
+	EnableDNSSupport   bool   `json:"EnableDnsSupport,omitempty"`
 }
 
 func (*awsEC2VPC) TypeName() string { return "AWS::EC2::VPC" }

@@ -80,6 +80,6 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	case "GetResourceRequestStatus":
 		s.GetResourceRequestStatus(w, r)
 	default:
-		writeError(w, "InvalidAction", "Action "+action+" is not supported", http.StatusBadRequest)
+		writeError(w, "InvalidAction", "Action "+action+" is not supported")
 	}
 }

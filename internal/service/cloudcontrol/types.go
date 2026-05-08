@@ -3,6 +3,7 @@ package cloudcontrol
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -91,8 +92,9 @@ func nowEpoch() float64 {
 	return float64(time.Now().UnixNano()) / 1e9
 }
 
-// CreateResourceOutput / UpdateResourceOutput / DeleteResourceOutput all
-// share the same shape: a single ProgressEvent.
+// ProgressEventOutput is the response envelope shared by CreateResource,
+// UpdateResource and DeleteResource. All three actions return a single
+// ProgressEvent on success.
 type ProgressEventOutput struct {
 	ProgressEvent ProgressEvent `json:"ProgressEvent"`
 }
@@ -126,23 +128,29 @@ func writeJSON(w http.ResponseWriter, body any) {
 }
 
 // writeError writes an AWS JSON error response. code becomes __type and
-// is what AWS SDK clients use to populate the error name.
-func writeError(w http.ResponseWriter, code, message string, status int) {
+// is what AWS SDK clients use to populate the error name. Cloud Control
+// always returns 400 for application errors; transport errors don't
+// flow through here.
+func writeError(w http.ResponseWriter, code, message string) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
 	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusBadRequest)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"__type":  code,
 		"message": message,
 	})
 }
 
-// readJSON decodes the request body into v. Returns an error string the
-// caller can pass straight to writeError.
-func readJSON(r *http.Request, v any) error {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		return err
-	}
+// maxRequestBodyBytes caps the JSON request bodies we accept. Without
+// this, an attacker streaming a multi-GB body would have it buffered
+// in memory before the JSON decoder rejects it.
+const maxRequestBodyBytes = 1 * 1024 * 1024
 
-	return nil
+// readJSON decodes the request body into v. Returns the decoder error
+// directly; callers wrap it for writeError. The body is capped at
+// maxRequestBodyBytes so we don't read unbounded request streams.
+func readJSON(r *http.Request, v any) error {
+	limited := io.LimitReader(r.Body, maxRequestBodyBytes)
+
+	return json.NewDecoder(limited).Decode(v)
 }

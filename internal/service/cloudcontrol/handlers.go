@@ -14,21 +14,21 @@ import (
 func (s *Service) CreateResource(w http.ResponseWriter, r *http.Request) {
 	var input CreateResourceInput
 	if err := readJSON(r, &input); err != nil {
-		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error(), http.StatusBadRequest)
+		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error())
 
 		return
 	}
 
 	handler, ok := s.registry.Get(input.TypeName)
 	if !ok {
-		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported", http.StatusBadRequest)
+		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported")
 
 		return
 	}
 
 	identifier, state, err := handler.Create(r.Context(), []byte(input.DesiredState))
 	if err != nil {
-		writeError(w, "GeneralServiceException", err.Error(), http.StatusBadRequest)
+		writeError(w, "GeneralServiceException", err.Error())
 
 		return
 	}
@@ -42,7 +42,7 @@ func (s *Service) CreateResource(w http.ResponseWriter, r *http.Request) {
 		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
 	}
-	s.progress.record(ev)
+	s.progress.record(&ev)
 	writeJSON(w, ProgressEventOutput{ProgressEvent: ev})
 }
 
@@ -51,14 +51,14 @@ func (s *Service) CreateResource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) GetResource(w http.ResponseWriter, r *http.Request) {
 	var input GetResourceInput
 	if err := readJSON(r, &input); err != nil {
-		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error(), http.StatusBadRequest)
+		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error())
 
 		return
 	}
 
 	handler, ok := s.registry.Get(input.TypeName)
 	if !ok {
-		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported", http.StatusBadRequest)
+		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported")
 
 		return
 	}
@@ -66,12 +66,12 @@ func (s *Service) GetResource(w http.ResponseWriter, r *http.Request) {
 	state, err := handler.Read(r.Context(), input.Identifier)
 	if err != nil {
 		if IsNotFound(err) {
-			writeError(w, "ResourceNotFoundException", err.Error(), http.StatusBadRequest)
+			writeError(w, "ResourceNotFoundException", err.Error())
 
 			return
 		}
 
-		writeError(w, "GeneralServiceException", err.Error(), http.StatusBadRequest)
+		writeError(w, "GeneralServiceException", err.Error())
 
 		return
 	}
@@ -89,14 +89,14 @@ func (s *Service) GetResource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 	var input UpdateResourceInput
 	if err := readJSON(r, &input); err != nil {
-		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error(), http.StatusBadRequest)
+		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error())
 
 		return
 	}
 
 	handler, ok := s.registry.Get(input.TypeName)
 	if !ok {
-		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported", http.StatusBadRequest)
+		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported")
 
 		return
 	}
@@ -104,12 +104,12 @@ func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 	state, err := handler.Update(r.Context(), input.Identifier, []byte(input.PatchDocument))
 	if err != nil {
 		if IsNotFound(err) {
-			writeError(w, "ResourceNotFoundException", err.Error(), http.StatusBadRequest)
+			writeError(w, "ResourceNotFoundException", err.Error())
 
 			return
 		}
 
-		writeError(w, "GeneralServiceException", err.Error(), http.StatusBadRequest)
+		writeError(w, "GeneralServiceException", err.Error())
 
 		return
 	}
@@ -123,7 +123,7 @@ func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
 	}
-	s.progress.record(ev)
+	s.progress.record(&ev)
 	writeJSON(w, ProgressEventOutput{ProgressEvent: ev})
 }
 
@@ -134,26 +134,26 @@ func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteResource(w http.ResponseWriter, r *http.Request) {
 	var input DeleteResourceInput
 	if err := readJSON(r, &input); err != nil {
-		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error(), http.StatusBadRequest)
+		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error())
 
 		return
 	}
 
 	handler, ok := s.registry.Get(input.TypeName)
 	if !ok {
-		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported", http.StatusBadRequest)
+		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported")
 
 		return
 	}
 
 	if err := handler.Delete(r.Context(), input.Identifier); err != nil {
 		if IsNotFound(err) {
-			writeError(w, "ResourceNotFoundException", err.Error(), http.StatusBadRequest)
+			writeError(w, "ResourceNotFoundException", err.Error())
 
 			return
 		}
 
-		writeError(w, "GeneralServiceException", err.Error(), http.StatusBadRequest)
+		writeError(w, "GeneralServiceException", err.Error())
 
 		return
 	}
@@ -166,7 +166,7 @@ func (s *Service) DeleteResource(w http.ResponseWriter, r *http.Request) {
 		OperationStatus: "SUCCESS",
 		EventTime:       nowEpoch(),
 	}
-	s.progress.record(ev)
+	s.progress.record(&ev)
 	writeJSON(w, ProgressEventOutput{ProgressEvent: ev})
 }
 
@@ -175,21 +175,21 @@ func (s *Service) DeleteResource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListResources(w http.ResponseWriter, r *http.Request) {
 	var input ListResourcesInput
 	if err := readJSON(r, &input); err != nil {
-		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error(), http.StatusBadRequest)
+		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error())
 
 		return
 	}
 
 	handler, ok := s.registry.Get(input.TypeName)
 	if !ok {
-		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported", http.StatusBadRequest)
+		writeError(w, "TypeNotFoundException", "Type "+input.TypeName+" is not supported")
 
 		return
 	}
 
 	descs, err := handler.List(r.Context())
 	if err != nil {
-		writeError(w, "GeneralServiceException", err.Error(), http.StatusBadRequest)
+		writeError(w, "GeneralServiceException", err.Error())
 
 		return
 	}
@@ -218,7 +218,7 @@ func (s *Service) ListResources(w http.ResponseWriter, r *http.Request) {
 func (s *Service) GetResourceRequestStatus(w http.ResponseWriter, r *http.Request) {
 	var input GetResourceRequestStatusInput
 	if err := readJSON(r, &input); err != nil {
-		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error(), http.StatusBadRequest)
+		writeError(w, "InvalidRequest", "failed to decode request body: "+err.Error())
 
 		return
 	}
@@ -246,4 +246,3 @@ func requestToken(clientToken string) string {
 
 	return uuid.New().String()
 }
-

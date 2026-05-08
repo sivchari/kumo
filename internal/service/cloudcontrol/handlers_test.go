@@ -23,10 +23,13 @@ func (h *stubHandler) Create(_ context.Context, desired []byte) (string, []byte,
 	var props struct {
 		Name string `json:"Name"`
 	}
+
 	if err := json.Unmarshal(desired, &props); err != nil {
 		return "", nil, err
 	}
+
 	h.state[props.Name] = desired
+
 	return props.Name, desired, nil
 }
 
@@ -35,6 +38,7 @@ func (h *stubHandler) Read(_ context.Context, id string) ([]byte, error) {
 	if !ok {
 		return nil, &NotFoundError{Message: id + " not found"}
 	}
+
 	return state, nil
 }
 
@@ -43,6 +47,7 @@ func (h *stubHandler) Update(_ context.Context, id string, _ []byte) ([]byte, er
 	if !ok {
 		return nil, &NotFoundError{Message: id + " not found"}
 	}
+
 	return state, nil
 }
 
@@ -50,7 +55,9 @@ func (h *stubHandler) Delete(_ context.Context, id string) error {
 	if _, ok := h.state[id]; !ok {
 		return &NotFoundError{Message: id + " not found"}
 	}
+
 	delete(h.state, id)
+
 	return nil
 }
 
@@ -59,6 +66,7 @@ func (h *stubHandler) List(_ context.Context) ([]ResourceDescription, error) {
 	for id, props := range h.state {
 		out = append(out, ResourceDescription{Identifier: id, Properties: props})
 	}
+
 	return out, nil
 }
 
@@ -66,11 +74,14 @@ func (h *stubHandler) List(_ context.Context) ([]ResourceDescription, error) {
 // dispatch action, the body is the JSON request envelope.
 func post(t *testing.T, svc *Service, target, body string) (int, string) {
 	t.Helper()
+
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	req.Header.Set("X-Amz-Target", target)
+
 	rec := httptest.NewRecorder()
 	svc.DispatchAction(rec, req)
+
 	return rec.Code, rec.Body.String()
 }
 

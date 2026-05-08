@@ -24,7 +24,7 @@ type subnetProperties struct {
 	VpcID               string `json:"VpcId,omitempty"`
 	CidrBlock           string `json:"CidrBlock,omitempty"`
 	AvailabilityZone    string `json:"AvailabilityZone,omitempty"`
-	MapPublicIpOnLaunch bool   `json:"MapPublicIpOnLaunch,omitempty"`
+	MapPublicIPOnLaunch bool   `json:"MapPublicIpOnLaunch,omitempty"`
 }
 
 func (*awsEC2Subnet) TypeName() string { return "AWS::EC2::Subnet" }
