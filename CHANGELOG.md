@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.18.1](https://github.com/sivchari/kumo/compare/v0.18.0...v0.18.1) - 2026-05-08
+- fix(dynamodb): return HTTP 400 for ConditionalCheckFailedException by @sivchari in https://github.com/sivchari/kumo/pull/541
+- release v0.18.1 by @sivchari in https://github.com/sivchari/kumo/pull/542
+
 ## [v0.18.0](https://github.com/sivchari/kumo/compare/v0.17.2...v0.18.0) - 2026-05-07
 - sort changelog by @sivchari in https://github.com/sivchari/kumo/pull/536
 - ci: replace manual actions/cache with setup-go built-in cache by @sivchari in https://github.com/sivchari/kumo/pull/538
