@@ -53,6 +53,48 @@ type ImageDetail struct {
 	ArtifactMediaType string   `json:"artifactMediaType,omitempty"`
 }
 
+// PutLifecyclePolicyRequest is the request for PutLifecyclePolicy.
+type PutLifecyclePolicyRequest struct {
+	RegistryID          string `json:"registryId,omitempty"`
+	RepositoryName      string `json:"repositoryName"`
+	LifecyclePolicyText string `json:"lifecyclePolicyText"`
+}
+
+// PutLifecyclePolicyResponse is the response for PutLifecyclePolicy.
+type PutLifecyclePolicyResponse struct {
+	RegistryID          string `json:"registryId,omitempty"`
+	RepositoryName      string `json:"repositoryName,omitempty"`
+	LifecyclePolicyText string `json:"lifecyclePolicyText,omitempty"`
+}
+
+// GetLifecyclePolicyRequest is the request for GetLifecyclePolicy.
+type GetLifecyclePolicyRequest struct {
+	RegistryID     string `json:"registryId,omitempty"`
+	RepositoryName string `json:"repositoryName"`
+}
+
+// GetLifecyclePolicyResponse is the response for GetLifecyclePolicy.
+type GetLifecyclePolicyResponse struct {
+	RegistryID          string  `json:"registryId,omitempty"`
+	RepositoryName      string  `json:"repositoryName,omitempty"`
+	LifecyclePolicyText string  `json:"lifecyclePolicyText,omitempty"`
+	LastEvaluatedAt     float64 `json:"lastEvaluatedAt,omitempty"`
+}
+
+// DeleteLifecyclePolicyRequest is the request for DeleteLifecyclePolicy.
+type DeleteLifecyclePolicyRequest struct {
+	RegistryID     string `json:"registryId,omitempty"`
+	RepositoryName string `json:"repositoryName"`
+}
+
+// DeleteLifecyclePolicyResponse is the response for DeleteLifecyclePolicy.
+type DeleteLifecyclePolicyResponse struct {
+	RegistryID          string  `json:"registryId,omitempty"`
+	RepositoryName      string  `json:"repositoryName,omitempty"`
+	LifecyclePolicyText string  `json:"lifecyclePolicyText,omitempty"`
+	LastEvaluatedAt     float64 `json:"lastEvaluatedAt,omitempty"`
+}
+
 // CreateRepositoryRequest is the request for CreateRepository.
 type CreateRepositoryRequest struct {
 	RepositoryName             string                      `json:"repositoryName"`

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -23,6 +24,9 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"BatchGetImage":         s.BatchGetImage,
 		"BatchDeleteImage":      s.BatchDeleteImage,
 		"GetAuthorizationToken": s.GetAuthorizationToken,
+		"PutLifecyclePolicy":    s.PutLifecyclePolicy,
+		"GetLifecyclePolicy":    s.GetLifecyclePolicy,
+		"DeleteLifecyclePolicy": s.DeleteLifecyclePolicy,
 	}
 }
 
@@ -269,6 +273,103 @@ func toImageOutput(img *Image) *ImageOutput {
 		ImageID:        img.ImageID,
 		ImageManifest:  img.ImageManifest,
 	}
+}
+
+// PutLifecyclePolicy handles the PutLifecyclePolicy API.
+func (s *Service) PutLifecyclePolicy(w http.ResponseWriter, r *http.Request) {
+	var req PutLifecyclePolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.RepositoryName == "" || req.LifecyclePolicyText == "" {
+		writeError(w, "ValidationException", "repositoryName and lifecyclePolicyText are required", http.StatusBadRequest)
+
+		return
+	}
+
+	stored, err := s.storage.PutLifecyclePolicy(r.Context(), req.RepositoryName, req.LifecyclePolicyText)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &PutLifecyclePolicyResponse{
+		RegistryID:          req.RegistryID,
+		RepositoryName:      req.RepositoryName,
+		LifecyclePolicyText: stored,
+	})
+}
+
+// GetLifecyclePolicy handles the GetLifecyclePolicy API.
+func (s *Service) GetLifecyclePolicy(w http.ResponseWriter, r *http.Request) {
+	var req GetLifecyclePolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.RepositoryName == "" {
+		writeError(w, "ValidationException", "repositoryName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	policy, at, err := s.storage.GetLifecyclePolicy(r.Context(), req.RepositoryName)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &GetLifecyclePolicyResponse{
+		RegistryID:          req.RegistryID,
+		RepositoryName:      req.RepositoryName,
+		LifecyclePolicyText: policy,
+		LastEvaluatedAt:     epochSeconds(at),
+	})
+}
+
+// DeleteLifecyclePolicy handles the DeleteLifecyclePolicy API.
+func (s *Service) DeleteLifecyclePolicy(w http.ResponseWriter, r *http.Request) {
+	var req DeleteLifecyclePolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.RepositoryName == "" {
+		writeError(w, "ValidationException", "repositoryName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	policy, at, err := s.storage.DeleteLifecyclePolicy(r.Context(), req.RepositoryName)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &DeleteLifecyclePolicyResponse{
+		RegistryID:          req.RegistryID,
+		RepositoryName:      req.RepositoryName,
+		LifecyclePolicyText: policy,
+		LastEvaluatedAt:     epochSeconds(at),
+	})
+}
+
+func epochSeconds(t time.Time) float64 {
+	if t.IsZero() {
+		return 0
+	}
+
+	return float64(t.Unix())
 }
 
 // writeResponse writes a JSON response.

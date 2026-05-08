@@ -229,3 +229,69 @@ func TestECR_RepositoryNotFound(t *testing.T) {
 		t.Fatal("expected error for non-existent repository")
 	}
 }
+
+func TestECR_LifecyclePolicy(t *testing.T) {
+	client := newECRClient(t)
+	ctx := t.Context()
+	repoName := "test-lifecycle-policy"
+
+	if _, err := client.CreateRepository(ctx, &ecr.CreateRepositoryInput{
+		RepositoryName: aws.String(repoName),
+	}); err != nil {
+		t.Fatalf("CreateRepository: %v", err)
+	}
+
+	policy := `{"rules":[{"rulePriority":1,"description":"keep last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}`
+
+	// Get on a fresh repo: AWS returns LifecyclePolicyNotFoundException.
+	if _, err := client.GetLifecyclePolicy(ctx, &ecr.GetLifecyclePolicyInput{
+		RepositoryName: aws.String(repoName),
+	}); err == nil {
+		t.Fatal("expected LifecyclePolicyNotFoundException on first Get, got nil")
+	}
+
+	// Put → Get round trip returns the same policy text verbatim.
+	if _, err := client.PutLifecyclePolicy(ctx, &ecr.PutLifecyclePolicyInput{
+		RepositoryName:      aws.String(repoName),
+		LifecyclePolicyText: aws.String(policy),
+	}); err != nil {
+		t.Fatalf("PutLifecyclePolicy: %v", err)
+	}
+
+	getOut, err := client.GetLifecyclePolicy(ctx, &ecr.GetLifecyclePolicyInput{
+		RepositoryName: aws.String(repoName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := aws.ToString(getOut.LifecyclePolicyText); got != policy {
+		t.Errorf("GetLifecyclePolicy text = %q, want %q", got, policy)
+	}
+
+	// Delete returns the policy that was removed, then Get returns NotFound again.
+	delOut, err := client.DeleteLifecyclePolicy(ctx, &ecr.DeleteLifecyclePolicyInput{
+		RepositoryName: aws.String(repoName),
+	})
+	if err != nil {
+		t.Fatalf("DeleteLifecyclePolicy: %v", err)
+	}
+
+	if got := aws.ToString(delOut.LifecyclePolicyText); got != policy {
+		t.Errorf("DeleteLifecyclePolicy returned text = %q, want %q", got, policy)
+	}
+
+	if _, err := client.GetLifecyclePolicy(ctx, &ecr.GetLifecyclePolicyInput{
+		RepositoryName: aws.String(repoName),
+	}); err == nil {
+		t.Fatal("expected LifecyclePolicyNotFoundException after Delete, got nil")
+	}
+
+	if _, err := client.DeleteRepository(ctx, &ecr.DeleteRepositoryInput{
+		RepositoryName: aws.String(repoName),
+	}); err != nil {
+		t.Fatalf("DeleteRepository cleanup: %v", err)
+	}
+
+	_ = types.LifecyclePolicyNotFoundException{}
+}

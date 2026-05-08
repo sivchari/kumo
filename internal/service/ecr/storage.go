@@ -32,6 +32,10 @@ type Storage interface {
 	BatchDeleteImage(ctx context.Context, repositoryName string, imageIDs []ImageIdentifier) ([]ImageIdentifier, []ImageFailure, error)
 	GetAuthorizationToken(ctx context.Context) ([]AuthorizationData, error)
 	DispatchAction(action string) bool
+
+	PutLifecyclePolicy(ctx context.Context, repositoryName, policyText string) (string, error)
+	GetLifecyclePolicy(ctx context.Context, repositoryName string) (string, time.Time, error)
+	DeleteLifecyclePolicy(ctx context.Context, repositoryName string) (string, time.Time, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -61,8 +65,10 @@ type MemoryStorage struct {
 
 // repositoryData holds repository information and its images.
 type repositoryData struct {
-	Repository *Repository       `json:"repository"`
-	Images     map[string]*Image `json:"images"`
+	Repository          *Repository       `json:"repository"`
+	Images              map[string]*Image `json:"images"`
+	LifecyclePolicyText string            `json:"lifecyclePolicyText,omitempty"`
+	LifecyclePolicyAt   time.Time         `json:"lifecyclePolicyAt,omitempty"`
 }
 
 // NewMemoryStorage creates a new in-memory storage.
@@ -414,4 +420,78 @@ func calculateDigest(manifest string) string {
 	hash := sha256.Sum256([]byte(manifest))
 
 	return fmt.Sprintf("sha256:%x", hash)
+}
+
+// PutLifecyclePolicy stores the lifecycle policy text on the named repository.
+// AWS validates the policy JSON shape; kumo stores whatever the caller sent so
+// tests can verify policy round-trips without modeling the lifecycle engine.
+func (s *MemoryStorage) PutLifecyclePolicy(_ context.Context, repositoryName, policyText string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	repo, ok := s.Repositories[repositoryName]
+	if !ok {
+		return "", &ServiceError{
+			Code:    "RepositoryNotFoundException",
+			Message: fmt.Sprintf("The repository with name '%s' does not exist in the registry with id '%s'", repositoryName, s.accountID),
+		}
+	}
+
+	repo.LifecyclePolicyText = policyText
+	repo.LifecyclePolicyAt = time.Now().UTC()
+
+	return policyText, nil
+}
+
+// GetLifecyclePolicy returns the stored policy text and the time it was set.
+// AWS returns LifecyclePolicyNotFoundException when the repository has no
+// policy; kumo mirrors that.
+func (s *MemoryStorage) GetLifecyclePolicy(_ context.Context, repositoryName string) (string, time.Time, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	repo, ok := s.Repositories[repositoryName]
+	if !ok {
+		return "", time.Time{}, &ServiceError{
+			Code:    "RepositoryNotFoundException",
+			Message: fmt.Sprintf("The repository with name '%s' does not exist in the registry with id '%s'", repositoryName, s.accountID),
+		}
+	}
+
+	if repo.LifecyclePolicyText == "" {
+		return "", time.Time{}, &ServiceError{
+			Code:    "LifecyclePolicyNotFoundException",
+			Message: fmt.Sprintf("Lifecycle policy does not exist for the repository with name '%s' in the registry with id '%s'", repositoryName, s.accountID),
+		}
+	}
+
+	return repo.LifecyclePolicyText, repo.LifecyclePolicyAt, nil
+}
+
+// DeleteLifecyclePolicy clears the policy text and returns what was removed.
+func (s *MemoryStorage) DeleteLifecyclePolicy(_ context.Context, repositoryName string) (string, time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	repo, ok := s.Repositories[repositoryName]
+	if !ok {
+		return "", time.Time{}, &ServiceError{
+			Code:    "RepositoryNotFoundException",
+			Message: fmt.Sprintf("The repository with name '%s' does not exist in the registry with id '%s'", repositoryName, s.accountID),
+		}
+	}
+
+	if repo.LifecyclePolicyText == "" {
+		return "", time.Time{}, &ServiceError{
+			Code:    "LifecyclePolicyNotFoundException",
+			Message: fmt.Sprintf("Lifecycle policy does not exist for the repository with name '%s' in the registry with id '%s'", repositoryName, s.accountID),
+		}
+	}
+
+	prev := repo.LifecyclePolicyText
+	at := repo.LifecyclePolicyAt
+	repo.LifecyclePolicyText = ""
+	repo.LifecyclePolicyAt = time.Time{}
+
+	return prev, at, nil
 }
