@@ -610,3 +610,182 @@ func TestIAM_CreateUserWithTags(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "UserId", "Arn", "CreateDate")).Assert(t.Name()+"_get", getResult)
 }
+
+func TestIAM_PutGetListDeleteRolePolicy(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+	roleName := "test-inline-policy-role"
+	policyName := "test-inline-policy"
+	policyDoc := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}); err != nil {
+		t.Fatalf("failed to create role: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteRole(context.Background(), &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+	})
+
+	if _, err := client.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+		RoleName:       aws.String(roleName),
+		PolicyName:     aws.String(policyName),
+		PolicyDocument: aws.String(policyDoc),
+	}); err != nil {
+		t.Fatalf("failed to put role policy: %v", err)
+	}
+
+	listResult, err := client.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatalf("failed to list role policies: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list", listResult)
+
+	getResult, err := client.GetRolePolicy(ctx, &iam.GetRolePolicyInput{
+		RoleName:   aws.String(roleName),
+		PolicyName: aws.String(policyName),
+	})
+	if err != nil {
+		t.Fatalf("failed to get role policy: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get", getResult)
+
+	if _, err := client.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+		RoleName:   aws.String(roleName),
+		PolicyName: aws.String(policyName),
+	}); err != nil {
+		t.Fatalf("failed to delete role policy: %v", err)
+	}
+
+	listAfter, err := client.ListRolePolicies(ctx, &iam.ListRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_after_delete", listAfter)
+}
+
+func TestIAM_ListAttachedRolePolicies(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+	roleName := "test-attached-list-role"
+	policyName := "test-list-managed-policy"
+
+	policyResult, err := client.CreatePolicy(ctx, &iam.CreatePolicyInput{
+		PolicyName:     aws.String(policyName),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("failed to create policy: %v", err)
+	}
+
+	policyArn := *policyResult.Policy.Arn
+
+	t.Cleanup(func() {
+		_, _ = client.DeletePolicy(context.Background(), &iam.DeletePolicyInput{
+			PolicyArn: aws.String(policyArn),
+		})
+	})
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}); err != nil {
+		t.Fatalf("failed to create role: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DetachRolePolicy(context.Background(), &iam.DetachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: aws.String(policyArn),
+		})
+		_, _ = client.DeleteRole(context.Background(), &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+	})
+
+	if _, err := client.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
+		RoleName:  aws.String(roleName),
+		PolicyArn: aws.String(policyArn),
+	}); err != nil {
+		t.Fatalf("failed to attach role policy: %v", err)
+	}
+
+	listResult, err := client.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatalf("failed to list attached role policies: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "PolicyArn")).Assert(t.Name(), listResult)
+}
+
+func TestIAM_OpenIDConnectProvider(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+
+	createResult, err := client.CreateOpenIDConnectProvider(ctx, &iam.CreateOpenIDConnectProviderInput{
+		Url:            aws.String("https://token.actions.githubusercontent.com"),
+		ClientIDList:   []string{"sts.amazonaws.com"},
+		ThumbprintList: []string{"6938fd4d98bab03faadb97b34396831e3780aea1"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create OIDC provider: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "OpenIDConnectProviderArn")).Assert(t.Name()+"_create", createResult)
+
+	arn := *createResult.OpenIDConnectProviderArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteOpenIDConnectProvider(context.Background(), &iam.DeleteOpenIDConnectProviderInput{
+			OpenIDConnectProviderArn: aws.String(arn),
+		})
+	})
+
+	getResult, err := client.GetOpenIDConnectProvider(ctx, &iam.GetOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(arn),
+	})
+	if err != nil {
+		t.Fatalf("failed to get OIDC provider: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "CreateDate")).Assert(t.Name()+"_get", getResult)
+
+	listResult, err := client.ListOpenIDConnectProviders(ctx, &iam.ListOpenIDConnectProvidersInput{})
+	if err != nil {
+		t.Fatalf("failed to list OIDC providers: %v", err)
+	}
+
+	found := false
+	for _, p := range listResult.OpenIDConnectProviderList {
+		if p.Arn != nil && *p.Arn == arn {
+			found = true
+
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("created OIDC provider %s not present in list", arn)
+	}
+
+	if _, err := client.UpdateOpenIDConnectProviderThumbprint(ctx, &iam.UpdateOpenIDConnectProviderThumbprintInput{
+		OpenIDConnectProviderArn: aws.String(arn),
+		ThumbprintList:           []string{"a031c46782e6e6c662c2c87c76da9aa62ccabd8e"},
+	}); err != nil {
+		t.Fatalf("failed to update thumbprint: %v", err)
+	}
+
+	getAfter, err := client.GetOpenIDConnectProvider(ctx, &iam.GetOpenIDConnectProviderInput{
+		OpenIDConnectProviderArn: aws.String(arn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "CreateDate")).Assert(t.Name()+"_get_after_update", getAfter)
+}

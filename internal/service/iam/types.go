@@ -16,16 +16,26 @@ type User struct {
 
 // Role represents an IAM role.
 type Role struct {
-	RoleName                 string           `xml:"RoleName"`
-	RoleID                   string           `xml:"RoleId"`
-	Arn                      string           `xml:"Arn"`
-	Path                     string           `xml:"Path"`
-	CreateDate               time.Time        `xml:"CreateDate"`
-	AssumeRolePolicyDocument string           `xml:"AssumeRolePolicyDocument"`
-	Description              string           `xml:"Description,omitempty"`
-	MaxSessionDuration       int              `xml:"MaxSessionDuration,omitempty"`
-	Tags                     []Tag            `xml:"Tags>member,omitempty"`
-	AttachedPolicies         []AttachedPolicy `xml:"-"`
+	RoleName                 string            `xml:"RoleName"`
+	RoleID                   string            `xml:"RoleId"`
+	Arn                      string            `xml:"Arn"`
+	Path                     string            `xml:"Path"`
+	CreateDate               time.Time         `xml:"CreateDate"`
+	AssumeRolePolicyDocument string            `xml:"AssumeRolePolicyDocument"`
+	Description              string            `xml:"Description,omitempty"`
+	MaxSessionDuration       int               `xml:"MaxSessionDuration,omitempty"`
+	Tags                     []Tag             `xml:"Tags>member,omitempty"`
+	AttachedPolicies         []AttachedPolicy  `xml:"-"`
+	InlinePolicies           map[string]string `xml:"-"`
+}
+
+// OIDCProvider represents an IAM OpenID Connect provider.
+type OIDCProvider struct {
+	Arn            string    `xml:"Arn"`
+	URL            string    `xml:"Url"`
+	ClientIDList   []string  `xml:"ClientIDList>member,omitempty"`
+	ThumbprintList []string  `xml:"ThumbprintList>member,omitempty"`
+	CreateDate     time.Time `xml:"CreateDate"`
 }
 
 // Policy represents an IAM policy.
@@ -366,6 +376,114 @@ type ListAccessKeysResult struct {
 	AccessKeyMetadata []AccessKeyMetadata `xml:"AccessKeyMetadata>member"`
 	IsTruncated       bool                `xml:"IsTruncated"`
 	Marker            string              `xml:"Marker,omitempty"`
+}
+
+// PutRolePolicyRequest represents a PutRolePolicy request.
+type PutRolePolicyRequest struct {
+	RoleName       string `xml:"RoleName"`
+	PolicyName     string `xml:"PolicyName"`
+	PolicyDocument string `xml:"PolicyDocument"`
+}
+
+// PutRolePolicyResponse represents a PutRolePolicy response.
+type PutRolePolicyResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// GetRolePolicyResponse represents a GetRolePolicy response.
+type GetRolePolicyResponse struct {
+	GetRolePolicyResult GetRolePolicyResult `xml:"GetRolePolicyResult"`
+	ResponseMetadata    ResponseMetadata    `xml:"ResponseMetadata"`
+}
+
+// GetRolePolicyResult contains the result of GetRolePolicy.
+type GetRolePolicyResult struct {
+	RoleName       string `xml:"RoleName"`
+	PolicyName     string `xml:"PolicyName"`
+	PolicyDocument string `xml:"PolicyDocument"`
+}
+
+// DeleteRolePolicyResponse represents a DeleteRolePolicy response.
+type DeleteRolePolicyResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// ListRolePoliciesResponse represents a ListRolePolicies response.
+type ListRolePoliciesResponse struct {
+	ListRolePoliciesResult ListRolePoliciesResult `xml:"ListRolePoliciesResult"`
+	ResponseMetadata       ResponseMetadata       `xml:"ResponseMetadata"`
+}
+
+// ListRolePoliciesResult contains the result of ListRolePolicies.
+type ListRolePoliciesResult struct {
+	PolicyNames []string `xml:"PolicyNames>member"`
+	IsTruncated bool     `xml:"IsTruncated"`
+	Marker      string   `xml:"Marker,omitempty"`
+}
+
+// ListAttachedRolePoliciesResponse represents a ListAttachedRolePolicies response.
+type ListAttachedRolePoliciesResponse struct {
+	ListAttachedRolePoliciesResult ListAttachedRolePoliciesResult `xml:"ListAttachedRolePoliciesResult"`
+	ResponseMetadata               ResponseMetadata               `xml:"ResponseMetadata"`
+}
+
+// ListAttachedRolePoliciesResult contains the result of ListAttachedRolePolicies.
+type ListAttachedRolePoliciesResult struct {
+	AttachedPolicies []AttachedPolicy `xml:"AttachedPolicies>member"`
+	IsTruncated      bool             `xml:"IsTruncated"`
+	Marker           string           `xml:"Marker,omitempty"`
+}
+
+// CreateOpenIDConnectProviderResponse is the response for CreateOpenIDConnectProvider.
+type CreateOpenIDConnectProviderResponse struct {
+	CreateOpenIDConnectProviderResult CreateOpenIDConnectProviderResult `xml:"CreateOpenIDConnectProviderResult"`
+	ResponseMetadata                  ResponseMetadata                  `xml:"ResponseMetadata"`
+}
+
+// CreateOpenIDConnectProviderResult contains the OIDC provider ARN.
+type CreateOpenIDConnectProviderResult struct {
+	OpenIDConnectProviderArn string `xml:"OpenIDConnectProviderArn"`
+}
+
+// GetOpenIDConnectProviderResponse is the response for GetOpenIDConnectProvider.
+type GetOpenIDConnectProviderResponse struct {
+	GetOpenIDConnectProviderResult GetOpenIDConnectProviderResult `xml:"GetOpenIDConnectProviderResult"`
+	ResponseMetadata               ResponseMetadata               `xml:"ResponseMetadata"`
+}
+
+// GetOpenIDConnectProviderResult contains the OIDC provider details.
+type GetOpenIDConnectProviderResult struct {
+	URL            string    `xml:"Url"`
+	ClientIDList   []string  `xml:"ClientIDList>member,omitempty"`
+	ThumbprintList []string  `xml:"ThumbprintList>member,omitempty"`
+	CreateDate     time.Time `xml:"CreateDate"`
+}
+
+// DeleteOpenIDConnectProviderResponse is the response for DeleteOpenIDConnectProvider.
+type DeleteOpenIDConnectProviderResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// ListOpenIDConnectProvidersResponse is the response for ListOpenIDConnectProviders.
+type ListOpenIDConnectProvidersResponse struct {
+	ListOpenIDConnectProvidersResult ListOpenIDConnectProvidersResult `xml:"ListOpenIDConnectProvidersResult"`
+	ResponseMetadata                 ResponseMetadata                 `xml:"ResponseMetadata"`
+}
+
+// ListOpenIDConnectProvidersResult contains the list of OIDC provider ARNs.
+type ListOpenIDConnectProvidersResult struct {
+	OpenIDConnectProviderList []OIDCProviderEntry `xml:"OpenIDConnectProviderList>member"`
+}
+
+// OIDCProviderEntry is a single entry in the OIDC provider list.
+type OIDCProviderEntry struct {
+	Arn string `xml:"Arn"`
+}
+
+// UpdateOpenIDConnectProviderThumbprintResponse is the response for
+// UpdateOpenIDConnectProviderThumbprint.
+type UpdateOpenIDConnectProviderThumbprintResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
 }
 
 // ResponseMetadata contains the request ID.

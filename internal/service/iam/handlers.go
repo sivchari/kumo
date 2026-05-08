@@ -485,6 +485,276 @@ func (s *Service) ListAccessKeys(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// PutRolePolicy handles the PutRolePolicy action.
+func (s *Service) PutRolePolicy(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	policyName := getFormValue(r, "PolicyName")
+	policyDoc := getFormValue(r, "PolicyDocument")
+
+	switch {
+	case roleName == "":
+		writeIAMError(w, errInvalidParameter, "RoleName is required", http.StatusBadRequest)
+
+		return
+	case policyName == "":
+		writeIAMError(w, errInvalidParameter, "PolicyName is required", http.StatusBadRequest)
+
+		return
+	case policyDoc == "":
+		writeIAMError(w, errInvalidParameter, "PolicyDocument is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.PutRolePolicy(r.Context(), roleName, policyName, policyDoc); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, PutRolePolicyResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// GetRolePolicy handles the GetRolePolicy action.
+func (s *Service) GetRolePolicy(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	policyName := getFormValue(r, "PolicyName")
+
+	if roleName == "" || policyName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName and PolicyName are required", http.StatusBadRequest)
+
+		return
+	}
+
+	doc, err := s.storage.GetRolePolicy(r.Context(), roleName, policyName)
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, GetRolePolicyResponse{
+		GetRolePolicyResult: GetRolePolicyResult{
+			RoleName:       roleName,
+			PolicyName:     policyName,
+			PolicyDocument: doc,
+		},
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DeleteRolePolicy handles the DeleteRolePolicy action.
+func (s *Service) DeleteRolePolicy(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	policyName := getFormValue(r, "PolicyName")
+
+	if roleName == "" || policyName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName and PolicyName are required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.DeleteRolePolicy(r.Context(), roleName, policyName); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, DeleteRolePolicyResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// ListRolePolicies handles the ListRolePolicies action.
+func (s *Service) ListRolePolicies(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	if roleName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	names, err := s.storage.ListRolePolicies(r.Context(), roleName)
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, ListRolePoliciesResponse{
+		ListRolePoliciesResult: ListRolePoliciesResult{PolicyNames: names, IsTruncated: false},
+		ResponseMetadata:       ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// ListAttachedRolePolicies handles the ListAttachedRolePolicies action.
+func (s *Service) ListAttachedRolePolicies(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	if roleName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	attached, err := s.storage.ListAttachedRolePolicies(r.Context(), roleName)
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, ListAttachedRolePoliciesResponse{
+		ListAttachedRolePoliciesResult: ListAttachedRolePoliciesResult{
+			AttachedPolicies: attached,
+			IsTruncated:      false,
+		},
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// CreateOpenIDConnectProvider handles the CreateOpenIDConnectProvider action.
+func (s *Service) CreateOpenIDConnectProvider(w http.ResponseWriter, r *http.Request) {
+	url := getFormValue(r, "Url")
+	if url == "" {
+		writeIAMError(w, errInvalidParameter, "Url is required", http.StatusBadRequest)
+
+		return
+	}
+
+	clientIDs := parseStringList(r, "ClientIDList")
+	thumbprints := parseStringList(r, "ThumbprintList")
+
+	provider, err := s.storage.CreateOIDCProvider(r.Context(), url, clientIDs, thumbprints)
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, CreateOpenIDConnectProviderResponse{
+		CreateOpenIDConnectProviderResult: CreateOpenIDConnectProviderResult{
+			OpenIDConnectProviderArn: provider.Arn,
+		},
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// GetOpenIDConnectProvider handles the GetOpenIDConnectProvider action.
+func (s *Service) GetOpenIDConnectProvider(w http.ResponseWriter, r *http.Request) {
+	arn := getFormValue(r, "OpenIDConnectProviderArn")
+	if arn == "" {
+		writeIAMError(w, errInvalidParameter, "OpenIDConnectProviderArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	provider, err := s.storage.GetOIDCProvider(r.Context(), arn)
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, GetOpenIDConnectProviderResponse{
+		GetOpenIDConnectProviderResult: GetOpenIDConnectProviderResult{
+			URL:            provider.URL,
+			ClientIDList:   provider.ClientIDList,
+			ThumbprintList: provider.ThumbprintList,
+			CreateDate:     provider.CreateDate,
+		},
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DeleteOpenIDConnectProvider handles the DeleteOpenIDConnectProvider action.
+func (s *Service) DeleteOpenIDConnectProvider(w http.ResponseWriter, r *http.Request) {
+	arn := getFormValue(r, "OpenIDConnectProviderArn")
+	if arn == "" {
+		writeIAMError(w, errInvalidParameter, "OpenIDConnectProviderArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.DeleteOIDCProvider(r.Context(), arn); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, DeleteOpenIDConnectProviderResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// ListOpenIDConnectProviders handles the ListOpenIDConnectProviders action.
+func (s *Service) ListOpenIDConnectProviders(w http.ResponseWriter, r *http.Request) {
+	arns, err := s.storage.ListOIDCProviders(r.Context())
+	if err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	entries := make([]OIDCProviderEntry, 0, len(arns))
+	for _, arn := range arns {
+		entries = append(entries, OIDCProviderEntry{Arn: arn})
+	}
+
+	writeIAMXMLResponse(w, ListOpenIDConnectProvidersResponse{
+		ListOpenIDConnectProvidersResult: ListOpenIDConnectProvidersResult{
+			OpenIDConnectProviderList: entries,
+		},
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// UpdateOpenIDConnectProviderThumbprint handles the
+// UpdateOpenIDConnectProviderThumbprint action.
+func (s *Service) UpdateOpenIDConnectProviderThumbprint(w http.ResponseWriter, r *http.Request) {
+	arn := getFormValue(r, "OpenIDConnectProviderArn")
+	if arn == "" {
+		writeIAMError(w, errInvalidParameter, "OpenIDConnectProviderArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	thumbprints := parseStringList(r, "ThumbprintList")
+	if len(thumbprints) == 0 {
+		writeIAMError(w, errInvalidParameter, "ThumbprintList is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UpdateOIDCProviderThumbprint(r.Context(), arn, thumbprints); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, UpdateOpenIDConnectProviderThumbprintResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// parseStringList reads "<name>.member.N" entries (the IAM convention) into a
+// list, stopping at the first missing index.
+func parseStringList(r *http.Request, name string) []string {
+	var out []string
+
+	for i := 1; ; i++ {
+		v := getFormValue(r, fmt.Sprintf("%s.member.%d", name, i))
+		if v == "" {
+			break
+		}
+
+		out = append(out, v)
+	}
+
+	return out
+}
+
 // DispatchAction routes the request to the appropriate handler based on Action parameter.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	action := extractAction(r)

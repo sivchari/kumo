@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,18 @@ type Storage interface {
 	DetachUserPolicy(ctx context.Context, userName, policyArn string) error
 	AttachRolePolicy(ctx context.Context, roleName, policyArn string) error
 	DetachRolePolicy(ctx context.Context, roleName, policyArn string) error
+	ListAttachedRolePolicies(ctx context.Context, roleName string) ([]AttachedPolicy, error)
+
+	PutRolePolicy(ctx context.Context, roleName, policyName, policyDocument string) error
+	GetRolePolicy(ctx context.Context, roleName, policyName string) (string, error)
+	DeleteRolePolicy(ctx context.Context, roleName, policyName string) error
+	ListRolePolicies(ctx context.Context, roleName string) ([]string, error)
+
+	CreateOIDCProvider(ctx context.Context, url string, clientIDs, thumbprints []string) (*OIDCProvider, error)
+	GetOIDCProvider(ctx context.Context, arn string) (*OIDCProvider, error)
+	DeleteOIDCProvider(ctx context.Context, arn string) error
+	ListOIDCProviders(ctx context.Context) ([]string, error)
+	UpdateOIDCProviderThumbprint(ctx context.Context, arn string, thumbprints []string) error
 
 	CreateAccessKey(ctx context.Context, userName string) (*AccessKey, error)
 	DeleteAccessKey(ctx context.Context, userName, accessKeyID string) error
@@ -74,23 +87,25 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu         sync.RWMutex                     `json:"-"`
-	Users      map[string]*User                 `json:"users"`
-	Roles      map[string]*Role                 `json:"roles"`
-	Policies   map[string]*Policy               `json:"policies"`   // key is ARN
-	AccessKeys map[string]map[string]*AccessKey `json:"accessKeys"` // userName -> accessKeyID -> AccessKey
-	accountID  string
-	dataDir    string
+	mu            sync.RWMutex                     `json:"-"`
+	Users         map[string]*User                 `json:"users"`
+	Roles         map[string]*Role                 `json:"roles"`
+	Policies      map[string]*Policy               `json:"policies"`      // key is ARN
+	AccessKeys    map[string]map[string]*AccessKey `json:"accessKeys"`    // userName -> accessKeyID -> AccessKey
+	OIDCProviders map[string]*OIDCProvider         `json:"oidcProviders"` // key is ARN
+	accountID     string
+	dataDir       string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
-		Users:      make(map[string]*User),
-		Roles:      make(map[string]*Role),
-		Policies:   make(map[string]*Policy),
-		AccessKeys: make(map[string]map[string]*AccessKey),
-		accountID:  "123456789012",
+		Users:         make(map[string]*User),
+		Roles:         make(map[string]*Role),
+		Policies:      make(map[string]*Policy),
+		AccessKeys:    make(map[string]map[string]*AccessKey),
+		OIDCProviders: make(map[string]*OIDCProvider),
+		accountID:     "123456789012",
 	}
 	for _, o := range opts {
 		o(s)
@@ -145,6 +160,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.AccessKeys == nil {
 		s.AccessKeys = make(map[string]map[string]*AccessKey)
+	}
+
+	if s.OIDCProviders == nil {
+		s.OIDCProviders = make(map[string]*OIDCProvider)
 	}
 
 	return nil
@@ -774,4 +793,222 @@ func generateSecretAccessKey() string {
 	_, _ = rand.Read(b)
 
 	return hex.EncodeToString(b)[:40]
+}
+
+// PutRolePolicy upserts an inline policy on a role.
+func (s *MemoryStorage) PutRolePolicy(_ context.Context, roleName, policyName, policyDocument string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	role, ok := s.Roles[roleName]
+	if !ok {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	if role.InlinePolicies == nil {
+		role.InlinePolicies = make(map[string]string)
+	}
+
+	role.InlinePolicies[policyName] = policyDocument
+
+	return nil
+}
+
+// GetRolePolicy returns the document for an inline policy on a role.
+func (s *MemoryStorage) GetRolePolicy(_ context.Context, roleName, policyName string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	role, ok := s.Roles[roleName]
+	if !ok {
+		return "", &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	doc, ok := role.InlinePolicies[policyName]
+	if !ok {
+		return "", &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role policy with name %s cannot be found.", policyName),
+		}
+	}
+
+	return doc, nil
+}
+
+// DeleteRolePolicy removes an inline policy from a role.
+func (s *MemoryStorage) DeleteRolePolicy(_ context.Context, roleName, policyName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	role, ok := s.Roles[roleName]
+	if !ok {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	if _, ok := role.InlinePolicies[policyName]; !ok {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role policy with name %s cannot be found.", policyName),
+		}
+	}
+
+	delete(role.InlinePolicies, policyName)
+
+	return nil
+}
+
+// ListRolePolicies returns the names of inline policies attached to a role.
+func (s *MemoryStorage) ListRolePolicies(_ context.Context, roleName string) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	role, ok := s.Roles[roleName]
+	if !ok {
+		return nil, &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	names := make([]string, 0, len(role.InlinePolicies))
+	for name := range role.InlinePolicies {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	return names, nil
+}
+
+// ListAttachedRolePolicies returns managed policies attached to a role.
+func (s *MemoryStorage) ListAttachedRolePolicies(_ context.Context, roleName string) ([]AttachedPolicy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	role, ok := s.Roles[roleName]
+	if !ok {
+		return nil, &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	out := make([]AttachedPolicy, len(role.AttachedPolicies))
+	copy(out, role.AttachedPolicies)
+
+	return out, nil
+}
+
+// CreateOIDCProvider stores a new OpenID Connect provider.
+// The provider ARN is derived from the URL by stripping the scheme, matching
+// the AWS IAM convention: arn:aws:iam::<account>:oidc-provider/<host>/<path>.
+func (s *MemoryStorage) CreateOIDCProvider(_ context.Context, url string, clientIDs, thumbprints []string) (*OIDCProvider, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	host := stripScheme(url)
+	arn := fmt.Sprintf("arn:aws:iam::%s:oidc-provider/%s", s.accountID, host)
+
+	if _, exists := s.OIDCProviders[arn]; exists {
+		return nil, &Error{
+			Code:    errEntityAlreadyExists,
+			Message: fmt.Sprintf("OpenID Connect provider %s already exists.", arn),
+		}
+	}
+
+	provider := &OIDCProvider{
+		Arn:            arn,
+		URL:            url,
+		ClientIDList:   append([]string(nil), clientIDs...),
+		ThumbprintList: append([]string(nil), thumbprints...),
+		CreateDate:     time.Now().UTC(),
+	}
+	s.OIDCProviders[arn] = provider
+
+	return provider, nil
+}
+
+// GetOIDCProvider returns the provider with the given ARN.
+func (s *MemoryStorage) GetOIDCProvider(_ context.Context, arn string) (*OIDCProvider, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	provider, ok := s.OIDCProviders[arn]
+	if !ok {
+		return nil, &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("OpenID Connect provider %s does not exist.", arn),
+		}
+	}
+
+	return provider, nil
+}
+
+// DeleteOIDCProvider removes a provider by ARN.
+func (s *MemoryStorage) DeleteOIDCProvider(_ context.Context, arn string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.OIDCProviders[arn]; !ok {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("OpenID Connect provider %s does not exist.", arn),
+		}
+	}
+
+	delete(s.OIDCProviders, arn)
+
+	return nil
+}
+
+// ListOIDCProviders returns all provider ARNs.
+func (s *MemoryStorage) ListOIDCProviders(_ context.Context) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	arns := make([]string, 0, len(s.OIDCProviders))
+	for arn := range s.OIDCProviders {
+		arns = append(arns, arn)
+	}
+
+	sort.Strings(arns)
+
+	return arns, nil
+}
+
+// UpdateOIDCProviderThumbprint replaces the thumbprint list of a provider.
+func (s *MemoryStorage) UpdateOIDCProviderThumbprint(_ context.Context, arn string, thumbprints []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	provider, ok := s.OIDCProviders[arn]
+	if !ok {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("OpenID Connect provider %s does not exist.", arn),
+		}
+	}
+
+	provider.ThumbprintList = append([]string(nil), thumbprints...)
+
+	return nil
+}
+
+func stripScheme(url string) string {
+	for _, prefix := range []string{"https://", "http://"} {
+		if rest, ok := strings.CutPrefix(url, prefix); ok {
+			return rest
+		}
+	}
+
+	return url
 }
