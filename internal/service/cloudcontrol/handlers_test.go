@@ -132,6 +132,21 @@ func TestCloudControl_TypeNotRegistered(t *testing.T) {
 	}
 }
 
+func TestCloudControl_DefaultRegistryRegistersBuiltinTypes(t *testing.T) {
+	reg := defaultRegistry()
+
+	for _, want := range []string{
+		"AWS::S3::Bucket",
+		"AWS::EC2::VPC",
+		"AWS::EC2::Subnet",
+		"AWS::IAM::Role",
+	} {
+		if _, ok := reg.Get(want); !ok {
+			t.Errorf("default registry missing handler for %s", want)
+		}
+	}
+}
+
 func TestCloudControl_UnknownAction(t *testing.T) {
 	svc := New(NewRegistry())
 

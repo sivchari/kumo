@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/service/s3"
 )
 
@@ -29,20 +28,7 @@ func (*awsS3Bucket) TypeName() string { return "AWS::S3::Bucket" }
 // share the same bucket store as the s3 service. Doing it lazily avoids
 // init-order coupling between the cloudcontrol and s3 packages.
 func (*awsS3Bucket) s3Storage() (s3.Storage, error) {
-	for _, svc := range service.Services() {
-		if svc.Name() != "s3" {
-			continue
-		}
-
-		storageProvider, ok := svc.(interface{ Storage() s3.Storage })
-		if !ok {
-			return nil, errors.New("s3 service does not expose Storage()")
-		}
-
-		return storageProvider.Storage(), nil
-	}
-
-	return nil, errors.New("s3 service is not registered")
+	return lookupStorage[s3.Storage]("s3")
 }
 
 // Create extracts BucketName from the desired-state JSON and creates the

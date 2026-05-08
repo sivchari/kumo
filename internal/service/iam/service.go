@@ -93,6 +93,14 @@ func (s *Service) Name() string {
 	return "iam"
 }
 
+// Storage exposes the underlying storage so other services that need to
+// operate on the same IAM store (notably the cloudcontrol service, which
+// proxies AWS::IAM::* through the existing IAM storage) can read and
+// mutate it without going back through HTTP.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
 // RegisterRoutes registers the IAM routes.
 func (s *Service) RegisterRoutes(r service.Router) {
 	// IAM uses a single endpoint with Action parameter.
