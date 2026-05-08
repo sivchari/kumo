@@ -485,6 +485,22 @@ func (s *Service) ListAccessKeys(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListInstanceProfilesForRole returns an empty list. Instance profiles are
+// not modeled; AWS clients call this during role tear-down to detach profiles
+// before deletion, so an empty list is the correct "no profiles" response.
+func (s *Service) ListInstanceProfilesForRole(w http.ResponseWriter, _ *http.Request) {
+	writeIAMXMLResponse(w, struct {
+		XMLName                           xml.Name `xml:"ListInstanceProfilesForRoleResponse"`
+		ListInstanceProfilesForRoleResult struct {
+			InstanceProfiles struct{} `xml:"InstanceProfiles"`
+			IsTruncated      bool     `xml:"IsTruncated"`
+		} `xml:"ListInstanceProfilesForRoleResult"`
+		ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+	}{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
 // DispatchAction routes the request to the appropriate handler based on Action parameter.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	action := extractAction(r)

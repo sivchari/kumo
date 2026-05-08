@@ -610,3 +610,33 @@ func TestIAM_CreateUserWithTags(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "UserId", "Arn", "CreateDate")).Assert(t.Name()+"_get", getResult)
 }
+
+func TestIAM_ListInstanceProfilesForRole(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+	roleName := "test-instance-profiles-role"
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	}); err != nil {
+		t.Fatalf("failed to create role: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteRole(context.Background(), &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+	})
+
+	result, err := client.ListInstanceProfilesForRole(ctx, &iam.ListInstanceProfilesForRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatalf("ListInstanceProfilesForRole failed: %v", err)
+	}
+
+	if len(result.InstanceProfiles) != 0 {
+		t.Errorf("expected empty InstanceProfiles list, got %d entries", len(result.InstanceProfiles))
+	}
+}

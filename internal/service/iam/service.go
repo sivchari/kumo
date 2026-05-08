@@ -65,6 +65,8 @@ func (s *Service) initActionHandlers() {
 		"CreateAccessKey": s.CreateAccessKey,
 		"DeleteAccessKey": s.DeleteAccessKey,
 		"ListAccessKeys":  s.ListAccessKeys,
+		// Role tear-down support
+		"ListInstanceProfilesForRole": s.ListInstanceProfilesForRole,
 	}
 }
 
