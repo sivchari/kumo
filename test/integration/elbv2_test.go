@@ -497,3 +497,138 @@ func TestELBv2_ListenerRuleLifecycle(t *testing.T) {
 		t.Errorf("after delete, DescribeRules returned %d rules, want 1 (default only)", got)
 	}
 }
+
+func TestELBv2_LoadBalancerAttributes(t *testing.T) {
+	client := newELBv2Client(t)
+	ctx := t.Context()
+
+	lbRes, err := client.CreateLoadBalancer(ctx, &elasticloadbalancingv2.CreateLoadBalancerInput{
+		Name:    aws.String("attr-test-lb"),
+		Subnets: []string{"subnet-aaaa1111", "subnet-bbbb2222"},
+	})
+	if err != nil {
+		t.Fatalf("CreateLoadBalancer: %v", err)
+	}
+
+	lbArn := lbRes.LoadBalancers[0].LoadBalancerArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteLoadBalancer(context.Background(), &elasticloadbalancingv2.DeleteLoadBalancerInput{
+			LoadBalancerArn: lbArn,
+		})
+	})
+
+	descBefore, err := client.DescribeLoadBalancerAttributes(ctx, &elasticloadbalancingv2.DescribeLoadBalancerAttributesInput{
+		LoadBalancerArn: lbArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if found := lookupLBAttr(descBefore.Attributes, "deletion_protection.enabled"); found != "false" {
+		t.Errorf("default deletion_protection.enabled = %q, want %q", found, "false")
+	}
+
+	if found := lookupLBAttr(descBefore.Attributes, "idle_timeout.timeout_seconds"); found != "60" {
+		t.Errorf("default idle_timeout.timeout_seconds = %q, want %q", found, "60")
+	}
+
+	if _, err := client.ModifyLoadBalancerAttributes(ctx, &elasticloadbalancingv2.ModifyLoadBalancerAttributesInput{
+		LoadBalancerArn: lbArn,
+		Attributes: []types.LoadBalancerAttribute{
+			{Key: aws.String("deletion_protection.enabled"), Value: aws.String("true")},
+			{Key: aws.String("idle_timeout.timeout_seconds"), Value: aws.String("120")},
+		},
+	}); err != nil {
+		t.Fatalf("ModifyLoadBalancerAttributes: %v", err)
+	}
+
+	descAfter, err := client.DescribeLoadBalancerAttributes(ctx, &elasticloadbalancingv2.DescribeLoadBalancerAttributesInput{
+		LoadBalancerArn: lbArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if found := lookupLBAttr(descAfter.Attributes, "deletion_protection.enabled"); found != "true" {
+		t.Errorf("after Modify, deletion_protection.enabled = %q, want %q", found, "true")
+	}
+
+	if found := lookupLBAttr(descAfter.Attributes, "idle_timeout.timeout_seconds"); found != "120" {
+		t.Errorf("after Modify, idle_timeout.timeout_seconds = %q, want %q", found, "120")
+	}
+}
+
+func TestELBv2_TargetGroupAttributes(t *testing.T) {
+	client := newELBv2Client(t)
+	ctx := t.Context()
+
+	tgRes, err := client.CreateTargetGroup(ctx, &elasticloadbalancingv2.CreateTargetGroupInput{
+		Name:     aws.String("attr-test-tg"),
+		Protocol: types.ProtocolEnumHttp,
+		Port:     aws.Int32(80),
+		VpcId:    aws.String("vpc-xxxx"),
+	})
+	if err != nil {
+		t.Fatalf("CreateTargetGroup: %v", err)
+	}
+
+	tgArn := tgRes.TargetGroups[0].TargetGroupArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTargetGroup(context.Background(), &elasticloadbalancingv2.DeleteTargetGroupInput{
+			TargetGroupArn: tgArn,
+		})
+	})
+
+	descBefore, err := client.DescribeTargetGroupAttributes(ctx, &elasticloadbalancingv2.DescribeTargetGroupAttributesInput{
+		TargetGroupArn: tgArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if found := lookupTGAttr(descBefore.Attributes, "deregistration_delay.timeout_seconds"); found != "300" {
+		t.Errorf("default deregistration_delay.timeout_seconds = %q, want %q", found, "300")
+	}
+
+	if _, err := client.ModifyTargetGroupAttributes(ctx, &elasticloadbalancingv2.ModifyTargetGroupAttributesInput{
+		TargetGroupArn: tgArn,
+		Attributes: []types.TargetGroupAttribute{
+			{Key: aws.String("deregistration_delay.timeout_seconds"), Value: aws.String("60")},
+		},
+	}); err != nil {
+		t.Fatalf("ModifyTargetGroupAttributes: %v", err)
+	}
+
+	descAfter, err := client.DescribeTargetGroupAttributes(ctx, &elasticloadbalancingv2.DescribeTargetGroupAttributesInput{
+		TargetGroupArn: tgArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if found := lookupTGAttr(descAfter.Attributes, "deregistration_delay.timeout_seconds"); found != "60" {
+		t.Errorf("after Modify, deregistration_delay.timeout_seconds = %q, want %q", found, "60")
+	}
+}
+
+func lookupLBAttr(attrs []types.LoadBalancerAttribute, key string) string {
+	for _, a := range attrs {
+		if a.Key != nil && *a.Key == key && a.Value != nil {
+			return *a.Value
+		}
+	}
+
+	return ""
+}
+
+func lookupTGAttr(attrs []types.TargetGroupAttribute, key string) string {
+	for _, a := range attrs {
+		if a.Key != nil && *a.Key == key && a.Value != nil {
+			return *a.Value
+		}
+	}
+
+	return ""
+}

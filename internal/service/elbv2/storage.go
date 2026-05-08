@@ -39,6 +39,11 @@ type Storage interface {
 	ModifyRule(ctx context.Context, ruleArn string, conditions []RuleCondition, actions []Action) (*Rule, error)
 	DeleteRule(ctx context.Context, ruleArn string) error
 	SetRulePriorities(ctx context.Context, priorities map[string]string) ([]Rule, error)
+
+	ModifyLoadBalancerAttributes(ctx context.Context, lbArn string, attrs map[string]string) (map[string]string, error)
+	DescribeLoadBalancerAttributes(ctx context.Context, lbArn string) (map[string]string, error)
+	ModifyTargetGroupAttributes(ctx context.Context, tgArn string, attrs map[string]string) (map[string]string, error)
+	DescribeTargetGroupAttributes(ctx context.Context, tgArn string) (map[string]string, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -769,4 +774,119 @@ func (m *MemoryStorage) SetRulePriorities(_ context.Context, priorities map[stri
 
 func uuidLite() string {
 	return fmt.Sprintf("rule-%d", time.Now().UnixNano())
+}
+
+// defaultLoadBalancerAttributes returns the AWS-default attribute set
+// surfaced on a freshly-created load balancer.
+func defaultLoadBalancerAttributes() map[string]string {
+	return map[string]string{
+		"access_logs.s3.enabled":                          "false",
+		"access_logs.s3.bucket":                           "",
+		"access_logs.s3.prefix":                           "",
+		"deletion_protection.enabled":                     "false",
+		"idle_timeout.timeout_seconds":                    "60",
+		"routing.http2.enabled":                           "true",
+		"routing.http.drop_invalid_header_fields.enabled": "false",
+		"load_balancing.cross_zone.enabled":               "true",
+	}
+}
+
+// defaultTargetGroupAttributes returns the AWS-default attribute set for a
+// freshly-created target group.
+func defaultTargetGroupAttributes() map[string]string {
+	return map[string]string{
+		"deregistration_delay.timeout_seconds":  "300",
+		"stickiness.enabled":                    "false",
+		"stickiness.type":                       "lb_cookie",
+		"stickiness.lb_cookie.duration_seconds": "86400",
+		"slow_start.duration_seconds":           "0",
+		"load_balancing.algorithm.type":         "round_robin",
+		"proxy_protocol_v2.enabled":             "false",
+	}
+}
+
+// ModifyLoadBalancerAttributes upserts attributes on a load balancer.
+func (m *MemoryStorage) ModifyLoadBalancerAttributes(_ context.Context, lbArn string, attrs map[string]string) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	lb, ok := m.LoadBalancers[lbArn]
+	if !ok {
+		return nil, &Error{Code: "LoadBalancerNotFound", Message: "Load balancer '" + lbArn + "' not found"}
+	}
+
+	if lb.Attributes == nil {
+		lb.Attributes = defaultLoadBalancerAttributes()
+	}
+
+	for k, v := range attrs {
+		lb.Attributes[k] = v
+	}
+
+	return cloneAttributes(lb.Attributes), nil
+}
+
+// DescribeLoadBalancerAttributes returns the attribute set, lazy-initializing
+// to the AWS defaults if Modify has never been called.
+func (m *MemoryStorage) DescribeLoadBalancerAttributes(_ context.Context, lbArn string) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	lb, ok := m.LoadBalancers[lbArn]
+	if !ok {
+		return nil, &Error{Code: "LoadBalancerNotFound", Message: "Load balancer '" + lbArn + "' not found"}
+	}
+
+	if lb.Attributes == nil {
+		lb.Attributes = defaultLoadBalancerAttributes()
+	}
+
+	return cloneAttributes(lb.Attributes), nil
+}
+
+// ModifyTargetGroupAttributes upserts attributes on a target group.
+func (m *MemoryStorage) ModifyTargetGroupAttributes(_ context.Context, tgArn string, attrs map[string]string) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	tg, ok := m.TargetGroups[tgArn]
+	if !ok {
+		return nil, &Error{Code: "TargetGroupNotFound", Message: "Target group '" + tgArn + "' not found"}
+	}
+
+	if tg.Attributes == nil {
+		tg.Attributes = defaultTargetGroupAttributes()
+	}
+
+	for k, v := range attrs {
+		tg.Attributes[k] = v
+	}
+
+	return cloneAttributes(tg.Attributes), nil
+}
+
+// DescribeTargetGroupAttributes returns the attribute set with AWS defaults.
+func (m *MemoryStorage) DescribeTargetGroupAttributes(_ context.Context, tgArn string) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	tg, ok := m.TargetGroups[tgArn]
+	if !ok {
+		return nil, &Error{Code: "TargetGroupNotFound", Message: "Target group '" + tgArn + "' not found"}
+	}
+
+	if tg.Attributes == nil {
+		tg.Attributes = defaultTargetGroupAttributes()
+	}
+
+	return cloneAttributes(tg.Attributes), nil
+}
+
+func cloneAttributes(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+
+	return out
 }

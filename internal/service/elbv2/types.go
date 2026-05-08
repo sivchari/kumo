@@ -22,6 +22,7 @@ type LoadBalancer struct {
 	AvailabilityZones     []AvailabilityZone
 	SecurityGroups        []string
 	IPAddressType         string
+	Attributes            map[string]string
 }
 
 // LoadBalancerState represents the state of a load balancer.
@@ -60,6 +61,7 @@ type TargetGroup struct {
 	UnhealthyThresholdCount    int
 	TargetType                 string // instance | ip | lambda | alb
 	LoadBalancerArns           []string
+	Attributes                 map[string]string
 }
 
 // Listener represents an ELB listener.
@@ -528,4 +530,67 @@ type Error struct {
 // Error implements the error interface.
 func (e *Error) Error() string {
 	return e.Code + ": " + e.Message
+}
+
+// XMLAttributePair represents a single attribute key/value entry.
+type XMLAttributePair struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+// XMLAttributePairs contains a list of attribute key/value entries.
+type XMLAttributePairs struct {
+	Members []XMLAttributePair `xml:"member"`
+}
+
+// XMLModifyLoadBalancerAttributesResponse is the XML response.
+type XMLModifyLoadBalancerAttributesResponse struct {
+	XMLName          xml.Name                              `xml:"ModifyLoadBalancerAttributesResponse"`
+	Xmlns            string                                `xml:"xmlns,attr"`
+	Result           XMLModifyLoadBalancerAttributesResult `xml:"ModifyLoadBalancerAttributesResult"`
+	ResponseMetadata XMLResponseMetadata                   `xml:"ResponseMetadata"`
+}
+
+// XMLModifyLoadBalancerAttributesResult contains the updated attributes.
+type XMLModifyLoadBalancerAttributesResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
+}
+
+// XMLDescribeLoadBalancerAttributesResponse is the XML response.
+type XMLDescribeLoadBalancerAttributesResponse struct {
+	XMLName          xml.Name                                `xml:"DescribeLoadBalancerAttributesResponse"`
+	Xmlns            string                                  `xml:"xmlns,attr"`
+	Result           XMLDescribeLoadBalancerAttributesResult `xml:"DescribeLoadBalancerAttributesResult"`
+	ResponseMetadata XMLResponseMetadata                     `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeLoadBalancerAttributesResult contains the requested attributes.
+type XMLDescribeLoadBalancerAttributesResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
+}
+
+// XMLModifyTargetGroupAttributesResponse is the XML response.
+type XMLModifyTargetGroupAttributesResponse struct {
+	XMLName          xml.Name                             `xml:"ModifyTargetGroupAttributesResponse"`
+	Xmlns            string                               `xml:"xmlns,attr"`
+	Result           XMLModifyTargetGroupAttributesResult `xml:"ModifyTargetGroupAttributesResult"`
+	ResponseMetadata XMLResponseMetadata                  `xml:"ResponseMetadata"`
+}
+
+// XMLModifyTargetGroupAttributesResult contains the updated attributes.
+type XMLModifyTargetGroupAttributesResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
+}
+
+// XMLDescribeTargetGroupAttributesResponse is the XML response.
+type XMLDescribeTargetGroupAttributesResponse struct {
+	XMLName          xml.Name                               `xml:"DescribeTargetGroupAttributesResponse"`
+	Xmlns            string                                 `xml:"xmlns,attr"`
+	Result           XMLDescribeTargetGroupAttributesResult `xml:"DescribeTargetGroupAttributesResult"`
+	ResponseMetadata XMLResponseMetadata                    `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeTargetGroupAttributesResult contains the requested attributes.
+type XMLDescribeTargetGroupAttributesResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
 }

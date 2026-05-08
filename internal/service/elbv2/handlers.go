@@ -822,21 +822,25 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // getActionHandler returns the handler function for the given action.
 func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *http.Request) {
 	handlers := map[string]func(http.ResponseWriter, *http.Request){
-		"CreateLoadBalancer":    s.CreateLoadBalancer,
-		"DeleteLoadBalancer":    s.DeleteLoadBalancer,
-		"DescribeLoadBalancers": s.DescribeLoadBalancers,
-		"CreateTargetGroup":     s.CreateTargetGroup,
-		"DeleteTargetGroup":     s.DeleteTargetGroup,
-		"DescribeTargetGroups":  s.DescribeTargetGroups,
-		"RegisterTargets":       s.RegisterTargets,
-		"DeregisterTargets":     s.DeregisterTargets,
-		"CreateListener":        s.CreateListener,
-		"DeleteListener":        s.DeleteListener,
-		"CreateRule":            s.CreateRule,
-		"DescribeRules":         s.DescribeRules,
-		"ModifyRule":            s.ModifyRule,
-		"DeleteRule":            s.DeleteRule,
-		"SetRulePriorities":     s.SetRulePriorities,
+		"CreateLoadBalancer":             s.CreateLoadBalancer,
+		"DeleteLoadBalancer":             s.DeleteLoadBalancer,
+		"DescribeLoadBalancers":          s.DescribeLoadBalancers,
+		"CreateTargetGroup":              s.CreateTargetGroup,
+		"DeleteTargetGroup":              s.DeleteTargetGroup,
+		"DescribeTargetGroups":           s.DescribeTargetGroups,
+		"RegisterTargets":                s.RegisterTargets,
+		"DeregisterTargets":              s.DeregisterTargets,
+		"CreateListener":                 s.CreateListener,
+		"DeleteListener":                 s.DeleteListener,
+		"CreateRule":                     s.CreateRule,
+		"DescribeRules":                  s.DescribeRules,
+		"ModifyRule":                     s.ModifyRule,
+		"DeleteRule":                     s.DeleteRule,
+		"SetRulePriorities":              s.SetRulePriorities,
+		"ModifyLoadBalancerAttributes":   s.ModifyLoadBalancerAttributes,
+		"DescribeLoadBalancerAttributes": s.DescribeLoadBalancerAttributes,
+		"ModifyTargetGroupAttributes":    s.ModifyTargetGroupAttributes,
+		"DescribeTargetGroupAttributes":  s.DescribeTargetGroupAttributes,
 	}
 
 	return handlers[action]
@@ -976,4 +980,196 @@ func handleELBError(w http.ResponseWriter, err error) {
 	}
 
 	writeELBError(w, errInternalError, "Internal server error", http.StatusInternalServerError)
+}
+
+// ModifyLoadBalancerAttributes handles the ModifyLoadBalancerAttributes action.
+func (s *Service) ModifyLoadBalancerAttributes(w http.ResponseWriter, r *http.Request) {
+	lbArn, attrs, err := readAttributesRequestForm(r, "LoadBalancerArn")
+	if err != nil {
+		writeELBError(w, errInvalidParameter, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	updated, err := s.storage.ModifyLoadBalancerAttributes(r.Context(), lbArn, attrs)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLModifyLoadBalancerAttributesResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLModifyLoadBalancerAttributesResult{Attributes: attributesToXML(updated)},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DescribeLoadBalancerAttributes handles the DescribeLoadBalancerAttributes action.
+func (s *Service) DescribeLoadBalancerAttributes(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	lbArn := r.Form.Get("LoadBalancerArn")
+	if lbArn == "" {
+		writeELBError(w, errInvalidParameter, "LoadBalancerArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	attrs, err := s.storage.DescribeLoadBalancerAttributes(r.Context(), lbArn)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLDescribeLoadBalancerAttributesResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLDescribeLoadBalancerAttributesResult{Attributes: attributesToXML(attrs)},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// ModifyTargetGroupAttributes handles the ModifyTargetGroupAttributes action.
+func (s *Service) ModifyTargetGroupAttributes(w http.ResponseWriter, r *http.Request) {
+	tgArn, attrs, err := readAttributesRequestForm(r, "TargetGroupArn")
+	if err != nil {
+		writeELBError(w, errInvalidParameter, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	updated, err := s.storage.ModifyTargetGroupAttributes(r.Context(), tgArn, attrs)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLModifyTargetGroupAttributesResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLModifyTargetGroupAttributesResult{Attributes: attributesToXML(updated)},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DescribeTargetGroupAttributes handles the DescribeTargetGroupAttributes action.
+func (s *Service) DescribeTargetGroupAttributes(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	tgArn := r.Form.Get("TargetGroupArn")
+	if tgArn == "" {
+		writeELBError(w, errInvalidParameter, "TargetGroupArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	attrs, err := s.storage.DescribeTargetGroupAttributes(r.Context(), tgArn)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLDescribeTargetGroupAttributesResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLDescribeTargetGroupAttributesResult{Attributes: attributesToXML(attrs)},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// readAttributesRequestForm extracts the resource ARN and the
+// Attributes.member.N.{Key,Value} pairs from the AWS Query form.
+func readAttributesRequestForm(r *http.Request, arnField string) (string, map[string]string, error) {
+	if err := r.ParseForm(); err != nil {
+		return "", nil, fmt.Errorf("failed to parse form: %w", err)
+	}
+
+	arn := r.Form.Get(arnField)
+	if arn == "" {
+		return "", nil, fmt.Errorf("%s is required", arnField)
+	}
+
+	return arn, parseAttributePairsFromForm(r.Form), nil
+}
+
+// attributePairAcc accumulates one Attributes.member.N pair being parsed.
+type attributePairAcc struct {
+	key   string
+	value string
+}
+
+// parseAttributePairsFromForm reads Attributes.member.N.Key/Value into a map.
+func parseAttributePairsFromForm(form map[string][]string) map[string]string {
+	byIdx := make(map[int]*attributePairAcc)
+
+	for key, values := range form {
+		applyAttributePairFormEntry(byIdx, key, values)
+	}
+
+	out := make(map[string]string)
+
+	for _, entry := range byIdx {
+		if entry.key != "" {
+			out[entry.key] = entry.value
+		}
+	}
+
+	return out
+}
+
+func applyAttributePairFormEntry(byIdx map[int]*attributePairAcc, key string, values []string) {
+	suffix, ok := strings.CutPrefix(key, "Attributes.member.")
+	if !ok || len(values) == 0 {
+		return
+	}
+
+	dot := strings.Index(suffix, ".")
+	if dot < 0 {
+		return
+	}
+
+	n, err := strconv.Atoi(suffix[:dot])
+	if err != nil {
+		return
+	}
+
+	entry, exists := byIdx[n]
+	if !exists {
+		entry = &attributePairAcc{}
+		byIdx[n] = entry
+	}
+
+	switch suffix[dot+1:] {
+	case "Key":
+		entry.key = values[0]
+	case "Value":
+		entry.value = values[0]
+	}
+}
+
+// attributesToXML converts a name->value map to the XML wire shape, sorted
+// by key for deterministic output.
+func attributesToXML(attrs map[string]string) XMLAttributePairs {
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	members := make([]XMLAttributePair, 0, len(keys))
+	for _, k := range keys {
+		members = append(members, XMLAttributePair{Key: k, Value: attrs[k]})
+	}
+
+	return XMLAttributePairs{Members: members}
 }

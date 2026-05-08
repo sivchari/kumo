@@ -66,6 +66,10 @@ func (s *Service) Actions() []string {
 		"ModifyRule",
 		"DeleteRule",
 		"SetRulePriorities",
+		"ModifyLoadBalancerAttributes",
+		"DescribeLoadBalancerAttributes",
+		"ModifyTargetGroupAttributes",
+		"DescribeTargetGroupAttributes",
 	}
 }
 
