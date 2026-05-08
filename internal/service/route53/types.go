@@ -108,6 +108,20 @@ type ListHostedZonesResponse struct {
 	MaxItems    string       `xml:"MaxItems"`
 }
 
+// ListHostedZonesByNameResponse represents a response to list hosted zones
+// by name (used by the AWS data source aws_route53_zone among others).
+type ListHostedZonesByNameResponse struct {
+	XMLName          xml.Name     `xml:"ListHostedZonesByNameResponse"`
+	XMLNS            string       `xml:"xmlns,attr"`
+	HostedZones      []HostedZone `xml:"HostedZones>HostedZone"`
+	DNSName          string       `xml:"DNSName,omitempty"`
+	HostedZoneID     string       `xml:"HostedZoneId,omitempty"`
+	IsTruncated      bool         `xml:"IsTruncated"`
+	NextDNSName      string       `xml:"NextDNSName,omitempty"`
+	NextHostedZoneID string       `xml:"NextHostedZoneId,omitempty"`
+	MaxItems         string       `xml:"MaxItems"`
+}
+
 // DeleteHostedZoneResponse represents a response to delete hosted zone.
 type DeleteHostedZoneResponse struct {
 	XMLName    xml.Name   `xml:"DeleteHostedZoneResponse"`

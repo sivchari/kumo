@@ -220,6 +220,99 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
+// ListHostedZonesByName handles the ListHostedZonesByName API. Hosted zones
+// are sorted ASCII-ascending on Name (matching the AWS contract used by data
+// sources such as aws_route53_zone). The dnsname query parameter, when
+// supplied, filters to zones with Name >= dnsname; an exact-match dnsname
+// yields a single-zone response with that zone first.
+//
+//nolint:funlen // Handler bundles parsing, sorting, and pagination by design
+func (s *Service) ListHostedZonesByName(w http.ResponseWriter, r *http.Request) {
+	dnsname := normalizeDNSName(r.URL.Query().Get("dnsname"))
+	hostedZoneID := r.URL.Query().Get("hostedzoneid")
+	maxItemsStr := r.URL.Query().Get("maxitems")
+
+	maxItems := 100
+
+	if maxItemsStr != "" {
+		if parsed, err := strconv.Atoi(maxItemsStr); err == nil && parsed > 0 && parsed <= 100 {
+			maxItems = parsed
+		}
+	}
+
+	zones, err := s.storage.ListHostedZones()
+	if err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
+
+		return
+	}
+
+	sort.Slice(zones, func(i, j int) bool {
+		return zones[i].Name < zones[j].Name
+	})
+
+	startIdx := 0
+
+	if dnsname != "" {
+		for i, z := range zones {
+			if z.Name >= dnsname {
+				startIdx = i
+
+				break
+			}
+
+			startIdx = len(zones) // beyond range
+		}
+	}
+
+	endIdx := startIdx + maxItems
+	isTruncated := false
+	nextDNSName := ""
+	nextHostedZoneID := ""
+
+	if endIdx < len(zones) {
+		isTruncated = true
+		nextDNSName = zones[endIdx].Name
+		nextHostedZoneID = strings.TrimPrefix(zones[endIdx].ID, "/hostedzone/")
+	} else {
+		endIdx = len(zones)
+	}
+
+	hostedZones := make([]HostedZone, 0, endIdx-startIdx)
+	for i := startIdx; i < endIdx; i++ {
+		hostedZones = append(hostedZones, *zones[i])
+	}
+
+	resp := ListHostedZonesByNameResponse{
+		XMLNS:            xmlns,
+		HostedZones:      hostedZones,
+		DNSName:          dnsname,
+		HostedZoneID:     hostedZoneID,
+		IsTruncated:      isTruncated,
+		NextDNSName:      nextDNSName,
+		NextHostedZoneID: nextHostedZoneID,
+		MaxItems:         strconv.Itoa(maxItems),
+	}
+
+	writeXMLResponse(w, http.StatusOK, resp)
+}
+
+// normalizeDNSName makes the DNS-name query value compare-friendly: AWS
+// canonicalizes hosted-zone names with a trailing dot, but clients may send
+// either form. Lowercase to make comparison case-insensitive.
+func normalizeDNSName(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	lower := strings.ToLower(name)
+	if !strings.HasSuffix(lower, ".") {
+		lower += "."
+	}
+
+	return lower
+}
+
 // DeleteHostedZone handles the DeleteHostedZone API.
 func (s *Service) DeleteHostedZone(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

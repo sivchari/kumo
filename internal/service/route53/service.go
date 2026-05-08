@@ -41,6 +41,7 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	// Hosted Zones
 	r.Handle("POST", "/2013-04-01/hostedzone", s.CreateHostedZone)
 	r.Handle("GET", "/2013-04-01/hostedzone", s.ListHostedZones)
+	r.Handle("GET", "/2013-04-01/hostedzonesbyname", s.ListHostedZonesByName)
 	r.Handle("GET", "/2013-04-01/hostedzone/{id}", s.GetHostedZone)
 	r.Handle("DELETE", "/2013-04-01/hostedzone/{id}", s.DeleteHostedZone)
 

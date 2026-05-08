@@ -586,3 +586,62 @@ func TestRoute53_GetChange_NotFound(t *testing.T) {
 		t.Fatalf("expected NoSuchChange error, got %T: %v", err, err)
 	}
 }
+
+func TestRoute53_ListHostedZonesByName(t *testing.T) {
+	client := newRoute53Client(t)
+	ctx := t.Context()
+
+	// Create three zones with names that span the alphabet so we can verify
+	// the ascending-order start filter.
+	for i, name := range []string{"alpha.example.com.", "kumo-zone.example.com.", "zeta.example.com."} {
+		ref := fmt.Sprintf("lhzbn-test-%d-%d", time.Now().UnixNano(), i)
+
+		zoneRes, err := client.CreateHostedZone(ctx, &route53.CreateHostedZoneInput{
+			Name:            aws.String(name),
+			CallerReference: aws.String(ref),
+		})
+		if err != nil {
+			t.Fatalf("CreateHostedZone(%s): %v", name, err)
+		}
+
+		id := *zoneRes.HostedZone.Id
+		t.Cleanup(func() {
+			_, _ = client.DeleteHostedZone(context.Background(), &route53.DeleteHostedZoneInput{
+				Id: aws.String(id),
+			})
+		})
+	}
+
+	// No filter: returns all zones, sorted ascending by name.
+	allRes, err := client.ListHostedZonesByName(ctx, &route53.ListHostedZonesByNameInput{})
+	if err != nil {
+		t.Fatalf("ListHostedZonesByName (no filter): %v", err)
+	}
+
+	if got := len(allRes.HostedZones); got < 3 {
+		t.Fatalf("ListHostedZonesByName returned %d zones, want at least 3", got)
+	}
+
+	for i := 1; i < len(allRes.HostedZones); i++ {
+		if *allRes.HostedZones[i-1].Name > *allRes.HostedZones[i].Name {
+			t.Errorf("zones not sorted ascending: %q > %q", *allRes.HostedZones[i-1].Name, *allRes.HostedZones[i].Name)
+		}
+	}
+
+	// Filter by exact name: the first zone in the response is the requested
+	// zone (the index-0 contract used by data source-style lookups).
+	exactRes, err := client.ListHostedZonesByName(ctx, &route53.ListHostedZonesByNameInput{
+		DNSName: aws.String("kumo-zone.example.com"),
+	})
+	if err != nil {
+		t.Fatalf("ListHostedZonesByName (dnsname): %v", err)
+	}
+
+	if got := len(exactRes.HostedZones); got == 0 {
+		t.Fatal("ListHostedZonesByName(dnsname=kumo-zone.example.com) returned 0 zones")
+	}
+
+	if got := *exactRes.HostedZones[0].Name; got != "kumo-zone.example.com." {
+		t.Errorf("first zone for exact-name query = %q, want kumo-zone.example.com.", got)
+	}
+}
