@@ -27,7 +27,19 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"PutLifecyclePolicy":    s.PutLifecyclePolicy,
 		"GetLifecyclePolicy":    s.GetLifecyclePolicy,
 		"DeleteLifecyclePolicy": s.DeleteLifecyclePolicy,
+		"ListTagsForResource":   s.tagsNoOp,
+		"TagResource":           s.tagsNoOp,
+		"UntagResource":         s.tagsNoOp,
 	}
+}
+
+// tagsNoOp returns an empty success response. ECR tags are not modeled but
+// AWS SDK clients call ListTagsForResource on every read; returning empty
+// keeps the read path from hitting InvalidAction.
+func (s *Service) tagsNoOp(w http.ResponseWriter, _ *http.Request) {
+	writeResponse(w, struct {
+		Tags []any `json:"tags"`
+	}{Tags: []any{}})
 }
 
 // DispatchAction dispatches the request to the appropriate handler.
