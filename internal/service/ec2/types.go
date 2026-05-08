@@ -355,12 +355,27 @@ func (e *Error) Error() string {
 
 // Vpc represents a VPC.
 type Vpc struct {
-	VpcID           string
-	CidrBlock       string
-	State           string
-	IsDefault       bool
-	InstanceTenancy string
-	Tags            []Tag
+	VpcID              string
+	CidrBlock          string
+	State              string
+	IsDefault          bool
+	InstanceTenancy    string
+	EnableDNSHostnames bool
+	EnableDNSSupport   bool
+	Tags               []Tag
+}
+
+// VpcAttributeUpdates carries optional VPC attribute changes. nil pointers
+// mean "leave as-is" since AWS modifies one attribute per call.
+type VpcAttributeUpdates struct {
+	EnableDNSHostnames *bool
+	EnableDNSSupport   *bool
+}
+
+// SubnetAttributeUpdates is the subnet equivalent.
+type SubnetAttributeUpdates struct {
+	MapPublicIPOnLaunch         *bool
+	AssignIPv6AddressOnCreation *bool
 }
 
 // Subnet represents a subnet.

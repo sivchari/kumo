@@ -753,3 +753,114 @@ func TestEC2_CreateVpc_WithTagSpecifications(t *testing.T) {
 		t.Errorf("DescribeTags = %d entries, want 2", got)
 	}
 }
+
+func TestEC2_ModifyAndDescribeVpcAttribute(t *testing.T) {
+	client := newEC2Client(t)
+	ctx := t.Context()
+
+	createResult, err := client.CreateVpc(ctx, &ec2.CreateVpcInput{
+		CidrBlock: aws.String("10.60.0.0/16"),
+	})
+	if err != nil {
+		t.Fatalf("CreateVpc failed: %v", err)
+	}
+
+	vpcID := *createResult.Vpc.VpcId
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteVpc(context.Background(), &ec2.DeleteVpcInput{
+			VpcId: aws.String(vpcID),
+		})
+	})
+
+	supportRes, err := client.DescribeVpcAttribute(ctx, &ec2.DescribeVpcAttributeInput{
+		VpcId:     aws.String(vpcID),
+		Attribute: types.VpcAttributeNameEnableDnsSupport,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supportRes.EnableDnsSupport == nil || !*supportRes.EnableDnsSupport.Value {
+		t.Errorf("default EnableDnsSupport = false, want true")
+	}
+
+	hostRes, err := client.DescribeVpcAttribute(ctx, &ec2.DescribeVpcAttributeInput{
+		VpcId:     aws.String(vpcID),
+		Attribute: types.VpcAttributeNameEnableDnsHostnames,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hostRes.EnableDnsHostnames != nil && hostRes.EnableDnsHostnames.Value != nil && *hostRes.EnableDnsHostnames.Value {
+		t.Errorf("default EnableDnsHostnames = true, want false")
+	}
+
+	if _, err := client.ModifyVpcAttribute(ctx, &ec2.ModifyVpcAttributeInput{
+		VpcId:              aws.String(vpcID),
+		EnableDnsHostnames: &types.AttributeBooleanValue{Value: aws.Bool(true)},
+	}); err != nil {
+		t.Fatalf("ModifyVpcAttribute failed: %v", err)
+	}
+
+	hostRes2, err := client.DescribeVpcAttribute(ctx, &ec2.DescribeVpcAttributeInput{
+		VpcId:     aws.String(vpcID),
+		Attribute: types.VpcAttributeNameEnableDnsHostnames,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hostRes2.EnableDnsHostnames == nil || !*hostRes2.EnableDnsHostnames.Value {
+		t.Errorf("after Modify, EnableDnsHostnames = false, want true")
+	}
+}
+
+func TestEC2_ModifySubnetAttribute(t *testing.T) {
+	client := newEC2Client(t)
+	ctx := t.Context()
+
+	vpcResult, err := client.CreateVpc(ctx, &ec2.CreateVpcInput{
+		CidrBlock: aws.String("10.61.0.0/16"),
+	})
+	if err != nil {
+		t.Fatalf("CreateVpc failed: %v", err)
+	}
+
+	vpcID := *vpcResult.Vpc.VpcId
+
+	subnetResult, err := client.CreateSubnet(ctx, &ec2.CreateSubnetInput{
+		VpcId:     aws.String(vpcID),
+		CidrBlock: aws.String("10.61.1.0/24"),
+	})
+	if err != nil {
+		t.Fatalf("CreateSubnet failed: %v", err)
+	}
+
+	subnetID := *subnetResult.Subnet.SubnetId
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteSubnet(context.Background(), &ec2.DeleteSubnetInput{
+			SubnetId: aws.String(subnetID),
+		})
+		_, _ = client.DeleteVpc(context.Background(), &ec2.DeleteVpcInput{
+			VpcId: aws.String(vpcID),
+		})
+	})
+
+	if _, err := client.ModifySubnetAttribute(ctx, &ec2.ModifySubnetAttributeInput{
+		SubnetId:            aws.String(subnetID),
+		MapPublicIpOnLaunch: &types.AttributeBooleanValue{Value: aws.Bool(true)},
+	}); err != nil {
+		t.Fatalf("ModifySubnetAttribute failed: %v", err)
+	}
+
+	descResult, err := client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		SubnetIds: []string{subnetID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := descResult.Subnets[0].MapPublicIpOnLaunch; got == nil || !*got {
+		t.Errorf("after Modify, MapPublicIpOnLaunch = %v, want true", got)
+	}
+}

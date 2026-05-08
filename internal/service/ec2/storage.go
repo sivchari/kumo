@@ -83,11 +83,13 @@ type Storage interface {
 	CreateVpc(ctx context.Context, req *CreateVpcRequest) (*Vpc, error)
 	DeleteVpc(ctx context.Context, vpcID string) error
 	DescribeVpcs(ctx context.Context, vpcIDs []string) ([]*Vpc, error)
+	ModifyVpcAttribute(ctx context.Context, vpcID string, updates VpcAttributeUpdates) error
 
 	// Subnet operations
 	CreateSubnet(ctx context.Context, req *CreateSubnetRequest) (*Subnet, error)
 	DeleteSubnet(ctx context.Context, subnetID string) error
 	DescribeSubnets(ctx context.Context, subnetIDs []string, filters map[string][]string) ([]*Subnet, error)
+	ModifySubnetAttribute(ctx context.Context, subnetID string, updates SubnetAttributeUpdates) error
 
 	// Internet Gateway operations
 	CreateInternetGateway(ctx context.Context, req *CreateInternetGatewayRequest) (*InternetGateway, error)
@@ -762,12 +764,14 @@ func (m *MemoryStorage) CreateVpc(_ context.Context, req *CreateVpcRequest) (*Vp
 	defer m.mu.Unlock()
 
 	vpc := &Vpc{
-		VpcID:           "vpc-" + generateID(),
-		CidrBlock:       req.CidrBlock,
-		State:           "available",
-		IsDefault:       false,
-		InstanceTenancy: req.InstanceTenancy,
-		Tags:            []Tag{},
+		VpcID:              "vpc-" + generateID(),
+		CidrBlock:          req.CidrBlock,
+		State:              "available",
+		IsDefault:          false,
+		InstanceTenancy:    req.InstanceTenancy,
+		EnableDNSSupport:   true, // matches AWS default
+		EnableDNSHostnames: false,
+		Tags:               []Tag{},
 	}
 
 	if vpc.InstanceTenancy == "" {
@@ -1258,6 +1262,53 @@ func (m *MemoryStorage) CreateTags(_ context.Context, resourceIDs []string, tags
 			return err
 		}
 	}
+
+	return nil
+}
+
+// ModifyVpcAttribute applies VPC attribute updates. Only set (non-nil) fields
+// are touched, matching the AWS one-attribute-per-call semantics.
+func (m *MemoryStorage) ModifyVpcAttribute(_ context.Context, vpcID string, updates VpcAttributeUpdates) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	vpc, ok := m.Vpcs[vpcID]
+	if !ok {
+		return &Error{
+			Code:    "InvalidVpcID.NotFound",
+			Message: fmt.Sprintf("The vpc ID '%s' does not exist", vpcID),
+		}
+	}
+
+	if updates.EnableDNSHostnames != nil {
+		vpc.EnableDNSHostnames = *updates.EnableDNSHostnames
+	}
+
+	if updates.EnableDNSSupport != nil {
+		vpc.EnableDNSSupport = *updates.EnableDNSSupport
+	}
+
+	return nil
+}
+
+// ModifySubnetAttribute applies subnet attribute updates.
+func (m *MemoryStorage) ModifySubnetAttribute(_ context.Context, subnetID string, updates SubnetAttributeUpdates) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	subnet, ok := m.Subnets[subnetID]
+	if !ok {
+		return &Error{
+			Code:    "InvalidSubnetID.NotFound",
+			Message: fmt.Sprintf("The subnet ID '%s' does not exist", subnetID),
+		}
+	}
+
+	if updates.MapPublicIPOnLaunch != nil {
+		subnet.MapPublicIPOnLaunch = *updates.MapPublicIPOnLaunch
+	}
+
+	_ = updates.AssignIPv6AddressOnCreation // accepted but not modeled
 
 	return nil
 }

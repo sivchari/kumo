@@ -93,6 +93,10 @@ func (s *Service) Actions() []string {
 		"CreateTags",
 		"DeleteTags",
 		"DescribeTags",
+		// VPC / Subnet attribute mutation
+		"ModifyVpcAttribute",
+		"DescribeVpcAttribute",
+		"ModifySubnetAttribute",
 	}
 }
 

@@ -966,6 +966,178 @@ func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ModifyVpcAttribute handles the ModifyVpcAttribute action. AWS modifies one
+// attribute per call; the handler updates only the fields the request supplies.
+func (s *Service) ModifyVpcAttribute(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	vpcID := r.Form.Get("VpcId")
+	if vpcID == "" {
+		writeError(w, errInvalidParameter, "VpcId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.ModifyVpcAttribute(r.Context(), vpcID, vpcAttributeUpdates(r.Form)); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeEC2XMLResponse(w, struct {
+		XMLName   xml.Name `xml:"ModifyVpcAttributeResponse"`
+		Xmlns     string   `xml:"xmlns,attr"`
+		RequestID string   `xml:"requestId"`
+		Return    bool     `xml:"return"`
+	}{Xmlns: ec2XMLNS, RequestID: uuid.New().String(), Return: true})
+}
+
+// DescribeVpcAttribute returns one of EnableDnsHostnames, EnableDnsSupport, or
+// EnableNetworkAddressUsageMetrics. The attribute name in the request uses
+// the AWS lowercase-camel form (e.g. "enableDnsHostnames").
+func (s *Service) DescribeVpcAttribute(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	vpcID := r.Form.Get("VpcId")
+	attribute := r.Form.Get("Attribute")
+
+	if vpcID == "" || attribute == "" {
+		writeError(w, errInvalidParameter, "VpcId and Attribute are required", http.StatusBadRequest)
+
+		return
+	}
+
+	vpcs, err := s.storage.DescribeVpcs(r.Context(), []string{vpcID})
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	if len(vpcs) == 0 {
+		writeError(w, "InvalidVpcID.NotFound", "The vpc ID '"+vpcID+"' does not exist", http.StatusBadRequest)
+
+		return
+	}
+
+	vpc := vpcs[0]
+
+	resp := struct {
+		XMLName                          xml.Name      `xml:"DescribeVpcAttributeResponse"`
+		Xmlns                            string        `xml:"xmlns,attr"`
+		RequestID                        string        `xml:"requestId"`
+		VpcID                            string        `xml:"vpcId"`
+		EnableDNSHostnames               *xmlBoolValue `xml:"enableDnsHostnames,omitempty"`
+		EnableDNSSupport                 *xmlBoolValue `xml:"enableDnsSupport,omitempty"`
+		EnableNetworkAddressUsageMetrics *xmlBoolValue `xml:"enableNetworkAddressUsageMetrics,omitempty"`
+	}{Xmlns: ec2XMLNS, RequestID: uuid.New().String(), VpcID: vpc.VpcID}
+
+	switch attribute {
+	case "enableDnsHostnames":
+		resp.EnableDNSHostnames = &xmlBoolValue{Value: vpc.EnableDNSHostnames}
+	case "enableDnsSupport":
+		resp.EnableDNSSupport = &xmlBoolValue{Value: vpc.EnableDNSSupport}
+	case "enableNetworkAddressUsageMetrics":
+		resp.EnableNetworkAddressUsageMetrics = &xmlBoolValue{Value: false}
+	default:
+		writeError(w, errInvalidParameter, "Unsupported attribute: "+attribute, http.StatusBadRequest)
+
+		return
+	}
+
+	writeEC2XMLResponse(w, resp)
+}
+
+// xmlBoolValue wraps a boolean in the AWS <value>true</value> child shape.
+type xmlBoolValue struct {
+	Value bool `xml:"value"`
+}
+
+// ModifySubnetAttribute handles the ModifySubnetAttribute action.
+func (s *Service) ModifySubnetAttribute(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	subnetID := r.Form.Get("SubnetId")
+	if subnetID == "" {
+		writeError(w, errInvalidParameter, "SubnetId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.ModifySubnetAttribute(r.Context(), subnetID, subnetAttributeUpdates(r.Form)); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeEC2XMLResponse(w, struct {
+		XMLName   xml.Name `xml:"ModifySubnetAttributeResponse"`
+		Xmlns     string   `xml:"xmlns,attr"`
+		RequestID string   `xml:"requestId"`
+		Return    bool     `xml:"return"`
+	}{Xmlns: ec2XMLNS, RequestID: uuid.New().String(), Return: true})
+}
+
+// vpcAttributeUpdates extracts EnableDnsHostnames.Value and EnableDnsSupport.Value
+// from the form, returning a struct with only the supplied fields populated.
+func vpcAttributeUpdates(form map[string][]string) VpcAttributeUpdates {
+	var u VpcAttributeUpdates
+
+	if v := getFormBoolPtr(form, "EnableDnsHostnames.Value"); v != nil {
+		u.EnableDNSHostnames = v
+	}
+
+	if v := getFormBoolPtr(form, "EnableDnsSupport.Value"); v != nil {
+		u.EnableDNSSupport = v
+	}
+
+	return u
+}
+
+// subnetAttributeUpdates extracts MapPublicIpOnLaunch.Value and
+// AssignIpv6AddressOnCreation.Value from the form.
+func subnetAttributeUpdates(form map[string][]string) SubnetAttributeUpdates {
+	var u SubnetAttributeUpdates
+
+	if v := getFormBoolPtr(form, "MapPublicIpOnLaunch.Value"); v != nil {
+		u.MapPublicIPOnLaunch = v
+	}
+
+	if v := getFormBoolPtr(form, "AssignIpv6AddressOnCreation.Value"); v != nil {
+		u.AssignIPv6AddressOnCreation = v
+	}
+
+	return u
+}
+
+// getFormBoolPtr returns a pointer to a parsed bool from the form, or nil
+// if the key is missing or unparseable.
+func getFormBoolPtr(form map[string][]string, key string) *bool {
+	values, ok := form[key]
+	if !ok || len(values) == 0 {
+		return nil
+	}
+
+	b, err := strconv.ParseBool(values[0])
+	if err != nil {
+		return nil
+	}
+
+	return &b
+}
+
 // readTagRequestForm extracts ResourceId.N and Tag.N.Key/Value pairs from the
 // already-parsed AWS Query form. The Query dispatcher calls ParseForm before
 // dispatch, but ParseForm is idempotent, so calling it again is safe.
@@ -1264,6 +1436,10 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"CreateTags":   s.CreateTags,
 		"DeleteTags":   s.DeleteTags,
 		"DescribeTags": s.DescribeTags,
+		// VPC / Subnet attribute mutation
+		"ModifyVpcAttribute":    s.ModifyVpcAttribute,
+		"DescribeVpcAttribute":  s.DescribeVpcAttribute,
+		"ModifySubnetAttribute": s.ModifySubnetAttribute,
 	}
 
 	return handlers[action]
