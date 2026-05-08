@@ -380,3 +380,120 @@ func TestELBv2_LoadBalancerWithTargetGroupAndListener(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields("TargetGroupArn", "LoadBalancerArns", "ResultMetadata")).Assert(t.Name()+"_describe_tg", descTgResult)
 }
+
+func TestELBv2_ListenerRuleLifecycle(t *testing.T) {
+	client := newELBv2Client(t)
+	ctx := t.Context()
+
+	lbRes, err := client.CreateLoadBalancer(ctx, &elasticloadbalancingv2.CreateLoadBalancerInput{
+		Name:    aws.String("rule-test-lb"),
+		Subnets: []string{"subnet-aaaa1111", "subnet-bbbb2222"},
+	})
+	if err != nil {
+		t.Fatalf("CreateLoadBalancer: %v", err)
+	}
+
+	lbArn := lbRes.LoadBalancers[0].LoadBalancerArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteLoadBalancer(context.Background(), &elasticloadbalancingv2.DeleteLoadBalancerInput{
+			LoadBalancerArn: lbArn,
+		})
+	})
+
+	tgRes, err := client.CreateTargetGroup(ctx, &elasticloadbalancingv2.CreateTargetGroupInput{
+		Name:     aws.String("rule-test-tg"),
+		Protocol: types.ProtocolEnumHttp,
+		Port:     aws.Int32(80),
+		VpcId:    aws.String("vpc-xxxx"),
+	})
+	if err != nil {
+		t.Fatalf("CreateTargetGroup: %v", err)
+	}
+
+	tgArn := tgRes.TargetGroups[0].TargetGroupArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTargetGroup(context.Background(), &elasticloadbalancingv2.DeleteTargetGroupInput{
+			TargetGroupArn: tgArn,
+		})
+	})
+
+	listenerRes, err := client.CreateListener(ctx, &elasticloadbalancingv2.CreateListenerInput{
+		LoadBalancerArn: lbArn,
+		Protocol:        types.ProtocolEnumHttp,
+		Port:            aws.Int32(80),
+		DefaultActions: []types.Action{
+			{Type: types.ActionTypeEnumForward, TargetGroupArn: tgArn},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateListener: %v", err)
+	}
+
+	listenerArn := listenerRes.Listeners[0].ListenerArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteListener(context.Background(), &elasticloadbalancingv2.DeleteListenerInput{
+			ListenerArn: listenerArn,
+		})
+	})
+
+	createRuleRes, err := client.CreateRule(ctx, &elasticloadbalancingv2.CreateRuleInput{
+		ListenerArn: listenerArn,
+		Priority:    aws.Int32(100),
+		Conditions: []types.RuleCondition{
+			{
+				Field: aws.String("path-pattern"),
+				PathPatternConfig: &types.PathPatternConditionConfig{
+					Values: []string{"/api/*"},
+				},
+			},
+		},
+		Actions: []types.Action{
+			{Type: types.ActionTypeEnumForward, TargetGroupArn: tgArn},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+
+	ruleArn := createRuleRes.Rules[0].RuleArn
+
+	if got := len(createRuleRes.Rules[0].Conditions); got != 1 {
+		t.Errorf("created rule has %d conditions, want 1", got)
+	}
+
+	if got := len(createRuleRes.Rules[0].Conditions[0].Values); got != 1 || createRuleRes.Rules[0].Conditions[0].Values[0] != "/api/*" {
+		t.Errorf("rule.Conditions[0].Values = %v, want [/api/*]", createRuleRes.Rules[0].Conditions[0].Values)
+	}
+
+	descRes, err := client.DescribeRules(ctx, &elasticloadbalancingv2.DescribeRulesInput{
+		ListenerArn: listenerArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Default rule + the rule we created.
+	if got := len(descRes.Rules); got != 2 {
+		t.Errorf("DescribeRules returned %d rules, want 2 (default + created)", got)
+	}
+
+	if _, err := client.DeleteRule(ctx, &elasticloadbalancingv2.DeleteRuleInput{
+		RuleArn: ruleArn,
+	}); err != nil {
+		t.Fatalf("DeleteRule: %v", err)
+	}
+
+	descAfter, err := client.DescribeRules(ctx, &elasticloadbalancingv2.DescribeRulesInput{
+		ListenerArn: listenerArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := len(descAfter.Rules); got != 1 {
+		t.Errorf("after delete, DescribeRules returned %d rules, want 1 (default only)", got)
+	}
+}

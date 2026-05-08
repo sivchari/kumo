@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -323,6 +325,428 @@ func (s *Service) DeleteListener(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CreateRule handles the CreateRule action.
+func (s *Service) CreateRule(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	listenerArn := r.Form.Get("ListenerArn")
+	priority := r.Form.Get("Priority")
+
+	if listenerArn == "" || priority == "" {
+		writeELBError(w, errInvalidParameter, "ListenerArn and Priority are required", http.StatusBadRequest)
+
+		return
+	}
+
+	rule, err := s.storage.CreateRule(r.Context(), listenerArn, priority,
+		parseRuleConditionsFromForm(r.Form), parseActionsFromForm(r.Form, "Actions"))
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLCreateRuleResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLCreateRuleResult{Rules: XMLRules{Members: []XMLRule{convertRuleToXML(rule)}}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DescribeRules handles the DescribeRules action.
+func (s *Service) DescribeRules(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	listenerArn := r.Form.Get("ListenerArn")
+	ruleArns := parseMemberListFromForm(r.Form, "RuleArns")
+
+	rules, err := s.storage.DescribeRules(r.Context(), listenerArn, ruleArns)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLDescribeRulesResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLDescribeRulesResult{Rules: XMLRules{Members: convertRulesToXML(rules)}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// ModifyRule handles the ModifyRule action.
+func (s *Service) ModifyRule(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	ruleArn := r.Form.Get("RuleArn")
+	if ruleArn == "" {
+		writeELBError(w, errInvalidParameter, "RuleArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	conds := parseRuleConditionsFromForm(r.Form)
+	actions := parseActionsFromForm(r.Form, "Actions")
+
+	if len(conds) == 0 {
+		conds = nil
+	}
+
+	if len(actions) == 0 {
+		actions = nil
+	}
+
+	rule, err := s.storage.ModifyRule(r.Context(), ruleArn, conds, actions)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLModifyRuleResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLModifyRuleResult{Rules: XMLRules{Members: []XMLRule{convertRuleToXML(rule)}}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DeleteRule handles the DeleteRule action.
+func (s *Service) DeleteRule(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	ruleArn := r.Form.Get("RuleArn")
+	if ruleArn == "" {
+		writeELBError(w, errInvalidParameter, "RuleArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.DeleteRule(r.Context(), ruleArn); err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLDeleteRuleResponse{
+		Xmlns:            elbXMLNS,
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// SetRulePriorities handles the SetRulePriorities action.
+func (s *Service) SetRulePriorities(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	priorities := parseRulePrioritiesFromForm(r.Form)
+	if len(priorities) == 0 {
+		writeELBError(w, errInvalidParameter, "RulePriorities is required", http.StatusBadRequest)
+
+		return
+	}
+
+	rules, err := s.storage.SetRulePriorities(r.Context(), priorities)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLSetRulePrioritiesResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLSetRulePrioritiesResult{Rules: XMLRules{Members: convertRulesToXML(rules)}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// parseMemberListFromForm reads <prefix>.member.N entries into a list,
+// preserving the index order.
+func parseMemberListFromForm(form map[string][]string, prefix string) []string {
+	type entry struct {
+		idx int
+		val string
+	}
+
+	entries := make([]entry, 0)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, prefix+".member.")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		if strings.Contains(suffix, ".") {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+
+		entries = append(entries, entry{idx: n, val: values[0]})
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].idx < entries[j].idx })
+
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.val)
+	}
+
+	return out
+}
+
+// parseActionsFromForm reads <prefix>.member.N.{Type,TargetGroupArn,Order}.
+func parseActionsFromForm(form map[string][]string, prefix string) []Action {
+	byIdx := make(map[int]*Action)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, prefix+".member.")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		dot := strings.Index(suffix, ".")
+		if dot < 0 {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix[:dot])
+		if err != nil {
+			continue
+		}
+
+		entry, exists := byIdx[n]
+		if !exists {
+			entry = &Action{}
+			byIdx[n] = entry
+		}
+
+		switch suffix[dot+1:] {
+		case "Type":
+			entry.Type = values[0]
+		case "TargetGroupArn":
+			entry.TargetGroupArn = values[0]
+		case "Order":
+			if v, err := strconv.Atoi(values[0]); err == nil {
+				entry.Order = v
+			}
+		}
+	}
+
+	indexes := make([]int, 0, len(byIdx))
+	for n := range byIdx {
+		indexes = append(indexes, n)
+	}
+
+	sort.Ints(indexes)
+
+	out := make([]Action, 0, len(indexes))
+	for _, n := range indexes {
+		out = append(out, *byIdx[n])
+	}
+
+	return out
+}
+
+// ruleConditionAcc accumulates one Conditions.member.N entry being parsed.
+type ruleConditionAcc struct {
+	field  string
+	values map[int]string
+}
+
+// parseRuleConditionsFromForm reads Conditions.member.N.Field and either
+// Conditions.member.N.Values.member.M (legacy) or
+// Conditions.member.N.<Field>Config.Values.member.M (modern). Both are
+// stored as Field + Values.
+func parseRuleConditionsFromForm(form map[string][]string) []RuleCondition {
+	byIdx := make(map[int]*ruleConditionAcc)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, "Conditions.member.")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		dot := strings.Index(suffix, ".")
+		if dot < 0 {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix[:dot])
+		if err != nil {
+			continue
+		}
+
+		entry, exists := byIdx[n]
+		if !exists {
+			entry = &ruleConditionAcc{values: make(map[int]string)}
+			byIdx[n] = entry
+		}
+
+		applyRuleConditionField(entry, suffix[dot+1:], values[0])
+	}
+
+	indexes := make([]int, 0, len(byIdx))
+	for n := range byIdx {
+		indexes = append(indexes, n)
+	}
+
+	sort.Ints(indexes)
+
+	out := make([]RuleCondition, 0, len(indexes))
+
+	for _, n := range indexes {
+		entry := byIdx[n]
+		vals := flattenValuesMap(entry.values)
+		out = append(out, RuleCondition{Field: entry.field, Values: vals})
+	}
+
+	return out
+}
+
+func applyRuleConditionField(entry *ruleConditionAcc, field, value string) {
+	switch {
+	case field == "Field":
+		entry.field = value
+	case strings.HasPrefix(field, "Values.member."):
+		recordIndexedValue(entry.values, strings.TrimPrefix(field, "Values.member."), value)
+	default:
+		// Modern <Field>Config.Values.member.N pattern.
+		if i := strings.Index(field, "Config.Values.member."); i > 0 {
+			recordIndexedValue(entry.values, field[i+len("Config.Values.member."):], value)
+		}
+	}
+}
+
+func recordIndexedValue(m map[int]string, suffix, value string) {
+	n, err := strconv.Atoi(suffix)
+	if err != nil {
+		return
+	}
+
+	m[n] = value
+}
+
+func flattenValuesMap(m map[int]string) []string {
+	indexes := make([]int, 0, len(m))
+	for n := range m {
+		indexes = append(indexes, n)
+	}
+
+	sort.Ints(indexes)
+
+	out := make([]string, 0, len(indexes))
+	for _, n := range indexes {
+		out = append(out, m[n])
+	}
+
+	return out
+}
+
+// parseRulePrioritiesFromForm reads RulePriorities.member.N.{RuleArn,Priority}.
+func parseRulePrioritiesFromForm(form map[string][]string) map[string]string {
+	type entry struct {
+		arn      string
+		priority string
+	}
+
+	byIdx := make(map[int]*entry)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, "RulePriorities.member.")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		dot := strings.Index(suffix, ".")
+		if dot < 0 {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix[:dot])
+		if err != nil {
+			continue
+		}
+
+		ent, exists := byIdx[n]
+		if !exists {
+			ent = &entry{}
+			byIdx[n] = ent
+		}
+
+		switch suffix[dot+1:] {
+		case "RuleArn":
+			ent.arn = values[0]
+		case "Priority":
+			ent.priority = values[0]
+		}
+	}
+
+	out := make(map[string]string)
+
+	for _, ent := range byIdx {
+		if ent.arn != "" {
+			out[ent.arn] = ent.priority
+		}
+	}
+
+	return out
+}
+
+// convertRuleToXML converts a Rule to its XML form.
+func convertRuleToXML(rule *Rule) XMLRule {
+	conds := make([]XMLRuleCondition, 0, len(rule.Conditions))
+	for _, c := range rule.Conditions {
+		conds = append(conds, XMLRuleCondition{
+			Field:  c.Field,
+			Values: XMLRuleValues{Members: append([]string(nil), c.Values...)},
+		})
+	}
+
+	actions := make([]XMLAction, 0, len(rule.Actions))
+	for _, a := range rule.Actions {
+		actions = append(actions, XMLAction(a))
+	}
+
+	return XMLRule{
+		RuleArn:    rule.RuleArn,
+		Priority:   rule.Priority,
+		Conditions: XMLRuleConditions{Members: conds},
+		Actions:    XMLActions{Members: actions},
+		IsDefault:  rule.IsDefault,
+	}
+}
+
+func convertRulesToXML(rules []Rule) []XMLRule {
+	out := make([]XMLRule, 0, len(rules))
+	for i := range rules {
+		out = append(out, convertRuleToXML(&rules[i]))
+	}
+
+	return out
+}
+
 // DispatchAction routes the request to the appropriate handler based on Action parameter.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	action := extractAction(r)
@@ -350,6 +774,11 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"DeregisterTargets":     s.DeregisterTargets,
 		"CreateListener":        s.CreateListener,
 		"DeleteListener":        s.DeleteListener,
+		"CreateRule":            s.CreateRule,
+		"DescribeRules":         s.DescribeRules,
+		"ModifyRule":            s.ModifyRule,
+		"DeleteRule":            s.DeleteRule,
+		"SetRulePriorities":     s.SetRulePriorities,
 	}
 
 	return handlers[action]

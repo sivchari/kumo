@@ -69,6 +69,7 @@ type Listener struct {
 	Port            int
 	Protocol        string
 	DefaultActions  []Action
+	Rules           []Rule
 }
 
 // Action represents a listener action.
@@ -76,6 +77,24 @@ type Action struct {
 	Type           string
 	TargetGroupArn string
 	Order          int
+}
+
+// Rule represents a listener rule for path/host-based routing.
+type Rule struct {
+	RuleArn    string
+	Priority   string // AWS treats priority as string ("default" or 1-50000)
+	Conditions []RuleCondition
+	Actions    []Action
+	IsDefault  bool
+}
+
+// RuleCondition represents one condition on a rule (host-header,
+// path-pattern, http-header, etc.). Field + Values is the legacy form;
+// modern SDKs may also send <Field>Config.Values.member.N. The handler
+// accepts both and stores them in Field/Values.
+type RuleCondition struct {
+	Field  string
+	Values []string
 }
 
 // Target represents a target in a target group.
@@ -386,6 +405,99 @@ type XMLAction struct {
 	Type           string `xml:"Type"`
 	TargetGroupArn string `xml:"TargetGroupArn,omitempty"`
 	Order          int    `xml:"Order,omitempty"`
+}
+
+// XMLCreateRuleResponse is the XML response for CreateRule.
+type XMLCreateRuleResponse struct {
+	XMLName          xml.Name            `xml:"CreateRuleResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	Result           XMLCreateRuleResult `xml:"CreateRuleResult"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLCreateRuleResult contains the created rules.
+type XMLCreateRuleResult struct {
+	Rules XMLRules `xml:"Rules"`
+}
+
+// XMLDescribeRulesResponse is the XML response for DescribeRules.
+type XMLDescribeRulesResponse struct {
+	XMLName          xml.Name               `xml:"DescribeRulesResponse"`
+	Xmlns            string                 `xml:"xmlns,attr"`
+	Result           XMLDescribeRulesResult `xml:"DescribeRulesResult"`
+	ResponseMetadata XMLResponseMetadata    `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeRulesResult contains the listed rules.
+type XMLDescribeRulesResult struct {
+	Rules XMLRules `xml:"Rules"`
+}
+
+// XMLModifyRuleResponse is the XML response for ModifyRule.
+type XMLModifyRuleResponse struct {
+	XMLName          xml.Name            `xml:"ModifyRuleResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	Result           XMLModifyRuleResult `xml:"ModifyRuleResult"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLModifyRuleResult contains the modified rule.
+type XMLModifyRuleResult struct {
+	Rules XMLRules `xml:"Rules"`
+}
+
+// XMLDeleteRuleResponse is the XML response for DeleteRule.
+type XMLDeleteRuleResponse struct {
+	XMLName          xml.Name            `xml:"DeleteRuleResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	Result           XMLDeleteRuleResult `xml:"DeleteRuleResult"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLDeleteRuleResult is an empty result for DeleteRule.
+type XMLDeleteRuleResult struct{}
+
+// XMLSetRulePrioritiesResponse is the XML response for SetRulePriorities.
+type XMLSetRulePrioritiesResponse struct {
+	XMLName          xml.Name                   `xml:"SetRulePrioritiesResponse"`
+	Xmlns            string                     `xml:"xmlns,attr"`
+	Result           XMLSetRulePrioritiesResult `xml:"SetRulePrioritiesResult"`
+	ResponseMetadata XMLResponseMetadata        `xml:"ResponseMetadata"`
+}
+
+// XMLSetRulePrioritiesResult contains the rules with their new priorities.
+type XMLSetRulePrioritiesResult struct {
+	Rules XMLRules `xml:"Rules"`
+}
+
+// XMLRules contains a list of rules.
+type XMLRules struct {
+	Members []XMLRule `xml:"member"`
+}
+
+// XMLRule represents a rule in XML format.
+type XMLRule struct {
+	RuleArn    string            `xml:"RuleArn"`
+	Priority   string            `xml:"Priority"`
+	Conditions XMLRuleConditions `xml:"Conditions"`
+	Actions    XMLActions        `xml:"Actions"`
+	IsDefault  bool              `xml:"IsDefault"`
+}
+
+// XMLRuleConditions contains a list of conditions.
+type XMLRuleConditions struct {
+	Members []XMLRuleCondition `xml:"member"`
+}
+
+// XMLRuleCondition represents a condition in XML format.
+type XMLRuleCondition struct {
+	Field  string        `xml:"Field"`
+	Values XMLRuleValues `xml:"Values"`
+}
+
+// XMLRuleValues contains a list of values for a condition.
+type XMLRuleValues struct {
+	Members []string `xml:"member"`
 }
 
 // XMLResponseMetadata contains response metadata.

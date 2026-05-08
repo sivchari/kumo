@@ -33,6 +33,12 @@ type Storage interface {
 
 	CreateListener(ctx context.Context, req *CreateListenerRequest) (*Listener, error)
 	DeleteListener(ctx context.Context, listenerArn string) error
+
+	CreateRule(ctx context.Context, listenerArn, priority string, conditions []RuleCondition, actions []Action) (*Rule, error)
+	DescribeRules(ctx context.Context, listenerArn string, ruleArns []string) ([]Rule, error)
+	ModifyRule(ctx context.Context, ruleArn string, conditions []RuleCondition, actions []Action) (*Rule, error)
+	DeleteRule(ctx context.Context, ruleArn string) error
+	SetRulePriorities(ctx context.Context, priorities map[string]string) ([]Rule, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -609,4 +615,158 @@ func (m *MemoryStorage) DeleteListener(_ context.Context, listenerArn string) er
 	delete(m.Listeners, listenerArn)
 
 	return nil
+}
+
+// CreateRule attaches a new rule to a listener.
+func (m *MemoryStorage) CreateRule(_ context.Context, listenerArn, priority string, conditions []RuleCondition, actions []Action) (*Rule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	listener, ok := m.Listeners[listenerArn]
+	if !ok {
+		return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + listenerArn + "' not found"}
+	}
+
+	rule := Rule{
+		RuleArn:    listenerArn + "/" + uuidLite(),
+		Priority:   priority,
+		Conditions: append([]RuleCondition(nil), conditions...),
+		Actions:    append([]Action(nil), actions...),
+		IsDefault:  false,
+	}
+	listener.Rules = append(listener.Rules, rule)
+
+	return &listener.Rules[len(listener.Rules)-1], nil
+}
+
+// DescribeRules returns rules for a listener (or specific rule ARNs across
+// all listeners).
+func (m *MemoryStorage) DescribeRules(_ context.Context, listenerArn string, ruleArns []string) ([]Rule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]Rule, 0)
+
+	if listenerArn != "" {
+		listener, ok := m.Listeners[listenerArn]
+		if !ok {
+			return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + listenerArn + "' not found"}
+		}
+
+		out = append(out, defaultRuleFor(listener))
+		out = append(out, listener.Rules...)
+
+		return out, nil
+	}
+
+	if len(ruleArns) == 0 {
+		return out, nil
+	}
+
+	for _, listener := range m.Listeners {
+		for _, rule := range listener.Rules {
+			for _, want := range ruleArns {
+				if rule.RuleArn == want {
+					out = append(out, rule)
+				}
+			}
+		}
+	}
+
+	return out, nil
+}
+
+// defaultRuleFor synthesizes the implicit default rule that AWS surfaces
+// alongside explicitly-created rules.
+func defaultRuleFor(listener *Listener) Rule {
+	return Rule{
+		RuleArn:   listener.ListenerArn + "/default",
+		Priority:  "default",
+		Actions:   append([]Action(nil), listener.DefaultActions...),
+		IsDefault: true,
+	}
+}
+
+// ModifyRule replaces the conditions and/or actions on a rule. nil slices
+// leave the corresponding field as-is, matching AWS one-field-per-call
+// semantics.
+func (m *MemoryStorage) ModifyRule(_ context.Context, ruleArn string, conditions []RuleCondition, actions []Action) (*Rule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, listener := range m.Listeners {
+		for i := range listener.Rules {
+			if listener.Rules[i].RuleArn != ruleArn {
+				continue
+			}
+
+			if conditions != nil {
+				listener.Rules[i].Conditions = append([]RuleCondition(nil), conditions...)
+			}
+
+			if actions != nil {
+				listener.Rules[i].Actions = append([]Action(nil), actions...)
+			}
+
+			return &listener.Rules[i], nil
+		}
+	}
+
+	return nil, &Error{Code: "RuleNotFound", Message: "Rule '" + ruleArn + "' not found"}
+}
+
+// DeleteRule removes a rule by ARN.
+func (m *MemoryStorage) DeleteRule(_ context.Context, ruleArn string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, listener := range m.Listeners {
+		for i := range listener.Rules {
+			if listener.Rules[i].RuleArn == ruleArn {
+				listener.Rules = append(listener.Rules[:i], listener.Rules[i+1:]...)
+
+				return nil
+			}
+		}
+	}
+
+	return &Error{Code: "RuleNotFound", Message: "Rule '" + ruleArn + "' not found"}
+}
+
+// SetRulePriorities updates the priorities of one or more rules atomically.
+func (m *MemoryStorage) SetRulePriorities(_ context.Context, priorities map[string]string) ([]Rule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	updated := make([]Rule, 0, len(priorities))
+
+	for arn, prio := range priorities {
+		found := false
+
+		for _, listener := range m.Listeners {
+			for i := range listener.Rules {
+				if listener.Rules[i].RuleArn == arn {
+					listener.Rules[i].Priority = prio
+					updated = append(updated, listener.Rules[i])
+					found = true
+
+					break
+				}
+			}
+
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			return nil, &Error{Code: "RuleNotFound", Message: "Rule '" + arn + "' not found"}
+		}
+	}
+
+	return updated, nil
+}
+
+func uuidLite() string {
+	return fmt.Sprintf("rule-%d", time.Now().UnixNano())
 }
