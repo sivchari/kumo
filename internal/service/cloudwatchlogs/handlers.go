@@ -322,6 +322,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.PutRetentionPolicy(w, r)
 	case "DeleteRetentionPolicy":
 		s.DeleteRetentionPolicy(w, r)
+	case "ListTagsForResource", "ListTagsLogGroup",
+		"TagResource", "UntagResource",
+		"TagLogGroup", "UntagLogGroup":
+		// Tags are not modeled; respond as no-op so AWS SDK clients
+		// reading state after CreateLogGroup do not see InvalidAction.
+		writeEmptyResponse(w)
 	default:
 		writeLogsError(w, errInvalidAction, "The action "+action+" is not valid for this web service", http.StatusBadRequest)
 	}
