@@ -73,10 +73,12 @@ func (s *Service) Actions() []string {
 		"DescribeTargetHealth",
 		"ModifyListener",
 		"DescribeListeners",
-		"github.com/sivchari/kumo/internal/service",
-		"os",
-		"io",
-		"fmt",
+		"DescribeTags",
+		"AddTags",
+		"RemoveTags",
+		"DescribeCapacityReservation",
+		"DescribeListenerAttributes",
+		"ModifyListenerAttributes",
 	}
 }
 

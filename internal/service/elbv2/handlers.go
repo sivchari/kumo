@@ -844,9 +844,129 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"DescribeListeners":              s.DescribeListeners,
 		"ModifyListener":                 s.ModifyListener,
 		"DescribeTargetHealth":           s.DescribeTargetHealth,
+		"DescribeTags":                   s.DescribeTags,
+		"AddTags":                        s.tagsNoOp,
+		"RemoveTags":                     s.tagsNoOp,
+		"DescribeCapacityReservation":    s.DescribeCapacityReservation,
+		"DescribeListenerAttributes":     s.DescribeListenerAttributes,
+		"ModifyListenerAttributes":       s.DescribeListenerAttributes,
 	}
 
 	return handlers[action]
+}
+
+// xmlDescribeTagsResponse is the wire shape for DescribeTags.
+type xmlDescribeTagsResponse struct {
+	XMLName            xml.Name              `xml:"DescribeTagsResponse"`
+	Xmlns              string                `xml:"xmlns,attr"`
+	DescribeTagsResult xmlDescribeTagsResult `xml:"DescribeTagsResult"`
+	ResponseMetadata   XMLResponseMetadata   `xml:"ResponseMetadata"`
+}
+
+type xmlDescribeTagsResult struct {
+	TagDescriptions xmlTagDescriptions `xml:"TagDescriptions"`
+}
+
+type xmlTagDescriptions struct {
+	Members []xmlTagDescription `xml:"member"`
+}
+
+type xmlTagDescription struct {
+	ResourceArn string          `xml:"ResourceArn"`
+	Tags        xmlEmptyMembers `xml:"Tags"`
+}
+
+type xmlEmptyMembers struct {
+	Members []struct{} `xml:"member"`
+}
+
+// DescribeTags returns empty tag descriptions for each ResourceArn.N. The
+// AWS provider calls this on every read to surface tags to the user; we
+// don't model them yet but must echo the requested ARNs back.
+func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+
+	descs := make([]xmlTagDescription, 0)
+
+	for i := 1; ; i++ {
+		key := fmt.Sprintf("ResourceArns.member.%d", i)
+
+		arn := r.Form.Get(key)
+		if arn == "" {
+			break
+		}
+
+		descs = append(descs, xmlTagDescription{ResourceArn: arn})
+	}
+
+	writeELBXMLResponse(w, xmlDescribeTagsResponse{
+		Xmlns:              elbXMLNS,
+		DescribeTagsResult: xmlDescribeTagsResult{TagDescriptions: xmlTagDescriptions{Members: descs}},
+		ResponseMetadata:   XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// xmlDescribeCapacityReservationResponse mirrors the wire shape AWS returns
+// when no capacity reservation is configured.
+type xmlDescribeCapacityReservationResponse struct {
+	XMLName                           xml.Name                     `xml:"DescribeCapacityReservationResponse"`
+	Xmlns                             string                       `xml:"xmlns,attr"`
+	DescribeCapacityReservationResult xmlCapacityReservationResult `xml:"DescribeCapacityReservationResult"`
+	ResponseMetadata                  XMLResponseMetadata          `xml:"ResponseMetadata"`
+}
+
+type xmlCapacityReservationResult struct {
+	LastModifiedTime          string          `xml:"LastModifiedTime,omitempty"`
+	DecreaseRequestsRemaining int             `xml:"DecreaseRequestsRemaining"`
+	CapacityReservationState  xmlEmptyMembers `xml:"CapacityReservationState"`
+}
+
+// DescribeCapacityReservation returns an empty capacity reservation block.
+// The AWS provider reads this on every load balancer read; we don't model
+// reserved capacity, so we omit MinimumLoadBalancerCapacity entirely (a
+// CapacityUnits=0 child block triggers perpetual drift).
+func (s *Service) DescribeCapacityReservation(w http.ResponseWriter, _ *http.Request) {
+	writeELBXMLResponse(w, xmlDescribeCapacityReservationResponse{
+		Xmlns:            elbXMLNS,
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// xmlDescribeListenerAttrResponse is shared by Describe and Modify
+// ListenerAttributes; the wrapping element name differs but the body shape
+// is identical.
+type xmlDescribeListenerAttrResponse struct {
+	XMLName          xml.Name              `xml:"DescribeListenerAttributesResponse"`
+	Xmlns            string                `xml:"xmlns,attr"`
+	Result           xmlListenerAttrResult `xml:"DescribeListenerAttributesResult"`
+	ResponseMetadata XMLResponseMetadata   `xml:"ResponseMetadata"`
+}
+
+type xmlListenerAttrResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
+}
+
+// DescribeListenerAttributes returns an empty attribute set. Listener
+// attributes are not modeled but the AWS provider reads them on every
+// listener refresh.
+func (s *Service) DescribeListenerAttributes(w http.ResponseWriter, _ *http.Request) {
+	writeELBXMLResponse(w, xmlDescribeListenerAttrResponse{
+		Xmlns:            elbXMLNS,
+		Result:           xmlListenerAttrResult{Attributes: XMLAttributePairs{Members: []XMLAttributePair{}}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// tagsNoOp accepts AddTags / RemoveTags as a no-op success response.
+func (s *Service) tagsNoOp(w http.ResponseWriter, _ *http.Request) {
+	writeELBXMLResponse(w, struct {
+		XMLName          xml.Name            `xml:"AddTagsResponse"`
+		Xmlns            string              `xml:"xmlns,attr"`
+		ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+	}{
+		Xmlns:            elbXMLNS,
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // Helper functions.
