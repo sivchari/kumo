@@ -1325,6 +1325,7 @@ func (m *MemoryStorage) DescribeTags(_ context.Context, filters map[string][]str
 		if descriptions[i].ResourceID != descriptions[j].ResourceID {
 			return descriptions[i].ResourceID < descriptions[j].ResourceID
 		}
+
 		return descriptions[i].Key < descriptions[j].Key
 	})
 
