@@ -89,6 +89,10 @@ func (s *Service) Actions() []string {
 		// NAT Gateway operations
 		"CreateNatGateway",
 		"DescribeNatGateways",
+		// Tag operations
+		"CreateTags",
+		"DeleteTags",
+		"DescribeTags",
 	}
 }
 

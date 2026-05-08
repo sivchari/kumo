@@ -753,3 +753,70 @@ type XMLDescribeNatGatewaysResponse struct {
 type XMLNatGatewaySet struct {
 	Items []XMLNatGateway `xml:"item"`
 }
+
+// TagDescription represents a tag association with a resource.
+type TagDescription struct {
+	ResourceID   string
+	ResourceType string
+	Key          string
+	Value        string
+}
+
+// CreateTagsRequest represents a CreateTags request.
+type CreateTagsRequest struct {
+	Resources []string
+	Tags      []Tag
+}
+
+// DeleteTagsRequest represents a DeleteTags request.
+type DeleteTagsRequest struct {
+	Resources []string
+	// Tags lists the tags to remove. An empty slice removes all tags from the
+	// listed resources. A tag with an empty Value removes the tag for any value.
+	Tags []Tag
+}
+
+// DescribeTagsRequest represents a DescribeTags request.
+type DescribeTagsRequest struct {
+	// Filters supports the standard EC2 tag filters: resource-id, resource-type,
+	// key, value, tag:<key>. Only resource-id and key are honored today; the rest
+	// are accepted but ignored.
+	Filters map[string][]string
+}
+
+// XMLCreateTagsResponse is the XML response for CreateTags.
+type XMLCreateTagsResponse struct {
+	XMLName   xml.Name `xml:"CreateTagsResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLDeleteTagsResponse is the XML response for DeleteTags.
+type XMLDeleteTagsResponse struct {
+	XMLName   xml.Name `xml:"DeleteTagsResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLDescribeTagsResponse is the XML response for DescribeTags.
+type XMLDescribeTagsResponse struct {
+	XMLName   xml.Name             `xml:"DescribeTagsResponse"`
+	Xmlns     string               `xml:"xmlns,attr"`
+	RequestID string               `xml:"requestId"`
+	TagSet    XMLTagDescriptionSet `xml:"tagSet"`
+}
+
+// XMLTagDescriptionSet contains a list of tag descriptions.
+type XMLTagDescriptionSet struct {
+	Items []XMLTagDescription `xml:"item"`
+}
+
+// XMLTagDescription represents a tag description in XML format.
+type XMLTagDescription struct {
+	ResourceID   string `xml:"resourceId"`
+	ResourceType string `xml:"resourceType"`
+	Key          string `xml:"key"`
+	Value        string `xml:"value"`
+}

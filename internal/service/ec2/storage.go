@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,6 +102,11 @@ type Storage interface {
 	// NAT Gateway operations
 	CreateNatGateway(ctx context.Context, req *CreateNatGatewayRequest) (*NatGateway, error)
 	DescribeNatGateways(ctx context.Context, natgwIDs []string) ([]*NatGateway, error)
+
+	// Tag operations
+	CreateTags(ctx context.Context, resourceIDs []string, tags []Tag) error
+	DeleteTags(ctx context.Context, resourceIDs []string, tags []Tag) error
+	DescribeTags(ctx context.Context, filters map[string][]string) ([]TagDescription, error)
 }
 
 // InstanceStateChange represents an instance state change.
@@ -1232,4 +1238,257 @@ func containsString(slice []string, s string) bool {
 	}
 
 	return false
+}
+
+// CreateTags adds or overwrites tags on the listed resources.
+func (m *MemoryStorage) CreateTags(_ context.Context, resourceIDs []string, tags []Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, id := range resourceIDs {
+		current, _, err := m.lookupTagsLocked(id)
+		if err != nil {
+			return err
+		}
+
+		updated := mergeTags(current, tags)
+
+		if err := m.setTagsLocked(id, updated); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// DeleteTags removes the listed tags from the resources. An empty tag list
+// removes all tags. A tag with an empty Value matches any value.
+func (m *MemoryStorage) DeleteTags(_ context.Context, resourceIDs []string, tags []Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, id := range resourceIDs {
+		current, _, err := m.lookupTagsLocked(id)
+		if err != nil {
+			return err
+		}
+
+		var updated []Tag
+		if len(tags) == 0 {
+			updated = nil
+		} else {
+			updated = removeTags(current, tags)
+		}
+
+		if err := m.setTagsLocked(id, updated); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// DescribeTags returns all tags across all resources, optionally filtered by
+// resource-id or key. Other filters are accepted for compatibility but ignored.
+func (m *MemoryStorage) DescribeTags(_ context.Context, filters map[string][]string) ([]TagDescription, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	resourceIDs := filters["resource-id"]
+	keys := filters["key"]
+
+	descriptions := make([]TagDescription, 0)
+
+	for id, getTags := range m.tagSourcesLocked() {
+		if len(resourceIDs) > 0 && !containsString(resourceIDs, id) {
+			continue
+		}
+
+		resourceType := resourceTypeForID(id)
+
+		for _, t := range getTags() {
+			if len(keys) > 0 && !containsString(keys, t.Key) {
+				continue
+			}
+
+			descriptions = append(descriptions, TagDescription{
+				ResourceID:   id,
+				ResourceType: resourceType,
+				Key:          t.Key,
+				Value:        t.Value,
+			})
+		}
+	}
+
+	return descriptions, nil
+}
+
+// lookupTagsLocked returns the current tags and a setter for the resource ID.
+// The caller must hold the appropriate lock.
+func (m *MemoryStorage) lookupTagsLocked(id string) ([]Tag, func([]Tag), error) {
+	if vpc, ok := m.Vpcs[id]; ok {
+		return vpc.Tags, func(t []Tag) { vpc.Tags = t }, nil
+	}
+
+	if subnet, ok := m.Subnets[id]; ok {
+		return subnet.Tags, func(t []Tag) { subnet.Tags = t }, nil
+	}
+
+	if igw, ok := m.InternetGateways[id]; ok {
+		return igw.Tags, func(t []Tag) { igw.Tags = t }, nil
+	}
+
+	if rt, ok := m.RouteTables[id]; ok {
+		return rt.Tags, func(t []Tag) { rt.Tags = t }, nil
+	}
+
+	if natgw, ok := m.NatGateways[id]; ok {
+		return natgw.Tags, func(t []Tag) { natgw.Tags = t }, nil
+	}
+
+	if inst, ok := m.Instances[id]; ok {
+		return inst.Tags, func(t []Tag) { inst.Tags = t }, nil
+	}
+
+	if sg, ok := m.SecurityGroups[id]; ok {
+		return sg.Tags, func(t []Tag) { sg.Tags = t }, nil
+	}
+
+	if kp, ok := m.KeyPairs[id]; ok {
+		return kp.Tags, func(t []Tag) { kp.Tags = t }, nil
+	}
+
+	return nil, nil, &Error{
+		Code:    "InvalidID",
+		Message: fmt.Sprintf("The ID '%s' is not valid", id),
+	}
+}
+
+func (m *MemoryStorage) setTagsLocked(id string, tags []Tag) error {
+	_, set, err := m.lookupTagsLocked(id)
+	if err != nil {
+		return err
+	}
+
+	set(tags)
+
+	return nil
+}
+
+// tagSourcesLocked returns a map of resource-id to a closure returning that
+// resource's tag list. Used to iterate every taggable resource.
+func (m *MemoryStorage) tagSourcesLocked() map[string]func() []Tag {
+	out := make(map[string]func() []Tag)
+
+	for id, v := range m.Vpcs {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	for id, v := range m.Subnets {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	for id, v := range m.InternetGateways {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	for id, v := range m.RouteTables {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	for id, v := range m.NatGateways {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	for id, v := range m.Instances {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	for id, v := range m.SecurityGroups {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	for id, v := range m.KeyPairs {
+		out[id] = func() []Tag { return v.Tags }
+	}
+
+	return out
+}
+
+// resourceTypePrefixes maps EC2 resource ID prefixes to their resource-type
+// strings. Order does not matter; longer-prefix matches are not required since
+// EC2 prefixes do not collide.
+var resourceTypePrefixes = map[string]string{
+	"vpc-":    "vpc",
+	"subnet-": "subnet",
+	"igw-":    "internet-gateway",
+	"rtb-":    "route-table",
+	"nat-":    "natgateway",
+	"i-":      "instance",
+	"sg-":     "security-group",
+	"key-":    "key-pair",
+}
+
+// resourceTypeForID maps an EC2 resource ID prefix to its resource-type string.
+func resourceTypeForID(id string) string {
+	for prefix, rtype := range resourceTypePrefixes {
+		if strings.HasPrefix(id, prefix) {
+			return rtype
+		}
+	}
+
+	return ""
+}
+
+// mergeTags upserts new tags into existing, replacing values for matching keys.
+func mergeTags(existing, incoming []Tag) []Tag {
+	merged := make([]Tag, 0, len(existing)+len(incoming))
+	merged = append(merged, existing...)
+
+	for _, t := range incoming {
+		replaced := false
+
+		for i, e := range merged {
+			if e.Key == t.Key {
+				merged[i].Value = t.Value
+				replaced = true
+
+				break
+			}
+		}
+
+		if !replaced {
+			merged = append(merged, t)
+		}
+	}
+
+	return merged
+}
+
+// removeTags returns existing minus any matches in toRemove. A toRemove entry
+// with an empty Value matches all values for that key.
+func removeTags(existing, toRemove []Tag) []Tag {
+	out := make([]Tag, 0, len(existing))
+
+	for _, e := range existing {
+		drop := false
+
+		for _, r := range toRemove {
+			if r.Key != e.Key {
+				continue
+			}
+
+			if r.Value == "" || r.Value == e.Value {
+				drop = true
+
+				break
+			}
+		}
+
+		if !drop {
+			out = append(out, e)
+		}
+	}
+
+	return out
 }

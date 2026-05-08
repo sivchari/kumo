@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -843,6 +845,251 @@ func (s *Service) DescribeNatGateways(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CreateTags handles the CreateTags action.
+func (s *Service) CreateTags(w http.ResponseWriter, r *http.Request) {
+	resources, tags, err := readTagRequestForm(r)
+	if err != nil {
+		writeError(w, errInvalidParameter, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	if len(resources) == 0 {
+		writeError(w, errInvalidParameter, "ResourceId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(tags) == 0 {
+		writeError(w, errInvalidParameter, "Tag is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.CreateTags(r.Context(), resources, tags); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeEC2XMLResponse(w, XMLCreateTagsResponse{
+		Xmlns:     ec2XMLNS,
+		RequestID: uuid.New().String(),
+		Return:    true,
+	})
+}
+
+// DeleteTags handles the DeleteTags action.
+func (s *Service) DeleteTags(w http.ResponseWriter, r *http.Request) {
+	resources, tags, err := readTagRequestForm(r)
+	if err != nil {
+		writeError(w, errInvalidParameter, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	if len(resources) == 0 {
+		writeError(w, errInvalidParameter, "ResourceId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.DeleteTags(r.Context(), resources, tags); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeEC2XMLResponse(w, XMLDeleteTagsResponse{
+		Xmlns:     ec2XMLNS,
+		RequestID: uuid.New().String(),
+		Return:    true,
+	})
+}
+
+// DescribeTags handles the DescribeTags action.
+func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	filters := parseFiltersFromForm(r.Form)
+
+	descriptions, err := s.storage.DescribeTags(r.Context(), filters)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	items := make([]XMLTagDescription, 0, len(descriptions))
+	for _, d := range descriptions {
+		items = append(items, XMLTagDescription(d))
+	}
+
+	writeEC2XMLResponse(w, XMLDescribeTagsResponse{
+		Xmlns:     ec2XMLNS,
+		RequestID: uuid.New().String(),
+		TagSet:    XMLTagDescriptionSet{Items: items},
+	})
+}
+
+// readTagRequestForm extracts ResourceId.N and Tag.N.Key/Value pairs from the
+// already-parsed AWS Query form. The Query dispatcher calls ParseForm before
+// dispatch, but ParseForm is idempotent, so calling it again is safe.
+func readTagRequestForm(r *http.Request) ([]string, []Tag, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse form: %w", err)
+	}
+
+	resources := parseIndexedListFromForm(r.Form, "ResourceId")
+	tags := parseTagsFromForm(r.Form, "Tag")
+
+	return resources, tags, nil
+}
+
+// parseIndexedListFromForm returns values for keys of the form "<prefix>.N",
+// ordered by N. Indexes start at 1 in AWS Query but we tolerate any positive
+// integer. Missing indexes are skipped.
+func parseIndexedListFromForm(form map[string][]string, prefix string) []string {
+	type entry struct {
+		idx int
+		val string
+	}
+
+	entries := make([]entry, 0)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, prefix+".")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		// Reject nested keys like "Tag.1.Key" — only direct numeric suffix counts.
+		if strings.Contains(suffix, ".") {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+
+		entries = append(entries, entry{idx: n, val: values[0]})
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].idx < entries[j].idx })
+
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.val)
+	}
+
+	return out
+}
+
+// parseTagsFromForm reads "<prefix>.N.Key" and "<prefix>.N.Value" pairs.
+// A missing Value is treated as empty string.
+func parseTagsFromForm(form map[string][]string, prefix string) []Tag {
+	keysByIdx := make(map[int]string)
+	valsByIdx := make(map[int]string)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, prefix+".")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		dot := strings.Index(suffix, ".")
+		if dot < 0 {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix[:dot])
+		if err != nil {
+			continue
+		}
+
+		switch suffix[dot+1:] {
+		case "Key":
+			keysByIdx[n] = values[0]
+		case "Value":
+			valsByIdx[n] = values[0]
+		}
+	}
+
+	indexes := make([]int, 0, len(keysByIdx))
+	for n := range keysByIdx {
+		indexes = append(indexes, n)
+	}
+
+	sort.Ints(indexes)
+
+	tags := make([]Tag, 0, len(indexes))
+	for _, n := range indexes {
+		tags = append(tags, Tag{Key: keysByIdx[n], Value: valsByIdx[n]})
+	}
+
+	return tags
+}
+
+// parseFiltersFromForm reads "Filter.N.Name" and "Filter.N.Value.M" entries
+// into a Name -> []Value map.
+func parseFiltersFromForm(form map[string][]string) map[string][]string {
+	type filterAcc struct {
+		name   string
+		values []string
+	}
+
+	byIdx := make(map[int]*filterAcc)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, "Filter.")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		dot := strings.Index(suffix, ".")
+		if dot < 0 {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix[:dot])
+		if err != nil {
+			continue
+		}
+
+		field := suffix[dot+1:]
+
+		entry, ok := byIdx[n]
+		if !ok {
+			entry = &filterAcc{}
+			byIdx[n] = entry
+		}
+
+		switch {
+		case field == "Name":
+			entry.name = values[0]
+		case strings.HasPrefix(field, "Value."):
+			entry.values = append(entry.values, values[0])
+		}
+	}
+
+	out := make(map[string][]string)
+
+	for _, entry := range byIdx {
+		if entry.name == "" {
+			continue
+		}
+
+		out[entry.name] = append(out[entry.name], entry.values...)
+	}
+
+	return out
+}
+
 // DispatchAction routes the request to the appropriate handler based on Action parameter.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	action := extractAction(r)
@@ -895,6 +1142,10 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		// NAT gateway operations
 		"CreateNatGateway":    s.CreateNatGateway,
 		"DescribeNatGateways": s.DescribeNatGateways,
+		// Tag operations
+		"CreateTags":   s.CreateTags,
+		"DeleteTags":   s.DeleteTags,
+		"DescribeTags": s.DescribeTags,
 	}
 
 	return handlers[action]
