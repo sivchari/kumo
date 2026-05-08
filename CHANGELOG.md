@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.18.2](https://github.com/sivchari/kumo/compare/v0.18.1...v0.18.2) - 2026-05-08
+- fix(s3): clean URL path to prevent 301 redirects and sort GetObjectTagging response by @sivchari in https://github.com/sivchari/kumo/pull/545
+- release v0.18.2 by @sivchari in https://github.com/sivchari/kumo/pull/544
+
 ## [v0.18.1](https://github.com/sivchari/kumo/compare/v0.18.0...v0.18.1) - 2026-05-08
 - fix(dynamodb): return HTTP 400 for ConditionalCheckFailedException by @sivchari in https://github.com/sivchari/kumo/pull/541
 - release v0.18.1 by @sivchari in https://github.com/sivchari/kumo/pull/542
