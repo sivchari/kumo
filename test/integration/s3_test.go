@@ -1557,3 +1557,101 @@ func TestS3_BucketEncryption(t *testing.T) {
 		t.Fatal("expected ServerSideEncryptionConfigurationNotFoundError after delete, got nil")
 	}
 }
+
+func TestS3_BucketSubresourceStubs_DefaultResponses(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-subresource-defaults"
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	if _, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Errorf("GetBucketAcl: unexpected error: %v", err)
+	}
+
+	loc, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{Bucket: aws.String(bucket)})
+	if err != nil {
+		t.Errorf("GetBucketLocation: unexpected error: %v", err)
+	} else if string(loc.LocationConstraint) != "us-east-1" {
+		t.Errorf("LocationConstraint = %q, want %q", loc.LocationConstraint, "us-east-1")
+	}
+
+	if _, err := client.GetBucketLogging(ctx, &s3.GetBucketLoggingInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Errorf("GetBucketLogging: unexpected error: %v", err)
+	}
+
+	if _, err := client.GetBucketAccelerateConfiguration(ctx, &s3.GetBucketAccelerateConfigurationInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Errorf("GetBucketAccelerateConfiguration: unexpected error: %v", err)
+	}
+
+	pay, err := client.GetBucketRequestPayment(ctx, &s3.GetBucketRequestPaymentInput{Bucket: aws.String(bucket)})
+	if err != nil {
+		t.Errorf("GetBucketRequestPayment: unexpected error: %v", err)
+	} else if string(pay.Payer) != "BucketOwner" {
+		t.Errorf("Payer = %q, want %q", pay.Payer, "BucketOwner")
+	}
+}
+
+func TestS3_BucketSubresourceStubs_NoSuchErrors(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-subresource-nosuch"
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{"GetBucketPolicy", func() error {
+			_, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
+
+			return err
+		}},
+		{"GetBucketCors", func() error {
+			_, err := client.GetBucketCors(ctx, &s3.GetBucketCorsInput{Bucket: aws.String(bucket)})
+
+			return err
+		}},
+		{"GetBucketLifecycleConfiguration", func() error {
+			_, err := client.GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{Bucket: aws.String(bucket)})
+
+			return err
+		}},
+		{"GetBucketWebsite", func() error {
+			_, err := client.GetBucketWebsite(ctx, &s3.GetBucketWebsiteInput{Bucket: aws.String(bucket)})
+
+			return err
+		}},
+		{"GetBucketReplication", func() error {
+			_, err := client.GetBucketReplication(ctx, &s3.GetBucketReplicationInput{Bucket: aws.String(bucket)})
+
+			return err
+		}},
+		{"GetBucketTagging", func() error {
+			_, err := client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{Bucket: aws.String(bucket)})
+
+			return err
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.call(); err == nil {
+				t.Fatalf("%s: expected NoSuch* error, got nil", tc.name)
+			}
+		})
+	}
+}

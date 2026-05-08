@@ -130,7 +130,128 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if handled := s.serveBucketSubresourceStub(w, r); handled {
+		return
+	}
+
 	s.ListObjects(w, r)
+}
+
+// serveBucketSubresourceStub handles GET requests for bucket sub-resources that
+// kumo does not model. Some sub-resources (acl, location, logging, accelerate,
+// requestPayment) always return a default response in real S3; others return a
+// specific NoSuch* error code. Returns true when the request was handled.
+func (s *Service) serveBucketSubresourceStub(w http.ResponseWriter, r *http.Request) bool {
+	q := r.URL.Query()
+
+	switch {
+	case q.Has("acl"):
+		writeXMLResponse(w, defaultBucketACL())
+	case q.Has("location"):
+		writeXMLResponse(w, struct {
+			XMLName xml.Name `xml:"LocationConstraint"`
+			Xmlns   string   `xml:"xmlns,attr,omitempty"`
+			Value   string   `xml:",chardata"`
+		}{Xmlns: s3Namespace, Value: "us-east-1"})
+	case q.Has("logging"):
+		writeXMLResponse(w, struct {
+			XMLName xml.Name `xml:"BucketLoggingStatus"`
+			Xmlns   string   `xml:"xmlns,attr,omitempty"`
+		}{Xmlns: s3Namespace})
+	case q.Has("accelerate"):
+		writeXMLResponse(w, struct {
+			XMLName xml.Name `xml:"AccelerateConfiguration"`
+			Xmlns   string   `xml:"xmlns,attr,omitempty"`
+			Status  string   `xml:"Status,omitempty"`
+		}{Xmlns: s3Namespace})
+	case q.Has("requestPayment"):
+		writeXMLResponse(w, struct {
+			XMLName xml.Name `xml:"RequestPaymentConfiguration"`
+			Xmlns   string   `xml:"xmlns,attr,omitempty"`
+			Payer   string   `xml:"Payer"`
+		}{Xmlns: s3Namespace, Payer: "BucketOwner"})
+	default:
+		errCode, ok := bucketSubresourceErrorCode(q)
+		if !ok {
+			return false
+		}
+
+		writeS3Error(w, r, errCode, "The "+errCode+" sub-resource is not configured", http.StatusNotFound)
+	}
+
+	return true
+}
+
+// bucketSubresourceErrorCode maps a GET ?<sub-resource> query to the AWS error
+// code returned when the sub-resource is unconfigured.
+func bucketSubresourceErrorCode(q map[string][]string) (string, bool) {
+	mapping := map[string]string{
+		"policy":            "NoSuchBucketPolicy",
+		"cors":              "NoSuchCORSConfiguration",
+		"lifecycle":         "NoSuchLifecycleConfiguration",
+		"replication":       "ReplicationConfigurationNotFoundError",
+		"website":           "NoSuchWebsiteConfiguration",
+		"tagging":           "NoSuchTagSet",
+		"object-lock":       "ObjectLockConfigurationNotFoundError",
+		"ownershipControls": "OwnershipControlsNotFoundError",
+	}
+
+	for key, code := range mapping {
+		if _, ok := q[key]; ok {
+			return code, true
+		}
+	}
+
+	return "", false
+}
+
+// defaultBucketACL builds the ACL response real S3 returns when the bucket has
+// no explicit ACL set: owner gets FULL_CONTROL.
+func defaultBucketACL() any {
+	type grantee struct {
+		XMLName     xml.Name `xml:"Grantee"`
+		XSI         string   `xml:"xmlns:xsi,attr"`
+		Type        string   `xml:"xsi:type,attr"`
+		ID          string   `xml:"ID,omitempty"`
+		DisplayName string   `xml:"DisplayName,omitempty"`
+	}
+
+	type grant struct {
+		XMLName    xml.Name `xml:"Grant"`
+		Grantee    grantee
+		Permission string `xml:"Permission"`
+	}
+
+	type owner struct {
+		XMLName     xml.Name `xml:"Owner"`
+		ID          string   `xml:"ID"`
+		DisplayName string   `xml:"DisplayName,omitempty"`
+	}
+
+	return struct {
+		XMLName           xml.Name `xml:"AccessControlPolicy"`
+		Xmlns             string   `xml:"xmlns,attr,omitempty"`
+		Owner             owner
+		AccessControlList struct {
+			Grant grant
+		} `xml:"AccessControlList"`
+	}{
+		Xmlns: s3Namespace,
+		Owner: owner{ID: "owner-id", DisplayName: "owner"},
+		AccessControlList: struct {
+			Grant grant
+		}{
+			Grant: grant{
+				Grantee: grantee{
+					XSI:         "http://www.w3.org/2001/XMLSchema-instance",
+					Type:        "CanonicalUser",
+					ID:          "owner-id",
+					DisplayName: "owner",
+				},
+				Permission: "FULL_CONTROL",
+			},
+		},
+	}
 }
 
 // handleBucketPost dispatches POST /{bucket} requests based on query parameters.
