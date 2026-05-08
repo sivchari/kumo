@@ -1148,7 +1148,7 @@ func (m *MemoryStorage) DescribeRouteTables(_ context.Context, rtbIDs []string) 
 		rt, exists := m.RouteTables[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidRouteTableId.NotFound",
+				Code:    "InvalidRouteTableID.NotFound",
 				Message: fmt.Sprintf("The routeTable ID '%s' does not exist", id),
 			}
 		}
