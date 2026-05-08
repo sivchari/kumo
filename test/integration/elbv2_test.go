@@ -632,3 +632,148 @@ func lookupTGAttr(attrs []types.TargetGroupAttribute, key string) string {
 
 	return ""
 }
+
+func TestELBv2_DescribeListenersAndModify(t *testing.T) {
+	client := newELBv2Client(t)
+	ctx := t.Context()
+
+	lbRes, err := client.CreateLoadBalancer(ctx, &elasticloadbalancingv2.CreateLoadBalancerInput{
+		Name:    aws.String("listener-mod-lb"),
+		Subnets: []string{"subnet-aaaa1111"},
+	})
+	if err != nil {
+		t.Fatalf("CreateLoadBalancer: %v", err)
+	}
+
+	lbArn := lbRes.LoadBalancers[0].LoadBalancerArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteLoadBalancer(context.Background(), &elasticloadbalancingv2.DeleteLoadBalancerInput{
+			LoadBalancerArn: lbArn,
+		})
+	})
+
+	tgRes, err := client.CreateTargetGroup(ctx, &elasticloadbalancingv2.CreateTargetGroupInput{
+		Name:     aws.String("listener-mod-tg"),
+		Protocol: types.ProtocolEnumHttp,
+		Port:     aws.Int32(80),
+		VpcId:    aws.String("vpc-x"),
+	})
+	if err != nil {
+		t.Fatalf("CreateTargetGroup: %v", err)
+	}
+
+	tgArn := tgRes.TargetGroups[0].TargetGroupArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTargetGroup(context.Background(), &elasticloadbalancingv2.DeleteTargetGroupInput{
+			TargetGroupArn: tgArn,
+		})
+	})
+
+	listenerRes, err := client.CreateListener(ctx, &elasticloadbalancingv2.CreateListenerInput{
+		LoadBalancerArn: lbArn,
+		Protocol:        types.ProtocolEnumHttp,
+		Port:            aws.Int32(80),
+		DefaultActions: []types.Action{
+			{Type: types.ActionTypeEnumForward, TargetGroupArn: tgArn},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateListener: %v", err)
+	}
+
+	listenerArn := listenerRes.Listeners[0].ListenerArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteListener(context.Background(), &elasticloadbalancingv2.DeleteListenerInput{
+			ListenerArn: listenerArn,
+		})
+	})
+
+	descRes, err := client.DescribeListeners(ctx, &elasticloadbalancingv2.DescribeListenersInput{
+		LoadBalancerArn: lbArn,
+	})
+	if err != nil {
+		t.Fatalf("DescribeListeners: %v", err)
+	}
+
+	if got := len(descRes.Listeners); got != 1 {
+		t.Errorf("DescribeListeners returned %d listeners, want 1", got)
+	}
+
+	if _, err := client.ModifyListener(ctx, &elasticloadbalancingv2.ModifyListenerInput{
+		ListenerArn: listenerArn,
+		Port:        aws.Int32(8080),
+	}); err != nil {
+		t.Fatalf("ModifyListener: %v", err)
+	}
+
+	descAfter, err := client.DescribeListeners(ctx, &elasticloadbalancingv2.DescribeListenersInput{
+		ListenerArns: []string{*listenerArn},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := *descAfter.Listeners[0].Port; got != 8080 {
+		t.Errorf("after Modify, listener.Port = %d, want 8080", got)
+	}
+}
+
+func TestELBv2_DescribeTargetHealth(t *testing.T) {
+	client := newELBv2Client(t)
+	ctx := t.Context()
+
+	tgRes, err := client.CreateTargetGroup(ctx, &elasticloadbalancingv2.CreateTargetGroupInput{
+		Name:     aws.String("health-test-tg"),
+		Protocol: types.ProtocolEnumHttp,
+		Port:     aws.Int32(80),
+		VpcId:    aws.String("vpc-x"),
+	})
+	if err != nil {
+		t.Fatalf("CreateTargetGroup: %v", err)
+	}
+
+	tgArn := tgRes.TargetGroups[0].TargetGroupArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTargetGroup(context.Background(), &elasticloadbalancingv2.DeleteTargetGroupInput{
+			TargetGroupArn: tgArn,
+		})
+	})
+
+	// On a freshly-created target group with no registered targets, the
+	// unfiltered call returns an empty list.
+	healthRes, err := client.DescribeTargetHealth(ctx, &elasticloadbalancingv2.DescribeTargetHealthInput{
+		TargetGroupArn: tgArn,
+	})
+	if err != nil {
+		t.Fatalf("DescribeTargetHealth: %v", err)
+	}
+
+	if got := len(healthRes.TargetHealthDescriptions); got != 0 {
+		t.Errorf("on empty target group, DescribeTargetHealth returned %d entries, want 0", got)
+	}
+
+	// A request with explicit Targets returns one entry per requested target,
+	// reporting "unused" for any target that is not currently registered. This
+	// matches AWS behavior for the read-side query.
+	healthFiltered, err := client.DescribeTargetHealth(ctx, &elasticloadbalancingv2.DescribeTargetHealthInput{
+		TargetGroupArn: tgArn,
+		Targets: []types.TargetDescription{
+			{Id: aws.String("10.0.0.99"), Port: aws.Int32(80)},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := len(healthFiltered.TargetHealthDescriptions); got != 1 {
+		t.Fatalf("filtered DescribeTargetHealth returned %d entries, want 1", got)
+	}
+
+	if got := string(healthFiltered.TargetHealthDescriptions[0].TargetHealth.State); got != "unused" {
+		t.Errorf("non-registered target state = %q, want unused", got)
+	}
+}

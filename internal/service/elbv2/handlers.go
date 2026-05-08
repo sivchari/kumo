@@ -841,6 +841,9 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"DescribeLoadBalancerAttributes": s.DescribeLoadBalancerAttributes,
 		"ModifyTargetGroupAttributes":    s.ModifyTargetGroupAttributes,
 		"DescribeTargetGroupAttributes":  s.DescribeTargetGroupAttributes,
+		"DescribeListeners":              s.DescribeListeners,
+		"ModifyListener":                 s.ModifyListener,
+		"DescribeTargetHealth":           s.DescribeTargetHealth,
 	}
 
 	return handlers[action]
@@ -1172,4 +1175,215 @@ func attributesToXML(attrs map[string]string) XMLAttributePairs {
 	}
 
 	return XMLAttributePairs{Members: members}
+}
+
+// DescribeListeners handles the DescribeListeners action.
+func (s *Service) DescribeListeners(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	listenerArns := parseELBMemberListFromForm(r.Form, "ListenerArns")
+	lbArn := r.Form.Get("LoadBalancerArn")
+
+	listeners, err := s.storage.DescribeListeners(r.Context(), listenerArns, lbArn)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	xmlListeners := make([]XMLListener, 0, len(listeners))
+	for _, l := range listeners {
+		xmlListeners = append(xmlListeners, convertToXMLListener(l))
+	}
+
+	writeELBXMLResponse(w, XMLDescribeListenersResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLDescribeListenersResult{Listeners: XMLListeners{Members: xmlListeners}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// ModifyListener handles the ModifyListener action.
+func (s *Service) ModifyListener(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	listenerArn := r.Form.Get("ListenerArn")
+	if listenerArn == "" {
+		writeELBError(w, errInvalidParameter, "ListenerArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	port := 0
+
+	if p := r.Form.Get("Port"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			port = v
+		}
+	}
+
+	protocol := r.Form.Get("Protocol")
+
+	defaultActions := parseELBActionsFromForm(r.Form, "DefaultActions")
+	if len(defaultActions) == 0 {
+		defaultActions = nil
+	}
+
+	listener, err := s.storage.ModifyListener(r.Context(), listenerArn, port, protocol, defaultActions)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLModifyListenerResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLModifyListenerResult{Listeners: XMLListeners{Members: []XMLListener{convertToXMLListener(listener)}}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DescribeTargetHealth handles the DescribeTargetHealth action.
+func (s *Service) DescribeTargetHealth(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	tgArn := r.Form.Get("TargetGroupArn")
+	if tgArn == "" {
+		writeELBError(w, errInvalidParameter, "TargetGroupArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	targets := parseELBTargetsFromForm(r.Form)
+
+	descriptions, err := s.storage.DescribeTargetHealth(r.Context(), tgArn, targets)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
+	members := make([]XMLTargetHealthDescription, 0, len(descriptions))
+	for _, d := range descriptions {
+		members = append(members, XMLTargetHealthDescription{
+			Target: XMLTargetForHealth{
+				ID:               d.Target.ID,
+				Port:             d.Target.Port,
+				AvailabilityZone: d.Target.AvailabilityZone,
+			},
+			TargetHealth: XMLTargetHealth{State: d.HealthState},
+		})
+	}
+
+	writeELBXMLResponse(w, XMLDescribeTargetHealthResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLDescribeTargetHealthResult{TargetHealthDescriptions: XMLTargetHealthDescriptions{Members: members}},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// parseELBMemberListFromForm reads <prefix>.member.N entries.
+func parseELBMemberListFromForm(form map[string][]string, prefix string) []string {
+	type entry struct {
+		idx int
+		val string
+	}
+
+	entries := make([]entry, 0)
+
+	for key, values := range form {
+		suffix, ok := strings.CutPrefix(key, prefix+".member.")
+		if !ok || len(values) == 0 {
+			continue
+		}
+
+		if strings.Contains(suffix, ".") {
+			continue
+		}
+
+		n, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+
+		entries = append(entries, entry{idx: n, val: values[0]})
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].idx < entries[j].idx })
+
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.val)
+	}
+
+	return out
+}
+
+// parseELBActionsFromForm reads <prefix>.member.N.{Type,TargetGroupArn,Order}.
+func parseELBActionsFromForm(form map[string][]string, prefix string) []Action {
+	byIdx := make(map[int]*Action)
+
+	for key, values := range form {
+		applyELBActionFormEntry(byIdx, prefix, key, values)
+	}
+
+	indexes := make([]int, 0, len(byIdx))
+	for n := range byIdx {
+		indexes = append(indexes, n)
+	}
+
+	sort.Ints(indexes)
+
+	out := make([]Action, 0, len(indexes))
+	for _, n := range indexes {
+		out = append(out, *byIdx[n])
+	}
+
+	return out
+}
+
+func applyELBActionFormEntry(byIdx map[int]*Action, prefix, key string, values []string) {
+	suffix, ok := strings.CutPrefix(key, prefix+".member.")
+	if !ok || len(values) == 0 {
+		return
+	}
+
+	dot := strings.Index(suffix, ".")
+	if dot < 0 {
+		return
+	}
+
+	n, err := strconv.Atoi(suffix[:dot])
+	if err != nil {
+		return
+	}
+
+	entry, exists := byIdx[n]
+	if !exists {
+		entry = &Action{}
+		byIdx[n] = entry
+	}
+
+	switch suffix[dot+1:] {
+	case "Type":
+		entry.Type = values[0]
+	case "TargetGroupArn":
+		entry.TargetGroupArn = values[0]
+	case "Order":
+		if v, err := strconv.Atoi(values[0]); err == nil {
+			entry.Order = v
+		}
+	}
 }

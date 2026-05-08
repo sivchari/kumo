@@ -44,6 +44,10 @@ type Storage interface {
 	DescribeLoadBalancerAttributes(ctx context.Context, lbArn string) (map[string]string, error)
 	ModifyTargetGroupAttributes(ctx context.Context, tgArn string, attrs map[string]string) (map[string]string, error)
 	DescribeTargetGroupAttributes(ctx context.Context, tgArn string) (map[string]string, error)
+
+	DescribeListeners(ctx context.Context, listenerArns []string, lbArn string) ([]*Listener, error)
+	ModifyListener(ctx context.Context, listenerArn string, port int, protocol string, defaultActions []Action) (*Listener, error)
+	DescribeTargetHealth(ctx context.Context, targetGroupArn string, targets []Target) ([]TargetDescription, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -889,4 +893,103 @@ func cloneAttributes(in map[string]string) map[string]string {
 	}
 
 	return out
+}
+
+// DescribeListeners returns listeners by ARN list or by parent load balancer.
+func (m *MemoryStorage) DescribeListeners(_ context.Context, listenerArns []string, lbArn string) ([]*Listener, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]*Listener, 0)
+
+	if len(listenerArns) > 0 {
+		for _, arn := range listenerArns {
+			listener, ok := m.Listeners[arn]
+			if !ok {
+				return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + arn + "' not found"}
+			}
+
+			out = append(out, listener)
+		}
+
+		return out, nil
+	}
+
+	for _, listener := range m.Listeners {
+		if lbArn == "" || listener.LoadBalancerArn == lbArn {
+			out = append(out, listener)
+		}
+	}
+
+	return out, nil
+}
+
+// ModifyListener replaces port / protocol / default actions on a listener.
+// A zero port means "do not change"; an empty protocol or nil DefaultActions
+// likewise.
+func (m *MemoryStorage) ModifyListener(_ context.Context, listenerArn string, port int, protocol string, defaultActions []Action) (*Listener, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	listener, ok := m.Listeners[listenerArn]
+	if !ok {
+		return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + listenerArn + "' not found"}
+	}
+
+	if port != 0 {
+		listener.Port = port
+	}
+
+	if protocol != "" {
+		listener.Protocol = protocol
+	}
+
+	if defaultActions != nil {
+		listener.DefaultActions = append([]Action(nil), defaultActions...)
+	}
+
+	return listener, nil
+}
+
+// DescribeTargetHealth returns the health of registered targets in a target
+// group. kumo does not run real health checks, so every registered target is
+// reported as "healthy". An empty Targets request returns the full set; a
+// non-empty Targets request filters to those exact targets and reports
+// "unused" for any target not currently registered.
+func (m *MemoryStorage) DescribeTargetHealth(_ context.Context, targetGroupArn string, targets []Target) ([]TargetDescription, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if _, ok := m.TargetGroups[targetGroupArn]; !ok {
+		return nil, &Error{Code: "TargetGroupNotFound", Message: "Target group '" + targetGroupArn + "' not found"}
+	}
+
+	registered := m.Targets[targetGroupArn]
+
+	if len(targets) == 0 {
+		out := make([]TargetDescription, 0, len(registered))
+		for _, t := range registered {
+			out = append(out, TargetDescription{Target: t, HealthState: "healthy"})
+		}
+
+		return out, nil
+	}
+
+	out := make([]TargetDescription, 0, len(targets))
+
+	for _, want := range targets {
+		state := "unused"
+
+		for _, t := range registered {
+			if t.ID == want.ID && (want.Port == 0 || t.Port == want.Port) {
+				state = "healthy"
+
+				break
+			}
+		}
+
+		out = append(out, TargetDescription{Target: want, HealthState: state})
+	}
+
+	return out, nil
 }

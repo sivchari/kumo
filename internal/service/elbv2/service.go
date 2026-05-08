@@ -70,6 +70,13 @@ func (s *Service) Actions() []string {
 		"DescribeLoadBalancerAttributes",
 		"ModifyTargetGroupAttributes",
 		"DescribeTargetGroupAttributes",
+		"DescribeTargetHealth",
+		"ModifyListener",
+		"DescribeListeners",
+		"github.com/sivchari/kumo/internal/service",
+		"os",
+		"io",
+		"fmt",
 	}
 }
 

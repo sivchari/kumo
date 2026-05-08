@@ -594,3 +594,67 @@ type XMLDescribeTargetGroupAttributesResponse struct {
 type XMLDescribeTargetGroupAttributesResult struct {
 	Attributes XMLAttributePairs `xml:"Attributes"`
 }
+
+// XMLDescribeTargetHealthResponse is the XML response for DescribeTargetHealth.
+type XMLDescribeTargetHealthResponse struct {
+	XMLName          xml.Name                      `xml:"DescribeTargetHealthResponse"`
+	Xmlns            string                        `xml:"xmlns,attr"`
+	Result           XMLDescribeTargetHealthResult `xml:"DescribeTargetHealthResult"`
+	ResponseMetadata XMLResponseMetadata           `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeTargetHealthResult contains the per-target health.
+type XMLDescribeTargetHealthResult struct {
+	TargetHealthDescriptions XMLTargetHealthDescriptions `xml:"TargetHealthDescriptions"`
+}
+
+// XMLTargetHealthDescriptions contains a list of target health descriptions.
+type XMLTargetHealthDescriptions struct {
+	Members []XMLTargetHealthDescription `xml:"member"`
+}
+
+// XMLTargetHealthDescription represents one target's health.
+type XMLTargetHealthDescription struct {
+	Target       XMLTargetForHealth `xml:"Target"`
+	TargetHealth XMLTargetHealth    `xml:"TargetHealth"`
+}
+
+// XMLTargetForHealth is the Target as wrapped inside a health description.
+type XMLTargetForHealth struct {
+	ID               string `xml:"Id"`
+	Port             int    `xml:"Port"`
+	AvailabilityZone string `xml:"AvailabilityZone,omitempty"`
+}
+
+// XMLTargetHealth represents a target's health state.
+type XMLTargetHealth struct {
+	State       string `xml:"State"`
+	Reason      string `xml:"Reason,omitempty"`
+	Description string `xml:"Description,omitempty"`
+}
+
+// XMLDescribeListenersResponse is the XML response for DescribeListeners.
+type XMLDescribeListenersResponse struct {
+	XMLName          xml.Name                   `xml:"DescribeListenersResponse"`
+	Xmlns            string                     `xml:"xmlns,attr"`
+	Result           XMLDescribeListenersResult `xml:"DescribeListenersResult"`
+	ResponseMetadata XMLResponseMetadata        `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeListenersResult contains the listed listeners.
+type XMLDescribeListenersResult struct {
+	Listeners XMLListeners `xml:"Listeners"`
+}
+
+// XMLModifyListenerResponse is the XML response for ModifyListener.
+type XMLModifyListenerResponse struct {
+	XMLName          xml.Name                `xml:"ModifyListenerResponse"`
+	Xmlns            string                  `xml:"xmlns,attr"`
+	Result           XMLModifyListenerResult `xml:"ModifyListenerResult"`
+	ResponseMetadata XMLResponseMetadata     `xml:"ResponseMetadata"`
+}
+
+// XMLModifyListenerResult contains the modified listener.
+type XMLModifyListenerResult struct {
+	Listeners XMLListeners `xml:"Listeners"`
+}
