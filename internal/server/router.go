@@ -80,12 +80,29 @@ func extractRoutePrefix(pattern string) string {
 	prefixes := []string{"/kumo", "/lambda", "/2015-03-31", "/eks", "/iam", "/buckets", "/namespaces", "/tables", "/get-table", "/apigateway", "/ses", "/2020-05-31", "/2013-04-01", "/service", "/appsync", "/v1", "/tags", "/applications", "/v20190125", "/scheduler", "/dlm", "/mq", "/v20180820", "/kx", "/kafka", "/create-app", "/describe-app", "/update-app", "/delete-app", "/list-apps", "/create-resiliency-policy", "/describe-resiliency-policy", "/update-resiliency-policy", "/delete-resiliency-policy", "/list-resiliency-policies", "/start-app-assessment", "/describe-app-assessment", "/delete-app-assessment", "/list-app-assessments", "/tag-resource", "/untag-resource", "/list-tags-for-resource", "/schemas", "/matchingworkflows", "/idmappingworkflows", "/providerservices", "/-", "/snapshots", "/apps", "/backup-vaults", "/backup", "/associations", "/codereviews", "/feedback", "/profilingGroups", "/maps", "/places", "/routes", "/geofencing", "/tracking", "/metadata", "/macie", "/allow-lists", "/jobs", "/custom-data-identifiers", "/findingsfilters", "/findings", "/managed-data-identifiers"}
 
 	for _, prefix := range prefixes {
-		if len(pattern) >= len(prefix) && pattern[:len(prefix)] == prefix {
+		if hasPathPrefix(pattern, prefix) {
 			return prefix
 		}
 	}
 
 	return ""
+}
+
+// hasPathPrefix reports whether path starts with prefix on a path
+// boundary — i.e. either the prefix consumes the entire path or the
+// next character is `/`. This stops `/kumo-audit-bad-bucket` from
+// being mis-classified as a `/kumo`-prefixed path, which would shadow
+// the S3 wildcard route `/{bucket}`.
+func hasPathPrefix(path, prefix string) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+
+	if path[:len(prefix)] != prefix {
+		return false
+	}
+
+	return len(path) == len(prefix) || path[len(prefix)] == '/'
 }
 
 // HandleFunc is an alias for Handle for compatibility with service.Router interface.
@@ -174,7 +191,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	bestPrefix := ""
 
 	for prefix := range r.prefixRouters {
-		if len(req.URL.Path) >= len(prefix) && req.URL.Path[:len(prefix)] == prefix && len(prefix) > len(bestPrefix) {
+		if hasPathPrefix(req.URL.Path, prefix) && len(prefix) > len(bestPrefix) {
 			bestPrefix = prefix
 		}
 	}
