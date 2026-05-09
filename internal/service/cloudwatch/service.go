@@ -54,6 +54,24 @@ func (s *Service) ServiceName() string {
 // CBORProtocol is a marker method that indicates CloudWatch uses RPC v2 CBOR protocol.
 func (s *Service) CBORProtocol() {}
 
+// TargetPrefix returns the X-Amz-Target prefix for CloudWatch JSON 1.0
+// requests. botocore-derived clients (aws-cli, boto3, older AWS SDKs)
+// continue to use the JSON 1.0 wire format even though newer SDKs are
+// migrating to RPC v2 CBOR; supporting both is the only way kumo can
+// be a target for the broad client population.
+func (s *Service) TargetPrefix() string {
+	return "GraniteServiceVersion20100801"
+}
+
+// JSONProtocol marks CloudWatch as also speaking AWS JSON 1.0,
+// alongside CBOR. The server's JSONProtocolDispatcher and
+// CBORProtocolDispatcher are independent — JSON dispatches off
+// X-Amz-Target, CBOR off URL path — so a single service can register
+// for both without conflict. The action dispatcher itself
+// (`DispatchAction`) lives in handlers.go alongside the JSON handlers
+// it routes to.
+func (s *Service) JSONProtocol() {}
+
 // DispatchCBORAction handles RPC v2 CBOR protocol requests.
 func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, operation string) {
 	switch operation {
