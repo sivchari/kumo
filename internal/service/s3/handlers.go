@@ -620,6 +620,12 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !evalCopySourcePreconditions(r.Header, srcObj.ETag, srcObj.LastModified) {
+		writeS3Error(w, r, "PreconditionFailed", "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
+
+		return
+	}
+
 	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), srcObj.Metadata)
 	if err != nil {
 		var bucketErr *BucketError
@@ -696,12 +702,25 @@ func (s *Service) GetObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	switch evalGetObjectPreconditions(r.Header, obj.ETag, obj.LastModified) {
+	case preconditionFailed:
+		writeS3Error(w, r, "PreconditionFailed", "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
+
+		return
+	case preconditionNotModified:
+		writeNotModifiedResponse(w, obj)
+
+		return
+	}
+
 	if rng := r.Header.Get("Range"); rng != "" {
+		applyResponseHeaderOverrides(w, r.URL.Query())
 		writeRangeOrFull(w, r, obj, rng)
 
 		return
 	}
 
+	applyResponseHeaderOverrides(w, r.URL.Query())
 	writeObjectResponse(w, obj)
 }
 
@@ -734,7 +753,7 @@ func writeRangeOrFull(w http.ResponseWriter, r *http.Request, obj *Object, range
 func writePartialObjectResponse(w http.ResponseWriter, obj *Object, start, end int64) {
 	length := end - start + 1
 
-	w.Header().Set("Content-Type", obj.ContentType)
+	setIfAbsent(w, "Content-Type", obj.ContentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
 	w.Header().Set("Content-Range",
 		"bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10)+
@@ -757,6 +776,53 @@ func writePartialObjectResponse(w http.ResponseWriter, obj *Object, start, end i
 	_, _ = w.Write(obj.Body[start : end+1])
 }
 
+// applyResponseHeaderOverrides honours the `response-*` query
+// parameters S3 supports for presigned download URLs (mainly used to
+// force `Content-Disposition: attachment; filename=...` on browser
+// downloads). Overrides win over object metadata.
+func applyResponseHeaderOverrides(w http.ResponseWriter, q map[string][]string) {
+	overrides := map[string]string{
+		"response-content-type":        "Content-Type",
+		"response-content-disposition": "Content-Disposition",
+		"response-cache-control":       "Cache-Control",
+		"response-content-encoding":    "Content-Encoding",
+		"response-content-language":    "Content-Language",
+		"response-expires":             "Expires",
+	}
+
+	for queryKey, headerName := range overrides {
+		if v := firstQueryValue(q, queryKey); v != "" {
+			w.Header().Set(headerName, v)
+		}
+	}
+}
+
+func firstQueryValue(q map[string][]string, key string) string {
+	if v, ok := q[key]; ok && len(v) > 0 {
+		return v[0]
+	}
+
+	return ""
+}
+
+// setIfAbsent sets a response header only when the caller hasn't
+// already set it. Used so that response-header overrides set by
+// presigned-URL query parameters survive the default header writers.
+func setIfAbsent(w http.ResponseWriter, name, value string) {
+	if w.Header().Get(name) == "" {
+		w.Header().Set(name, value)
+	}
+}
+
+// writeNotModifiedResponse writes a 304 with the ETag and
+// Last-Modified of the object so the cache can re-pin its entry per
+// RFC 9111 §4.3.4. No body, no Content-Length.
+func writeNotModifiedResponse(w http.ResponseWriter, obj *Object) {
+	w.Header().Set("ETag", obj.ETag)
+	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
+	w.WriteHeader(http.StatusNotModified)
+}
+
 // handleGetObjectError handles errors from GetObject/GetObjectVersion.
 func handleGetObjectError(w http.ResponseWriter, r *http.Request, err error) {
 	var bucketErr *BucketError
@@ -777,8 +843,10 @@ func handleGetObjectError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // writeObjectResponse writes the object response with headers and body.
+// Pre-existing header values (e.g. set by applyResponseHeaderOverrides
+// for presigned response-* overrides) are preserved.
 func writeObjectResponse(w http.ResponseWriter, obj *Object) {
-	w.Header().Set("Content-Type", obj.ContentType)
+	setIfAbsent(w, "Content-Type", obj.ContentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
 	w.Header().Set("ETag", obj.ETag)
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
