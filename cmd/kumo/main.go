@@ -63,6 +63,7 @@ import (
 	_ "github.com/sivchari/kumo/internal/service/mq"
 	_ "github.com/sivchari/kumo/internal/service/neptune"
 	_ "github.com/sivchari/kumo/internal/service/organizations"
+	_ "github.com/sivchari/kumo/internal/service/otlp"
 	_ "github.com/sivchari/kumo/internal/service/pinpointsmsvoicev2"
 	_ "github.com/sivchari/kumo/internal/service/pipes"
 	_ "github.com/sivchari/kumo/internal/service/rds"
