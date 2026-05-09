@@ -12,6 +12,23 @@ type Bucket struct {
 	CreationDate time.Time
 }
 
+// BucketLoggingStatus is the wire shape of {Put,Get}BucketLogging.
+// LoggingEnabled is omitted (nil pointer) when logging is disabled —
+// AWS sends `<BucketLoggingStatus/>` in that case.
+type BucketLoggingStatus struct {
+	XMLName        xml.Name              `xml:"BucketLoggingStatus"`
+	Xmlns          string                `xml:"xmlns,attr,omitempty"`
+	LoggingEnabled *LoggingEnabledStatus `xml:"LoggingEnabled,omitempty"`
+}
+
+// LoggingEnabledStatus is the body of LoggingEnabled. TargetGrants
+// isn't modelled; terraform's aws_s3_bucket_logging only sets target
+// + prefix.
+type LoggingEnabledStatus struct {
+	TargetBucket string `xml:"TargetBucket"`
+	TargetPrefix string `xml:"TargetPrefix,omitempty"`
+}
+
 // Object represents an S3 object.
 type Object struct {
 	Key            string

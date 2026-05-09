@@ -73,6 +73,9 @@ type Storage interface {
 	GetBucketPolicy(ctx context.Context, bucket string) (string, error)
 	DeleteBucketPolicy(ctx context.Context, bucket string) error
 	DeleteBucketEncryption(ctx context.Context, bucket string) error
+
+	PutBucketLogging(ctx context.Context, bucket string, cfg BucketLoggingConfig) error
+	GetBucketLogging(ctx context.Context, bucket string) (*BucketLoggingConfig, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -112,6 +115,17 @@ type MemoryBucket struct {
 	PublicAccessBlock  *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"` // public access block configuration
 	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
 	Policy             string                      `json:"policy,omitempty"`            // bucket policy JSON document (empty == not configured)
+	Logging            *BucketLoggingConfig        `json:"logging,omitempty"`           // server access logging target (nil == disabled)
+}
+
+// BucketLoggingConfig stores the destination for server access logs.
+// AWS lets logging be opted out by sending an empty BucketLoggingStatus
+// (no LoggingEnabled element); we represent that as a nil pointer on
+// the bucket. TargetBucket == "" never lands in storage — the handler
+// only persists configs with a target.
+type BucketLoggingConfig struct {
+	TargetBucket string `json:"targetBucket"`
+	TargetPrefix string `json:"targetPrefix,omitempty"`
 }
 
 // PublicAccessBlockConfig stores the four PAB flags.
@@ -1343,4 +1357,51 @@ func (s *MemoryStorage) DeleteBucketPolicy(_ context.Context, bucket string) err
 	b.Policy = ""
 
 	return nil
+}
+
+// PutBucketLogging stores the server-access-log destination for a
+// bucket. An empty TargetBucket means the caller is opting out, so we
+// clear the config (matches AWS semantics where an empty
+// BucketLoggingStatus body disables logging).
+func (s *MemoryStorage) PutBucketLogging(_ context.Context, bucket string, cfg BucketLoggingConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if cfg.TargetBucket == "" {
+		b.Logging = nil
+
+		return nil
+	}
+
+	c := cfg
+	b.Logging = &c
+
+	return nil
+}
+
+// GetBucketLogging returns the configured destination, or nil when
+// logging is disabled. Real AWS GET on an unconfigured bucket returns
+// an empty <BucketLoggingStatus/> rather than NoSuch*; the handler
+// renders that case from a nil result.
+func (s *MemoryStorage) GetBucketLogging(_ context.Context, bucket string) (*BucketLoggingConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if b.Logging == nil {
+		return nil, nil //nolint:nilnil // documented contract: nil cfg + nil err == disabled
+	}
+
+	c := *b.Logging
+
+	return &c, nil
 }

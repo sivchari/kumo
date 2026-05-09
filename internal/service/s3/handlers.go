@@ -130,6 +130,12 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := r.URL.Query()["logging"]; ok {
+		s.GetBucketLogging(w, r)
+
+		return
+	}
+
 	if _, ok := r.URL.Query()["versions"]; ok {
 		s.ListObjectVersions(w, r)
 
@@ -165,11 +171,6 @@ func (s *Service) serveBucketSubresourceStub(w http.ResponseWriter, r *http.Requ
 			Xmlns   string   `xml:"xmlns,attr,omitempty"`
 			Value   string   `xml:",chardata"`
 		}{Xmlns: s3Namespace, Value: "us-east-1"})
-	case q.Has("logging"):
-		writeXMLResponse(w, struct {
-			XMLName xml.Name `xml:"BucketLoggingStatus"`
-			Xmlns   string   `xml:"xmlns,attr,omitempty"`
-		}{Xmlns: s3Namespace})
 	case q.Has("accelerate"):
 		writeXMLResponse(w, struct {
 			XMLName xml.Name `xml:"AccelerateConfiguration"`
@@ -1197,6 +1198,12 @@ func (s *Service) handleBucketPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := r.URL.Query()["logging"]; ok {
+		s.PutBucketLogging(w, r)
+
+		return
+	}
+
 	s.CreateBucket(w, r)
 }
 
@@ -1356,6 +1363,69 @@ func (s *Service) GetBucketEncryption(w http.ResponseWriter, r *http.Request) {
 		Xmlns: s3Namespace,
 		Rules: xmlRules,
 	})
+}
+
+// PutBucketLogging handles PUT /{bucket}?logging. Body is the AWS
+// BucketLoggingStatus XML; an empty / missing LoggingEnabled element
+// disables logging on the bucket. terraform aws_s3_bucket_logging is
+// the primary caller.
+func (s *Service) PutBucketLogging(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeS3Error(w, r, "InvalidRequest", "Failed to read request body", http.StatusBadRequest)
+
+		return
+	}
+
+	var status BucketLoggingStatus
+	if len(body) > 0 {
+		if err := xml.Unmarshal(body, &status); err != nil {
+			writeS3Error(w, r, "MalformedXML", "Failed to parse BucketLoggingStatus", http.StatusBadRequest)
+
+			return
+		}
+	}
+
+	cfg := BucketLoggingConfig{}
+	if status.LoggingEnabled != nil {
+		cfg.TargetBucket = status.LoggingEnabled.TargetBucket
+		cfg.TargetPrefix = status.LoggingEnabled.TargetPrefix
+	}
+
+	if err := s.storage.PutBucketLogging(r.Context(), bucket, cfg); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetBucketLogging handles GET /{bucket}?logging. Returns the wire
+// shape with LoggingEnabled present when configured, or an empty
+// status element when not — matching real AWS behaviour. terraform
+// reads this back to detect drift.
+func (s *Service) GetBucketLogging(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	cfg, err := s.storage.GetBucketLogging(r.Context(), bucket)
+	if err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	resp := BucketLoggingStatus{Xmlns: s3Namespace}
+	if cfg != nil {
+		resp.LoggingEnabled = &LoggingEnabledStatus{
+			TargetBucket: cfg.TargetBucket,
+			TargetPrefix: cfg.TargetPrefix,
+		}
+	}
+
+	writeXMLResponse(w, resp)
 }
 
 // DeleteBucketEncryption handles DELETE /{bucket}?encryption.
