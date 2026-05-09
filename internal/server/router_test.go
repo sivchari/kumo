@@ -26,6 +26,7 @@ func TestRouter_PrefixMatchRespectsBoundary(t *testing.T) {
 	// `/kumo` is a registered prefix (used by /_kumo/health etc.).
 	r.Handle("GET", "/kumo/health", func(w http.ResponseWriter, _ *http.Request) {
 		called = "kumo-health"
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -34,6 +35,7 @@ func TestRouter_PrefixMatchRespectsBoundary(t *testing.T) {
 	// prefix router (no matching pattern) → 404.
 	r.Handle("PUT", "/{bucket}", func(w http.ResponseWriter, _ *http.Request) {
 		called = "bucket-put"
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -56,7 +58,7 @@ func TestRouter_PrefixMatchRespectsBoundary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			called = ""
 
-			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req := httptest.NewRequest(tc.method, tc.path, http.NoBody)
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 

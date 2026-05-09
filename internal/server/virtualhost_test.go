@@ -8,124 +8,111 @@ import (
 	"testing"
 )
 
+// virtualHostCase is one row in the virtual-hosted dispatch table.
+type virtualHostCase struct {
+	name   string
+	method string
+	host   string
+	path   string
+	want   string
+}
+
+// virtualHostCases enumerates host / path combinations the router has
+// to dispatch correctly. Defined once and reused so the test function
+// itself stays inside funlen budget.
+var virtualHostCases = []virtualHostCase{
+	{
+		name: "path-style PUT bucket", method: "PUT",
+		host: "127.0.0.1:4566", path: "/my-bucket",
+		want: "create-bucket:my-bucket",
+	},
+	{
+		name: "virtual-hosted PUT bucket via .localhost", method: "PUT",
+		host: "my-bucket.localhost:4566", path: "/",
+		want: "create-bucket:my-bucket",
+	},
+	{
+		name: "virtual-hosted HEAD bucket", method: "HEAD",
+		host: "my-bucket.localhost:4566", path: "/",
+		want: "head-bucket:my-bucket",
+	},
+	{
+		name: "virtual-hosted PUT object", method: "PUT",
+		host: "my-bucket.localhost:4566", path: "/some/key.txt",
+		want: "put-object:my-bucket/some/key.txt",
+	},
+	{
+		name: "virtual-hosted via real AWS S3 host", method: "PUT",
+		host: "my-bucket.s3.us-east-1.amazonaws.com", path: "/",
+		want: "create-bucket:my-bucket",
+	},
+	{
+		name: "virtual-hosted via legacy region-prefixed host", method: "PUT",
+		host: "my-bucket.s3-us-west-2.amazonaws.com", path: "/",
+		want: "create-bucket:my-bucket",
+	},
+	{
+		name: "virtual-hosted via global host", method: "PUT",
+		host: "my-bucket.s3.amazonaws.com", path: "/",
+		want: "create-bucket:my-bucket",
+	},
+	{
+		name: "list-buckets (no virtual host) stays at /", method: "GET",
+		host: "127.0.0.1:4566", path: "/",
+		want: "list-buckets",
+	},
+	{
+		name: "list-buckets via plain s3.amazonaws.com (no bucket prefix)", method: "GET",
+		host: "s3.amazonaws.com", path: "/",
+		want: "list-buckets",
+	},
+}
+
+// newS3StyleRouter wires up the four S3-style routes the dispatch
+// tests exercise. The returned *string captures which handler matched.
+func newS3StyleRouter() (*Router, *string) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	r := NewRouter(logger)
+	matched := new(string)
+
+	r.Handle("PUT", "/{bucket}", func(w http.ResponseWriter, req *http.Request) {
+		*matched = "create-bucket:" + req.PathValue("bucket")
+
+		w.WriteHeader(http.StatusOK)
+	})
+	r.Handle("HEAD", "/{bucket}", func(w http.ResponseWriter, req *http.Request) {
+		*matched = "head-bucket:" + req.PathValue("bucket")
+
+		w.WriteHeader(http.StatusOK)
+	})
+	r.Handle("PUT", "/{bucket}/{key...}", func(w http.ResponseWriter, req *http.Request) {
+		*matched = "put-object:" + req.PathValue("bucket") + "/" + req.PathValue("key")
+
+		w.WriteHeader(http.StatusOK)
+	})
+	r.Handle("GET", "/", func(w http.ResponseWriter, _ *http.Request) {
+		*matched = "list-buckets"
+
+		w.WriteHeader(http.StatusOK)
+	})
+
+	return r, matched
+}
+
 // TestRouter_VirtualHostedStyleS3 covers AWS S3 virtual-hosted-style
 // addressing: the bucket sits in the Host header rather than the
 // URL path. Without rewrite the request `HEAD http://b.localhost/`
 // hits the wildcard `/{bucket}` route with bucket="" and returns 200,
 // which the AWS SDK reads as "bucket exists" → BucketAlreadyExists
 // when terraform tries to create.
-//
-// Recognised host shapes:
-//   - <bucket>.localhost(:port)       (kumo-style custom endpoint)
-//   - <bucket>.s3.amazonaws.com
-//   - <bucket>.s3-<region>.amazonaws.com
-//   - <bucket>.s3.<region>.amazonaws.com
 func TestRouter_VirtualHostedStyleS3(t *testing.T) {
 	t.Parallel()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	makeRouter := func() (*Router, *string) {
-		r := NewRouter(logger)
-		matched := new(string)
-
-		r.Handle("PUT", "/{bucket}", func(w http.ResponseWriter, req *http.Request) {
-			*matched = "create-bucket:" + req.PathValue("bucket")
-			w.WriteHeader(http.StatusOK)
-		})
-		r.Handle("HEAD", "/{bucket}", func(w http.ResponseWriter, req *http.Request) {
-			*matched = "head-bucket:" + req.PathValue("bucket")
-			w.WriteHeader(http.StatusOK)
-		})
-		r.Handle("PUT", "/{bucket}/{key...}", func(w http.ResponseWriter, req *http.Request) {
-			*matched = "put-object:" + req.PathValue("bucket") + "/" + req.PathValue("key")
-			w.WriteHeader(http.StatusOK)
-		})
-		r.Handle("GET", "/", func(w http.ResponseWriter, _ *http.Request) {
-			*matched = "list-buckets"
-			w.WriteHeader(http.StatusOK)
-		})
-
-		return r, matched
-	}
-
-	cases := []struct {
-		name   string
-		method string
-		host   string
-		path   string
-		want   string
-	}{
-		{
-			name:   "path-style PUT bucket",
-			method: "PUT",
-			host:   "127.0.0.1:4566",
-			path:   "/my-bucket",
-			want:   "create-bucket:my-bucket",
-		},
-		{
-			name:   "virtual-hosted PUT bucket via .localhost",
-			method: "PUT",
-			host:   "my-bucket.localhost:4566",
-			path:   "/",
-			want:   "create-bucket:my-bucket",
-		},
-		{
-			name:   "virtual-hosted HEAD bucket",
-			method: "HEAD",
-			host:   "my-bucket.localhost:4566",
-			path:   "/",
-			want:   "head-bucket:my-bucket",
-		},
-		{
-			name:   "virtual-hosted PUT object",
-			method: "PUT",
-			host:   "my-bucket.localhost:4566",
-			path:   "/some/key.txt",
-			want:   "put-object:my-bucket/some/key.txt",
-		},
-		{
-			name:   "virtual-hosted via real AWS S3 host",
-			method: "PUT",
-			host:   "my-bucket.s3.us-east-1.amazonaws.com",
-			path:   "/",
-			want:   "create-bucket:my-bucket",
-		},
-		{
-			name:   "virtual-hosted via legacy region-prefixed host",
-			method: "PUT",
-			host:   "my-bucket.s3-us-west-2.amazonaws.com",
-			path:   "/",
-			want:   "create-bucket:my-bucket",
-		},
-		{
-			name:   "virtual-hosted via global host",
-			method: "PUT",
-			host:   "my-bucket.s3.amazonaws.com",
-			path:   "/",
-			want:   "create-bucket:my-bucket",
-		},
-		{
-			name:   "list-buckets (no virtual host) stays at /",
-			method: "GET",
-			host:   "127.0.0.1:4566",
-			path:   "/",
-			want:   "list-buckets",
-		},
-		{
-			name:   "list-buckets via plain s3.amazonaws.com (no bucket prefix)",
-			method: "GET",
-			host:   "s3.amazonaws.com",
-			path:   "/",
-			want:   "list-buckets",
-		},
-	}
-
-	for _, tc := range cases {
+	for _, tc := range virtualHostCases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, matched := makeRouter()
+			r, matched := newS3StyleRouter()
 
-			req := httptest.NewRequest(tc.method, "http://"+tc.host+tc.path, nil)
+			req := httptest.NewRequest(tc.method, "http://"+tc.host+tc.path, http.NoBody)
 			req.Host = tc.host
 
 			rec := httptest.NewRecorder()
