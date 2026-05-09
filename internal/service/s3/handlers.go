@@ -287,6 +287,12 @@ func (s *Service) handleBucketPost(w http.ResponseWriter, r *http.Request) {
 func (s *Service) handleObjectPut(w http.ResponseWriter, r *http.Request) {
 	s.applyCORSHeaders(w, r, r.PathValue("bucket"))
 
+	if r.URL.Query().Has("acl") {
+		s.PutObjectACL(w, r)
+
+		return
+	}
+
 	if r.URL.Query().Has("tagging") {
 		s.PutObjectTagging(w, r)
 
@@ -317,6 +323,12 @@ func (s *Service) handleObjectPut(w http.ResponseWriter, r *http.Request) {
 // handleObjectGet dispatches GET /{bucket}/{key} requests based on query parameters.
 func (s *Service) handleObjectGet(w http.ResponseWriter, r *http.Request) {
 	s.applyCORSHeaders(w, r, r.PathValue("bucket"))
+
+	if r.URL.Query().Has("acl") {
+		s.GetObjectACL(w, r)
+
+		return
+	}
 
 	if r.URL.Query().Has("tagging") {
 		s.GetObjectTagging(w, r)
@@ -557,40 +569,65 @@ func (s *Service) ListObjectsV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prefix := r.URL.Query().Get("prefix")
-	delimiter := r.URL.Query().Get("delimiter")
-	marker := r.URL.Query().Get("marker")
+	q := r.URL.Query()
+	params := parseListObjectsV1Params(q)
+
+	const fetchAll = 1 << 30 // sentinel: "give us everything, we paginate in the handler"
+
+	objects, commonPrefixes, err := s.storage.ListObjects(r.Context(), bucket, params.prefix, params.delimiter, fetchAll)
+	if err != nil {
+		writeListObjectsV1Error(w, r, err)
+
+		return
+	}
+
+	objects = sliceObjectsAfterMarker(objects, params.marker)
+
+	truncated := len(objects) > params.maxKeys
+	if truncated {
+		objects = objects[:params.maxKeys]
+	}
+
+	writeXMLResponse(w, buildListBucketResultV1(bucket, params, objects, commonPrefixes, truncated))
+}
+
+// listObjectsV1Params bundles the parsed query-string for a V1 list.
+type listObjectsV1Params struct {
+	prefix    string
+	delimiter string
+	marker    string
+	maxKeys   int
+}
+
+func parseListObjectsV1Params(q map[string][]string) listObjectsV1Params {
 	maxKeys := 1000
 
-	if mks := r.URL.Query().Get("max-keys"); mks != "" {
+	if mks := firstQueryValue(q, "max-keys"); mks != "" {
 		if mk, err := strconv.Atoi(mks); err == nil && mk > 0 {
 			maxKeys = mk
 		}
 	}
 
-	const fetchAll = 1 << 30 // sentinel: "give us everything, we paginate in the handler"
+	return listObjectsV1Params{
+		prefix:    firstQueryValue(q, "prefix"),
+		delimiter: firstQueryValue(q, "delimiter"),
+		marker:    firstQueryValue(q, "marker"),
+		maxKeys:   maxKeys,
+	}
+}
 
-	objects, commonPrefixes, err := s.storage.ListObjects(r.Context(), bucket, prefix, delimiter, fetchAll)
-	if err != nil {
-		var bucketErr *BucketError
-		if errors.As(err, &bucketErr) {
-			writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
-
-			return
-		}
-
-		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+func writeListObjectsV1Error(w http.ResponseWriter, r *http.Request, err error) {
+	var bucketErr *BucketError
+	if errors.As(err, &bucketErr) {
+		writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
 
 		return
 	}
 
-	objects = sliceObjectsAfterMarker(objects, marker)
+	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+}
 
-	truncated := len(objects) > maxKeys
-	if truncated {
-		objects = objects[:maxKeys]
-	}
-
+func buildListBucketResultV1(bucket string, params listObjectsV1Params, objects []Object, commonPrefixes []string, truncated bool) ListBucketResultV1 {
 	contents := make([]ObjectInfo, len(objects))
 	for i := range objects {
 		contents[i] = ObjectInfo{
@@ -608,22 +645,22 @@ func (s *Service) ListObjectsV1(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nextMarker string
-	if truncated && delimiter != "" && len(contents) > 0 {
+	if truncated && params.delimiter != "" && len(contents) > 0 {
 		nextMarker = contents[len(contents)-1].Key
 	}
 
-	writeXMLResponse(w, ListBucketResultV1{
+	return ListBucketResultV1{
 		Xmlns:          s3Namespace,
 		Name:           bucket,
-		Prefix:         prefix,
-		Marker:         marker,
+		Prefix:         params.prefix,
+		Marker:         params.marker,
 		NextMarker:     nextMarker,
-		MaxKeys:        maxKeys,
-		Delimiter:      delimiter,
+		MaxKeys:        params.maxKeys,
+		Delimiter:      params.delimiter,
 		IsTruncated:    truncated,
 		Contents:       contents,
 		CommonPrefixes: prefixes,
-	})
+	}
 }
 
 // sliceObjectsAfterMarker drops every entry whose Key is <= marker,
@@ -633,8 +670,8 @@ func sliceObjectsAfterMarker(objects []Object, marker string) []Object {
 		return objects
 	}
 
-	for i, o := range objects {
-		if o.Key > marker {
+	for i := range objects {
+		if objects[i].Key > marker {
 			return objects[i:]
 		}
 	}
@@ -805,6 +842,8 @@ func (s *Service) GetObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch evalGetObjectPreconditions(r.Header, obj.ETag, obj.LastModified) {
+	case preconditionPass:
+		// fall through to the normal response below
 	case preconditionFailed:
 		writeS3Error(w, r, "PreconditionFailed", "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
 

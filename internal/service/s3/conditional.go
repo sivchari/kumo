@@ -11,9 +11,9 @@ import (
 type preconditionResult int
 
 const (
-	preconditionPass         preconditionResult = iota // request should proceed normally
-	preconditionNotModified                            // GET/HEAD → 304 Not Modified
-	preconditionFailed                                 // any → 412 Precondition Failed
+	preconditionPass        preconditionResult = iota // request should proceed normally
+	preconditionNotModified                           // GET/HEAD → 304 Not Modified
+	preconditionFailed                                // any → 412 Precondition Failed
 )
 
 // evalGetObjectPreconditions implements RFC 9110 §13.1 evaluation order

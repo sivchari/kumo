@@ -57,6 +57,10 @@ type Storage interface {
 	PutObjectTagging(ctx context.Context, bucket, key string, tags map[string]string) error
 	GetObjectTagging(ctx context.Context, bucket, key string) (map[string]string, error)
 
+	// Object ACL
+	PutObjectACL(ctx context.Context, bucket, key string, acl *ObjectACL) error
+	GetObjectACL(ctx context.Context, bucket, key string) (*ObjectACL, error)
+
 	// Notification and CORS
 	SetEventBridgeNotification(ctx context.Context, bucket string, enabled bool)
 	IsEventBridgeEnabled(ctx context.Context, bucket string) bool
@@ -116,6 +120,7 @@ type MemoryBucket struct {
 	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
 	Policy             string                      `json:"policy,omitempty"`            // bucket policy JSON document (empty == not configured)
 	Logging            *BucketLoggingConfig        `json:"logging,omitempty"`           // server access logging target (nil == disabled)
+	ObjectACLs         map[string]*ObjectACL       `json:"objectAcls,omitempty"`        // per-object ACL (key -> ACL)
 }
 
 // BucketLoggingConfig stores the destination for server access logs.
