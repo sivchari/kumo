@@ -68,6 +68,9 @@ type Storage interface {
 
 	PutBucketEncryption(ctx context.Context, bucket string, cfg ServerSideEncryptionConfig) error
 	GetBucketEncryption(ctx context.Context, bucket string) (*ServerSideEncryptionConfig, error)
+	PutBucketPolicy(ctx context.Context, bucket, document string) error
+	GetBucketPolicy(ctx context.Context, bucket string) (string, error)
+	DeleteBucketPolicy(ctx context.Context, bucket string) error
 	DeleteBucketEncryption(ctx context.Context, bucket string) error
 }
 
@@ -107,6 +110,7 @@ type MemoryBucket struct {
 	CORSRules          []CORSRule                  `json:"corsRules,omitempty"`         // CORS configuration
 	PublicAccessBlock  *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"` // public access block configuration
 	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
+	Policy             string                      `json:"policy,omitempty"`            // bucket policy JSON document (empty == not configured)
 }
 
 // PublicAccessBlockConfig stores the four PAB flags.
@@ -1227,6 +1231,62 @@ func (s *MemoryStorage) DeleteBucketEncryption(_ context.Context, bucket string)
 	}
 
 	b.Encryption = nil
+
+	return nil
+}
+
+// PutBucketPolicy stores a bucket's policy document. AWS treats the
+// document as opaque JSON for the purposes of Put/Get, so we just
+// persist the bytes — IAM-layer evaluation is out of scope.
+func (s *MemoryStorage) PutBucketPolicy(_ context.Context, bucket, document string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	b.Policy = document
+
+	return nil
+}
+
+// GetBucketPolicy returns the configured policy document. Returns
+// NoSuchBucketPolicy when the bucket exists but has no policy set.
+func (s *MemoryStorage) GetBucketPolicy(_ context.Context, bucket string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return "", &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if b.Policy == "" {
+		return "", &BucketError{
+			Code:       "NoSuchBucketPolicy",
+			Message:    "The bucket policy does not exist",
+			BucketName: bucket,
+		}
+	}
+
+	return b.Policy, nil
+}
+
+// DeleteBucketPolicy clears the bucket's policy. AWS allows this on a
+// bucket without a policy (returns 204), so a missing policy is not
+// an error here either.
+func (s *MemoryStorage) DeleteBucketPolicy(_ context.Context, bucket string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	b.Policy = ""
 
 	return nil
 }

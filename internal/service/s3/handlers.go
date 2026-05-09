@@ -118,6 +118,12 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := r.URL.Query()["policy"]; ok {
+		s.GetBucketPolicy(w, r)
+
+		return
+	}
+
 	if _, ok := r.URL.Query()["versions"]; ok {
 		s.ListObjectVersions(w, r)
 
@@ -186,7 +192,6 @@ func (s *Service) serveBucketSubresourceStub(w http.ResponseWriter, r *http.Requ
 // code returned when the sub-resource is unconfigured.
 func bucketSubresourceErrorCode(q map[string][]string) (string, bool) {
 	mapping := map[string]string{
-		"policy":            "NoSuchBucketPolicy",
 		"cors":              "NoSuchCORSConfiguration",
 		"lifecycle":         "NoSuchLifecycleConfiguration",
 		"replication":       "ReplicationConfigurationNotFoundError",
@@ -1114,6 +1119,12 @@ func (s *Service) handleBucketPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := r.URL.Query()["policy"]; ok {
+		s.PutBucketPolicy(w, r)
+
+		return
+	}
+
 	s.CreateBucket(w, r)
 }
 
@@ -1127,6 +1138,12 @@ func (s *Service) handleBucketDelete(w http.ResponseWriter, r *http.Request) {
 
 	if _, ok := r.URL.Query()["encryption"]; ok {
 		s.DeleteBucketEncryption(w, r)
+
+		return
+	}
+
+	if _, ok := r.URL.Query()["policy"]; ok {
+		s.DeleteBucketPolicy(w, r)
 
 		return
 	}
@@ -1282,6 +1299,61 @@ func (s *Service) DeleteBucketEncryption(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// PutBucketPolicy handles PUT /{bucket}?policy. The body is the
+// raw JSON policy document — AWS treats it as opaque for storage,
+// so we don't validate structure here. terraform aws_s3_bucket_policy
+// is the primary caller.
+func (s *Service) PutBucketPolicy(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeS3Error(w, r, "InvalidArgument", "Failed to read request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.PutBucketPolicy(r.Context(), bucket, string(body)); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetBucketPolicy handles GET /{bucket}?policy. Returns the raw
+// document as application/json (mirroring real S3) or NoSuchBucketPolicy
+// when the bucket exists without a policy.
+func (s *Service) GetBucketPolicy(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	doc, err := s.storage.GetBucketPolicy(r.Context(), bucket)
+	if err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(doc))
+}
+
+// DeleteBucketPolicy handles DELETE /{bucket}?policy. AWS returns 204
+// even when no policy was set, so a missing policy is not an error.
+func (s *Service) DeleteBucketPolicy(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	if err := s.storage.DeleteBucketPolicy(r.Context(), bucket); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // writeBucketErrorOrInternal maps a BucketError to its HTTP status code,
 // falling back to 500 for non-bucket errors. Used by sub-resource handlers.
 func writeBucketErrorOrInternal(w http.ResponseWriter, r *http.Request, err error) {
@@ -1290,7 +1362,7 @@ func writeBucketErrorOrInternal(w http.ResponseWriter, r *http.Request, err erro
 		status := http.StatusBadRequest
 
 		switch bucketErr.Code {
-		case "NoSuchBucket", "NoSuchPublicAccessBlockConfiguration", "ServerSideEncryptionConfigurationNotFoundError":
+		case "NoSuchBucket", "NoSuchPublicAccessBlockConfiguration", "ServerSideEncryptionConfigurationNotFoundError", "NoSuchBucketPolicy":
 			status = http.StatusNotFound
 		}
 
