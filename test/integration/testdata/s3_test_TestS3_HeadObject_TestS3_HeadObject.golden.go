@@ -1,5 +1,5 @@
 {
-  "AcceptRanges": null,
+  "AcceptRanges": "bytes",
   "ArchiveStatus": "",
   "BucketKeyEnabled": null,
   "CacheControl": null,
