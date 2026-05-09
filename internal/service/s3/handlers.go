@@ -20,6 +20,11 @@ const (
 	s3Namespace    = "http://s3.amazonaws.com/doc/2006-03-01/"
 	timeFormatISO  = "2006-01-02T15:04:05.000Z"
 	timeFormatHTTP = "Mon, 02 Jan 2006 15:04:05 GMT"
+
+	// contentTypeHeader is the canonical "Content-Type" string. Hoisted
+	// to a const because the metadata-pass loop excludes it in three
+	// different handlers — goconst was flagging the literal.
+	contentTypeHeader = "Content-Type"
 )
 
 // applyCORSHeaders sets CORS response headers if the bucket has CORS configured and the request Origin matches.
@@ -678,7 +683,65 @@ func (s *Service) GetObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if rng := r.Header.Get("Range"); rng != "" {
+		writeRangeOrFull(w, r, obj, rng)
+
+		return
+	}
+
 	writeObjectResponse(w, obj)
+}
+
+// writeRangeOrFull serves a 206 Partial Content slice when the Range
+// is satisfiable, a 416 Requested Range Not Satisfiable when the spec
+// is well-formed but unsatisfiable, and falls through to a full 200
+// when the unit isn't bytes (RFC 9110 §14.1.3 lets the server treat
+// an unknown range unit as if the header were absent).
+func writeRangeOrFull(w http.ResponseWriter, r *http.Request, obj *Object, rangeHeader string) {
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		writeObjectResponse(w, obj)
+
+		return
+	}
+
+	start, end, ok := parseByteRange(rangeHeader, obj.Size)
+	if !ok {
+		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(obj.Size, 10))
+		writeS3Error(w, r, "InvalidRange",
+			"The requested range is not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+
+		return
+	}
+
+	writePartialObjectResponse(w, obj, start, end)
+}
+
+// writePartialObjectResponse writes a 206 with the byte slice plus
+// matching Content-Range / Content-Length / object metadata headers.
+func writePartialObjectResponse(w http.ResponseWriter, obj *Object, start, end int64) {
+	length := end - start + 1
+
+	w.Header().Set("Content-Type", obj.ContentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
+	w.Header().Set("Content-Range",
+		"bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10)+
+			"/"+strconv.FormatInt(obj.Size, 10))
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("ETag", obj.ETag)
+	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
+
+	if obj.VersionID != "" {
+		w.Header().Set("x-amz-version-id", obj.VersionID)
+	}
+
+	for k, v := range obj.Metadata {
+		if k != contentTypeHeader {
+			w.Header().Set("x-amz-meta-"+k, v)
+		}
+	}
+
+	w.WriteHeader(http.StatusPartialContent)
+	_, _ = w.Write(obj.Body[start : end+1])
 }
 
 // handleGetObjectError handles errors from GetObject/GetObjectVersion.
@@ -706,13 +769,14 @@ func writeObjectResponse(w http.ResponseWriter, obj *Object) {
 	w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
 	w.Header().Set("ETag", obj.ETag)
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
+	w.Header().Set("Accept-Ranges", "bytes")
 
 	if obj.VersionID != "" {
 		w.Header().Set("x-amz-version-id", obj.VersionID)
 	}
 
 	for k, v := range obj.Metadata {
-		if k != "Content-Type" {
+		if k != contentTypeHeader {
 			w.Header().Set("x-amz-meta-"+k, v)
 		}
 	}
@@ -891,10 +955,11 @@ func (s *Service) HeadObject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
 	w.Header().Set("ETag", obj.ETag)
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
+	w.Header().Set("Accept-Ranges", "bytes")
 
 	// Set metadata headers
 	for k, v := range obj.Metadata {
-		if k != "Content-Type" {
+		if k != contentTypeHeader {
 			w.Header().Set("x-amz-meta-"+k, v)
 		}
 	}
