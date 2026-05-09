@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -176,6 +177,26 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Rewrite AWS S3 virtual-hosted-style requests so the rest of the
+	// router only deals with path-style. terraform / aws-sdk-go-v2
+	// default to virtual-hosted-style: the bucket goes in the Host
+	// header (`<bucket>.localhost:4566` or `<bucket>.s3.amazonaws.com`)
+	// and the URL path is `/` (for bucket-level ops) or `/<key>` (for
+	// object ops). Without this rewrite the wildcard `/{bucket}` route
+	// can't see the bucket name and `HEAD /` returns 200, which the
+	// SDK reads as "bucket exists" → spurious BucketAlreadyExists.
+	if bucket := extractBucketFromHost(req.Host); bucket != "" {
+		req = req.Clone(req.Context())
+
+		// `/` (bucket-level op) → `/<bucket>`.
+		// `/key/path` (object-level op) → `/<bucket>/key/path`.
+		if req.URL.Path == "" || req.URL.Path == "/" {
+			req.URL.Path = "/" + bucket
+		} else {
+			req.URL.Path = "/" + bucket + req.URL.Path
+		}
+	}
+
 	// Clean the URL path to prevent Go's ServeMux from returning 301 redirects
 	// for paths with double slashes (e.g., /bucket//key). S3 keys can start with
 	// "/" which produces double slashes in path-style URLs. We clean the path
@@ -208,6 +229,60 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // Routes returns all registered routes.
 func (r *Router) Routes() []Route {
 	return r.routes
+}
+
+// extractBucketFromHost recognises AWS S3 virtual-hosted-style hosts
+// and returns the bucket name. Empty result means path-style (or a
+// non-S3 host) — caller leaves the URL untouched.
+//
+// Recognised shapes:
+//
+//	<bucket>.localhost(:port)          (kumo-style custom endpoint)
+//	<bucket>.s3.amazonaws.com
+//	<bucket>.s3-<region>.amazonaws.com
+//	<bucket>.s3.<region>.amazonaws.com (incl. dualstack subdomains)
+func extractBucketFromHost(host string) string {
+	if host == "" {
+		return ""
+	}
+
+	// Strip port — ":4566" etc. We only need the host name.
+	if idx := strings.LastIndex(host, ":"); idx >= 0 {
+		host = host[:idx]
+	}
+
+	// Localhost / loopback IPs are never virtual-hosted.
+	if host == "localhost" || host == "127.0.0.1" {
+		return ""
+	}
+
+	dot := strings.Index(host, ".")
+	if dot <= 0 {
+		return ""
+	}
+
+	bucket := host[:dot]
+	rest := host[dot+1:]
+
+	// Reject the "no bucket prefix" case: e.g. `s3.amazonaws.com`,
+	// `s3.us-east-1.amazonaws.com`. The leftmost label *is* the
+	// service marker, not a bucket.
+	if bucket == "s3" || strings.HasPrefix(bucket, "s3-") {
+		return ""
+	}
+
+	switch {
+	case rest == "localhost":
+		return bucket
+	case rest == "s3.amazonaws.com":
+		return bucket
+	case strings.HasPrefix(rest, "s3.") && strings.HasSuffix(rest, ".amazonaws.com"):
+		return bucket
+	case strings.HasPrefix(rest, "s3-") && strings.HasSuffix(rest, ".amazonaws.com"):
+		return bucket
+	}
+
+	return ""
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
