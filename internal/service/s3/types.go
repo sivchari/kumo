@@ -117,6 +117,29 @@ type CommonPrefix struct {
 	Prefix string `xml:"Prefix"`
 }
 
+// ListBucketResultV1 is the response for the legacy ListObjects (V1)
+// API. Same XML root name as V2, but the pagination fields are
+// `Marker` / `NextMarker` instead of `ContinuationToken` /
+// `NextContinuationToken`, and there is no `KeyCount`.
+//
+// The V1 API is still emitted by awscli's `aws s3 ls` (in some
+// configurations), older AWS SDKs, and a handful of non-AWS S3
+// clients (Go AWS SDK v1, some Java tooling), so it cannot be
+// retired purely by emulating V2.
+type ListBucketResultV1 struct {
+	XMLName        xml.Name       `xml:"ListBucketResult"`
+	Xmlns          string         `xml:"xmlns,attr"`
+	Name           string         `xml:"Name"`
+	Prefix         string         `xml:"Prefix"`
+	Marker         string         `xml:"Marker"`
+	NextMarker     string         `xml:"NextMarker,omitempty"`
+	MaxKeys        int            `xml:"MaxKeys"`
+	Delimiter      string         `xml:"Delimiter,omitempty"`
+	IsTruncated    bool           `xml:"IsTruncated"`
+	Contents       []ObjectInfo   `xml:"Contents"`
+	CommonPrefixes []CommonPrefix `xml:"CommonPrefixes,omitempty"`
+}
+
 // ErrorResponse represents an S3 error response.
 type ErrorResponse struct {
 	XMLName    xml.Name `xml:"Error"`

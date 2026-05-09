@@ -152,7 +152,13 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.ListObjects(w, r)
+	if r.URL.Query().Get("list-type") == "2" {
+		s.ListObjects(w, r)
+
+		return
+	}
+
+	s.ListObjectsV1(w, r)
 }
 
 // serveBucketSubresourceStub handles GET requests for bucket sub-resources that
@@ -538,6 +544,102 @@ func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeXMLResponse(w, result)
+}
+
+// ListObjectsV1 handles GET /{bucket} (no list-type=2) — the legacy
+// marker-based listing API. SDK v1, awscli's `aws s3 ls`, and a
+// handful of non-AWS S3 clients still target it.
+func (s *Service) ListObjectsV1(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	if bucket == "" {
+		writeS3Error(w, r, "InvalidBucketName", "The specified bucket is not valid.", http.StatusBadRequest)
+
+		return
+	}
+
+	prefix := r.URL.Query().Get("prefix")
+	delimiter := r.URL.Query().Get("delimiter")
+	marker := r.URL.Query().Get("marker")
+	maxKeys := 1000
+
+	if mks := r.URL.Query().Get("max-keys"); mks != "" {
+		if mk, err := strconv.Atoi(mks); err == nil && mk > 0 {
+			maxKeys = mk
+		}
+	}
+
+	const fetchAll = 1 << 30 // sentinel: "give us everything, we paginate in the handler"
+
+	objects, commonPrefixes, err := s.storage.ListObjects(r.Context(), bucket, prefix, delimiter, fetchAll)
+	if err != nil {
+		var bucketErr *BucketError
+		if errors.As(err, &bucketErr) {
+			writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
+
+			return
+		}
+
+		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	objects = sliceObjectsAfterMarker(objects, marker)
+
+	truncated := len(objects) > maxKeys
+	if truncated {
+		objects = objects[:maxKeys]
+	}
+
+	contents := make([]ObjectInfo, len(objects))
+	for i := range objects {
+		contents[i] = ObjectInfo{
+			Key:          objects[i].Key,
+			LastModified: objects[i].LastModified.Format(timeFormatISO),
+			ETag:         objects[i].ETag,
+			Size:         objects[i].Size,
+			StorageClass: "STANDARD",
+		}
+	}
+
+	prefixes := make([]CommonPrefix, len(commonPrefixes))
+	for i, p := range commonPrefixes {
+		prefixes[i] = CommonPrefix{Prefix: p}
+	}
+
+	var nextMarker string
+	if truncated && delimiter != "" && len(contents) > 0 {
+		nextMarker = contents[len(contents)-1].Key
+	}
+
+	writeXMLResponse(w, ListBucketResultV1{
+		Xmlns:          s3Namespace,
+		Name:           bucket,
+		Prefix:         prefix,
+		Marker:         marker,
+		NextMarker:     nextMarker,
+		MaxKeys:        maxKeys,
+		Delimiter:      delimiter,
+		IsTruncated:    truncated,
+		Contents:       contents,
+		CommonPrefixes: prefixes,
+	})
+}
+
+// sliceObjectsAfterMarker drops every entry whose Key is <= marker,
+// matching the V1 spec ("listing starts after the marker key").
+func sliceObjectsAfterMarker(objects []Object, marker string) []Object {
+	if marker == "" {
+		return objects
+	}
+
+	for i, o := range objects {
+		if o.Key > marker {
+			return objects[i:]
+		}
+	}
+
+	return nil
 }
 
 // PutObject handles PUT /{bucket}/{key...} - upload an object.
