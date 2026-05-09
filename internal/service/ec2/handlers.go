@@ -1657,13 +1657,40 @@ func convertToXMLRouteTable(rt *RouteTable) XMLRouteTable {
 	}
 }
 
-// RevokeSecurityGroupIngress / RevokeSecurityGroupEgress are accepted
-// as no-ops. terraform-aws issues these on every Create to clear the
-// default 0.0.0.0/0 egress rule before applying user rules; without a
-// 200 response the resource fails to create and downstream Authorize
-// calls never happen. We don't track egress today, so the no-op is
-// behaviourally equivalent to the cleanup terraform expects.
-func (s *Service) RevokeSecurityGroupIngress(w http.ResponseWriter, _ *http.Request) {
+// RevokeSecurityGroupIngress removes the requested rules / CIDRs
+// from the SG's ingress list. terraform aws_security_group calls this
+// on every Update where cidr_blocks shrinks, so the side effect must
+// reach storage — earlier this was a no-op stub which left stale
+// rules behind for the audit-style consumers to trip over.
+//
+// The form-converter dotted-key issue applies here too: re-parse the
+// form so IpPermissions.N.* lands in the request.
+func (s *Service) RevokeSecurityGroupIngress(w http.ResponseWriter, r *http.Request) {
+	var req AuthorizeSecurityGroupIngressRequest
+	if err := readEC2JSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.GroupID == "" && req.GroupName == "" {
+		writeError(w, errInvalidParameter, "GroupId or GroupName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := r.ParseForm(); err == nil {
+		if perms := parseIPPermissionsFromForm(r.Form); len(perms) > 0 {
+			req.IPPermissions = perms
+		}
+	}
+
+	if err := s.storage.RevokeSecurityGroupIngress(r.Context(), req.GroupID, req.GroupName, req.IPPermissions); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
 	writeEC2XMLResponse(w, struct {
 		XMLName   xml.Name `xml:"RevokeSecurityGroupIngressResponse"`
 		Xmlns     string   `xml:"xmlns,attr"`
@@ -1672,8 +1699,35 @@ func (s *Service) RevokeSecurityGroupIngress(w http.ResponseWriter, _ *http.Requ
 	}{Xmlns: ec2XMLNS, RequestID: uuid.New().String(), Return: true})
 }
 
-// RevokeSecurityGroupEgress mirrors the ingress no-op above.
-func (s *Service) RevokeSecurityGroupEgress(w http.ResponseWriter, _ *http.Request) {
+// RevokeSecurityGroupEgress is the egress mirror. Egress lookup is by
+// GroupID only — AWS doesn't accept GroupName for egress, mirroring
+// the existing Authorize handler.
+func (s *Service) RevokeSecurityGroupEgress(w http.ResponseWriter, r *http.Request) {
+	var req AuthorizeSecurityGroupEgressRequest
+	if err := readEC2JSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.GroupID == "" {
+		writeError(w, errInvalidParameter, "GroupId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := r.ParseForm(); err == nil {
+		if perms := parseIPPermissionsFromForm(r.Form); len(perms) > 0 {
+			req.IPPermissions = perms
+		}
+	}
+
+	if err := s.storage.RevokeSecurityGroupEgress(r.Context(), req.GroupID, req.IPPermissions); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
 	writeEC2XMLResponse(w, struct {
 		XMLName   xml.Name `xml:"RevokeSecurityGroupEgressResponse"`
 		Xmlns     string   `xml:"xmlns,attr"`

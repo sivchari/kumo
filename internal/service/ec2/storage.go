@@ -73,6 +73,8 @@ type Storage interface {
 	DeleteSecurityGroup(ctx context.Context, groupID, groupName string) error
 	AuthorizeSecurityGroupIngress(ctx context.Context, groupID, groupName string, permissions []IPPermission) error
 	AuthorizeSecurityGroupEgress(ctx context.Context, groupID string, permissions []IPPermission) error
+	RevokeSecurityGroupIngress(ctx context.Context, groupID, groupName string, permissions []IPPermission) error
+	RevokeSecurityGroupEgress(ctx context.Context, groupID string, permissions []IPPermission) error
 	DescribeSecurityGroups(ctx context.Context, groupIDs, groupNames []string) ([]*SecurityGroup, error)
 
 	// Key Pair operations
@@ -515,6 +517,110 @@ func (m *MemoryStorage) AuthorizeSecurityGroupEgress(_ context.Context, groupID 
 	sg.EgressRules = append(sg.EgressRules, permissions...)
 
 	return nil
+}
+
+// RevokeSecurityGroupIngress removes the IP ranges from any matching
+// ingress rule. Match key is (IPProtocol, FromPort, ToPort) — within a
+// matching rule, only the specified CidrIPs are removed (per AWS
+// semantics). A rule whose IPRanges become empty is dropped entirely.
+//
+// Note: real AWS returns InvalidPermission.NotFound when the requested
+// rule/CIDR doesn't exist; for terraform compatibility we silently
+// no-op on misses, which matches what the existing handler stub did
+// before this PR turned it real.
+func (m *MemoryStorage) RevokeSecurityGroupIngress(_ context.Context, groupID, groupName string, permissions []IPPermission) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sg := m.findSecurityGroup(groupID, groupName)
+	if sg == nil {
+		return &Error{
+			Code:    "InvalidGroup.NotFound",
+			Message: "The security group does not exist",
+		}
+	}
+
+	sg.IngressRules = revokeMatching(sg.IngressRules, permissions)
+
+	return nil
+}
+
+// RevokeSecurityGroupEgress is the egress mirror of the ingress
+// revoke. Egress lookup is by GroupID only, matching Authorize.
+func (m *MemoryStorage) RevokeSecurityGroupEgress(_ context.Context, groupID string, permissions []IPPermission) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sg, exists := m.SecurityGroups[groupID]
+	if !exists {
+		return &Error{
+			Code:    "InvalidGroup.NotFound",
+			Message: fmt.Sprintf("The security group '%s' does not exist", groupID),
+		}
+	}
+
+	sg.EgressRules = revokeMatching(sg.EgressRules, permissions)
+
+	return nil
+}
+
+// revokeMatching removes the CIDRs in `revoke` from any rule in
+// `rules` whose proto/port triple matches. Rules left with no IPRanges
+// are dropped from the returned slice. Pure function so the storage
+// methods can stay short.
+func revokeMatching(rules, revoke []IPPermission) []IPPermission {
+	for _, r := range revoke {
+		for i := range rules {
+			if !sameRuleKey(rules[i], r) {
+				continue
+			}
+
+			rules[i].IPRanges = removeCIDRs(rules[i].IPRanges, r.IPRanges)
+		}
+	}
+
+	out := rules[:0]
+
+	for _, rule := range rules {
+		if len(rule.IPRanges) > 0 {
+			out = append(out, rule)
+		}
+	}
+
+	return out
+}
+
+// sameRuleKey compares the proto/port triple AWS uses to identify a
+// rule. CIDR comparison is not part of the key — matching CIDRs are
+// removed from within the rule.
+func sameRuleKey(a, b IPPermission) bool {
+	return a.IPProtocol == b.IPProtocol && a.FromPort == b.FromPort && a.ToPort == b.ToPort
+}
+
+// removeCIDRs returns the elements of `from` whose CidrIP isn't in
+// `drop`. Matching is exact-string on CidrIP (matching AWS's CIDR
+// equality semantics — `0.0.0.0/0` and `0.0.0.0/00` are not the same).
+func removeCIDRs(from, drop []IPRange) []IPRange {
+	if len(drop) == 0 {
+		return from
+	}
+
+	dropSet := make(map[string]struct{}, len(drop))
+	for _, d := range drop {
+		dropSet[d.CidrIP] = struct{}{}
+	}
+
+	out := from[:0]
+
+	for _, r := range from {
+		if _, hit := dropSet[r.CidrIP]; hit {
+			continue
+		}
+
+		out = append(out, r)
+	}
+
+	return out
 }
 
 // DescribeSecurityGroups returns SGs filtered by GroupId / GroupName,
