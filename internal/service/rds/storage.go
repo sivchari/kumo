@@ -188,10 +188,11 @@ func (m *MemoryStorage) buildDBInstance(input *CreateDBInstanceInput) *DBInstanc
 		DeletionProtection:         input.DeletionProtection,
 		Tags:                       input.Tags,
 		VpcSecurityGroups:          buildVpcSecurityGroups(input.VpcSecurityGroupIDs),
-		Endpoint: &Endpoint{
-			Address: fmt.Sprintf("%s.%s.%s.rds.amazonaws.com", input.DBInstanceIdentifier, generateID(), defaultRegion),
-			Port:    m.getDefaultPort(input.Engine),
-		},
+		Endpoint: func() *Endpoint {
+			addr, port := endpointFor(input.Engine, input.DBInstanceIdentifier, m.getDefaultPort(input.Engine))
+
+			return &Endpoint{Address: addr, Port: port}
+		}(),
 	}
 
 	return instance
@@ -375,6 +376,9 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 		port = m.getDefaultPort(input.Engine)
 	}
 
+	clusterAddr, clusterPort := endpointFor(input.Engine, input.DBClusterIdentifier, port)
+	readerAddr, _ := endpointFor(input.Engine, input.DBClusterIdentifier+"-ro", port)
+
 	cluster := &DBCluster{
 		DBClusterIdentifier: input.DBClusterIdentifier,
 		DBClusterArn:        m.dbClusterArn(input.DBClusterIdentifier),
@@ -383,9 +387,9 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 		Status:              DBClusterStatusAvailable,
 		MasterUsername:      input.MasterUsername,
 		DatabaseName:        input.DatabaseName,
-		Endpoint:            fmt.Sprintf("%s.cluster-%s.%s.rds.amazonaws.com", input.DBClusterIdentifier, generateID(), defaultRegion),
-		ReaderEndpoint:      fmt.Sprintf("%s.cluster-ro-%s.%s.rds.amazonaws.com", input.DBClusterIdentifier, generateID(), defaultRegion),
-		Port:                port,
+		Endpoint:            clusterAddr,
+		ReaderEndpoint:      readerAddr,
+		Port:                clusterPort,
 		AllocatedStorage:    input.AllocatedStorage,
 		ClusterCreateTime:   now,
 		AvailabilityZones:   input.AvailabilityZones,
