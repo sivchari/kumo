@@ -18,9 +18,16 @@ type cacheEntry struct {
 	Header     http.Header
 	Body       []byte
 	StoredAt   time.Time
+	InitialAge time.Duration // Age the upstream reported on store
 	TTL        time.Duration
 	Vary       []string          // header names that pinned this variant
 	VaryValues map[string]string // request values seen at store time
+}
+
+// age is the entry's current age — RFC 9111 §5.1: time we've held it
+// + Age the origin reported when we stored it.
+func (e *cacheEntry) age() time.Duration {
+	return time.Since(e.StoredAt) + e.InitialAge
 }
 
 // edgeCache stores responses keyed by (distId, base) where base is
@@ -161,24 +168,17 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientCC := cache.ParseRequestCacheControl(r.Header)
 	base := cache.Key(r, nil)
-	entry, hit := s.edgeCache.lookup(distID, base, r)
 
-	if hit {
-		age := time.Since(entry.StoredAt)
+	if s.tryServeFromCache(w, r, distID, base, originURL, cfg, clientCC) {
+		return
+	}
 
-		fresh := age < entry.TTL && !cache.MustRevalidate(entry.Header)
-		if fresh {
-			serveFromCache(w, r, entry, age)
+	if clientCC.OnlyIfCached {
+		http.Error(w, "only-if-cached: not in cache", http.StatusGatewayTimeout)
 
-			return
-		}
-
-		// Stale or forced-revalidation: ask the origin with
-		// conditional headers built from the cached validators.
-		if revalidated := s.revalidate(w, r, distID, base, entry, originURL, cfg); revalidated {
-			return
-		}
+		return
 	}
 
 	upstream, err := fetchOrigin(originURL, r)
@@ -188,8 +188,38 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storeIfCacheable(s.edgeCache, distID, base, r, upstream, cfg)
+	if !clientCC.NoStore {
+		storeIfCacheable(s.edgeCache, distID, base, r, upstream, cfg)
+	}
+
 	writeUpstream(w, upstream, "Miss from kumo", 0)
+}
+
+// tryServeFromCache looks up the cache and either serves the entry,
+// triggers a revalidation, or reports back that the caller must do a
+// fresh origin fetch. Returns true when the response has already been
+// written.
+func (s *Service) tryServeFromCache(w http.ResponseWriter, r *http.Request, distID, base, originURL string, cfg cache.DistributionConfig, clientCC cache.RequestDirectives) bool {
+	entry, hit := s.edgeCache.lookup(distID, base, r)
+	if !hit {
+		return false
+	}
+
+	age := entry.age()
+	serverForcesRevalidate := cache.MustRevalidate(entry.Header)
+	clientDecision := cache.EvaluateClient(clientCC, age, entry.TTL)
+
+	switch {
+	case !serverForcesRevalidate && clientDecision.Servable:
+		serveFromCache(w, r, entry, age)
+
+		return true
+
+	case clientDecision.Revalidate || serverForcesRevalidate:
+		return s.revalidate(w, r, distID, base, entry, originURL, cfg)
+	}
+
+	return false
 }
 
 // serveFromCache writes the cached entry, honouring client
@@ -529,6 +559,7 @@ func storeIfCacheable(c *edgeCache, distID, base string, r *http.Request, resp *
 		Header:     resp.Header.Clone(),
 		Body:       append([]byte(nil), resp.Body...),
 		StoredAt:   time.Now(),
+		InitialAge: cache.InitialAge(resp.Header),
 		TTL:        ttl,
 		Vary:       vary,
 		VaryValues: values,

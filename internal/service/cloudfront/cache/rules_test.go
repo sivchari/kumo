@@ -77,6 +77,23 @@ func TestEffectiveTTL_PrecedenceTable(t *testing.T) {
 	}
 }
 
+// TestEffectiveTTL_CDNCacheControlOverride exercises RFC 9213:
+// `CDN-Cache-Control` wins over the regular `Cache-Control` at the
+// edge. Browsers downstream still see Cache-Control (we don't strip
+// it), but the cache uses CDN-Cache-Control's directives.
+func TestEffectiveTTL_CDNCacheControlOverride(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{}
+	headers.Set("Cache-Control", "max-age=60")
+	headers.Set("CDN-Cache-Control", "max-age=600")
+
+	got := EffectiveTTL(headers, defCfg, now)
+	if got != 600*time.Second {
+		t.Fatalf("CDN-Cache-Control should win: got %v, want 10m", got)
+	}
+}
+
 // TestEffectiveTTL_Clamp covers the [MinTTL, MaxTTL] guard around the
 // raw value. CloudFront clamps regardless of where the TTL came from.
 func TestEffectiveTTL_Clamp(t *testing.T) {
@@ -124,7 +141,9 @@ func TestIsCacheable(t *testing.T) {
 	}
 }
 
-// TestMustRevalidate covers no-cache and must-revalidate.
+// TestMustRevalidate covers the freshness-side meaning of no-cache.
+// must-revalidate is intentionally NOT included — it constrains
+// stale-entry serving, not fresh-entry serving (RFC 9111 §5.2.2.2).
 func TestMustRevalidate(t *testing.T) {
 	t.Parallel()
 
@@ -135,7 +154,7 @@ func TestMustRevalidate(t *testing.T) {
 		{"", false},
 		{"max-age=60", false},
 		{"no-cache", true},
-		{"must-revalidate", true},
+		{"must-revalidate", false}, // fresh entries serve as-is
 		{"max-age=60, no-cache", true},
 	}
 

@@ -27,10 +27,12 @@ type DistributionConfig struct {
 
 // EffectiveTTL implements the CloudFront precedence:
 //
-//  1. If the origin sends `Cache-Control: s-maxage=N`, use N.
-//  2. Otherwise if `Cache-Control: max-age=N`, use N.
-//  3. Otherwise if `Expires: <date>` is in the future, use that delta.
-//  4. Otherwise fall back to the distribution's DefaultTTL.
+//  1. `CDN-Cache-Control` (RFC 9213) — CDN-targeted directives win
+//     over the Cache-Control browsers see. CloudFront supports it.
+//  2. If the origin sends `Cache-Control: s-maxage=N`, use N.
+//  3. Otherwise if `Cache-Control: max-age=N`, use N.
+//  4. Otherwise if `Expires: <date>` is in the future, use that delta.
+//  5. Otherwise fall back to the distribution's DefaultTTL.
 //
 // The result is then clamped to [MinTTL, MaxTTL].
 //
@@ -41,9 +43,9 @@ type DistributionConfig struct {
 //     "shared cache must not store").
 //
 // `no-cache` is **not** zero — it caches but always revalidates; that
-// distinction belongs to MustRevalidate, not the TTL.
+// distinction belongs to NoCacheDirective, not the TTL.
 func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time) time.Duration {
-	cc := parseControl(respHeader.Get("Cache-Control"))
+	cc := mergedCacheControl(respHeader)
 	if cc.NoStore || cc.Private {
 		return 0
 	}
@@ -69,12 +71,27 @@ func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time)
 	return clampTTL(ttl, cfg)
 }
 
+// mergedCacheControl reads CDN-Cache-Control (RFC 9213) when present,
+// otherwise Cache-Control. CloudFront documents the precedence the
+// same way: CDN-Cache-Control is parsed at the edge and trumps the
+// Cache-Control the browser ultimately sees.
+//
+// Surrogate-Control (the older Akamai/Fastly variant) is intentionally
+// not read — RFC 9213 standardised on CDN-Cache-Control.
+func mergedCacheControl(respHeader http.Header) Control {
+	if cdn := respHeader.Get("CDN-Cache-Control"); cdn != "" {
+		return parseControl(cdn)
+	}
+
+	return parseControl(respHeader.Get("Cache-Control"))
+}
+
 // IsCacheable mirrors the CloudFront decision tree for "can the
 // response be put in the cache at all". Returns (false, reason) when
 // the response must not be stored. Reason is human-readable for
 // surfacing in X-Cache-Reason or logs.
 func IsCacheable(respHeader http.Header, statusCode int) (bool, string) {
-	cc := parseControl(respHeader.Get("Cache-Control"))
+	cc := mergedCacheControl(respHeader)
 	if cc.NoStore {
 		return false, "Cache-Control: no-store"
 	}
@@ -103,14 +120,18 @@ func IsCacheable(respHeader http.Header, statusCode int) (bool, string) {
 	}
 }
 
-// MustRevalidate reports whether a cached entry must be revalidated
-// with the origin before being served, even if it's still fresh by
-// TTL. CloudFront treats `Cache-Control: no-cache` and `must-revalidate`
-// the same way at the edge.
+// MustRevalidate reports whether a **fresh** cached entry must still
+// trigger origin revalidation before it can be served. RFC 9111
+// §5.2.2 distinguishes:
+//
+//   - `no-cache` — yes, revalidate even when fresh.
+//   - `must-revalidate` / `proxy-revalidate` — only matters once the
+//     entry is stale (and even then it just forbids serving stale
+//     while disconnected); fresh entries are unaffected.
+//
+// So this returns true iff the no-cache directive is present.
 func MustRevalidate(respHeader http.Header) bool {
-	cc := parseControl(respHeader.Get("Cache-Control"))
-
-	return cc.NoCache || cc.MustRevalidate
+	return mergedCacheControl(respHeader).NoCache
 }
 
 // VaryHeaders extracts the comma-separated list of request headers
@@ -244,6 +265,152 @@ func ConditionalHeaders(cachedHeader http.Header) http.Header {
 	}
 
 	return out
+}
+
+// InitialAge parses the upstream's `Age:` response header. Used to
+// pre-age a freshly-stored cache entry — the origin may have sat in
+// an upstream cache for some time before reaching us, and RFC 9111
+// §5.1 says we must carry that age forward.
+//
+// Returns 0 when the header is absent / malformed / negative.
+func InitialAge(respHeader http.Header) time.Duration {
+	raw := respHeader.Get("Age")
+	if raw == "" {
+		return 0
+	}
+
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+
+	return time.Duration(n) * time.Second
+}
+
+// RequestDirectives holds the subset of `Cache-Control` directives a
+// client may put on a *request* (RFC 9111 §5.2.1).
+type RequestDirectives struct {
+	NoCache      bool   // "always revalidate this hit before serving"
+	NoStore      bool   // "do not store the response"
+	OnlyIfCached bool   // "serve from cache or 504"
+	MaxAge       *int64 // "I'll only accept entries whose age <= MaxAge"
+	MinFresh     *int64 // "I want at least MinFresh seconds of remaining freshness"
+	MaxStale     *int64 // "I'll accept stale entries up to MaxStale seconds past TTL"
+	HasMaxStale  bool   // distinguishes `max-stale` (no value, means infinity) from absent
+}
+
+// ParseRequestCacheControl reads the request's Cache-Control header.
+// Same parsing logic as the response side, but exposes the
+// request-applicable directives via a separate type so callers don't
+// confuse the two.
+func ParseRequestCacheControl(reqHeader http.Header) RequestDirectives {
+	raw := reqHeader.Get("Cache-Control")
+	if raw == "" {
+		return RequestDirectives{}
+	}
+
+	var d RequestDirectives
+
+	for _, part := range strings.Split(raw, ",") {
+		applyRequestDirective(&d, strings.TrimSpace(part))
+	}
+
+	return d
+}
+
+// applyRequestDirective folds one parsed directive into d. Pulled out
+// of ParseRequestCacheControl to satisfy the cyclop budget — and to
+// give the per-directive parsing somewhere to grow if we add more.
+func applyRequestDirective(d *RequestDirectives, part string) {
+	if part == "" {
+		return
+	}
+
+	key, value, _ := strings.Cut(part, "=")
+	key = strings.ToLower(strings.TrimSpace(key))
+	value = strings.TrimSpace(strings.Trim(value, `"`))
+
+	switch key {
+	case "no-cache":
+		d.NoCache = true
+	case "no-store":
+		d.NoStore = true
+	case "only-if-cached":
+		d.OnlyIfCached = true
+	case "max-age":
+		if v, ok := parseNonNegativeInt(value); ok {
+			d.MaxAge = &v
+		}
+	case "min-fresh":
+		if v, ok := parseNonNegativeInt(value); ok {
+			d.MinFresh = &v
+		}
+	case "max-stale":
+		d.HasMaxStale = true
+
+		if v, ok := parseNonNegativeInt(value); ok {
+			d.MaxStale = &v
+		}
+	}
+}
+
+// parseNonNegativeInt parses a base-10 int64 and returns ok=false on
+// error or negative values.
+func parseNonNegativeInt(s string) (int64, bool) {
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || v < 0 {
+		return 0, false
+	}
+
+	return v, true
+}
+
+// EvaluateClient decides whether a cached entry can be served given
+// the request's Cache-Control directives. age is the entry's current
+// age (`time.Since(StoredAt) + InitialAge`). ttl is the entry's
+// effective TTL.
+//
+// Returns:
+//
+//	servable=true  → cached entry satisfies the request
+//	revalidate=true → cache may serve only after origin revalidation
+
+// ClientDecision is the verdict EvaluateClient returns.
+type ClientDecision struct {
+	Servable   bool
+	Revalidate bool
+	Reason     string
+}
+
+// EvaluateClient runs the request-side directives against an entry.
+func EvaluateClient(req RequestDirectives, age, ttl time.Duration) ClientDecision {
+	if req.NoCache {
+		return ClientDecision{Revalidate: true, Reason: "request: no-cache"}
+	}
+
+	if req.MaxAge != nil && age > time.Duration(*req.MaxAge)*time.Second {
+		return ClientDecision{Revalidate: true, Reason: "request: max-age exceeded"}
+	}
+
+	if req.MinFresh != nil {
+		remaining := ttl - age
+		if remaining < time.Duration(*req.MinFresh)*time.Second {
+			return ClientDecision{Revalidate: true, Reason: "request: min-fresh not met"}
+		}
+	}
+
+	stale := age >= ttl
+	if stale && req.HasMaxStale {
+		if req.MaxStale == nil || age-ttl <= time.Duration(*req.MaxStale)*time.Second {
+			return ClientDecision{Servable: true, Reason: "request: max-stale honoured"}
+		}
+	}
+
+	if stale {
+		return ClientDecision{Revalidate: true, Reason: "stale"}
+	}
+
+	return ClientDecision{Servable: true}
 }
 
 // ParseRange interprets a single-range "Range: bytes=START-END"
