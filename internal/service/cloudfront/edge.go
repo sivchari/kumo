@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -536,20 +537,75 @@ func edgeCacheConfig(dist *Distribution) (cache.DistributionConfig, bool) {
 	}, true
 }
 
-// edgeOriginURL builds the upstream URL: `<scheme>://<DomainName><OriginPath><path>?<query>`.
-// CustomOriginConfig.HTTPPort is honoured when the origin is HTTP.
+// edgeOriginURL builds the upstream URL for the request, choosing the
+// origin pinned by `DefaultCacheBehavior.TargetOriginID` and falling
+// back to the first registered origin when the ID doesn't resolve.
+//
+// Two origin shapes are honoured:
+//
+//   - **CustomOriginConfig**: arbitrary HTTP(S) origin.
+//     `<scheme>://<DomainName>[:<HTTPPort>]<OriginPath>/<path>`.
+//   - **S3OriginConfig**: an AWS S3 bucket. The DomainName is the
+//     virtual-hosted bucket DNS name (e.g.
+//     `mybucket.s3.us-east-1.amazonaws.com`). At the edge we extract
+//     the bucket name and target kumo's own S3 service in path-style
+//     so the proxy stays inside this kumo (no real AWS round-trip).
+//     The S3 base URL is `KUMO_S3_BACKEND` (default
+//     `http://127.0.0.1:4566`).
 func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
-	if dist.DistributionConfig == nil || dist.DistributionConfig.Origins == nil {
+	o, ok := selectOrigin(dist)
+	if !ok {
 		return "", false
+	}
+
+	var full string
+
+	switch {
+	case o.S3OriginConfig != nil:
+		full, ok = s3OriginURL(&o, path)
+		if !ok {
+			return "", false
+		}
+	case o.CustomOriginConfig != nil:
+		full = customOriginURL(&o, path)
+	default:
+		// No config block — assume HTTPS to the bare DomainName.
+		full = "https://" + o.DomainName + o.OriginPath + "/" + path
+	}
+
+	if rawQuery != "" {
+		full += "?" + rawQuery
+	}
+
+	return full, true
+}
+
+// selectOrigin returns the origin pinned by the distribution's
+// DefaultCacheBehavior.TargetOriginID, falling back to the first
+// origin when the ID doesn't match.
+func selectOrigin(dist *Distribution) (Origin, bool) {
+	if dist.DistributionConfig == nil || dist.DistributionConfig.Origins == nil {
+		return Origin{}, false
 	}
 
 	origins := dist.DistributionConfig.Origins.Items
 	if len(origins) == 0 {
-		return "", false
+		return Origin{}, false
 	}
 
-	o := origins[0]
+	if dcb := dist.DistributionConfig.DefaultCacheBehavior; dcb != nil && dcb.TargetOriginID != "" {
+		for _, o := range origins {
+			if o.ID == dcb.TargetOriginID {
+				return o, true
+			}
+		}
+	}
 
+	return origins[0], true
+}
+
+// customOriginURL builds the URL for an HTTP(S) custom origin.
+func customOriginURL(o *Origin, path string) string {
 	scheme := "https"
 	host := o.DomainName
 
@@ -566,12 +622,56 @@ func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
 		}
 	}
 
-	full := scheme + "://" + host + o.OriginPath + "/" + path
-	if rawQuery != "" {
-		full += "?" + rawQuery
+	return scheme + "://" + host + o.OriginPath + "/" + path
+}
+
+// s3OriginURL points the request at kumo's own S3 service in
+// path-style so the edge proxy stays in-process. Bucket name comes
+// from the DomainName's leftmost label; everything to the right of
+// the first dot is discarded.
+//
+// Example:
+//
+//	DomainName = "mybucket.s3.us-east-1.amazonaws.com"
+//	  → bucket = "mybucket"
+//	  → URL    = "<KUMO_S3_BACKEND>/mybucket<OriginPath>/<path>"
+//
+// Returns ok=false when the bucket can't be derived.
+func s3OriginURL(o *Origin, path string) (string, bool) {
+	bucket := s3BucketFromDomain(o.DomainName)
+	if bucket == "" {
+		return "", false
 	}
 
-	return full, true
+	base := os.Getenv("KUMO_S3_BACKEND")
+	if base == "" {
+		base = "http://127.0.0.1:4566"
+	}
+
+	return strings.TrimRight(base, "/") + "/" + bucket + o.OriginPath + "/" + path, true
+}
+
+// s3BucketFromDomain extracts the bucket name from a virtual-hosted
+// S3 DomainName. Accepts forms like
+// `<bucket>.s3.amazonaws.com`, `<bucket>.s3.<region>.amazonaws.com`,
+// `<bucket>.s3-<region>.amazonaws.com`. Returns "" when the input
+// isn't recognisably an S3 host.
+func s3BucketFromDomain(domain string) string {
+	dot := strings.Index(domain, ".")
+	if dot <= 0 {
+		return ""
+	}
+
+	bucket := domain[:dot]
+	rest := domain[dot+1:]
+
+	if !strings.HasPrefix(rest, "s3.") &&
+		!strings.HasPrefix(rest, "s3-") &&
+		rest != "s3.amazonaws.com" {
+		return ""
+	}
+
+	return bucket
 }
 
 // originResponse is the buffered subset of an http.Response that the

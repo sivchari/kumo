@@ -159,6 +159,157 @@ func TestEdge_SMaxAgeOverride(t *testing.T) {
 	}
 }
 
+// TestS3BucketFromDomain enumerates the virtual-hosted S3 hostname
+// shapes the edge must recognise to route an S3OriginConfig back at
+// kumo's own S3 service.
+func TestS3BucketFromDomain(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		domain string
+		want   string
+	}{
+		{"mybucket.s3.amazonaws.com", "mybucket"},
+		{"mybucket.s3.us-east-1.amazonaws.com", "mybucket"},
+		{"mybucket.s3-us-west-2.amazonaws.com", "mybucket"},
+		{"mybucket.s3.dualstack.us-east-1.amazonaws.com", "mybucket"},
+		{"example.com", ""},
+		{"", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.domain, func(t *testing.T) {
+			if got := s3BucketFromDomain(tc.domain); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEdge_S3Origin verifies an S3 origin gets routed at kumo's own
+// S3 service (path-style) instead of out to real AWS. We point
+// KUMO_S3_BACKEND at a tiny httptest server that mimics the S3
+// path-style response.
+func TestEdge_S3Origin(t *testing.T) {
+	const objectBody = "hello-from-fake-s3"
+
+	var gotPath string
+
+	fakeS3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(objectBody))
+	}))
+	defer fakeS3.Close()
+
+	t.Setenv("KUMO_S3_BACKEND", fakeS3.URL)
+
+	svc := New(NewMemoryStorage())
+
+	_, err := svc.storage.CreateDistribution(t.Context(), &CreateDistributionRequest{
+		CallerReference: "s3-origin",
+		Enabled:         true,
+		Origins: &OriginsXML{
+			Quantity: 1,
+			Items: &OriginList{
+				Origin: []OriginXML{{
+					ID:             "s3-origin",
+					DomainName:     "mybucket.s3.us-east-1.amazonaws.com",
+					S3OriginConfig: &S3OriginConfigXML{OriginAccessIdentity: ""},
+				}},
+			},
+		},
+		DefaultCacheBehavior: &DefaultCacheBehaviorXML{
+			TargetOriginID: "s3-origin",
+			MinTTL:         0,
+			DefaultTTL:     86400,
+			MaxTTL:         31536000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateDistribution: %v", err)
+	}
+
+	w := callEdge(t, svc, http.MethodGet, "/path/to/object.txt", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	if w.Body.String() != objectBody {
+		t.Fatalf("body: got %q, want %q", w.Body.String(), objectBody)
+	}
+
+	if gotPath != "/mybucket/path/to/object.txt" {
+		t.Fatalf("upstream path: got %q, want /mybucket/path/to/object.txt", gotPath)
+	}
+}
+
+// TestEdge_TargetOriginIDSelection — when a distribution has more
+// than one origin, the cache forwards to the one named by
+// DefaultCacheBehavior.TargetOriginID, not the first.
+func TestEdge_TargetOriginIDSelection(t *testing.T) {
+	t.Parallel()
+
+	wrong := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("WRONG ORIGIN"))
+	}))
+	defer wrong.Close()
+
+	right := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		_, _ = w.Write([]byte("right"))
+	}))
+	defer right.Close()
+
+	svc := New(NewMemoryStorage())
+
+	wrongHost, wrongPort := splitHostPort(strings.TrimPrefix(wrong.URL, "http://"))
+	rightHost, rightPort := splitHostPort(strings.TrimPrefix(right.URL, "http://"))
+
+	_, err := svc.storage.CreateDistribution(t.Context(), &CreateDistributionRequest{
+		CallerReference: "two-origin",
+		Enabled:         true,
+		Origins: &OriginsXML{
+			Quantity: 2,
+			Items: &OriginList{
+				Origin: []OriginXML{
+					{
+						ID:                 "wrong",
+						DomainName:         wrongHost,
+						CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: wrongPort, OriginProtocolPolicy: "http-only"},
+					},
+					{
+						ID:                 "right",
+						DomainName:         rightHost,
+						CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: rightPort, OriginProtocolPolicy: "http-only"},
+					},
+				},
+			},
+		},
+		DefaultCacheBehavior: &DefaultCacheBehaviorXML{
+			TargetOriginID: "right",
+			MinTTL:         0,
+			DefaultTTL:     86400,
+			MaxTTL:         31536000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateDistribution: %v", err)
+	}
+
+	w := callEdge(t, svc, http.MethodGet, "/foo", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	if w.Body.String() != "right" {
+		t.Fatalf("served from wrong origin: %q", w.Body.String())
+	}
+}
+
 // TestEdge_404FromKumoOnUnknownDistribution — a request to
 // /kumo/cdn/<bogus>/... returns 404 with no upstream contact.
 func TestEdge_404FromKumoOnUnknownDistribution(t *testing.T) {
