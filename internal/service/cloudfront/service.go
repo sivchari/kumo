@@ -55,9 +55,12 @@ func (s *Service) RegisterRoutes(r service.Router) {
 
 	// Edge — proxies real requests through the cache layer. Lives
 	// under /kumo (the existing admin prefix) so it doesn't collide
-	// with the S3 wildcard /{bucket}/{key...}.
-	r.Handle("GET", "/kumo/cdn/{distributionId}/{path...}", s.Edge)
-	r.Handle("HEAD", "/kumo/cdn/{distributionId}/{path...}", s.Edge)
+	// with the S3 wildcard /{bucket}/{key...}. Non-cacheable methods
+	// (PUT/POST/DELETE/PATCH) bypass the cache and pass through to
+	// the origin.
+	for _, method := range []string{"GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"} {
+		r.Handle(method, "/kumo/cdn/{distributionId}/{path...}", s.Edge)
+	}
 }
 
 // Close saves the storage state if persistence is enabled.

@@ -114,14 +114,18 @@ func sameVarySignature(a, b *cacheEntry) bool {
 	return true
 }
 
-// Edge handles GET requests routed through `/kumo/cdn/{distId}/{path...}`.
+// Edge handles requests routed through `/kumo/cdn/{distId}/{path...}`.
 // It implements the CloudFront edge caching contract:
 //
 //  1. Resolve the distribution + chosen origin.
-//  2. Look up the cache entry. If fresh and not flagged for forced
-//     revalidation, serve it with `X-Cache: Hit from kumo` and the
-//     standard `Age` header.
-//  3. Otherwise fetch from the origin, evaluate cacheability + TTL via
+//  2. For non-safe methods (PUT / POST / DELETE / PATCH), pass through
+//     to the origin without consulting or storing the cache. RFC 9111
+//     §4.4 requires the cache to invalidate on these too — handled in
+//     a follow-up.
+//  3. For safe methods (GET / HEAD), look up the cache. If fresh and
+//     not flagged for forced revalidation, serve it with
+//     `X-Cache: Hit from kumo` and the standard `Age` header.
+//  4. Otherwise fetch from the origin, evaluate cacheability + TTL via
 //     the rules in `cache/`, store the response when allowed, and
 //     serve with `X-Cache: Miss from kumo`.
 //
@@ -138,16 +142,22 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, ok := edgeCacheConfig(dist)
+	originURL, ok := edgeOriginURL(dist, r.PathValue("path"), r.URL.RawQuery)
 	if !ok {
-		http.Error(w, "distribution missing DefaultCacheBehavior", http.StatusServiceUnavailable)
+		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
 
 		return
 	}
 
-	originURL, ok := edgeOriginURL(dist, r.PathValue("path"), r.URL.RawQuery)
+	if !isCacheableMethod(r.Method) {
+		s.passthrough(w, r, originURL)
+
+		return
+	}
+
+	cfg, ok := edgeCacheConfig(dist)
 	if !ok {
-		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
+		http.Error(w, "distribution missing DefaultCacheBehavior", http.StatusServiceUnavailable)
 
 		return
 	}
@@ -168,6 +178,44 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 
 	storeIfCacheable(s.edgeCache, distID, base, r, upstream, cfg)
 	writeUpstream(w, upstream, "Miss from kumo", 0)
+}
+
+// isCacheableMethod returns true for the HTTP methods CloudFront ever
+// considers caching. Everything else passes through.
+func isCacheableMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead
+}
+
+// isHopByHopHeader reports whether the given header is per-hop and
+// must not be propagated through a proxy (RFC 7230 §6.1).
+func isHopByHopHeader(name string) bool {
+	switch http.CanonicalHeaderKey(name) {
+	case "Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te",
+		"Trailers",
+		"Transfer-Encoding",
+		"Upgrade",
+		"Host":
+		return true
+	}
+
+	return false
+}
+
+// passthrough forwards the request body verbatim, returns the response
+// without touching the cache. Used for PUT / POST / DELETE / PATCH.
+func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, originURL string) {
+	upstream, err := forwardOrigin(originURL, r)
+	if err != nil {
+		http.Error(w, "origin fetch failed: "+err.Error(), http.StatusBadGateway)
+
+		return
+	}
+
+	writeUpstream(w, upstream, "Bypass from kumo", 0)
 }
 
 // edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of
@@ -235,26 +283,43 @@ type originResponse struct {
 	Body       []byte
 }
 
-// fetchOrigin sends the request upstream and returns the buffered
-// response. We need the body twice (once to serve, once to cache),
-// so it's read into memory here.
+// fetchOrigin sends a body-less request upstream (GET/HEAD) and
+// returns the buffered response. We need the body twice (once to
+// serve, once to cache), so it's read into memory here.
 func fetchOrigin(target string, r *http.Request) (*originResponse, error) {
+	return originRequest(target, r, http.NoBody)
+}
+
+// forwardOrigin proxies a non-cacheable request (PUT/POST/DELETE/PATCH)
+// with its body intact. The cache is not consulted.
+func forwardOrigin(target string, r *http.Request) (*originResponse, error) {
+	return originRequest(target, r, r.Body)
+}
+
+// originRequest is the shared upstream request path used by both
+// fetchOrigin and forwardOrigin.
+func originRequest(target string, r *http.Request, reqBody io.Reader) (*originResponse, error) {
 	parsed, err := url.Parse(target)
 	if err != nil {
 		return nil, fmt.Errorf("parse origin URL: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, parsed.String(), http.NoBody)
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, parsed.String(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("build origin request: %w", err)
 	}
 
-	// Forward request headers that affect cache variants. The full
-	// header list isn't propagated — CloudFront's default forwarded
-	// set is small.
-	for _, h := range []string{"Accept", "Accept-Encoding", "Accept-Language", "User-Agent"} {
-		if v := r.Header.Get(h); v != "" {
-			req.Header.Set(h, v)
+	// Forward all request headers except hop-by-hop. CloudFront's
+	// real forwarding policy is configurable — we keep it permissive
+	// so the test surface (Test-ID / Req-Num / If-Modified-Since /
+	// Cache-Control / etc) reaches the origin verbatim.
+	for k, vs := range r.Header {
+		if isHopByHopHeader(k) {
+			continue
+		}
+
+		for _, v := range vs {
+			req.Header.Add(k, v)
 		}
 	}
 
