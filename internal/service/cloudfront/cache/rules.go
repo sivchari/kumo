@@ -123,6 +123,51 @@ func mergedCacheControl(respHeader http.Header) Control {
 	return parseControl(respHeader.Get("Cache-Control"))
 }
 
+// CDNStaleDirectives is the (stale-while-revalidate, stale-if-error)
+// pair from a response. CloudFront only honours these when they come
+// from CDN-Cache-Control — the Cache-Control header is the
+// browser-targeted policy and intentionally has no influence on the
+// CDN's stale-serving behaviour. RFC 9213 §3.1 endorses the same
+// split.
+//
+// Returns zero durations when neither directive is set or
+// CDN-Cache-Control is absent.
+type CDNStaleDirectives struct {
+	StaleWhileRevalidate time.Duration
+	StaleIfError         time.Duration
+}
+
+// ReadCDNStaleDirectives parses CDN-Cache-Control for swr / sie. It
+// intentionally ignores Cache-Control to match CloudFront's published
+// behaviour.
+func ReadCDNStaleDirectives(respHeader http.Header) CDNStaleDirectives {
+	cdn := respHeader.Get("CDN-Cache-Control")
+	if cdn == "" {
+		return CDNStaleDirectives{}
+	}
+
+	var out CDNStaleDirectives
+
+	for _, part := range strings.Split(cdn, ",") {
+		key, value, _ := strings.Cut(strings.TrimSpace(part), "=")
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = strings.TrimSpace(strings.Trim(value, `"`))
+
+		switch key {
+		case "stale-while-revalidate":
+			if v, ok := parseNonNegativeInt(value); ok {
+				out.StaleWhileRevalidate = time.Duration(v) * time.Second
+			}
+		case "stale-if-error":
+			if v, ok := parseNonNegativeInt(value); ok {
+				out.StaleIfError = time.Duration(v) * time.Second
+			}
+		}
+	}
+
+	return out
+}
+
 // IsCacheable decides whether the response can be put in the cache
 // at all. Returns (false, reason) when storage is forbidden.
 //

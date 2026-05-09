@@ -1,6 +1,7 @@
 package cloudfront
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,14 +16,18 @@ import (
 
 // cacheEntry is one cached response variant for a distribution.
 type cacheEntry struct {
-	StatusCode int
-	Header     http.Header
-	Body       []byte
-	StoredAt   time.Time
-	InitialAge time.Duration // Age the upstream reported on store
-	TTL        time.Duration
-	Vary       []string          // header names that pinned this variant
-	VaryValues map[string]string // request values seen at store time
+	StatusCode           int
+	Header               http.Header
+	Body                 []byte
+	StoredAt             time.Time
+	InitialAge           time.Duration // Age the upstream reported on store
+	TTL                  time.Duration
+	StaleWhileRevalidate time.Duration     // window after TTL during which a stale serve+async revalidate is allowed (CDN-Cache-Control only)
+	StaleIfError         time.Duration     // window after TTL during which an origin error allows serving stale (CDN-Cache-Control only)
+	Vary                 []string          // header names that pinned this variant
+	VaryValues           map[string]string // request values seen at store time
+	revalidating         bool              // guards against duplicate background revalidations
+	revalidateMu         sync.Mutex        // protects `revalidating`
 }
 
 // age is the entry's current age — RFC 9111 §5.1: time we've held it
@@ -273,17 +278,79 @@ func (s *Service) tryServeFromCache(w http.ResponseWriter, r *http.Request, dist
 	serverForcesRevalidate := cache.MustRevalidate(entry.Header)
 	clientDecision := cache.EvaluateClient(clientCC, age, entry.TTL)
 
-	switch {
-	case !serverForcesRevalidate && clientDecision.Servable:
+	if !serverForcesRevalidate && clientDecision.Servable {
 		serveFromCache(w, r, entry, age)
 
 		return true
+	}
 
-	case clientDecision.Revalidate || serverForcesRevalidate:
+	// Stale-while-revalidate: per CloudFront's CDN-Cache-Control
+	// reading of RFC 9213, a stale entry within the SWR window may
+	// be served immediately if the client allows it. A background
+	// revalidation refreshes the cache for the next request.
+	staleness := age - entry.TTL
+	if staleness > 0 && staleness <= entry.StaleWhileRevalidate && !serverForcesRevalidate && !clientCC.NoCache {
+		s.kickBackgroundRevalidate(distID, base, r, entry, originURL, cfg)
+		serveFromCache(w, r, entry, age)
+
+		return true
+	}
+
+	if clientDecision.Revalidate || serverForcesRevalidate {
 		return s.revalidate(w, r, distID, base, entry, originURL, cfg)
 	}
 
 	return false
+}
+
+// kickBackgroundRevalidate launches a goroutine that revalidates the
+// entry against the origin, deduplicating concurrent attempts on the
+// same key via a per-entry mutex flag. The current request is served
+// stale by the caller; this goroutine just keeps the cache fresh for
+// the next one.
+func (s *Service) kickBackgroundRevalidate(distID, base string, r *http.Request, entry *cacheEntry, originURL string, cfg cache.DistributionConfig) {
+	entry.revalidateMu.Lock()
+	if entry.revalidating {
+		entry.revalidateMu.Unlock()
+
+		return
+	}
+
+	entry.revalidating = true
+	entry.revalidateMu.Unlock()
+
+	// Detach the request from the response writer's lifecycle —
+	// the original handler returns immediately after we serve stale.
+	cloned := r.Clone(context.Background())
+
+	go func() {
+		defer func() {
+			entry.revalidateMu.Lock()
+			entry.revalidating = false
+			entry.revalidateMu.Unlock()
+		}()
+
+		cond := cache.ConditionalHeaders(entry.Header)
+		if len(cond) == 0 {
+			return
+		}
+
+		upstream, err := revalidateOrigin(originURL, cloned, cond)
+		if err != nil {
+			return
+		}
+
+		if upstream.StatusCode == http.StatusNotModified {
+			mergeRevalidatedHeaders(entry.Header, upstream.Header)
+			entry.StoredAt = time.Now()
+			entry.TTL = cache.EffectiveTTL(entry.Header, cfg, time.Now())
+
+			return
+		}
+
+		// 200 — replace via the normal store path.
+		storeIfCacheable(s.edgeCache, distID, base, cloned, upstream, cfg)
+	}()
 }
 
 // serveFromCache writes the cached entry, honouring client
@@ -618,15 +685,19 @@ func storeIfCacheable(c *edgeCache, distID, base string, r *http.Request, resp *
 		values[name] = r.Header.Get(name)
 	}
 
+	stale := cache.ReadCDNStaleDirectives(resp.Header)
+
 	c.store(distID, base, &cacheEntry{
-		StatusCode: resp.StatusCode,
-		Header:     resp.Header.Clone(),
-		Body:       append([]byte(nil), resp.Body...),
-		StoredAt:   time.Now(),
-		InitialAge: cache.InitialAge(resp.Header),
-		TTL:        ttl,
-		Vary:       vary,
-		VaryValues: values,
+		StatusCode:           resp.StatusCode,
+		Header:               resp.Header.Clone(),
+		Body:                 append([]byte(nil), resp.Body...),
+		StoredAt:             time.Now(),
+		InitialAge:           cache.InitialAge(resp.Header),
+		TTL:                  ttl,
+		StaleWhileRevalidate: stale.StaleWhileRevalidate,
+		StaleIfError:         stale.StaleIfError,
+		Vary:                 vary,
+		VaryValues:           values,
 	})
 }
 
