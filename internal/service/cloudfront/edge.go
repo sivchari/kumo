@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,13 +92,19 @@ func (c *edgeCache) store(distID, base string, entry *cacheEntry) {
 
 // matchesVary reports whether the request's headers for the entry's
 // recorded Vary list equal the ones it was stored with.
+//
+// Comparison is normalised: leading/trailing whitespace stripped,
+// internal whitespace runs collapsed, comma-separated tokens trimmed
+// individually. Case sensitivity follows the field-line value rule
+// (Accept-Language / Accept-Encoding are tokens — case-insensitive;
+// others fall back to byte equality after whitespace normalisation).
 func matchesVary(e *cacheEntry, r *http.Request) bool {
 	if len(e.Vary) == 0 {
 		return true
 	}
 
 	for _, name := range e.Vary {
-		if r.Header.Get(name) != e.VaryValues[name] {
+		if !varyValueEqual(name, r.Header.Get(name), e.VaryValues[name]) {
 			return false
 		}
 	}
@@ -105,15 +112,71 @@ func matchesVary(e *cacheEntry, r *http.Request) bool {
 	return true
 }
 
+// varyValueEqual compares two values for the named Vary header after
+// normalisation.
+func varyValueEqual(name, a, b string) bool {
+	an := normaliseVaryValue(name, a)
+	bn := normaliseVaryValue(name, b)
+
+	return an == bn
+}
+
+// normaliseVaryValue trims and collapses internal whitespace. For
+// token-list headers (Accept-Encoding / Accept-Language) it also
+// lowercases — those headers' grammars treat values case-insensitively.
+func normaliseVaryValue(name, value string) string {
+	out := collapseWhitespace(strings.TrimSpace(value))
+
+	switch strings.ToLower(name) {
+	case "accept-encoding", "accept-language":
+		// Per RFC 9110, content-coding / language-tag tokens are
+		// case-insensitive.
+		out = strings.ToLower(out)
+	}
+
+	return out
+}
+
+// collapseWhitespace replaces runs of HTAB/SP with a single SP and
+// trims spaces around comma separators.
+func collapseWhitespace(s string) string {
+	var b strings.Builder
+
+	prevSpace := false
+
+	for _, r := range s {
+		if r == ' ' || r == '\t' {
+			if !prevSpace {
+				b.WriteByte(' ')
+
+				prevSpace = true
+			}
+
+			continue
+		}
+
+		prevSpace = false
+
+		b.WriteRune(r)
+	}
+
+	out := b.String()
+	out = strings.ReplaceAll(out, " ,", ",")
+	out = strings.ReplaceAll(out, ", ", ",")
+
+	return out
+}
+
 // sameVarySignature checks two entries declare the same Vary headers
-// AND the same values (used during store to overwrite stale variants).
+// AND equivalent values (used during store to overwrite stale
+// variants).
 func sameVarySignature(a, b *cacheEntry) bool {
 	if len(a.Vary) != len(b.Vary) {
 		return false
 	}
 
 	for _, name := range a.Vary {
-		if a.VaryValues[name] != b.VaryValues[name] {
+		if !varyValueEqual(name, a.VaryValues[name], b.VaryValues[name]) {
 			return false
 		}
 	}
@@ -171,7 +234,8 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 	clientCC := cache.ParseRequestCacheControl(r.Header)
 	base := cache.Key(r, nil)
 
-	if s.tryServeFromCache(w, r, distID, base, originURL, cfg, clientCC) {
+	// Request `no-store` bypasses the cache on both serve and store.
+	if !clientCC.NoStore && s.tryServeFromCache(w, r, distID, base, originURL, cfg, clientCC) {
 		return
 	}
 

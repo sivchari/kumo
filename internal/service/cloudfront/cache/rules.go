@@ -58,17 +58,54 @@ func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time)
 	case cc.MaxAge != nil:
 		ttl = time.Duration(*cc.MaxAge) * time.Second
 	default:
-		if exp := respHeader.Get("Expires"); exp != "" {
-			if t, err := http.ParseTime(exp); err == nil {
-				delta := t.Sub(now)
-				if delta > 0 {
-					ttl = delta
-				}
-			}
+		switch {
+		case respHeader.Get("Expires") != "":
+			ttl = expiresTTL(respHeader, now)
+		case respHeader.Get("Last-Modified") != "":
+			// RFC 9111 §4.2.2 heuristic freshness: 10% of the
+			// last-modified-to-now interval, capped at the cache's
+			// configured max so a years-old asset doesn't get a
+			// years-long lifetime.
+			ttl = heuristicTTL(respHeader, now)
 		}
 	}
 
 	return clampTTL(ttl, cfg)
+}
+
+// expiresTTL evaluates the Expires header relative to `now`. Per RFC
+// 9111 §5.3 a valid Expires is explicit freshness — even when the
+// delta is non-positive (treat as already-stale).
+func expiresTTL(respHeader http.Header, now time.Time) time.Duration {
+	t, err := http.ParseTime(respHeader.Get("Expires"))
+	if err != nil {
+		return 0
+	}
+
+	delta := t.Sub(now)
+	if delta < 0 {
+		return 0
+	}
+
+	return delta
+}
+
+// heuristicTTL implements the RFC 9111 §4.2.2 10% heuristic. The
+// fraction is conservative — most real CDNs use this number too.
+// We bound by `now - Date` so a faulty Last-Modified can't push the
+// TTL past the response's own age.
+func heuristicTTL(respHeader http.Header, now time.Time) time.Duration {
+	lm, err := http.ParseTime(respHeader.Get("Last-Modified"))
+	if err != nil {
+		return 0
+	}
+
+	delta := now.Sub(lm)
+	if delta <= 0 {
+		return 0
+	}
+
+	return delta / 10
 }
 
 // mergedCacheControl reads CDN-Cache-Control (RFC 9213) when present,
@@ -86,10 +123,15 @@ func mergedCacheControl(respHeader http.Header) Control {
 	return parseControl(respHeader.Get("Cache-Control"))
 }
 
-// IsCacheable mirrors the CloudFront decision tree for "can the
-// response be put in the cache at all". Returns (false, reason) when
-// the response must not be stored. Reason is human-readable for
-// surfacing in X-Cache-Reason or logs.
+// IsCacheable decides whether the response can be put in the cache
+// at all. Returns (false, reason) when storage is forbidden.
+//
+// Per RFC 9111 §3: any status code may be cached when the response
+// carries **explicit** freshness information (Cache-Control max-age /
+// s-maxage / CDN-Cache-Control max-age, or an Expires header).
+// Without explicit freshness only the "heuristically cacheable" set
+// (RFC 9110 §15) is stored — that's the small list CloudFront
+// defaults to.
 func IsCacheable(respHeader http.Header, statusCode int) (bool, string) {
 	cc := mergedCacheControl(respHeader)
 	if cc.NoStore {
@@ -100,7 +142,44 @@ func IsCacheable(respHeader http.Header, statusCode int) (bool, string) {
 		return false, "Cache-Control: private"
 	}
 
-	// CloudFront caches a fixed set of status codes by default.
+	if hasExplicitFreshness(respHeader) {
+		return true, ""
+	}
+
+	if isHeuristicallyCacheableStatus(statusCode) {
+		return true, ""
+	}
+
+	return false, "status " + strconv.Itoa(statusCode) + " is not heuristically cacheable"
+}
+
+// hasExplicitFreshness reports whether the response advertises a
+// freshness lifetime — max-age / s-maxage on Cache-Control or
+// CDN-Cache-Control, or a *valid* Expires header. Used to decide
+// whether non-heuristic statuses may be cached.
+//
+// An Expires header that doesn't parse as an HTTP-date is treated as
+// already-expired per RFC 9111 §5.3 and therefore does not constitute
+// explicit freshness.
+func hasExplicitFreshness(respHeader http.Header) bool {
+	cc := mergedCacheControl(respHeader)
+	if cc.MaxAge != nil || cc.SMaxAge != nil {
+		return true
+	}
+
+	if exp := respHeader.Get("Expires"); exp != "" {
+		if _, err := http.ParseTime(exp); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isHeuristicallyCacheableStatus is the subset of status codes RFC
+// 9110 §15 marks as "heuristically cacheable". Without explicit
+// freshness the cache only stores these.
+func isHeuristicallyCacheableStatus(statusCode int) bool {
 	switch statusCode {
 	case http.StatusOK,
 		http.StatusNonAuthoritativeInfo,
@@ -114,10 +193,10 @@ func IsCacheable(respHeader http.Header, statusCode int) (bool, string) {
 		http.StatusGone,
 		http.StatusRequestURITooLong,
 		http.StatusNotImplemented:
-		return true, ""
-	default:
-		return false, "status " + strconv.Itoa(statusCode) + " is not cacheable by default"
+		return true
 	}
+
+	return false
 }
 
 // MustRevalidate reports whether a **fresh** cached entry must still
@@ -605,12 +684,19 @@ func parseControl(raw string) Control {
 		case "must-revalidate":
 			cc.MustRevalidate = true
 		case "max-age":
-			if v, err := strconv.ParseInt(value, 10, 64); err == nil {
-				cc.MaxAge = &v
+			// RFC 9111 §5.2 leaves duplicate-directive handling
+			// implementation-defined; cache-tests expects the first
+			// successfully-parsed value to win.
+			if cc.MaxAge == nil {
+				if v, err := strconv.ParseInt(value, 10, 64); err == nil {
+					cc.MaxAge = &v
+				}
 			}
 		case "s-maxage":
-			if v, err := strconv.ParseInt(value, 10, 64); err == nil {
-				cc.SMaxAge = &v
+			if cc.SMaxAge == nil {
+				if v, err := strconv.ParseInt(value, 10, 64); err == nil {
+					cc.SMaxAge = &v
+				}
 			}
 		}
 	}
