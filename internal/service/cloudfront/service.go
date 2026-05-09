@@ -53,11 +53,18 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("POST", "/2020-05-31/distribution/{id}/invalidation", s.CreateInvalidation)
 	r.Handle("GET", "/2020-05-31/distribution/{id}/invalidation/{invalidationId}", s.GetInvalidation)
 
-	// Edge — proxies real requests through the cache layer. Lives
-	// under /kumo (the existing admin prefix) so it doesn't collide
-	// with the S3 wildcard /{bucket}/{key...}. Non-cacheable methods
-	// (PUT/POST/DELETE/PATCH) bypass the cache and pass through to
-	// the origin.
+	// PublicKey + KeyGroup — building blocks for signed URL / signed cookie verification.
+	r.Handle("POST", "/2020-05-31/public-key", s.CreatePublicKey)
+	r.Handle("GET", "/2020-05-31/public-key", s.ListPublicKeys)
+	r.Handle("GET", "/2020-05-31/public-key/{id}", s.GetPublicKey)
+	r.Handle("DELETE", "/2020-05-31/public-key/{id}", s.DeletePublicKey)
+
+	r.Handle("POST", "/2020-05-31/key-group", s.CreateKeyGroup)
+	r.Handle("GET", "/2020-05-31/key-group", s.ListKeyGroups)
+	r.Handle("GET", "/2020-05-31/key-group/{id}", s.GetKeyGroup)
+	r.Handle("DELETE", "/2020-05-31/key-group/{id}", s.DeleteKeyGroup)
+
+	// Edge — proxies real requests through the cache layer.
 	for _, method := range []string{"GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"} {
 		r.Handle(method, "/kumo/cdn/{distributionId}/{path...}", s.Edge)
 	}

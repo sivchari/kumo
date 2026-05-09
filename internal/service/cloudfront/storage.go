@@ -22,6 +22,17 @@ type Storage interface {
 	CreateInvalidation(ctx context.Context, distributionID string, batch *CreateInvalidationRequest) (*Invalidation, error)
 	GetInvalidation(ctx context.Context, distributionID, invalidationID string) (*Invalidation, error)
 	ListInvalidations(ctx context.Context, distributionID, marker string, maxItems int) ([]*Invalidation, string, error)
+
+	// Signed URL building blocks.
+	CreatePublicKey(ctx context.Context, cfg *PublicKeyConfig) (*PublicKey, error)
+	GetPublicKey(ctx context.Context, id string) (*PublicKey, error)
+	ListPublicKeys(ctx context.Context) []*PublicKey
+	DeletePublicKey(ctx context.Context, id string) error
+
+	CreateKeyGroup(ctx context.Context, cfg *KeyGroupConfig) (*KeyGroup, error)
+	GetKeyGroup(ctx context.Context, id string) (*KeyGroup, error)
+	ListKeyGroups(ctx context.Context) []*KeyGroup
+	DeleteKeyGroup(ctx context.Context, id string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -45,6 +56,7 @@ type MemoryStorage struct {
 	mu            sync.RWMutex                        `json:"-"`
 	Distributions map[string]*Distribution            `json:"distributions"`
 	Invalidations map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
+	signing       signingStore
 	dataDir       string
 }
 
