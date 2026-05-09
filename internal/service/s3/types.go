@@ -307,6 +307,13 @@ type CopyPartResult struct {
 	ETag         string   `xml:"ETag"`
 }
 
+// CopyRange is the resolved x-amz-copy-source-range — START..END inclusive.
+// nil means "copy the whole source object".
+type CopyRange struct {
+	Start int64
+	End   int64
+}
+
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
 	XMLName           xml.Name           `xml:"NotificationConfiguration"`
