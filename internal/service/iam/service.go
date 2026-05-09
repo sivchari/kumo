@@ -47,10 +47,13 @@ func (s *Service) initActionHandlers() {
 		"GetUser":    s.GetUser,
 		"ListUsers":  s.ListUsers,
 		// Role management
-		"CreateRole": s.CreateRole,
-		"DeleteRole": s.DeleteRole,
-		"GetRole":    s.GetRole,
-		"ListRoles":  s.ListRoles,
+		"CreateRole":             s.CreateRole,
+		"DeleteRole":             s.DeleteRole,
+		"GetRole":                s.GetRole,
+		"ListRoles":              s.ListRoles,
+		"UpdateRole":             s.UpdateRole,
+		"UpdateAssumeRolePolicy": s.UpdateAssumeRolePolicy,
+		"TagRole":                s.TagRole,
 		// Policy management
 		"CreatePolicy": s.CreatePolicy,
 		"DeletePolicy": s.DeletePolicy,
