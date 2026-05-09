@@ -160,6 +160,179 @@ func VaryDisablesCache(respHeader http.Header) bool {
 	return false
 }
 
+// IfNoneMatchSatisfied reports whether the request's If-None-Match
+// matches the cached entry's ETag. Per RFC 9110 §13.1.2:
+//
+//   - `*` matches any existing representation
+//   - any listed entity-tag (weak or strong) matching the cached one returns true
+//
+// When this returns true, the cache should respond 304 Not Modified
+// instead of the full body.
+func IfNoneMatchSatisfied(reqHeader, respHeader http.Header) bool {
+	inm := reqHeader.Get("If-None-Match")
+	if inm == "" {
+		return false
+	}
+
+	if strings.TrimSpace(inm) == "*" {
+		return true
+	}
+
+	cached := strings.TrimSpace(respHeader.Get("ETag"))
+	if cached == "" {
+		return false
+	}
+
+	for _, raw := range strings.Split(inm, ",") {
+		if etagsEqualWeak(strings.TrimSpace(raw), cached) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IfModifiedSinceSatisfied reports whether the cached entry's
+// Last-Modified is at or before the request's If-Modified-Since.
+// When true the cache should respond 304 (the client's copy is fresh
+// enough).
+func IfModifiedSinceSatisfied(reqHeader, respHeader http.Header) bool {
+	ims := reqHeader.Get("If-Modified-Since")
+	if ims == "" {
+		return false
+	}
+
+	imsTime, err := http.ParseTime(ims)
+	if err != nil {
+		return false
+	}
+
+	lm := respHeader.Get("Last-Modified")
+	if lm == "" {
+		return false
+	}
+
+	lmTime, err := http.ParseTime(lm)
+	if err != nil {
+		return false
+	}
+
+	return !lmTime.After(imsTime)
+}
+
+// etagsEqualWeak compares two ETag values per RFC 9110 §8.8.3.2 weak
+// comparison (ignoring the W/ prefix).
+func etagsEqualWeak(a, b string) bool {
+	a = strings.TrimPrefix(a, "W/")
+	b = strings.TrimPrefix(b, "W/")
+
+	return a == b && a != ""
+}
+
+// ConditionalHeaders builds the If-None-Match / If-Modified-Since
+// header pair the cache should send on a revalidation request to the
+// origin, derived from the cached entry's validators.
+func ConditionalHeaders(cachedHeader http.Header) http.Header {
+	out := http.Header{}
+
+	if etag := cachedHeader.Get("ETag"); etag != "" {
+		out.Set("If-None-Match", etag)
+	}
+
+	if lm := cachedHeader.Get("Last-Modified"); lm != "" {
+		out.Set("If-Modified-Since", lm)
+	}
+
+	return out
+}
+
+// ParseRange interprets a single-range "Range: bytes=START-END"
+// header against a known content length. Returns (start, end, true)
+// where end is inclusive (matching the Content-Range wire format).
+//
+// Multi-range requests (`bytes=0-99,200-299`) and unsatisfiable
+// ranges return ok=false — the cache should fall through to a full
+// fetch / 416 in those cases. Suffix ranges (`bytes=-100`) and
+// open-ended (`bytes=100-`) are supported.
+func ParseRange(header string, totalSize int64) (int64, int64, bool) {
+	startRaw, endRaw, ok := splitByteRangeSpec(header)
+	if !ok {
+		return 0, 0, false
+	}
+
+	switch {
+	case startRaw == "" && endRaw == "":
+		return 0, 0, false
+	case startRaw == "":
+		return parseSuffixRange(endRaw, totalSize)
+	case endRaw == "":
+		return parseOpenRange(startRaw, totalSize)
+	default:
+		return parseClosedRange(startRaw, endRaw, totalSize)
+	}
+}
+
+// splitByteRangeSpec strips the "bytes=" prefix and splits on the
+// dash. Returns ok=false on multi-range or wrong unit.
+func splitByteRangeSpec(header string) (string, string, bool) {
+	spec, ok := strings.CutPrefix(header, "bytes=")
+	if !ok {
+		return "", "", false
+	}
+
+	if strings.Contains(spec, ",") {
+		return "", "", false
+	}
+
+	dash := strings.IndexByte(spec, '-')
+	if dash < 0 {
+		return "", "", false
+	}
+
+	return strings.TrimSpace(spec[:dash]), strings.TrimSpace(spec[dash+1:]), true
+}
+
+// parseSuffixRange resolves `bytes=-N` (the last N bytes).
+func parseSuffixRange(endRaw string, totalSize int64) (int64, int64, bool) {
+	n, err := strconv.ParseInt(endRaw, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, 0, false
+	}
+
+	if n > totalSize {
+		n = totalSize
+	}
+
+	return totalSize - n, totalSize - 1, true
+}
+
+// parseOpenRange resolves `bytes=START-` (from START to end of
+// content).
+func parseOpenRange(startRaw string, totalSize int64) (int64, int64, bool) {
+	start, err := strconv.ParseInt(startRaw, 10, 64)
+	if err != nil || start < 0 || start >= totalSize {
+		return 0, 0, false
+	}
+
+	return start, totalSize - 1, true
+}
+
+// parseClosedRange resolves `bytes=START-END`.
+func parseClosedRange(startRaw, endRaw string, totalSize int64) (int64, int64, bool) {
+	start, err1 := strconv.ParseInt(startRaw, 10, 64)
+	end, err2 := strconv.ParseInt(endRaw, 10, 64)
+
+	if err1 != nil || err2 != nil || start < 0 || end < start || start >= totalSize {
+		return 0, 0, false
+	}
+
+	if end >= totalSize {
+		end = totalSize - 1
+	}
+
+	return start, end, true
+}
+
 // Key builds the deterministic cache key for a request. The base
 // is method+URL; adding the values of any Vary headers (lowercased,
 // in stable order) yields the per-variant key.

@@ -119,19 +119,18 @@ func sameVarySignature(a, b *cacheEntry) bool {
 //
 //  1. Resolve the distribution + chosen origin.
 //  2. For non-safe methods (PUT / POST / DELETE / PATCH), pass through
-//     to the origin without consulting or storing the cache. RFC 9111
-//     §4.4 requires the cache to invalidate on these too — handled in
-//     a follow-up.
-//  3. For safe methods (GET / HEAD), look up the cache. If fresh and
-//     not flagged for forced revalidation, serve it with
-//     `X-Cache: Hit from kumo` and the standard `Age` header.
-//  4. Otherwise fetch from the origin, evaluate cacheability + TTL via
-//     the rules in `cache/`, store the response when allowed, and
-//     serve with `X-Cache: Miss from kumo`.
-//
-// Revalidation (`If-None-Match` / `If-Modified-Since`) is left for a
-// follow-up PR — `MustRevalidate` is currently treated as "always
-// miss".
+//     to the origin without consulting or storing the cache.
+//  3. For safe methods (GET / HEAD), look up the cache.
+//  4. If fresh:
+//     - client conditional (If-None-Match / If-Modified-Since)
+//     satisfied by the cached entry → 304 Not Modified
+//     - Range request → 206 Partial Content from the cached body
+//     - otherwise → 200 with `X-Cache: Hit from kumo` and `Age`
+//  5. If stale or MustRevalidate: revalidate with the origin using
+//     conditional headers built from the cached validators. 304 from
+//     origin extends the entry's freshness; 200 replaces it.
+//  6. On a true miss: fetch, evaluate cacheability + TTL via `cache/`,
+//     store when allowed, and serve with `X-Cache: Miss from kumo`.
 func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 	distID := r.PathValue("distributionId")
 
@@ -163,8 +162,21 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := cache.Key(r, nil)
-	if entry, hit := s.edgeCache.lookup(distID, base, r); hit {
-		if served := serveIfFresh(w, entry); served {
+	entry, hit := s.edgeCache.lookup(distID, base, r)
+
+	if hit {
+		age := time.Since(entry.StoredAt)
+
+		fresh := age < entry.TTL && !cache.MustRevalidate(entry.Header)
+		if fresh {
+			serveFromCache(w, r, entry, age)
+
+			return
+		}
+
+		// Stale or forced-revalidation: ask the origin with
+		// conditional headers built from the cached validators.
+		if revalidated := s.revalidate(w, r, distID, base, entry, originURL, cfg); revalidated {
 			return
 		}
 	}
@@ -178,6 +190,134 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 
 	storeIfCacheable(s.edgeCache, distID, base, r, upstream, cfg)
 	writeUpstream(w, upstream, "Miss from kumo", 0)
+}
+
+// serveFromCache writes the cached entry, honouring client
+// preconditions (If-None-Match / If-Modified-Since → 304) and Range
+// requests (→ 206 Partial Content) before falling back to the full
+// 200 response.
+func serveFromCache(w http.ResponseWriter, r *http.Request, entry *cacheEntry, age time.Duration) {
+	if cache.IfNoneMatchSatisfied(r.Header, entry.Header) || cache.IfModifiedSinceSatisfied(r.Header, entry.Header) {
+		writeNotModified(w, entry, age)
+
+		return
+	}
+
+	if rangeHeader := r.Header.Get("Range"); rangeHeader != "" {
+		start, end, ok := cache.ParseRange(rangeHeader, int64(len(entry.Body)))
+		if ok {
+			writePartialContent(w, entry, start, end, age)
+
+			return
+		}
+	}
+
+	writeFullCached(w, entry, age)
+}
+
+// revalidate sends a conditional request to the origin. Returns true
+// when it served a response (either 304-refreshed cache or 200-replaced
+// cache), false when the caller should fall through to a normal miss
+// fetch (e.g. the cached entry has no validators).
+func (s *Service) revalidate(w http.ResponseWriter, r *http.Request, distID, base string, entry *cacheEntry, originURL string, cfg cache.DistributionConfig) bool {
+	cond := cache.ConditionalHeaders(entry.Header)
+	if len(cond) == 0 {
+		return false
+	}
+
+	upstream, err := revalidateOrigin(originURL, r, cond)
+	if err != nil {
+		http.Error(w, "origin revalidate failed: "+err.Error(), http.StatusBadGateway)
+
+		return true
+	}
+
+	if upstream.StatusCode == http.StatusNotModified {
+		// Refresh: keep the cached body, update headers + reset TTL.
+		mergeRevalidatedHeaders(entry.Header, upstream.Header)
+		entry.StoredAt = time.Now()
+		entry.TTL = cache.EffectiveTTL(entry.Header, cfg, time.Now())
+
+		serveFromCache(w, r, entry, 0)
+
+		return true
+	}
+
+	// 200 (or anything else) — replace the cache entry.
+	storeIfCacheable(s.edgeCache, distID, base, r, upstream, cfg)
+	writeUpstream(w, upstream, "Miss from kumo", 0)
+
+	return true
+}
+
+// mergeRevalidatedHeaders applies the headers a 304 response brought
+// back. RFC 9111 §4.3.4 says the cache replaces validators / cache
+// directives but keeps the rest.
+func mergeRevalidatedHeaders(cached, fresh http.Header) {
+	for _, h := range []string{"Cache-Control", "ETag", "Last-Modified", "Expires", "Vary", "Date"} {
+		if v := fresh.Get(h); v != "" {
+			cached.Set(h, v)
+		}
+	}
+}
+
+// writeNotModified writes a 304 with only the headers RFC 9111 §4.1
+// permits to accompany it.
+func writeNotModified(w http.ResponseWriter, entry *cacheEntry, age time.Duration) {
+	for _, h := range []string{"ETag", "Last-Modified", "Cache-Control", "Date", "Content-Location", "Vary"} {
+		if v := entry.Header.Get(h); v != "" {
+			w.Header().Set(h, v)
+		}
+	}
+
+	w.Header().Set("X-Cache", "Hit from kumo")
+
+	if age > 0 {
+		w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))
+	}
+
+	w.WriteHeader(http.StatusNotModified)
+}
+
+// writePartialContent writes a 206 from the cached body slice.
+func writePartialContent(w http.ResponseWriter, entry *cacheEntry, start, end int64, age time.Duration) {
+	for k, vs := range entry.Header {
+		// Skip Content-Length — recomputed below from the slice.
+		if http.CanonicalHeaderKey(k) == "Content-Length" {
+			continue
+		}
+
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+
+	length := end - start + 1
+
+	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(entry.Body)))
+	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
+	w.Header().Set("X-Cache", "Hit from kumo")
+
+	if age > 0 {
+		w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))
+	}
+
+	w.WriteHeader(http.StatusPartialContent)
+	_, _ = w.Write(entry.Body[start : end+1])
+}
+
+// writeFullCached is the original 200-from-cache path.
+func writeFullCached(w http.ResponseWriter, entry *cacheEntry, age time.Duration) {
+	for k, vs := range entry.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+
+	w.Header().Set("X-Cache", "Hit from kumo")
+	w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))
+	w.WriteHeader(entry.StatusCode)
+	_, _ = w.Write(entry.Body)
 }
 
 // isCacheableMethod returns true for the HTTP methods CloudFront ever
@@ -296,6 +436,28 @@ func forwardOrigin(target string, r *http.Request) (*originResponse, error) {
 	return originRequest(target, r, r.Body)
 }
 
+// revalidateOrigin sends a body-less GET/HEAD with the supplied
+// conditional headers attached. Used for stale-entry refresh; if the
+// origin returns 304 the cache extends the existing entry, otherwise
+// it replaces it.
+func revalidateOrigin(target string, r *http.Request, conditional http.Header) (*originResponse, error) {
+	clone := r.Clone(r.Context())
+
+	// Drop client-supplied conditionals so the cache's own validators
+	// drive the revalidation. RFC 9111 §4.3.1 sees these as the
+	// cache's responsibility.
+	clone.Header.Del("If-None-Match")
+	clone.Header.Del("If-Modified-Since")
+
+	for k, vs := range conditional {
+		for _, v := range vs {
+			clone.Header.Set(k, v)
+		}
+	}
+
+	return originRequest(target, clone, http.NoBody)
+}
+
 // originRequest is the shared upstream request path used by both
 // fetchOrigin and forwardOrigin.
 func originRequest(target string, r *http.Request, reqBody io.Reader) (*originResponse, error) {
@@ -371,33 +533,6 @@ func storeIfCacheable(c *edgeCache, distID, base string, r *http.Request, resp *
 		Vary:       vary,
 		VaryValues: values,
 	})
-}
-
-// serveIfFresh writes the cached entry when it's still within TTL.
-// Returns true when something was written; false when the caller
-// should fall through to an origin fetch.
-func serveIfFresh(w http.ResponseWriter, entry *cacheEntry) bool {
-	age := time.Since(entry.StoredAt)
-	if age >= entry.TTL {
-		return false
-	}
-
-	if cache.MustRevalidate(entry.Header) {
-		return false
-	}
-
-	for k, vs := range entry.Header {
-		for _, v := range vs {
-			w.Header().Add(k, v)
-		}
-	}
-
-	w.Header().Set("X-Cache", "Hit from kumo")
-	w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))
-	w.WriteHeader(entry.StatusCode)
-	_, _ = w.Write(entry.Body)
-
-	return true
 }
 
 // writeUpstream copies the upstream response body verbatim to the

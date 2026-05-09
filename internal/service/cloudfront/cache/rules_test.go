@@ -243,3 +243,140 @@ func TestKey_QueryStringStable(t *testing.T) {
 		t.Fatalf("query order should not matter:\n  a=%q\n  b=%q", Key(a, nil), Key(b, nil))
 	}
 }
+
+// TestIfNoneMatchSatisfied covers the precondition flavours RFC 9110
+// §13.1.2 enumerates: missing header, `*`, single ETag, ETag list,
+// weak comparison.
+func TestIfNoneMatchSatisfied(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		reqHeader string
+		respETag  string
+		want      bool
+	}{
+		{"absent header", "", `"abc"`, false},
+		{"absent ETag", `"abc"`, "", false},
+		{"star matches anything", "*", `"abc"`, true},
+		{"exact match", `"abc"`, `"abc"`, true},
+		{"no match", `"xyz"`, `"abc"`, false},
+		{"list with match", `"x", "abc", "y"`, `"abc"`, true},
+		{"weak prefix match", `W/"abc"`, `"abc"`, true},
+		{"both weak match", `W/"abc"`, `W/"abc"`, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := http.Header{}
+			if tc.reqHeader != "" {
+				req.Set("If-None-Match", tc.reqHeader)
+			}
+
+			resp := http.Header{}
+			if tc.respETag != "" {
+				resp.Set("ETag", tc.respETag)
+			}
+
+			if got := IfNoneMatchSatisfied(req, resp); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestIfModifiedSinceSatisfied: cached not-modified-after ⇒ 304.
+func TestIfModifiedSinceSatisfied(t *testing.T) {
+	t.Parallel()
+
+	earlier := time.Date(2026, 5, 9, 10, 0, 0, 0, time.UTC)
+	later := time.Date(2026, 5, 9, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name string
+		ims  string
+		lm   string
+		want bool
+	}{
+		{"absent IMS", "", earlier.Format(http.TimeFormat), false},
+		{"absent LM", earlier.Format(http.TimeFormat), "", false},
+		{"LM equal IMS", earlier.Format(http.TimeFormat), earlier.Format(http.TimeFormat), true},
+		{"LM before IMS", later.Format(http.TimeFormat), earlier.Format(http.TimeFormat), true},
+		{"LM after IMS", earlier.Format(http.TimeFormat), later.Format(http.TimeFormat), false},
+		{"malformed IMS", "garbage", earlier.Format(http.TimeFormat), false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := http.Header{}
+			if tc.ims != "" {
+				req.Set("If-Modified-Since", tc.ims)
+			}
+
+			resp := http.Header{}
+			if tc.lm != "" {
+				resp.Set("Last-Modified", tc.lm)
+			}
+
+			if got := IfModifiedSinceSatisfied(req, resp); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestConditionalHeaders builds the headers the cache attaches when
+// revalidating with the origin.
+func TestConditionalHeaders(t *testing.T) {
+	t.Parallel()
+
+	cached := http.Header{}
+	cached.Set("ETag", `"abc"`)
+	cached.Set("Last-Modified", "Sat, 09 May 2026 10:00:00 GMT")
+
+	out := ConditionalHeaders(cached)
+
+	if out.Get("If-None-Match") != `"abc"` {
+		t.Fatalf("If-None-Match: got %q", out.Get("If-None-Match"))
+	}
+
+	if out.Get("If-Modified-Since") != "Sat, 09 May 2026 10:00:00 GMT" {
+		t.Fatalf("If-Modified-Since: got %q", out.Get("If-Modified-Since"))
+	}
+}
+
+// TestParseRange enumerates the satisfiable / unsatisfiable cases the
+// edge cache hands to Range serving.
+func TestParseRange(t *testing.T) {
+	t.Parallel()
+
+	const totalSize int64 = 1000
+
+	cases := []struct {
+		header string
+		start  int64
+		end    int64
+		ok     bool
+	}{
+		{"bytes=0-99", 0, 99, true},
+		{"bytes=100-199", 100, 199, true},
+		{"bytes=900-9999", 900, 999, true},  // clamped
+		{"bytes=-100", 900, 999, true},      // suffix
+		{"bytes=500-", 500, 999, true},      // open-ended
+		{"bytes=1000-", 0, 0, false},        // start past end
+		{"bytes=200-100", 0, 0, false},      // inverted
+		{"bytes=0-99,200-299", 0, 0, false}, // multi-range
+		{"items=0-99", 0, 0, false},         // wrong unit
+		{"", 0, 0, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.header, func(t *testing.T) {
+			start, end, ok := ParseRange(tc.header, totalSize)
+			if ok != tc.ok || (ok && (start != tc.start || end != tc.end)) {
+				t.Fatalf("got (%d, %d, %v), want (%d, %d, %v)",
+					start, end, ok, tc.start, tc.end, tc.ok)
+			}
+		})
+	}
+}
