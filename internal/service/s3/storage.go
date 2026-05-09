@@ -51,6 +51,7 @@ type Storage interface {
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
 	ListMultipartUploads(ctx context.Context, bucket, prefix string, maxUploads int) ([]*MultipartUpload, error)
 	ListParts(ctx context.Context, bucket, key, uploadID string, maxParts int) ([]*Part, error)
+	UploadPartCopy(ctx context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey string, copyRange *CopyRange) (*Part, error)
 
 	// Object tagging
 	PutObjectTagging(ctx context.Context, bucket, key string, tags map[string]string) error
@@ -875,6 +876,59 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 		Size:         int64(len(data)),
 		LastModified: time.Now(),
 		Body:         data,
+	}
+
+	upload.Parts[partNumber] = part
+
+	return part, nil
+}
+
+// UploadPartCopy copies bytes from an existing object into a part of an
+// in-progress multipart upload. RFC-equivalent: AWS S3 UploadPartCopy.
+// `copyRange` may be nil to copy the entire source object.
+func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey string, copyRange *CopyRange) (*Part, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	srcB, exists := s.Buckets[srcBucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: srcBucket}
+	}
+
+	srcObj, exists := srcB.Objects[srcKey]
+	if !exists {
+		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: srcKey}
+	}
+
+	dstB, exists := s.Buckets[dstBucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: dstBucket}
+	}
+
+	upload, exists := dstB.MultipartUploads[uploadID]
+	if !exists || upload.Key != dstKey {
+		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+	}
+
+	data := srcObj.Body
+	if copyRange != nil {
+		size := int64(len(data))
+		if copyRange.Start < 0 || copyRange.End >= size || copyRange.Start > copyRange.End {
+			return nil, &MultipartError{Code: "InvalidArgument", Message: "Range out of source object bounds", UploadID: uploadID}
+		}
+
+		data = data[copyRange.Start : copyRange.End+1]
+	}
+
+	hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
+	etag := hex.EncodeToString(hash[:])
+
+	part := &Part{
+		PartNumber:   partNumber,
+		ETag:         fmt.Sprintf("%q", etag),
+		Size:         int64(len(data)),
+		LastModified: time.Now(),
+		Body:         append([]byte(nil), data...),
 	}
 
 	upload.Parts[partNumber] = part

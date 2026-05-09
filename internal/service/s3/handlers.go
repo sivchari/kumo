@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -276,6 +277,12 @@ func (s *Service) handleObjectPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Query().Get("uploadId") != "" && r.URL.Query().Get("partNumber") != "" {
+		if r.Header.Get("X-Amz-Copy-Source") != "" {
+			s.UploadPartCopy(w, r)
+
+			return
+		}
+
 		s.UploadPart(w, r)
 
 		return
@@ -1492,6 +1499,92 @@ func (s *Service) UploadPart(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// UploadPartCopy handles
+//
+//	PUT /{bucket}/{key}?partNumber=N&uploadId=...
+//	X-Amz-Copy-Source: /<srcBucket>/<srcKey>
+//	X-Amz-Copy-Source-Range: bytes=START-END   (optional)
+//
+// — copies bytes from an existing object into a part of an in-progress
+// multipart upload, without the client having to re-upload the data.
+//
+// Cross-bucket copy is supported. Source object must already exist.
+// If `X-Amz-Copy-Source-Range` is absent, the whole source is copied.
+func (s *Service) UploadPartCopy(w http.ResponseWriter, r *http.Request) {
+	dstBucket := r.PathValue("bucket")
+	dstKey := r.PathValue("key")
+
+	uploadID := r.URL.Query().Get("uploadId")
+	if uploadID == "" {
+		writeS3Error(w, r, "InvalidArgument", "uploadId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	partNumber, err := strconv.Atoi(r.URL.Query().Get("partNumber"))
+	if err != nil || partNumber < 1 || partNumber > 10000 {
+		writeS3Error(w, r, "InvalidArgument", "Invalid partNumber", http.StatusBadRequest)
+
+		return
+	}
+
+	srcBucket, srcKey := parseCopySource(r.Header.Get("X-Amz-Copy-Source"))
+	if srcBucket == "" || srcKey == "" {
+		writeS3Error(w, r, "InvalidArgument", "Invalid copy source", http.StatusBadRequest)
+
+		return
+	}
+
+	copyRange, err := parseCopySourceRange(r.Header.Get("X-Amz-Copy-Source-Range"))
+	if err != nil {
+		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	part, err := s.storage.UploadPartCopy(r.Context(), dstBucket, dstKey, uploadID, partNumber, srcBucket, srcKey, copyRange)
+	if err != nil {
+		handleMultipartError(w, r, err)
+
+		return
+	}
+
+	result := CopyPartResult{
+		Xmlns:        s3Namespace,
+		LastModified: part.LastModified.UTC().Format(timeFormatISO),
+		ETag:         part.ETag,
+	}
+	writeXMLResponse(w, result)
+}
+
+// parseCopySourceRange parses an `X-Amz-Copy-Source-Range: bytes=START-END`
+// header. Returns (nil, nil) when absent. Suffix / open-ended forms are
+// not allowed by S3 for UploadPartCopy — only closed ranges.
+func parseCopySourceRange(header string) (*CopyRange, error) {
+	if header == "" {
+		return nil, nil //nolint:nilnil // absent header is the "copy whole source" sentinel
+	}
+
+	spec, ok := strings.CutPrefix(header, "bytes=")
+	if !ok {
+		return nil, fmt.Errorf("X-Amz-Copy-Source-Range must use bytes unit")
+	}
+
+	dash := strings.IndexByte(spec, '-')
+	if dash <= 0 || dash == len(spec)-1 {
+		return nil, fmt.Errorf("X-Amz-Copy-Source-Range requires both START and END (closed range)")
+	}
+
+	start, err1 := strconv.ParseInt(strings.TrimSpace(spec[:dash]), 10, 64)
+	end, err2 := strconv.ParseInt(strings.TrimSpace(spec[dash+1:]), 10, 64)
+
+	if err1 != nil || err2 != nil || start < 0 || end < start {
+		return nil, fmt.Errorf("X-Amz-Copy-Source-Range has invalid byte range")
+	}
+
+	return &CopyRange{Start: start, End: end}, nil
+}
+
 // CompleteMultipartUpload handles POST /{bucket}/{key}?uploadId={uploadId} - complete a multipart upload.
 func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request) {
 	bucket := r.PathValue("bucket")
@@ -1733,10 +1826,17 @@ func handleMultipartError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 
+	var objectErr *ObjectError
+	if errors.As(err, &objectErr) {
+		writeS3Error(w, r, objectErr.Code, objectErr.Message, http.StatusNotFound)
+
+		return
+	}
+
 	var multipartErr *MultipartError
 	if errors.As(err, &multipartErr) {
 		status := http.StatusNotFound
-		if multipartErr.Code == "InvalidPart" {
+		if multipartErr.Code == "InvalidPart" || multipartErr.Code == "InvalidArgument" {
 			status = http.StatusBadRequest
 		}
 
