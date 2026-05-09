@@ -1,0 +1,282 @@
+package cloudfront
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+)
+
+// TestEdge_HitMissPattern stands up a tiny origin and walks through
+// the canonical Miss → Hit pattern. The origin counter pins how many
+// times the upstream was actually contacted, which is the operational
+// claim the cache makes.
+func TestEdge_HitMissPattern(t *testing.T) {
+	t.Parallel()
+
+	var hits atomic.Int64
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("hello"))
+	}))
+	defer origin.Close()
+
+	svc := setupEdge(t, origin.URL)
+
+	first := callEdge(t, svc, "GET", "/static/index.html", nil)
+
+	if first.Code != http.StatusOK {
+		t.Fatalf("first miss: status %d", first.Code)
+	}
+
+	if first.Header().Get("X-Cache") != "Miss from kumo" {
+		t.Fatalf("first should be Miss, got %q", first.Header().Get("X-Cache"))
+	}
+
+	second := callEdge(t, svc, "GET", "/static/index.html", nil)
+
+	if second.Header().Get("X-Cache") != "Hit from kumo" {
+		t.Fatalf("second should be Hit, got %q", second.Header().Get("X-Cache"))
+	}
+
+	if hits.Load() != 1 {
+		t.Fatalf("origin contacted %d times, expected 1", hits.Load())
+	}
+}
+
+// TestEdge_NoStoreSkipsCache — a response with `Cache-Control: no-store`
+// must never be served from cache. Two consecutive requests therefore
+// both hit the origin.
+func TestEdge_NoStoreSkipsCache(t *testing.T) {
+	t.Parallel()
+
+	var hits atomic.Int64
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte("dynamic"))
+	}))
+	defer origin.Close()
+
+	svc := setupEdge(t, origin.URL)
+
+	for i := 0; i < 2; i++ {
+		_ = callEdge(t, svc, "GET", "/api/dynamic", nil)
+	}
+
+	if hits.Load() != 2 {
+		t.Fatalf("no-store should bypass cache; origin hits = %d, want 2", hits.Load())
+	}
+}
+
+// TestEdge_VarySplit confirms two requests differing in a Vary'd
+// header land on different cache variants.
+func TestEdge_VarySplit(t *testing.T) {
+	t.Parallel()
+
+	var hits atomic.Int64
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Vary", "Accept-Language")
+		_, _ = w.Write([]byte("lang=" + r.Header.Get("Accept-Language")))
+	}))
+	defer origin.Close()
+
+	svc := setupEdge(t, origin.URL)
+
+	en := callEdge(t, svc, "GET", "/translated", http.Header{"Accept-Language": {"en"}})
+	ja := callEdge(t, svc, "GET", "/translated", http.Header{"Accept-Language": {"ja"}})
+
+	if hits.Load() != 2 {
+		t.Fatalf("Vary should split cache; origin hits = %d, want 2", hits.Load())
+	}
+
+	// Re-hit en should be cached.
+	enAgain := callEdge(t, svc, "GET", "/translated", http.Header{"Accept-Language": {"en"}})
+
+	if hits.Load() != 2 {
+		t.Fatalf("repeat en should hit cache; origin hits = %d, want 2", hits.Load())
+	}
+
+	if enAgain.Header().Get("X-Cache") != "Hit from kumo" {
+		t.Fatalf("expected Hit on cached variant, got %q", enAgain.Header().Get("X-Cache"))
+	}
+
+	if !strings.Contains(en.Body.String(), "lang=en") || !strings.Contains(ja.Body.String(), "lang=ja") {
+		t.Fatalf("variant bodies got mixed up: en=%q ja=%q", en.Body.String(), ja.Body.String())
+	}
+}
+
+// TestEdge_SMaxAgeOverride pins the s-maxage > max-age precedence the
+// cache rules enforce. If the cache used max-age (5s) by mistake the
+// second call would still hit, but we want to verify s-maxage (1s)
+// won — by the time we re-call, the entry is stale.
+//
+// We don't actually sleep — instead we backdate the cached entry's
+// StoredAt to simulate elapsed time.
+func TestEdge_SMaxAgeOverride(t *testing.T) {
+	t.Parallel()
+
+	var hits atomic.Int64
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Cache-Control", "max-age=300, s-maxage=1")
+		_, _ = w.Write([]byte("payload"))
+	}))
+	defer origin.Close()
+
+	svc := setupEdge(t, origin.URL)
+
+	_ = callEdge(t, svc, "GET", "/short-shared-ttl", nil)
+
+	// Backdate the stored entry by 5s so the s-maxage=1 has expired
+	// but max-age=300 hasn't. CloudFront should treat it as stale.
+	for _, dm := range svc.edgeCache.entries {
+		for _, variants := range dm {
+			for _, e := range variants {
+				e.StoredAt = e.StoredAt.Add(-5 * 1e9) // -5s
+			}
+		}
+	}
+
+	again := callEdge(t, svc, "GET", "/short-shared-ttl", nil)
+
+	if again.Header().Get("X-Cache") != "Miss from kumo" {
+		t.Fatalf("s-maxage=1 should have expired; got X-Cache=%q", again.Header().Get("X-Cache"))
+	}
+
+	if hits.Load() != 2 {
+		t.Fatalf("origin hits = %d, want 2 (cache should have been stale)", hits.Load())
+	}
+}
+
+// TestEdge_404FromKumoOnUnknownDistribution — a request to
+// /kumo/cdn/<bogus>/... returns 404 with no upstream contact.
+func TestEdge_404FromKumoOnUnknownDistribution(t *testing.T) {
+	t.Parallel()
+
+	svc := New(NewMemoryStorage())
+
+	req := httptest.NewRequest(http.MethodGet, "/kumo/cdn/dist-bogus/anything", http.NoBody)
+	req.SetPathValue("distributionId", "dist-bogus")
+	req.SetPathValue("path", "anything")
+
+	w := httptest.NewRecorder()
+	svc.Edge(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 on unknown distribution, got %d", w.Code)
+	}
+}
+
+// setupEdge wires a Service with one distribution pointing at the
+// given upstream. The upstream URL is parsed and split into
+// host:port + scheme so it lands in CustomOriginConfig the same way
+// terraform would author it.
+func setupEdge(t *testing.T, originURL string) *Service {
+	t.Helper()
+
+	svc := New(NewMemoryStorage())
+
+	// Strip the http:// prefix to get host:port.
+	host := strings.TrimPrefix(originURL, "http://")
+
+	hostOnly, port := splitHostPort(host)
+
+	_, err := svc.storage.CreateDistribution(context.Background(), &CreateDistributionRequest{
+		CallerReference: "test",
+		Enabled:         true,
+		Origins: &OriginsXML{
+			Quantity: 1,
+			Items: &OriginList{
+				Origin: []OriginXML{{
+					ID:         "origin-1",
+					DomainName: hostOnly,
+					CustomOriginConfig: &CustomOriginConfigXML{
+						HTTPPort:             port,
+						OriginProtocolPolicy: "http-only",
+					},
+				}},
+			},
+		},
+		DefaultCacheBehavior: &DefaultCacheBehaviorXML{
+			TargetOriginID: "origin-1",
+			MinTTL:         0,
+			DefaultTTL:     86400,
+			MaxTTL:         31536000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateDistribution: %v", err)
+	}
+
+	return svc
+}
+
+// splitHostPort separates "host:port" into ("host", port). Returns
+// port=80 when no port is in the input.
+func splitHostPort(hp string) (string, int) {
+	idx := strings.LastIndex(hp, ":")
+	if idx < 0 {
+		return hp, 80
+	}
+
+	host := hp[:idx]
+	port := 0
+
+	for _, c := range hp[idx+1:] {
+		if c < '0' || c > '9' {
+			return host, 80
+		}
+
+		port = port*10 + int(c-'0')
+
+		if port > 65535 {
+			return host, 80
+		}
+	}
+
+	return host, port
+}
+
+// callEdge invokes Service.Edge directly with the supplied path /
+// headers. Returns the recorder so the caller can inspect status,
+// headers, and body.
+func callEdge(t *testing.T, svc *Service, _, path string, hdr http.Header) *httptest.ResponseRecorder {
+	t.Helper()
+
+	// Find the (only) distribution the test setup created.
+	mem, ok := svc.storage.(*MemoryStorage)
+	if !ok {
+		t.Fatalf("expected *MemoryStorage, got %T", svc.storage)
+	}
+
+	var distID string
+	for id := range mem.Distributions {
+		distID = id
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/kumo/cdn/"+distID+strings.TrimPrefix(path, "/"), http.NoBody)
+	req.SetPathValue("distributionId", distID)
+	req.SetPathValue("path", strings.TrimPrefix(path, "/"))
+
+	for k, vs := range hdr {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	svc.Edge(w, req)
+
+	return w
+}
