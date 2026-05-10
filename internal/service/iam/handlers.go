@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -1030,11 +1031,18 @@ func getFormValue(r *http.Request, key string) string {
 }
 
 // getJSONValue extracts a value from JSON request body.
+//
+// IAM handlers call getFormValue many times per request to read individual
+// fields (RoleName, AssumeRolePolicyDocument, Path, Description, ...). When
+// the body is JSON the underlying io.Reader is single-shot, so we restore
+// r.Body after each read so subsequent calls can re-parse the same payload.
 func getJSONValue(r *http.Request, key string) string {
 	body, err := io.ReadAll(r.Body)
 	if err != nil || len(body) == 0 {
 		return ""
 	}
+
+	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
