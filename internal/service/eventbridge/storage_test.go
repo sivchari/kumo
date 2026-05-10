@@ -79,6 +79,47 @@ func TestResolveInputPath(t *testing.T) {
 	}
 }
 
+func TestIsLambdaArn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		arn  string
+		want bool
+	}{
+		{
+			name: "Lambda function ARN",
+			arn:  "arn:aws:lambda:us-east-1:000000000000:function:my-func",
+			want: true,
+		},
+		{
+			name: "Lambda qualified ARN",
+			arn:  "arn:aws:lambda:us-east-1:000000000000:function:my-func:PROD",
+			want: true,
+		},
+		{
+			name: "SQS ARN",
+			arn:  "arn:aws:sqs:us-east-1:000000000000:my-queue",
+			want: false,
+		},
+		{
+			name: "empty string",
+			arn:  "",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := isLambdaArn(tt.arn); got != tt.want {
+				t.Errorf("isLambdaArn(%q) = %v, want %v", tt.arn, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsSQSArn(t *testing.T) {
 	t.Parallel()
 

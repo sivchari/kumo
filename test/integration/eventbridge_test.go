@@ -3,10 +3,15 @@
 package integration
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -624,5 +629,150 @@ func TestEventBridge_EventBusNotFound(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for non-existent event bus")
+	}
+}
+
+func TestEventBridge_PutEvents_LambdaDelivery(t *testing.T) {
+	ebClient := newEventBridgeClient(t)
+	ctx := t.Context()
+
+	// Mock Lambda backend that records invocations.
+	var (
+		mu       sync.Mutex
+		received [][]byte
+	)
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		received = append(received, body)
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(mockServer.Close)
+
+	functionName := "eb-lambda-delivery-fn"
+
+	// Register Lambda function with InvokeEndpoint so that the kumo Lambda emulator
+	// forwards invocations to our mock server.
+	createReq, _ := json.Marshal(map[string]any{
+		"FunctionName":   functionName,
+		"Runtime":        "python3.12",
+		"Role":           "arn:aws:iam::000000000000:role/test-role",
+		"Handler":        "index.handler",
+		"InvokeEndpoint": mockServer.URL,
+		"Code":           map[string]any{"ZipFile": []byte("fake-zip")},
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
+		"http://localhost:4566/lambda/2015-03-31/functions", bytes.NewReader(createReq))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create function: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create function status: %d", resp.StatusCode)
+	}
+
+	t.Cleanup(func() {
+		delReq, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
+			"http://localhost:4566/lambda/2015-03-31/functions/"+functionName, nil)
+
+		delResp, _ := http.DefaultClient.Do(delReq)
+		if delResp != nil {
+			delResp.Body.Close()
+		}
+	})
+
+	// Create rule using advanced pattern matchers (prefix + numeric).
+	_, err = ebClient.PutRule(ctx, &eventbridge.PutRuleInput{
+		Name:         aws.String("eb-lambda-rule"),
+		EventPattern: aws.String(`{"source": [{"prefix": "order."}], "detail": {"amount": [{"numeric": [">", 0]}]}}`),
+		State:        types.RuleStateEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add Lambda target.
+	_, err = ebClient.PutTargets(ctx, &eventbridge.PutTargetsInput{
+		Rule: aws.String("eb-lambda-rule"),
+		Targets: []types.Target{
+			{
+				Id:  aws.String("lambda-target"),
+				Arn: aws.String("arn:aws:lambda:us-east-1:000000000000:function:" + functionName),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Put matching event.
+	_, err = ebClient.PutEvents(ctx, &eventbridge.PutEventsInput{
+		Entries: []types.PutEventsRequestEntry{
+			{
+				Source:     aws.String("order.service"),
+				DetailType: aws.String("OrderCreated"),
+				Detail:     aws.String(`{"orderId": "o-1", "amount": 42}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Put non-matching event (amount <= 0 should be filtered out).
+	_, err = ebClient.PutEvents(ctx, &eventbridge.PutEventsInput{
+		Entries: []types.PutEventsRequestEntry{
+			{
+				Source:     aws.String("order.service"),
+				DetailType: aws.String("OrderCreated"),
+				Detail:     aws.String(`{"orderId": "o-2", "amount": 0}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the asynchronous delivery to complete.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		count := len(received)
+		mu.Unlock()
+
+		if count >= 1 {
+			break
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(received) != 1 {
+		t.Fatalf("expected exactly 1 Lambda invocation, got %d", len(received))
+	}
+
+	// Verify payload is the EventBridge event envelope.
+	var envelope map[string]any
+	if err := json.Unmarshal(received[0], &envelope); err != nil {
+		t.Fatalf("invalid envelope JSON: %v (body=%s)", err, string(received[0]))
+	}
+
+	if envelope["source"] != "order.service" {
+		t.Errorf("source=%v, want order.service", envelope["source"])
+	}
+
+	detail, _ := envelope["detail"].(map[string]any)
+	if detail["orderId"] != "o-1" {
+		t.Errorf("orderId=%v, want o-1", detail["orderId"])
 	}
 }

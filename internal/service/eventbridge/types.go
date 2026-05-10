@@ -518,3 +518,10 @@ type ServiceError struct {
 func (e *ServiceError) Error() string {
 	return e.Message
 }
+
+// listTagsForResourceResponse mirrors the AWS shape: a `Tags` array that
+// must be present even when empty. terraform-provider-aws fails to parse
+// missing-Tags responses.
+type listTagsForResourceResponse struct {
+	Tags []map[string]string `json:"Tags"`
+}

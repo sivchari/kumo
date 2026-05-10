@@ -33,6 +33,11 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"CreateApiDestination":   s.CreateAPIDestination,
 		"DescribeApiDestination": s.DescribeAPIDestination,
 		"DeleteApiDestination":   s.DeleteAPIDestination,
+		// Tag stubs — see tag_stubs.go.
+		// Required by terraform-provider-aws after CreateEventBus.
+		"ListTagsForResource": s.ListTagsForResource,
+		"TagResource":         s.TagResource,
+		"UntagResource":       s.UntagResource,
 	}
 }
 
