@@ -139,6 +139,10 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 			attrs = append(attrs, "action", action)
 		}
 
+		if ua := req.Header.Get("User-Agent"); ua != "" {
+			attrs = append(attrs, "ua", ua)
+		}
+
 		r.logger.Info("request", attrs...)
 
 		// Log request body at debug level.

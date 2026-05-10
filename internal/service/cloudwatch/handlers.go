@@ -178,8 +178,12 @@ func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// PutMetricAlarm returns an empty response on success.
-	writeJSONResponse(w, struct{}{})
+	// PutMetricAlarm returns an empty response on success — XML for the
+	// Query-protocol path that terraform-provider-aws uses.
+	writeCloudWatchXML(w, xmlPutMetricAlarmResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // DeleteAlarms handles the DeleteAlarms action.
@@ -203,8 +207,12 @@ func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DeleteAlarms returns an empty response on success.
-	writeJSONResponse(w, struct{}{})
+	// DeleteAlarms returns an empty response on success — XML for the
+	// Query-protocol path that terraform-provider-aws uses.
+	writeCloudWatchXML(w, xmlDeleteAlarmsResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // DescribeAlarms handles the DescribeAlarms action.
@@ -223,9 +231,14 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSONResponse(w, DescribeAlarmsResponse{
-		MetricAlarms: result.MetricAlarms,
-		NextToken:    result.NextToken,
+	// XML for the Query-protocol path that terraform-provider-aws uses.
+	writeCloudWatchXML(w, xmlDescribeAlarmsResponse{
+		Xmlns: cloudWatchXMLNS,
+		DescribeAlarmsResult: xmlDescribeAlarmsResult{
+			MetricAlarms: xmlMetricAlarmList{Members: metricAlarmsToXML(result.MetricAlarms)},
+			NextToken:    result.NextToken,
+		},
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
 
@@ -249,6 +262,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.DeleteAlarms(w, r)
 	case "DescribeAlarms":
 		s.DescribeAlarms(w, r)
+	case "ListTagsForResource":
+		s.ListTagsForResource(w, r)
+	case "TagResource":
+		s.TagResource(w, r)
+	case "UntagResource":
+		s.UntagResource(w, r)
 	default:
 		writeCloudWatchError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
 	}

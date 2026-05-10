@@ -148,6 +148,10 @@ func (d *QueryProtocolDispatcher) resolveByFallback(action string) (queryHandler
 // parseServiceFromUserAgent extracts the service identifier from the AWS SDK v2 User-Agent header.
 // The User-Agent contains a token like "api/rds#1.5.0"; this function returns "rds".
 // Returns empty string if no api/ token is found.
+//
+// terraform-provider-aws (and a few other SDK consumers) sometimes use "/"
+// instead of "#" as the version separator (e.g. "api/monitoring/1.0"), so
+// both are accepted.
 func parseServiceFromUserAgent(userAgent string) string {
 	for _, token := range strings.Split(userAgent, " ") {
 		after, found := strings.CutPrefix(token, "api/")
@@ -155,8 +159,9 @@ func parseServiceFromUserAgent(userAgent string) string {
 			continue
 		}
 
-		// Strip version suffix: "rds#1.5.0" -> "rds"
+		// Strip version suffix: "rds#1.5.0" / "rds/1.5.0" -> "rds"
 		name, _, _ := strings.Cut(after, "#")
+		name, _, _ = strings.Cut(name, "/")
 
 		return name
 	}
