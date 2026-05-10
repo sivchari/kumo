@@ -22,7 +22,9 @@ func startPprofServer(logger *slog.Logger) {
 	if v == "" {
 		return
 	}
+
 	on, err := strconv.ParseBool(v)
+
 	if err != nil || !on {
 		return
 	}
@@ -49,9 +51,12 @@ func startPprofServer(logger *slog.Logger) {
 		ln, lerr := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 		if lerr != nil {
 			logger.Error("pprof listen failed", "addr", addr, "err", lerr)
+
 			return
 		}
+
 		logger.Info(fmt.Sprintf("pprof endpoint enabled on %s", addr))
+
 		if serr := srv.Serve(ln); serr != nil && serr != http.ErrServerClosed {
 			logger.Error("pprof server failed", "err", serr)
 		}
