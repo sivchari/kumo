@@ -693,28 +693,39 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		results = append(results, m.copyItem(item))
 	}
 
-	// Sort by key for consistent pagination.
-	sort.Slice(results, func(i, j int) bool {
-		keyI := m.serializeKey(td.Table, results[i])
-		keyJ := m.serializeKey(td.Table, results[j])
+	// Sort by key for consistent pagination. Pre-compute keys once so the
+	// sort comparator and the pagination lookup don't re-serialize each item
+	// on every comparison (was N log N serializeKey calls; now N).
+	type keyedItem struct {
+		key  string
+		item Item
+	}
 
-		return keyI < keyJ
-	})
+	pairs := make([]keyedItem, len(results))
+
+	for i, it := range results {
+		pairs[i] = keyedItem{key: m.serializeKey(td.Table, it), item: it}
+	}
+
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].key < pairs[j].key })
 
 	// Apply pagination.
 	startIdx := 0
 
 	if exclusiveStartKey != nil {
 		startKeyStr := m.serializeKey(td.Table, exclusiveStartKey)
-
-		for i, item := range results {
-			itemKeyStr := m.serializeKey(td.Table, item)
-			if itemKeyStr == startKeyStr {
+		for i, p := range pairs {
+			if p.key == startKeyStr {
 				startIdx = i + 1
 
 				break
 			}
 		}
+	}
+
+	results = results[:0:len(pairs)]
+	for _, p := range pairs {
+		results = append(results, p.item)
 	}
 
 	if startIdx >= len(results) {
