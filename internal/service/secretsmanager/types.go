@@ -271,3 +271,20 @@ type ExternalSecretRotationMetadataItem struct {
 	Key   string `json:"Key,omitempty"`
 	Value string `json:"Value,omitempty"`
 }
+
+// getResourcePolicyRequest is the wire shape of GetResourcePolicy / PutResourcePolicy / DeleteResourcePolicy.
+type getResourcePolicyRequest struct {
+	SecretID       string `json:"SecretId"`
+	ResourcePolicy string `json:"ResourcePolicy,omitempty"`
+}
+
+// getResourcePolicyResponse is the wire shape of GetResourcePolicy.
+//
+// AWS responds with ARN + Name and omits the ResourcePolicy field when no
+// policy is attached. terraform-provider-aws treats the missing field as
+// "no policy attached".
+type getResourcePolicyResponse struct {
+	ARN            string `json:"ARN"`
+	Name           string `json:"Name"`
+	ResourcePolicy string `json:"ResourcePolicy,omitempty"`
+}
