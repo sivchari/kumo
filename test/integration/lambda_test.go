@@ -195,15 +195,24 @@ func TestLambda_Invoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Note: Since AWS SDK doesn't support custom InvokeEndpoint field,
-	// we need to test with a raw HTTP request or skip this test.
-	// For now, we verify that invoke without InvokeEndpoint returns an error.
-	_, err = client.Invoke(ctx, &lambda.InvokeInput{
+	// Without an InvokeEndpoint configured, Invoke now returns an empty
+	// stub success instead of erroring (200 + "{}" for RequestResponse).
+	// This matches what terraform-provider-aws and other clients expect
+	// when they invoke functions for which kumo has no real handler.
+	out, err := client.Invoke(ctx, &lambda.InvokeInput{
 		FunctionName: aws.String(functionName),
 		Payload:      []byte(`{"key": "value"}`),
 	})
-	if err == nil {
-		t.Error("expected error when invoking function without InvokeEndpoint")
+	if err != nil {
+		t.Fatalf("stub-mode invoke should succeed, got error: %v", err)
+	}
+
+	if out.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", out.StatusCode)
+	}
+
+	if got := string(out.Payload); got != "{}" {
+		t.Errorf("expected empty stub payload \"{}\", got %q", got)
 	}
 }
 
