@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,11 +32,13 @@ type Config struct {
 // DefaultConfig returns the default server configuration.
 // KUMO_HOST and KUMO_PORT override the bind address when set; an
 // unparseable KUMO_PORT is ignored and the default port is kept.
+// KUMO_LOG_LEVEL (debug|info|warn|error) overrides the default INFO level —
+// useful when benchmarking, where per-request INFO logs dominate CPU.
 func DefaultConfig() Config {
 	cfg := Config{
 		Host:     "0.0.0.0",
 		Port:     4566,
-		LogLevel: slog.LevelInfo,
+		LogLevel: parseLogLevel(os.Getenv("KUMO_LOG_LEVEL"), slog.LevelInfo),
 		InitDir:  os.Getenv("KUMO_INIT_DIR"),
 	}
 
@@ -50,6 +53,21 @@ func DefaultConfig() Config {
 	}
 
 	return cfg
+}
+
+func parseLogLevel(s string, def slog.Level) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return def
+	}
 }
 
 // Server is the main HTTP server for kumo.
@@ -196,6 +214,9 @@ func (s *Server) Start(readyCh ...chan struct{}) error {
 	}
 
 	s.logger.Info("starting kumo server", "addr", s.Addr())
+
+	// Optional pprof endpoint (KUMO_PPROF=1).
+	startPprofServer(s.logger)
 
 	// List registered services
 	for _, name := range s.registry.Names() {
