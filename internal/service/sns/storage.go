@@ -27,6 +27,8 @@ type SQSPublisher interface {
 // Storage defines the SNS storage interface.
 type Storage interface {
 	CreateTopic(ctx context.Context, name string, attributes map[string]string) (*Topic, error)
+	GetTopic(ctx context.Context, topicARN string) (*Topic, error)
+	SetTopicAttribute(ctx context.Context, topicARN, name, value string) error
 	DeleteTopic(ctx context.Context, topicARN string) error
 	ListTopics(ctx context.Context, nextToken string) ([]*Topic, string, error)
 	Subscribe(ctx context.Context, topicARN, protocol, endpoint string, attributes map[string]string) (*Subscription, error)
@@ -166,6 +168,49 @@ func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes m
 	m.Topics[arn] = topic
 
 	return topic, nil
+}
+
+// GetTopic returns the topic with the given ARN, or NotFound.
+func (m *MemoryStorage) GetTopic(_ context.Context, topicARN string) (*Topic, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	topic, exists := m.Topics[topicARN]
+	if !exists {
+		return nil, &TopicError{Code: "NotFound", Message: "Topic does not exist: " + topicARN}
+	}
+
+	return topic, nil
+}
+
+// SetTopicAttribute writes name=value into the topic's attribute map.
+//
+// AWS exposes a small set of mutable topic attributes via SetTopicAttributes
+// (DisplayName, Policy, DeliveryPolicy, plus the *FeedbackRoleArn and
+// *FeedbackSampleRate families). kumo does not enforce or validate any of
+// them; we just persist the write so subsequent GetTopicAttributes reflects
+// it. The DisplayName field on the topic is also updated so existing code
+// paths that read it directly stay consistent.
+func (m *MemoryStorage) SetTopicAttribute(_ context.Context, topicARN, name, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	topic, exists := m.Topics[topicARN]
+	if !exists {
+		return &TopicError{Code: "NotFound", Message: "Topic does not exist: " + topicARN}
+	}
+
+	if topic.Attributes == nil {
+		topic.Attributes = make(map[string]string)
+	}
+
+	topic.Attributes[name] = value
+
+	if name == "DisplayName" {
+		topic.DisplayName = value
+	}
+
+	return nil
 }
 
 // DeleteTopic deletes a topic.
