@@ -94,6 +94,8 @@ type Storage interface {
 	// Internet Gateway operations
 	CreateInternetGateway(ctx context.Context, req *CreateInternetGatewayRequest) (*InternetGateway, error)
 	AttachInternetGateway(ctx context.Context, igwID, vpcID string) error
+	DetachInternetGateway(ctx context.Context, igwID, vpcID string) error
+	DeleteInternetGateway(ctx context.Context, igwID string) error
 	DescribeInternetGateways(ctx context.Context, igwIDs []string) ([]*InternetGateway, error)
 
 	// Route Table operations
@@ -1007,6 +1009,58 @@ func (m *MemoryStorage) AttachInternetGateway(_ context.Context, igwID, vpcID st
 		VpcID: vpcID,
 		State: "available",
 	})
+
+	return nil
+}
+
+// DetachInternetGateway detaches an internet gateway from a VPC.
+func (m *MemoryStorage) DetachInternetGateway(_ context.Context, igwID, vpcID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	igw, exists := m.InternetGateways[igwID]
+	if !exists {
+		return &Error{
+			Code:    "InvalidInternetGatewayID.NotFound",
+			Message: fmt.Sprintf("The internetGateway ID '%s' does not exist", igwID),
+		}
+	}
+
+	for i, attachment := range igw.Attachments {
+		if attachment.VpcID == vpcID {
+			igw.Attachments = append(igw.Attachments[:i], igw.Attachments[i+1:]...)
+
+			return nil
+		}
+	}
+
+	return &Error{
+		Code:    "Gateway.NotAttached",
+		Message: fmt.Sprintf("Internet gateway '%s' is not attached to vpc '%s'", igwID, vpcID),
+	}
+}
+
+// DeleteInternetGateway deletes an internet gateway.
+func (m *MemoryStorage) DeleteInternetGateway(_ context.Context, igwID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	igw, exists := m.InternetGateways[igwID]
+	if !exists {
+		return &Error{
+			Code:    "InvalidInternetGatewayID.NotFound",
+			Message: fmt.Sprintf("The internetGateway ID '%s' does not exist", igwID),
+		}
+	}
+
+	if len(igw.Attachments) > 0 {
+		return &Error{
+			Code:    "DependencyViolation",
+			Message: fmt.Sprintf("Internet gateway '%s' has attachments and cannot be deleted", igwID),
+		}
+	}
+
+	delete(m.InternetGateways, igwID)
 
 	return nil
 }

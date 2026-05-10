@@ -835,3 +835,45 @@ type XMLTagDescription struct {
 	Key          string `xml:"key"`
 	Value        string `xml:"value"`
 }
+
+// DeleteInternetGatewayRequest represents a DeleteInternetGateway request.
+type DeleteInternetGatewayRequest struct {
+	InternetGatewayID string `json:"InternetGatewayId"`
+}
+
+// XMLDetachInternetGatewayResponse is the XML response for DetachInternetGateway.
+type XMLDetachInternetGatewayResponse struct {
+	XMLName   xml.Name `xml:"DetachInternetGatewayResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLDeleteInternetGatewayResponse is the XML response for DeleteInternetGateway.
+type XMLDeleteInternetGatewayResponse struct {
+	XMLName   xml.Name `xml:"DeleteInternetGatewayResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLDescribeNetworkInterfacesResponse is the XML response for DescribeNetworkInterfaces.
+type XMLDescribeNetworkInterfacesResponse struct {
+	XMLName             xml.Name               `xml:"DescribeNetworkInterfacesResponse"`
+	Xmlns               string                 `xml:"xmlns,attr"`
+	RequestID           string                 `xml:"requestId"`
+	NetworkInterfaceSet XMLNetworkInterfaceSet `xml:"networkInterfaceSet"`
+}
+
+// XMLNetworkInterfaceSet wraps the network interface members.
+type XMLNetworkInterfaceSet struct {
+	Items []XMLNetworkInterface `xml:"item"`
+}
+
+// XMLNetworkInterface is a single network interface description.
+type XMLNetworkInterface struct {
+	NetworkInterfaceID string `xml:"networkInterfaceId"`
+	VpcID              string `xml:"vpcId,omitempty"`
+	SubnetID           string `xml:"subnetId,omitempty"`
+	Status             string `xml:"status,omitempty"`
+}
