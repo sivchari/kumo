@@ -54,6 +54,46 @@ func (s *Service) ServiceName() string {
 // CBORProtocol is a marker method that indicates CloudWatch uses RPC v2 CBOR protocol.
 func (s *Service) CBORProtocol() {}
 
+// TargetPrefix returns the X-Amz-Target header prefix for CloudWatch.
+//
+// The form-encoded Query protocol path uses this so the unified dispatcher
+// can wrap converted JSON requests with the right X-Amz-Target. Newer AWS
+// SDKs go through the CBOR path above; terraform-provider-aws still uses
+// the Query protocol against `/`.
+func (s *Service) TargetPrefix() string {
+	return "GraniteServiceVersion20100801"
+}
+
+// ServiceIdentifier returns the SDK service identifier sent in the User-Agent
+// header by aws-sdk-go-v2.
+//
+// Note: this is "cloudwatch" (the SDK package name) not "monitoring" (the
+// AWS service ID). terraform-provider-aws sends `api/cloudwatch#x.y.z`.
+func (s *Service) ServiceIdentifier() string {
+	return "cloudwatch"
+}
+
+// Actions returns the Query-protocol actions that DispatchAction handles.
+func (s *Service) Actions() []string {
+	return []string{
+		"PutMetricData",
+		"GetMetricData",
+		"GetMetricStatistics",
+		"ListMetrics",
+		"PutMetricAlarm",
+		"DeleteAlarms",
+		"DescribeAlarms",
+		// Tag stubs — see tag_stubs.go.
+		"ListTagsForResource",
+		"TagResource",
+		"UntagResource",
+	}
+}
+
+// QueryProtocol is a marker method that indicates CloudWatch is reachable
+// through the unified Query→JSON dispatcher in addition to CBOR.
+func (s *Service) QueryProtocol() {}
+
 // DispatchCBORAction handles RPC v2 CBOR protocol requests.
 func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, operation string) {
 	switch operation {
