@@ -175,3 +175,34 @@ type Error struct {
 	Code    string `xml:"Code"`
 	Message string `xml:"Message"`
 }
+
+// ListTagsForResourceXMLResponse is the XML response for ListTagsForResource.
+type ListTagsForResourceXMLResponse struct {
+	XMLName        struct{}       `xml:"ListTagsForResourceResponse"`
+	XMLNS          string         `xml:"xmlns,attr"`
+	ResourceTagSet ResourceTagSet `xml:"ResourceTagSet"`
+}
+
+// ChangeTagsForResourceXMLResponse is the XML response for ChangeTagsForResource.
+type ChangeTagsForResourceXMLResponse struct {
+	XMLName struct{} `xml:"ChangeTagsForResourceResponse"`
+	XMLNS   string   `xml:"xmlns,attr"`
+}
+
+// ResourceTagSet is the tag set for a Route53 resource.
+type ResourceTagSet struct {
+	ResourceType string  `xml:"ResourceType"`
+	ResourceID   string  `xml:"ResourceId"`
+	Tags         TagList `xml:"Tags"`
+}
+
+// TagList wraps tag members.
+type TagList struct {
+	Tag []Tag `xml:"Tag"`
+}
+
+// Tag is a single Route53 tag.
+type Tag struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
