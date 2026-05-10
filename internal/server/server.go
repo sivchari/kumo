@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -28,13 +29,27 @@ type Config struct {
 }
 
 // DefaultConfig returns the default server configuration.
+// KUMO_HOST and KUMO_PORT override the bind address when set; an
+// unparseable KUMO_PORT is ignored and the default port is kept.
 func DefaultConfig() Config {
-	return Config{
+	cfg := Config{
 		Host:     "0.0.0.0",
 		Port:     4566,
 		LogLevel: slog.LevelInfo,
 		InitDir:  os.Getenv("KUMO_INIT_DIR"),
 	}
+
+	if host := os.Getenv("KUMO_HOST"); host != "" {
+		cfg.Host = host
+	}
+
+	if portStr := os.Getenv("KUMO_PORT"); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			cfg.Port = p
+		}
+	}
+
+	return cfg
 }
 
 // Server is the main HTTP server for kumo.
