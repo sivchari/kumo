@@ -27,6 +27,14 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"SendTaskSuccess":      s.SendTaskSuccess,
 		"SendTaskFailure":      s.SendTaskFailure,
 		"SendTaskHeartbeat":    s.SendTaskHeartbeat,
+		// Tag + validation stubs — see definition_stub.go.
+		// Required by terraform-provider-aws plan/apply of aws_sfn_state_machine.
+		"ValidateStateMachineDefinition": s.ValidateStateMachineDefinition,
+		"ListStateMachineVersions":       s.ListStateMachineVersions,
+		"ListStateMachineAliases":        s.ListStateMachineAliases,
+		"ListTagsForResource":            s.ListTagsForResource,
+		"TagResource":                    s.TagResource,
+		"UntagResource":                  s.UntagResource,
 	}
 }
 

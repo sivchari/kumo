@@ -355,3 +355,37 @@ type ServiceError struct {
 func (e *ServiceError) Error() string {
 	return e.Message
 }
+
+// validateStateMachineDefinitionResponse is the wire shape of
+// ValidateStateMachineDefinition. AWS returns Result="OK" plus an empty
+// diagnostics array on success; terraform-provider-aws checks Result.
+type validateStateMachineDefinitionResponse struct {
+	Result      string               `json:"result"`
+	Diagnostics []validateDiagnostic `json:"diagnostics"`
+}
+
+// validateDiagnostic is a single ValidateStateMachineDefinition diagnostic.
+type validateDiagnostic struct {
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Location string `json:"location,omitempty"`
+}
+
+// listTagsForResourceResponse is the wire shape of ListTagsForResource;
+// the Tags field must be present even when empty.
+type listTagsForResourceResponse struct {
+	Tags []map[string]string `json:"tags"`
+}
+
+// listStateMachineVersionsResponse is the wire shape of ListStateMachineVersions.
+type listStateMachineVersionsResponse struct {
+	StateMachineVersions []map[string]string `json:"stateMachineVersions"`
+	NextToken            string              `json:"nextToken,omitempty"`
+}
+
+// listStateMachineAliasesResponse is the wire shape of ListStateMachineAliases.
+type listStateMachineAliasesResponse struct {
+	StateMachineAliases []map[string]string `json:"stateMachineAliases"`
+	NextToken           string              `json:"nextToken,omitempty"`
+}
