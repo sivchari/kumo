@@ -90,10 +90,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6
 	github.com/aws/aws-sdk-go-v2/service/xray v1.36.17
 	github.com/aws/smithy-go v1.26.0
+	github.com/hashicorp/terraform-exec v0.25.2
 	github.com/sivchari/golden v0.3.0
 )
 
 require (
+	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.25 // indirect
@@ -108,7 +110,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.9 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.13 // indirect
+	github.com/hashicorp/go-version v1.9.0 // indirect
+	github.com/hashicorp/terraform-json v0.27.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/zclconf/go-cty v1.18.1 // indirect
+	golang.org/x/text v0.31.0 // indirect
 )
 
 replace github.com/sivchari/kumo => ../
