@@ -39,38 +39,46 @@ func (s *Service) Name() string {
 }
 
 // RegisterRoutes registers the API Gateway routes.
+//
+// Routes are registered under both the /apigateway/... prefix (legacy
+// per-service BaseEndpoint) and the bare /restapis/... prefix that
+// terraform-provider-aws and aws-sdk-go-v2 use against the unified
+// endpoint.
 func (s *Service) RegisterRoutes(r service.Router) {
-	// REST API routes.
-	r.HandleFunc("POST", "/apigateway/restapis", s.CreateRestAPI)
-	r.HandleFunc("GET", "/apigateway/restapis", s.GetRestAPIs)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}", s.GetRestAPI)
-	r.HandleFunc("DELETE", "/apigateway/restapis/{restApiId}", s.DeleteRestAPI)
+	for _, prefix := range []string{"/apigateway", ""} {
+		// REST API routes.
+		r.HandleFunc("POST", prefix+"/restapis", s.CreateRestAPI)
+		r.HandleFunc("GET", prefix+"/restapis", s.GetRestAPIs)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}", s.GetRestAPI)
+		r.HandleFunc("DELETE", prefix+"/restapis/{restApiId}", s.DeleteRestAPI)
 
-	// Resource routes.
-	r.HandleFunc("POST", "/apigateway/restapis/{restApiId}/resources/{parentId}", s.CreateResource)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/resources", s.GetResources)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/resources/{resourceId}", s.GetResource)
-	r.HandleFunc("DELETE", "/apigateway/restapis/{restApiId}/resources/{resourceId}", s.DeleteResource)
+		// Resource routes.
+		r.HandleFunc("POST", prefix+"/restapis/{restApiId}/resources/{parentId}", s.CreateResource)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/resources", s.GetResources)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/resources/{resourceId}", s.GetResource)
+		r.HandleFunc("DELETE", prefix+"/restapis/{restApiId}/resources/{resourceId}", s.DeleteResource)
 
-	// Method routes.
-	r.HandleFunc("PUT", "/apigateway/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}", s.PutMethod)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}", s.GetMethod)
+		// Method routes.
+		r.HandleFunc("PUT", prefix+"/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}", s.PutMethod)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}", s.GetMethod)
+		r.HandleFunc("DELETE", prefix+"/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}", s.DeleteMethod)
 
-	// Integration routes.
-	r.HandleFunc("PUT", "/apigateway/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}/integration", s.PutIntegration)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}/integration", s.GetIntegration)
+		// Integration routes.
+		r.HandleFunc("PUT", prefix+"/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}/integration", s.PutIntegration)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}/integration", s.GetIntegration)
 
-	// Deployment routes.
-	r.HandleFunc("POST", "/apigateway/restapis/{restApiId}/deployments", s.CreateDeployment)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/deployments", s.GetDeployments)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/deployments/{deploymentId}", s.GetDeployment)
-	r.HandleFunc("DELETE", "/apigateway/restapis/{restApiId}/deployments/{deploymentId}", s.DeleteDeployment)
+		// Deployment routes.
+		r.HandleFunc("POST", prefix+"/restapis/{restApiId}/deployments", s.CreateDeployment)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/deployments", s.GetDeployments)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/deployments/{deploymentId}", s.GetDeployment)
+		r.HandleFunc("DELETE", prefix+"/restapis/{restApiId}/deployments/{deploymentId}", s.DeleteDeployment)
 
-	// Stage routes.
-	r.HandleFunc("POST", "/apigateway/restapis/{restApiId}/stages", s.CreateStage)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/stages", s.GetStages)
-	r.HandleFunc("GET", "/apigateway/restapis/{restApiId}/stages/{stageName}", s.GetStage)
-	r.HandleFunc("DELETE", "/apigateway/restapis/{restApiId}/stages/{stageName}", s.DeleteStage)
+		// Stage routes.
+		r.HandleFunc("POST", prefix+"/restapis/{restApiId}/stages", s.CreateStage)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/stages", s.GetStages)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/stages/{stageName}", s.GetStage)
+		r.HandleFunc("DELETE", prefix+"/restapis/{restApiId}/stages/{stageName}", s.DeleteStage)
+	}
 }
 
 // Close saves the storage state if persistence is enabled.

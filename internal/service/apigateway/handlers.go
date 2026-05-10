@@ -125,12 +125,14 @@ func (s *Service) GetResource(w http.ResponseWriter, r *http.Request) {
 
 // GetResources handles the GetResources API.
 func (s *Service) GetResources(w http.ResponseWriter, r *http.Request) {
-	// Extract restApiId from path: /apigateway/restapis/{restApiId}/resources
-	path := strings.TrimPrefix(r.URL.Path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-	restAPIID := parts[0]
+	parts := pathSegmentsAfterRestapis(r.URL.Path)
+	if len(parts) < 1 {
+		writeError(w, "BadRequestException", "restApiId is required", http.StatusBadRequest)
 
-	resources, nextPosition, err := s.storage.GetResources(r.Context(), restAPIID, 25, "")
+		return
+	}
+
+	resources, nextPosition, err := s.storage.GetResources(r.Context(), parts[0], 25, "")
 	if err != nil {
 		handleError(w, err)
 
@@ -199,6 +201,19 @@ func (s *Service) GetMethod(w http.ResponseWriter, r *http.Request) {
 
 	resp := toMethodOutput(method)
 	writeResponse(w, resp, http.StatusOK)
+}
+
+// DeleteMethod handles the DeleteMethod API.
+func (s *Service) DeleteMethod(w http.ResponseWriter, r *http.Request) {
+	restAPIID, resourceID, httpMethod := extractMethodParams(r.URL.Path)
+
+	if err := s.storage.DeleteMethod(r.Context(), restAPIID, resourceID, httpMethod); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // PutIntegration handles the PutIntegration API.
@@ -477,17 +492,34 @@ func toStageResponse(s *Stage) *StageResponse {
 	}
 }
 
-// extractPathParam extracts the path parameter after the given prefix.
+// extractPathParam returns the segment immediately after the given
+// prefix. Tolerates both /apigateway/<...> (legacy SDK BaseEndpoint) and
+// /<...> (terraform-provider-aws / aws-sdk-go-v2 against the unified
+// endpoint) by stripping the optional /apigateway leading segment first.
 func extractPathParam(path, prefix string) string {
-	return strings.TrimPrefix(path, prefix)
+	path = strings.TrimPrefix(path, "/apigateway")
+
+	return strings.TrimPrefix(path, strings.TrimPrefix(prefix, "/apigateway"))
 }
 
-// extractResourceParams extracts restApiId and parentId from the path.
+// pathSegmentsAfterRestapis returns the URL path segments after the
+// "restapis" segment, regardless of whether the path is prefixed with
+// /apigateway/. Used by the various extract*Params helpers below.
+func pathSegmentsAfterRestapis(path string) []string {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	for i, p := range parts {
+		if p == "restapis" && i+1 < len(parts) {
+			return parts[i+1:]
+		}
+	}
+
+	return nil
+}
+
+// extractResourceParams extracts restApiId and parentId from the path
+// /restapis/{restApiId}/resources/{parentId}.
 func extractResourceParams(path string) (restAPIID, parentID string) {
-	// Path: /apigateway/restapis/{restApiId}/resources/{parentId}
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 3 {
 		return parts[0], parts[2]
 	}
@@ -495,12 +527,10 @@ func extractResourceParams(path string) (restAPIID, parentID string) {
 	return "", ""
 }
 
-// extractRestAPIAndResourceID extracts restApiId and resourceId from the path.
+// extractRestAPIAndResourceID extracts restApiId and resourceId from
+// /restapis/{restApiId}/resources/{resourceId}.
 func extractRestAPIAndResourceID(path string) (restAPIID, resourceID string) {
-	// Path: /apigateway/restapis/{restApiId}/resources/{resourceId}
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 3 {
 		return parts[0], parts[2]
 	}
@@ -508,12 +538,10 @@ func extractRestAPIAndResourceID(path string) (restAPIID, resourceID string) {
 	return "", ""
 }
 
-// extractMethodParams extracts restApiId, resourceId, and httpMethod from the path.
+// extractMethodParams extracts restApiId, resourceId, and httpMethod from
+// /restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}.
 func extractMethodParams(path string) (restAPIID, resourceID, httpMethod string) {
-	// Path: /apigateway/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 5 {
 		return parts[0], parts[2], parts[4]
 	}
@@ -521,12 +549,10 @@ func extractMethodParams(path string) (restAPIID, resourceID, httpMethod string)
 	return "", "", ""
 }
 
-// extractIntegrationParams extracts restApiId, resourceId, and httpMethod from the path.
+// extractIntegrationParams extracts restApiId, resourceId, and httpMethod
+// from /restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}/integration.
 func extractIntegrationParams(path string) (restAPIID, resourceID, httpMethod string) {
-	// Path: /apigateway/restapis/{restApiId}/resources/{resourceId}/methods/{httpMethod}/integration
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 6 {
 		return parts[0], parts[2], parts[4]
 	}
@@ -534,12 +560,10 @@ func extractIntegrationParams(path string) (restAPIID, resourceID, httpMethod st
 	return "", "", ""
 }
 
-// extractDeploymentRestAPIID extracts restApiId from the deployments path.
+// extractDeploymentRestAPIID extracts restApiId from
+// /restapis/{restApiId}/deployments.
 func extractDeploymentRestAPIID(path string) string {
-	// Path: /apigateway/restapis/{restApiId}/deployments
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 1 {
 		return parts[0]
 	}
@@ -547,12 +571,10 @@ func extractDeploymentRestAPIID(path string) string {
 	return ""
 }
 
-// extractRestAPIAndDeploymentID extracts restApiId and deploymentId from the path.
+// extractRestAPIAndDeploymentID extracts restApiId and deploymentId from
+// /restapis/{restApiId}/deployments/{deploymentId}.
 func extractRestAPIAndDeploymentID(path string) (restAPIID, deploymentID string) {
-	// Path: /apigateway/restapis/{restApiId}/deployments/{deploymentId}
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 3 {
 		return parts[0], parts[2]
 	}
@@ -560,12 +582,10 @@ func extractRestAPIAndDeploymentID(path string) (restAPIID, deploymentID string)
 	return "", ""
 }
 
-// extractStageRestAPIID extracts restApiId from the stages path.
+// extractStageRestAPIID extracts restApiId from
+// /restapis/{restApiId}/stages.
 func extractStageRestAPIID(path string) string {
-	// Path: /apigateway/restapis/{restApiId}/stages
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 1 {
 		return parts[0]
 	}
@@ -573,12 +593,10 @@ func extractStageRestAPIID(path string) string {
 	return ""
 }
 
-// extractRestAPIAndStageName extracts restApiId and stageName from the path.
+// extractRestAPIAndStageName extracts restApiId and stageName from
+// /restapis/{restApiId}/stages/{stageName}.
 func extractRestAPIAndStageName(path string) (restAPIID, stageName string) {
-	// Path: /apigateway/restapis/{restApiId}/stages/{stageName}
-	path = strings.TrimPrefix(path, "/apigateway/restapis/")
-	parts := strings.Split(path, "/")
-
+	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 3 {
 		return parts[0], parts[2]
 	}
