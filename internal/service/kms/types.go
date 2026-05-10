@@ -347,3 +347,31 @@ type ServiceError struct {
 func (e *ServiceError) Error() string {
 	return e.Message
 }
+
+// getKeyPolicyRequest is the wire shape of GetKeyPolicy / PutKeyPolicy.
+type getKeyPolicyRequest struct {
+	KeyID      string `json:"KeyId"`
+	PolicyName string `json:"PolicyName,omitempty"`
+}
+
+// getKeyPolicyResponse is the wire shape of GetKeyPolicy.
+type getKeyPolicyResponse struct {
+	Policy     string `json:"Policy"`
+	PolicyName string `json:"PolicyName"`
+}
+
+// listKeyPoliciesResponse is the wire shape of ListKeyPolicies.
+type listKeyPoliciesResponse struct {
+	PolicyNames []string `json:"PolicyNames"`
+}
+
+// listResourceTagsResponse mirrors AWS — the Tags field must be present
+// even when empty so terraform-provider-aws can parse it.
+type listResourceTagsResponse struct {
+	Tags []map[string]string `json:"Tags"`
+}
+
+// getKeyRotationStatusResponse is the wire shape of GetKeyRotationStatus.
+type getKeyRotationStatusResponse struct {
+	KeyRotationEnabled bool `json:"KeyRotationEnabled"`
+}

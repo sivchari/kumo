@@ -28,6 +28,15 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"CreateAlias":         s.CreateAlias,
 		"DeleteAlias":         s.DeleteAlias,
 		"ListAliases":         s.ListAliases,
+		// Key policy + tag stubs — see policy_tag_stubs.go.
+		// Required by terraform-provider-aws after CreateKey.
+		"GetKeyPolicy":         s.GetKeyPolicy,
+		"PutKeyPolicy":         s.PutKeyPolicy,
+		"ListKeyPolicies":      s.ListKeyPolicies,
+		"ListResourceTags":     s.ListResourceTags,
+		"TagResource":          s.TagResource,
+		"UntagResource":        s.UntagResource,
+		"GetKeyRotationStatus": s.GetKeyRotationStatus,
 	}
 }
 
