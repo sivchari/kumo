@@ -460,6 +460,16 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.ListSubscriptions(w, r)
 	case "ListSubscriptionsByTopic":
 		s.ListSubscriptionsByTopic(w, r)
+	case "GetTopicAttributes":
+		s.GetTopicAttributes(w, r)
+	case "SetTopicAttributes":
+		s.SetTopicAttributes(w, r)
+	case "ListTagsForResource":
+		s.ListTagsForResource(w, r)
+	case "TagResource":
+		s.TagResource(w, r)
+	case "UntagResource":
+		s.UntagResource(w, r)
 	default:
 		writeTopicError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
 	}

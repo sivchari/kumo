@@ -299,3 +299,94 @@ type TopicError struct {
 func (e *TopicError) Error() string {
 	return e.Message
 }
+
+// XMLSetTopicAttributesResponse is the XML response for SetTopicAttributes.
+type XMLSetTopicAttributesResponse struct {
+	XMLName          struct{}         `xml:"SetTopicAttributesResponse"`
+	Xmlns            string           `xml:"xmlns,attr"`
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLGetTopicAttributesResponse is the XML response for GetTopicAttributes.
+type XMLGetTopicAttributesResponse struct {
+	XMLName                  struct{}                    `xml:"GetTopicAttributesResponse"`
+	Xmlns                    string                      `xml:"xmlns,attr"`
+	GetTopicAttributesResult XMLGetTopicAttributesResult `xml:"GetTopicAttributesResult"`
+	ResponseMetadata         ResponseMetadata            `xml:"ResponseMetadata"`
+}
+
+// XMLGetTopicAttributesResult contains the attribute map.
+type XMLGetTopicAttributesResult struct {
+	Attributes XMLAttributesMap `xml:"Attributes"`
+}
+
+// XMLAttributesMap wraps the attribute entries as the AWS Query protocol
+// expects: <Attributes><entry><key/><value/></entry>...</Attributes>.
+type XMLAttributesMap struct {
+	Entry []XMLAttributeEntry `xml:"entry"`
+}
+
+// XMLAttributeEntry is a single attribute key/value entry.
+type XMLAttributeEntry struct {
+	Key   string `xml:"key"`
+	Value string `xml:"value"`
+}
+
+// XMLListTagsForResourceResponse mirrors the AWS shape; the Tags member is
+// always an empty member list because tag storage is not modeled.
+type XMLListTagsForResourceResponse struct {
+	XMLName                   struct{}                     `xml:"ListTagsForResourceResponse"`
+	Xmlns                     string                       `xml:"xmlns,attr"`
+	ListTagsForResourceResult XMLListTagsForResourceResult `xml:"ListTagsForResourceResult"`
+	ResponseMetadata          ResponseMetadata             `xml:"ResponseMetadata"`
+}
+
+// XMLListTagsForResourceResult contains the (always empty) tag list.
+type XMLListTagsForResourceResult struct {
+	Tags XMLTagList `xml:"Tags"`
+}
+
+// XMLTagList wraps the tag members.
+type XMLTagList struct {
+	Member []XMLTag `xml:"member"`
+}
+
+// XMLTag is a single tag.
+type XMLTag struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+// XMLTagResourceResponse is the XML response for TagResource.
+type XMLTagResourceResponse struct {
+	XMLName          struct{}         `xml:"TagResourceResponse"`
+	Xmlns            string           `xml:"xmlns,attr"`
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLUntagResourceResponse is the XML response for UntagResource.
+type XMLUntagResourceResponse struct {
+	XMLName          struct{}         `xml:"UntagResourceResponse"`
+	Xmlns            string           `xml:"xmlns,attr"`
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// setTopicAttributesRequest is the wire shape after the Query dispatcher
+// converts terraform's form-encoded body to JSON.
+//
+// AttributeValue uses the lenient flexString helper because the dispatcher's
+// formToJSON heuristically promotes "0" / "1" / "true" / "false" to numeric
+// or boolean JSON literals, but AWS itself sends every SetTopicAttributes
+// value as a string and clients (terraform-provider-aws) produce
+// numeric-looking sample-rate values that must round-trip as strings.
+type setTopicAttributesRequest struct {
+	TopicArn       string     `json:"TopicArn"`
+	AttributeName  string     `json:"AttributeName"`
+	AttributeValue flexString `json:"AttributeValue"`
+}
+
+// getTopicAttributesRequest mirrors GetTopicAttributes after the Query
+// dispatcher converts the form-encoded body to JSON.
+type getTopicAttributesRequest struct {
+	TopicArn string `json:"TopicArn"`
+}
