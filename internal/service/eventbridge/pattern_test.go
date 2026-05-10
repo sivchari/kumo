@@ -92,6 +92,90 @@ func TestMatchEventPattern(t *testing.T) {
 			event:   PutEventsRequestEntry{Source: "my.app"},
 			want:    false,
 		},
+		{
+			name:    "prefix on source",
+			pattern: `{"source": [{"prefix": "my."}]}`,
+			event:   PutEventsRequestEntry{Source: "my.app"},
+			want:    true,
+		},
+		{
+			name:    "prefix on source mismatch",
+			pattern: `{"source": [{"prefix": "other."}]}`,
+			event:   PutEventsRequestEntry{Source: "my.app"},
+			want:    false,
+		},
+		{
+			name:    "suffix on detail field",
+			pattern: `{"detail": {"name": [{"suffix": ".png"}]}}`,
+			event:   PutEventsRequestEntry{Source: "s3", Detail: `{"name": "photo.png"}`},
+			want:    true,
+		},
+		{
+			name:    "exists true matches present field",
+			pattern: `{"detail": {"userId": [{"exists": true}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"userId": "u1"}`},
+			want:    true,
+		},
+		{
+			name:    "exists false matches missing field",
+			pattern: `{"detail": {"userId": [{"exists": false}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"orderId": "o1"}`},
+			want:    true,
+		},
+		{
+			name:    "exists true rejects missing field",
+			pattern: `{"detail": {"userId": [{"exists": true}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"orderId": "o1"}`},
+			want:    false,
+		},
+		{
+			name:    "anything-but single value",
+			pattern: `{"detail": {"status": [{"anything-but": "draft"}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"status": "published"}`},
+			want:    true,
+		},
+		{
+			name:    "anything-but single value rejects",
+			pattern: `{"detail": {"status": [{"anything-but": "draft"}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"status": "draft"}`},
+			want:    false,
+		},
+		{
+			name:    "anything-but list",
+			pattern: `{"detail": {"status": [{"anything-but": ["draft", "archived"]}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"status": "published"}`},
+			want:    true,
+		},
+		{
+			name:    "numeric range match",
+			pattern: `{"detail": {"price": [{"numeric": [">", 0, "<=", 100]}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"price": 50}`},
+			want:    true,
+		},
+		{
+			name:    "numeric range out of bounds",
+			pattern: `{"detail": {"price": [{"numeric": [">", 0, "<=", 100]}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"price": 200}`},
+			want:    false,
+		},
+		{
+			name:    "numeric equality",
+			pattern: `{"detail": {"count": [{"numeric": ["=", 5]}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"count": 5}`},
+			want:    true,
+		},
+		{
+			name:    "equals-ignore-case",
+			pattern: `{"detail": {"region": [{"equals-ignore-case": "us-east-1"}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"region": "US-EAST-1"}`},
+			want:    true,
+		},
+		{
+			name:    "literal and content filter mixed",
+			pattern: `{"detail": {"state": ["pending", {"prefix": "process"}]}}`,
+			event:   PutEventsRequestEntry{Detail: `{"state": "processing"}`},
+			want:    true,
+		},
 	}
 
 	for _, tt := range tests {

@@ -604,6 +604,11 @@ func (s *MemoryStorage) matchAndDeliver(eventID, eventBusName string, entry *Put
 			if isSQSArn(target.Arn) {
 				go s.deliverToSQS(target, payload)
 			}
+
+			// Deliver to Lambda if the target ARN is a Lambda function.
+			if isLambdaArn(target.Arn) {
+				go s.deliverToLambda(target, payload)
+			}
 		}
 	}
 }
@@ -775,6 +780,55 @@ func (s *MemoryStorage) deliverToSQS(target *Target, payload []byte) {
 
 	s.logger.Info("delivered event to SQS",
 		"queue", queueName,
+		"status", resp.StatusCode,
+	)
+}
+
+// isLambdaArn returns true if the ARN is a Lambda function ARN.
+func isLambdaArn(arn string) bool {
+	return strings.Contains(arn, ":lambda:")
+}
+
+// deliverToLambda invokes a Lambda function asynchronously via the local kumo Lambda endpoint.
+func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
+	if payload == nil {
+		return
+	}
+
+	// Lambda ARN: arn:aws:lambda:region:account:function:function-name[:qualifier]
+	parts := strings.Split(target.Arn, ":")
+	if len(parts) < 7 || parts[5] != "function" {
+		s.logger.Error("invalid Lambda ARN", "arn", target.Arn)
+
+		return
+	}
+
+	functionName := parts[6]
+	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", s.baseURL, functionName)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		s.logger.Error("failed to create Lambda invoke request", "error", err, "function", functionName)
+
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Amz-Invocation-Type", "Event")
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		s.logger.Error("failed to deliver event to Lambda", "error", err, "function", functionName)
+
+		return
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	s.logger.Info("delivered event to Lambda",
+		"function", functionName,
 		"status", resp.StatusCode,
 	)
 }
