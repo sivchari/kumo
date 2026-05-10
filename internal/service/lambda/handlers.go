@@ -386,41 +386,54 @@ func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoin
 	}
 }
 
-// extractFunctionName extracts function name from path like /lambda/2015-03-31/functions/{name}.
+// extractFunctionName extracts function name from URL paths like:
+//
+//   - /lambda/2015-03-31/functions/{name}              (SDK BaseEndpoint = .../lambda)
+//   - /2015-03-31/functions/{name}                     (terraform-provider-aws, single endpoint)
+//   - /lambda/2015-03-31/functions/{name}/code         (sub-resources accepted as well)
+//
+// Routes are registered for both prefixes, so the helper finds the
+// "functions" segment regardless of where it appears in the path. The
+// trailing /code, /configuration, /invocations sub-resources are tolerated
+// — the dedicated FromXPath helpers below assert which sub-resource was
+// matched.
 func extractFunctionName(path string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 4 && parts[2] == pathSegmentFunctions {
-		return parts[3]
+	for i, p := range parts {
+		if p == pathSegmentFunctions && i+1 < len(parts) {
+			return parts[i+1]
+		}
 	}
 
 	return ""
 }
 
-// extractFunctionNameFromCodePath extracts function name from path like /lambda/2015-03-31/functions/{name}/code.
+// extractFunctionNameFromCodePath returns the function name when the path
+// ends in /functions/{name}/code; "" if the shape does not match.
 func extractFunctionNameFromCodePath(path string) string {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 5 && parts[2] == pathSegmentFunctions && parts[4] == "code" {
-		return parts[3]
-	}
-
-	return ""
+	return extractFunctionNameFromSubresource(path, "code")
 }
 
-// extractFunctionNameFromConfigPath extracts function name from path like /lambda/2015-03-31/functions/{name}/configuration.
+// extractFunctionNameFromConfigPath returns the function name when the path
+// ends in /functions/{name}/configuration; "" if the shape does not match.
 func extractFunctionNameFromConfigPath(path string) string {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 5 && parts[2] == pathSegmentFunctions && parts[4] == "configuration" {
-		return parts[3]
-	}
-
-	return ""
+	return extractFunctionNameFromSubresource(path, "configuration")
 }
 
-// extractFunctionNameFromInvokePath extracts function name from path like /lambda/2015-03-31/functions/{name}/invocations.
+// extractFunctionNameFromInvokePath returns the function name when the path
+// ends in /functions/{name}/invocations; "" if the shape does not match.
 func extractFunctionNameFromInvokePath(path string) string {
+	return extractFunctionNameFromSubresource(path, "invocations")
+}
+
+// extractFunctionNameFromSubresource returns the function name when the
+// path matches /functions/{name}/<sub>, accepting any leading prefix.
+func extractFunctionNameFromSubresource(path, sub string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 5 && parts[2] == pathSegmentFunctions && parts[4] == "invocations" {
-		return parts[3]
+	for i, p := range parts {
+		if p == pathSegmentFunctions && i+2 < len(parts) && parts[i+2] == sub {
+			return parts[i+1]
+		}
 	}
 
 	return ""
