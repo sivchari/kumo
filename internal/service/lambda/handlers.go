@@ -258,13 +258,6 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if fn.InvokeEndpoint == "" {
-		writeFunctionError(w, ErrInvalidParameterValue,
-			"InvokeEndpoint is not configured for this function", http.StatusBadRequest)
-
-		return
-	}
-
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeFunctionError(w, ErrInvalidParameterValue, "Failed to read request body", http.StatusBadRequest)
@@ -275,6 +268,32 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 	invocationType := r.Header.Get("X-Amz-Invocation-Type")
 	if invocationType == "" {
 		invocationType = "RequestResponse"
+	}
+
+	// When no InvokeEndpoint is configured the function is treated as a
+	// stub: the invocation is accepted but no real code runs. This is the
+	// common shape for terraform integration tests — provider-aws creates
+	// the function via CreateFunction, which has no invoke_endpoint
+	// argument, then never calls Invoke. Returning a benign empty success
+	// here (rather than InvalidParameterValueException) lets ad-hoc CLI /
+	// SDK callers exercise the function without setting up a separate
+	// HTTP listener.
+	if fn.InvokeEndpoint == "" {
+		switch invocationType {
+		case "DryRun":
+			writeInvokeHeaders(w)
+			w.WriteHeader(http.StatusNoContent)
+		case "Event":
+			writeInvokeHeaders(w)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte("{}"))
+		default:
+			writeInvokeHeaders(w)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+		}
+
+		return
 	}
 
 	switch invocationType {
