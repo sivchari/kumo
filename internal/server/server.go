@@ -77,6 +77,9 @@ func New(config Config) *Server {
 		srv.RegisterService(svc)
 	}
 
+	// Cross-service wiring (must happen after all services are registered).
+	wireSNStoSQS(registry)
+
 	// Register unified protocol dispatcher for POST /
 	hasJSONServices := len(jsonDispatcher.handlers) > 0
 	hasQueryServices := len(queryDispatcher.handlers) > 0

@@ -66,3 +66,17 @@ func (s *Service) Close() error {
 
 	return nil
 }
+
+// Storage returns the SQS storage so other services (e.g. SNS) can hand
+// messages directly to a queue without going through the public SDK
+// surface.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
+// BaseURL returns the configured base URL used when generating queue URLs.
+// SNS uses this to translate an SQS ARN (which is what subscribers send)
+// into the queue URL the storage layer keys queues by.
+func (s *Service) BaseURL() string {
+	return s.baseURL
+}
