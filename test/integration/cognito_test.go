@@ -52,7 +52,7 @@ func TestCognito_CreateAndDescribeUserPool(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("Id", "CreationDate", "LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_create", createOutput)
+	golden.New(t, golden.WithIgnoreFields("Id", "Arn", "CreationDate", "LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_create", createOutput)
 
 	userPoolID := *createOutput.UserPool.Id
 
@@ -64,7 +64,7 @@ func TestCognito_CreateAndDescribeUserPool(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("Id", "CreationDate", "LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("Id", "Arn", "CreationDate", "LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
 }
 
 func TestCognito_ListUserPools(t *testing.T) {
@@ -87,7 +87,7 @@ func TestCognito_ListUserPools(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("Id", "CreationDate", "LastModifiedDate", "ResultMetadata")).Assert(t.Name(), listOutput)
+	golden.New(t, golden.WithIgnoreFields("Id", "Arn", "CreationDate", "LastModifiedDate", "ResultMetadata")).Assert(t.Name(), listOutput)
 }
 
 func TestCognito_CreateAndDescribeUserPoolClient(t *testing.T) {
