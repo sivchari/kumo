@@ -484,6 +484,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.UpdateSecret(w, r)
 	case "GetRandomPassword":
 		s.GetRandomPassword(w, r)
+	case "GetResourcePolicy":
+		s.GetResourcePolicy(w, r)
+	case "PutResourcePolicy":
+		s.PutResourcePolicy(w, r)
+	case "DeleteResourcePolicy":
+		s.DeleteResourcePolicy(w, r)
 	default:
 		writeSecretsManagerError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
 	}
