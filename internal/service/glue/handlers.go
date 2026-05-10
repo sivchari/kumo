@@ -30,39 +30,35 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 
 	operation := parts[1]
 
-	switch operation {
-	case "CreateDatabase":
-		s.CreateDatabase(w, r)
-	case "GetDatabase":
-		s.GetDatabase(w, r)
-	case "GetDatabases":
-		s.GetDatabases(w, r)
-	case "DeleteDatabase":
-		s.DeleteDatabase(w, r)
-	case "CreateTable":
-		s.CreateTable(w, r)
-	case "GetTable":
-		s.GetTable(w, r)
-	case "GetTables":
-		s.GetTables(w, r)
-	case "DeleteTable":
-		s.DeleteTable(w, r)
-	case "CreateJob":
-		s.CreateJob(w, r)
-	case "DeleteJob":
-		s.DeleteJob(w, r)
-	case "StartJobRun":
-		s.StartJobRun(w, r)
-	// Tag stubs — see tag_stubs.go.
-	// Required by terraform-provider-aws after CreateDatabase / CreateTable.
-	case "GetTags":
-		s.GetTags(w, r)
-	case "TagResource":
-		s.TagResource(w, r)
-	case "UntagResource":
-		s.UntagResource(w, r)
-	default:
+	handler, ok := s.actionHandlers()[operation]
+	if !ok {
 		writeError(w, errInvalidInput, fmt.Sprintf("Unknown operation: %s", operation), http.StatusBadRequest)
+
+		return
+	}
+
+	handler(w, r)
+}
+
+// actionHandlers returns the operation → handler map.
+func (s *Service) actionHandlers() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"CreateDatabase": s.CreateDatabase,
+		"GetDatabase":    s.GetDatabase,
+		"GetDatabases":   s.GetDatabases,
+		"DeleteDatabase": s.DeleteDatabase,
+		"CreateTable":    s.CreateTable,
+		"GetTable":       s.GetTable,
+		"GetTables":      s.GetTables,
+		"DeleteTable":    s.DeleteTable,
+		"CreateJob":      s.CreateJob,
+		"DeleteJob":      s.DeleteJob,
+		"StartJobRun":    s.StartJobRun,
+		// Tag stubs — see tag_stubs.go.
+		// Required by terraform-provider-aws after CreateDatabase / CreateTable.
+		"GetTags":       s.GetTags,
+		"TagResource":   s.TagResource,
+		"UntagResource": s.UntagResource,
 	}
 }
 
