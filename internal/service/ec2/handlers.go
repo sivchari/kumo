@@ -1423,7 +1423,11 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		// Internet gateway operations
 		"CreateInternetGateway":    s.CreateInternetGateway,
 		"AttachInternetGateway":    s.AttachInternetGateway,
+		"DetachInternetGateway":    s.DetachInternetGateway,
+		"DeleteInternetGateway":    s.DeleteInternetGateway,
 		"DescribeInternetGateways": s.DescribeInternetGateways,
+		// Network interface — destroy-time stub
+		"DescribeNetworkInterfaces": s.DescribeNetworkInterfaces,
 		// Route table operations
 		"CreateRouteTable":    s.CreateRouteTable,
 		"CreateRoute":         s.CreateRoute,

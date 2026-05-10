@@ -80,7 +80,11 @@ func (s *Service) Actions() []string {
 		// Internet Gateway operations
 		"CreateInternetGateway",
 		"AttachInternetGateway",
+		"DetachInternetGateway",
+		"DeleteInternetGateway",
 		"DescribeInternetGateways",
+		// Network interface — destroy-time stub
+		"DescribeNetworkInterfaces",
 		// Route Table operations
 		"CreateRouteTable",
 		"CreateRoute",
