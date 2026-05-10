@@ -870,6 +870,11 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"DescribeListeners":              s.DescribeListeners,
 		"ModifyListener":                 s.ModifyListener,
 		"DescribeTargetHealth":           s.DescribeTargetHealth,
+		// Tag stubs — see tag_stubs.go.
+		// Required by terraform-provider-aws after Create*.
+		"DescribeTags": s.DescribeTags,
+		"AddTags":      s.AddTags,
+		"RemoveTags":   s.RemoveTags,
 	}
 
 	return handlers[action]
