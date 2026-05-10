@@ -200,18 +200,131 @@ type CreateUserPoolResponse struct {
 }
 
 // UserPoolOutput represents a user pool in API responses.
+//
+// Field set is sized to terraform-provider-aws's resourceUserPoolRead
+// requirements: every nested struct it dereferences (Arn,
+// AdminCreateUserConfig, AccountRecoverySetting, DeviceConfiguration,
+// VerificationMessageTemplate, UserPoolAddOns, UsernameConfiguration,
+// UserAttributeUpdateSettings) must be present (or explicitly nil) so the
+// provider's flatten helpers don't nil-pointer-panic. SchemaAttributes,
+// EstimatedNumberOfUsers, DeletionProtection, UserPoolTier, MfaConfiguration
+// have sensible AWS-default values rather than zero values.
 type UserPoolOutput struct {
-	ID                     string                    `json:"Id"`
-	Name                   string                    `json:"Name"`
-	Status                 string                    `json:"Status,omitempty"`
-	CreationDate           float64                   `json:"CreationDate"`
-	LastModifiedDate       float64                   `json:"LastModifiedDate"`
-	Policies               *UserPoolPoliciesOutput   `json:"Policies,omitempty"`
-	LambdaConfig           *LambdaConfigOutput       `json:"LambdaConfig,omitempty"`
-	AutoVerifiedAttributes []string                  `json:"AutoVerifiedAttributes,omitempty"`
-	UsernameAttributes     []string                  `json:"UsernameAttributes,omitempty"`
-	MfaConfiguration       string                    `json:"MfaConfiguration,omitempty"`
-	EmailConfiguration     *EmailConfigurationOutput `json:"EmailConfiguration,omitempty"`
+	ID                          string                             `json:"Id"`
+	Arn                         string                             `json:"Arn"`
+	Name                        string                             `json:"Name"`
+	Status                      string                             `json:"Status,omitempty"`
+	CreationDate                float64                            `json:"CreationDate"`
+	LastModifiedDate            float64                            `json:"LastModifiedDate"`
+	Policies                    *UserPoolPoliciesOutput            `json:"Policies,omitempty"`
+	LambdaConfig                *LambdaConfigOutput                `json:"LambdaConfig"`
+	AutoVerifiedAttributes      []string                           `json:"AutoVerifiedAttributes"`
+	UsernameAttributes          []string                           `json:"UsernameAttributes"`
+	AliasAttributes             []string                           `json:"AliasAttributes"`
+	MfaConfiguration            string                             `json:"MfaConfiguration"`
+	EmailConfiguration          *EmailConfigurationOutput          `json:"EmailConfiguration,omitempty"`
+	AdminCreateUserConfig       *AdminCreateUserConfigOutput       `json:"AdminCreateUserConfig"`
+	AccountRecoverySetting      *AccountRecoverySettingOutput      `json:"AccountRecoverySetting"`
+	DeviceConfiguration         *DeviceConfigurationOutput         `json:"DeviceConfiguration,omitempty"`
+	VerificationMessageTemplate *VerificationMessageTemplateOutput `json:"VerificationMessageTemplate"`
+	UserPoolAddOns              *UserPoolAddOnsOutput              `json:"UserPoolAddOns,omitempty"`
+	UsernameConfiguration       *UsernameConfigurationOutput       `json:"UsernameConfiguration,omitempty"`
+	UserAttributeUpdateSettings *UserAttributeUpdateSettingsOutput `json:"UserAttributeUpdateSettings,omitempty"`
+	SchemaAttributes            []SchemaAttributeOutput            `json:"SchemaAttributes"`
+	UserPoolTags                map[string]string                  `json:"UserPoolTags"`
+	EstimatedNumberOfUsers      int32                              `json:"EstimatedNumberOfUsers"`
+	DeletionProtection          string                             `json:"DeletionProtection"`
+	UserPoolTier                string                             `json:"UserPoolTier"`
+	SmsConfiguration            *SMSConfigurationOutput            `json:"SmsConfiguration,omitempty"`
+	SmsAuthenticationMessage    string                             `json:"SmsAuthenticationMessage,omitempty"`
+	EmailVerificationMessage    string                             `json:"EmailVerificationMessage,omitempty"`
+	EmailVerificationSubject    string                             `json:"EmailVerificationSubject,omitempty"`
+}
+
+// AdminCreateUserConfigOutput mirrors AWS's AdminCreateUserConfigType.
+type AdminCreateUserConfigOutput struct {
+	AllowAdminCreateUserOnly  bool                   `json:"AllowAdminCreateUserOnly"`
+	UnusedAccountValidityDays int32                  `json:"UnusedAccountValidityDays,omitempty"`
+	InviteMessageTemplate     *MessageTemplateOutput `json:"InviteMessageTemplate,omitempty"`
+}
+
+// MessageTemplateOutput mirrors AWS's MessageTemplateType.
+type MessageTemplateOutput struct {
+	SMSMessage   string `json:"SMSMessage,omitempty"`
+	EmailMessage string `json:"EmailMessage,omitempty"`
+	EmailSubject string `json:"EmailSubject,omitempty"`
+}
+
+// AccountRecoverySettingOutput mirrors AWS's AccountRecoverySettingType.
+type AccountRecoverySettingOutput struct {
+	RecoveryMechanisms []RecoveryMechanismOutput `json:"RecoveryMechanisms"`
+}
+
+// RecoveryMechanismOutput is a single RecoveryOptionType entry.
+type RecoveryMechanismOutput struct {
+	Priority int32  `json:"Priority"`
+	Name     string `json:"Name"`
+}
+
+// DeviceConfigurationOutput mirrors AWS's DeviceConfigurationType.
+type DeviceConfigurationOutput struct {
+	ChallengeRequiredOnNewDevice     bool `json:"ChallengeRequiredOnNewDevice"`
+	DeviceOnlyRememberedOnUserPrompt bool `json:"DeviceOnlyRememberedOnUserPrompt"`
+}
+
+// VerificationMessageTemplateOutput mirrors AWS's VerificationMessageTemplateType.
+type VerificationMessageTemplateOutput struct {
+	SMSMessage         string `json:"SmsMessage,omitempty"`
+	EmailMessage       string `json:"EmailMessage,omitempty"`
+	EmailSubject       string `json:"EmailSubject,omitempty"`
+	EmailMessageByLink string `json:"EmailMessageByLink,omitempty"`
+	EmailSubjectByLink string `json:"EmailSubjectByLink,omitempty"`
+	DefaultEmailOption string `json:"DefaultEmailOption,omitempty"`
+}
+
+// UserPoolAddOnsOutput mirrors AWS's UserPoolAddOnsType.
+type UserPoolAddOnsOutput struct {
+	AdvancedSecurityMode string `json:"AdvancedSecurityMode"`
+}
+
+// UsernameConfigurationOutput mirrors AWS's UsernameConfigurationType.
+type UsernameConfigurationOutput struct {
+	CaseSensitive bool `json:"CaseSensitive"`
+}
+
+// UserAttributeUpdateSettingsOutput mirrors AWS's UserAttributeUpdateSettingsType.
+type UserAttributeUpdateSettingsOutput struct {
+	AttributesRequireVerificationBeforeUpdate []string `json:"AttributesRequireVerificationBeforeUpdate"`
+}
+
+// SchemaAttributeOutput mirrors AWS's SchemaAttributeType (one entry per
+// attribute in the user pool's schema).
+type SchemaAttributeOutput struct {
+	Name                       string                            `json:"Name"`
+	AttributeDataType          string                            `json:"AttributeDataType"`
+	DeveloperOnlyAttribute     bool                              `json:"DeveloperOnlyAttribute"`
+	Mutable                    bool                              `json:"Mutable"`
+	Required                   bool                              `json:"Required"`
+	StringAttributeConstraints *StringAttributeConstraintsOutput `json:"StringAttributeConstraints,omitempty"`
+	NumberAttributeConstraints *NumberAttributeConstraintsOutput `json:"NumberAttributeConstraints,omitempty"`
+}
+
+// StringAttributeConstraintsOutput mirrors AWS's StringAttributeConstraintsType.
+type StringAttributeConstraintsOutput struct {
+	MinLength string `json:"MinLength,omitempty"`
+	MaxLength string `json:"MaxLength,omitempty"`
+}
+
+// NumberAttributeConstraintsOutput mirrors AWS's NumberAttributeConstraintsType.
+type NumberAttributeConstraintsOutput struct {
+	MinValue string `json:"MinValue,omitempty"`
+	MaxValue string `json:"MaxValue,omitempty"`
+}
+
+// SMSConfigurationOutput mirrors AWS's SmsConfigurationType.
+type SMSConfigurationOutput struct {
+	SnsCallerArn string `json:"SnsCallerArn"`
+	ExternalID   string `json:"ExternalId,omitempty"`
 }
 
 // UserPoolPoliciesOutput represents user pool policies in responses.
@@ -522,4 +635,20 @@ type ServiceError struct {
 // Error implements the error interface.
 func (e *ServiceError) Error() string {
 	return e.Message
+}
+
+// getUserPoolMFAConfigResponse mirrors AWS's GetUserPoolMfaConfigResponse /
+// SetUserPoolMfaConfigResponse.
+type getUserPoolMFAConfigResponse struct {
+	MfaConfiguration              string                        `json:"MfaConfiguration"`
+	SmsMfaConfiguration           *smsMfaConfigOutput           `json:"SmsMfaConfiguration,omitempty"`
+	SoftwareTokenMfaConfiguration *softwareTokenMfaConfigOutput `json:"SoftwareTokenMfaConfiguration,omitempty"`
+}
+
+type smsMfaConfigOutput struct {
+	SmsAuthenticationMessage string `json:"SmsAuthenticationMessage,omitempty"`
+}
+
+type softwareTokenMfaConfigOutput struct {
+	Enabled bool `json:"Enabled"`
 }
