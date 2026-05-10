@@ -53,6 +53,14 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.DeleteJob(w, r)
 	case "StartJobRun":
 		s.StartJobRun(w, r)
+	// Tag stubs — see tag_stubs.go.
+	// Required by terraform-provider-aws after CreateDatabase / CreateTable.
+	case "GetTags":
+		s.GetTags(w, r)
+	case "TagResource":
+		s.TagResource(w, r)
+	case "UntagResource":
+		s.UntagResource(w, r)
 	default:
 		writeError(w, errInvalidInput, fmt.Sprintf("Unknown operation: %s", operation), http.StatusBadRequest)
 	}
