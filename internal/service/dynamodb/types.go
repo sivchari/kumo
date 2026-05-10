@@ -598,3 +598,32 @@ type TableError struct {
 func (e *TableError) Error() string {
 	return e.Message
 }
+
+// listTagsOfResourceResponse is the wire shape for ListTagsOfResource.
+//
+// AWS returns at minimum an empty array; clients (notably terraform-provider-aws)
+// require the field to be present even when no tags exist.
+type listTagsOfResourceResponse struct {
+	Tags      []map[string]string `json:"Tags"`
+	NextToken string              `json:"NextToken,omitempty"`
+}
+
+// describeContinuousBackupsResponse mirrors the AWS shape required by clients
+// reading point-in-time-recovery state after CreateTable.
+type describeContinuousBackupsResponse struct {
+	ContinuousBackupsDescription continuousBackupsDescription `json:"ContinuousBackupsDescription"`
+}
+
+type continuousBackupsDescription struct {
+	ContinuousBackupsStatus        string                         `json:"ContinuousBackupsStatus"`
+	PointInTimeRecoveryDescription pointInTimeRecoveryDescription `json:"PointInTimeRecoveryDescription"`
+}
+
+type pointInTimeRecoveryDescription struct {
+	PointInTimeRecoveryStatus string `json:"PointInTimeRecoveryStatus"`
+}
+
+// describeContinuousBackupsRequest decodes the TableName the request targets.
+type describeContinuousBackupsRequest struct {
+	TableName string `json:"TableName"`
+}
