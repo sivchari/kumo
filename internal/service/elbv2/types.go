@@ -697,3 +697,58 @@ type XMLModifyListenerResponse struct {
 type XMLModifyListenerResult struct {
 	Listeners XMLListeners `xml:"Listeners"`
 }
+
+// XMLDescribeTagsResponse is the XML response for DescribeTags.
+type XMLDescribeTagsResponse struct {
+	XMLName            xml.Name              `xml:"DescribeTagsResponse"`
+	Xmlns              string                `xml:"xmlns,attr"`
+	DescribeTagsResult XMLDescribeTagsResult `xml:"DescribeTagsResult"`
+	ResponseMetadata   XMLResponseMetadata   `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeTagsResult contains the DescribeTags result.
+type XMLDescribeTagsResult struct {
+	TagDescriptions XMLTagDescriptionList `xml:"TagDescriptions"`
+}
+
+// XMLTagDescriptionList wraps tag-description members.
+type XMLTagDescriptionList struct {
+	Items []XMLTagDescription `xml:"member"`
+}
+
+// XMLTagDescription is the per-resource tag list.
+type XMLTagDescription struct {
+	ResourceArn string     `xml:"ResourceArn"`
+	Tags        XMLTagList `xml:"Tags"`
+}
+
+// XMLTagList wraps tag members.
+type XMLTagList struct {
+	Items []XMLTagMember `xml:"member"`
+}
+
+// XMLTagMember is a single tag.
+type XMLTagMember struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+// XMLAddTagsResponse is the XML response for AddTags.
+type XMLAddTagsResponse struct {
+	XMLName          xml.Name            `xml:"AddTagsResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLRemoveTagsResponse is the XML response for RemoveTags.
+type XMLRemoveTagsResponse struct {
+	XMLName          xml.Name            `xml:"RemoveTagsResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// describeTagsJSONRequest is the wire shape after the unified Query
+// dispatcher converts the form-encoded body to JSON.
+type describeTagsJSONRequest struct {
+	ResourceArns []string `json:"ResourceArns"`
+}
