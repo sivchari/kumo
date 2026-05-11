@@ -419,6 +419,24 @@ func (qd *QueueData) validateFIFO(body, messageGroupID, messageDeduplicationID s
 	}, nil
 }
 
+// lockedMessageGroups returns the set of MessageGroupIDs that have in-flight
+// messages. Returns nil for non-FIFO queues.
+func (qd *QueueData) lockedMessageGroups() map[string]struct{} {
+	if !qd.Queue.FifoQueue {
+		return nil
+	}
+
+	locked := make(map[string]struct{})
+
+	for _, msg := range qd.Inflight {
+		if msg.MessageGroupID != "" {
+			locked[msg.MessageGroupID] = struct{}{}
+		}
+	}
+
+	return locked
+}
+
 // updateFIFOCache updates the deduplication cache with the message ID.
 func (qd *QueueData) updateFIFOCache(dedupID, messageID string) {
 	entry := qd.DeduplicationCache[dedupID]
@@ -548,6 +566,9 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 	result := make([]*Message, 0, maxMessages)
 	remaining := make([]*Message, 0, len(qd.Messages))
 
+	// For FIFO queues, track which message groups are locked (have in-flight messages).
+	lockedGroups := qd.lockedMessageGroups()
+
 	for _, msg := range qd.Messages {
 		if len(result) >= maxMessages {
 			remaining = append(remaining, msg)
@@ -561,30 +582,52 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 			continue
 		}
 
-		// Make message invisible and add to inflight.
-		msg.ReceiptHandle = uuid.New().String()
-		msg.VisibleAt = now.Add(time.Duration(visibilityTimeout) * time.Second)
-		msg.ReceiveCount++
-		msg.Attributes["ApproximateReceiveCount"] = fmt.Sprintf("%d", msg.ReceiveCount)
+		// FIFO: skip messages from groups that are locked (have in-flight messages).
+		if lockedGroups != nil && msg.MessageGroupID != "" {
+			if _, locked := lockedGroups[msg.MessageGroupID]; locked {
+				remaining = append(remaining, msg)
 
-		if msg.Attributes["ApproximateFirstReceiveTimestamp"] == "" {
-			msg.Attributes["ApproximateFirstReceiveTimestamp"] = fmt.Sprintf("%d", now.UnixMilli())
+				continue
+			}
 		}
 
-		// Check if message should be moved to DLQ.
-		if qd.Queue.MaxReceiveCount > 0 && msg.ReceiveCount > qd.Queue.MaxReceiveCount {
-			s.moveToDeadLetterQueue(qd.Queue.DeadLetterTargetArn, msg)
+		// Deliver the message: make invisible and add to inflight.
+		if s.deliverMessage(qd, msg, now, visibilityTimeout) {
+			result = append(result, msg)
 
-			continue
+			// FIFO: lock the group after delivering a message from it.
+			if lockedGroups != nil && msg.MessageGroupID != "" {
+				lockedGroups[msg.MessageGroupID] = struct{}{}
+			}
 		}
-
-		qd.Inflight[msg.ReceiptHandle] = msg
-		result = append(result, msg)
 	}
 
 	qd.Messages = remaining
 
 	return result, qd.notify, nil
+}
+
+// deliverMessage makes a message invisible and adds it to inflight.
+// Returns true if delivered, false if moved to DLQ. Must be called under lock.
+func (s *MemoryStorage) deliverMessage(qd *QueueData, msg *Message, now time.Time, visibilityTimeout int) bool {
+	msg.ReceiptHandle = uuid.New().String()
+	msg.VisibleAt = now.Add(time.Duration(visibilityTimeout) * time.Second)
+	msg.ReceiveCount++
+	msg.Attributes["ApproximateReceiveCount"] = fmt.Sprintf("%d", msg.ReceiveCount)
+
+	if msg.Attributes["ApproximateFirstReceiveTimestamp"] == "" {
+		msg.Attributes["ApproximateFirstReceiveTimestamp"] = fmt.Sprintf("%d", now.UnixMilli())
+	}
+
+	if qd.Queue.MaxReceiveCount > 0 && msg.ReceiveCount > qd.Queue.MaxReceiveCount {
+		s.moveToDeadLetterQueue(qd.Queue.DeadLetterTargetArn, msg)
+
+		return false
+	}
+
+	qd.Inflight[msg.ReceiptHandle] = msg
+
+	return true
 }
 
 // DeleteMessage deletes a message from a queue.
