@@ -1,5 +1,48 @@
 # Changelog
 
+## [v0.19.0](https://github.com/sivchari/kumo/compare/v0.18.2...v0.19.0) - 2026-05-11
+- feat(ec2): implement CreateTags / DeleteTags / DescribeTags by @mizchi in https://github.com/sivchari/kumo/pull/547
+- feat(iam): inline role policies, ListAttachedRolePolicies, OIDC provider by @mizchi in https://github.com/sivchari/kumo/pull/548
+- feat(s3): PublicAccessBlock and BucketEncryption by @mizchi in https://github.com/sivchari/kumo/pull/549
+- fix(ec2): correct InvalidRouteTableID.NotFound error code casing by @mizchi in https://github.com/sivchari/kumo/pull/550
+- feat(elbv2): listener rule lifecycle (Create/Describe/Modify/Delete + SetRulePriorities) by @mizchi in https://github.com/sivchari/kumo/pull/556
+- fix(elbv2): parse Targets.member.N from form in RegisterTargets / DeregisterTargets by @mizchi in https://github.com/sivchari/kumo/pull/559
+- feat(route53): ListHostedZonesByName by @mizchi in https://github.com/sivchari/kumo/pull/560
+- feat(logs): PutRetentionPolicy / DeleteRetentionPolicy by @mizchi in https://github.com/sivchari/kumo/pull/561
+- feat(ecr): PutLifecyclePolicy / GetLifecyclePolicy / DeleteLifecyclePolicy by @mizchi in https://github.com/sivchari/kumo/pull/562
+- fix(ec2): sort DescribeTags response for deterministic ordering by @sivchari in https://github.com/sivchari/kumo/pull/564
+- feat(ec2): tags-on-create via TagSpecifications on Create* actions by @mizchi in https://github.com/sivchari/kumo/pull/553
+- feat(iam): instance profile lifecycle (Create/Get/Delete/List + AddRole/RemoveRole) by @mizchi in https://github.com/sivchari/kumo/pull/555
+- feat(elbv2): LoadBalancer / TargetGroup attribute APIs (Modify/Describe) by @mizchi in https://github.com/sivchari/kumo/pull/557
+- feat(s3): default-response stubs for unconfigured bucket sub-resources by @mizchi in https://github.com/sivchari/kumo/pull/552
+- feat(elbv2): DescribeListeners / ModifyListener / DescribeTargetHealth by @mizchi in https://github.com/sivchari/kumo/pull/558
+- feat(ecr): no-op stubs for ListTagsForResource / TagResource / UntagResource by @mizchi in https://github.com/sivchari/kumo/pull/565
+- feat(logs): no-op stubs for ListTagsForResource / TagResource / UntagResource by @mizchi in https://github.com/sivchari/kumo/pull/566
+- feat(ec2): VPC/Subnet attribute mutation (Modify/Describe) by @mizchi in https://github.com/sivchari/kumo/pull/554
+- fix(elbv2): align listener-rule wire format with AWS (ARN segment + condition typed configs) by @mizchi in https://github.com/sivchari/kumo/pull/568
+- fix(server): honor KUMO_HOST/KUMO_PORT and --host/--port by @izumin5210 in https://github.com/sivchari/kumo/pull/612
+- fix(server): path-prefix boundary + AWS S3 virtual-hosted-style support by @mizchi in https://github.com/sivchari/kumo/pull/574
+- perf(dynamodb): cache key once for Scan sort + pagination (~1.7x) by @mizchi in https://github.com/sivchari/kumo/pull/608
+- feat(s3): PutBucketPolicy / GetBucketPolicy / DeleteBucketPolicy by @mizchi in https://github.com/sivchari/kumo/pull/576
+- feat(s3): GetObject Range support + UploadPartCopy by @mizchi in https://github.com/sivchari/kumo/pull/584
+- feat(ec2): real RevokeSecurityGroupIngress / RevokeSecurityGroupEgress by @mizchi in https://github.com/sivchari/kumo/pull/575
+- fix(ec2): make terraform destroy work for IGW + subnet by @mizchi in https://github.com/sivchari/kumo/pull/596
+- feat(iam): UpdateRole / UpdateAssumeRolePolicy / TagRole + unified Query dispatcher by @mizchi in https://github.com/sivchari/kumo/pull/578
+- feat(elbv2): weighted forward (TargetGroupTuples) for ALB canary / blue-green by @mizchi in https://github.com/sivchari/kumo/pull/570
+- feat(dynamodb): no-op stubs for ListTagsOfResource / Tag / Untag / DescribeContinuousBackups by @mizchi in https://github.com/sivchari/kumo/pull/590
+- feat(secretsmanager): GetResourcePolicy / Put / Delete stubs by @mizchi in https://github.com/sivchari/kumo/pull/592
+- feat(kms): GetKeyPolicy / ListResourceTags / GetKeyRotationStatus stubs by @mizchi in https://github.com/sivchari/kumo/pull/593
+- feat(sfn): ValidateStateMachineDefinition + Versions/Aliases/Tags stubs by @mizchi in https://github.com/sivchari/kumo/pull/594
+- feat(route53): ListTagsForResource / ChangeTagsForResource stubs by @mizchi in https://github.com/sivchari/kumo/pull/597
+- feat(glue): GetTags / TagResource / UntagResource stubs by @mizchi in https://github.com/sivchari/kumo/pull/599
+- feat(sns): GetTopicAttributes / SetTopicAttributes / Tag stubs by @mizchi in https://github.com/sivchari/kumo/pull/595
+- feat(cloudwatch): register Query dispatcher + XML responses + tag stubs by @mizchi in https://github.com/sivchari/kumo/pull/600
+- fix(lambda): terraform path-extract + refresh stubs + InvokeEndpoint-less stub-mode by @mizchi in https://github.com/sivchari/kumo/pull/601
+- feat(cognito): populate UserPool refresh fields + GetUserPoolMfaConfig stub by @mizchi in https://github.com/sivchari/kumo/pull/603
+- fix(server): wire SNS topic SQS subscriptions to actually deliver messages by @mizchi in https://github.com/sivchari/kumo/pull/604
+- fix(sqs): enforce message group lock for FIFO queues by @sivchari in https://github.com/sivchari/kumo/pull/613
+- release v0.19.0 by @sivchari in https://github.com/sivchari/kumo/pull/614
+
 ## [v0.18.2](https://github.com/sivchari/kumo/compare/v0.18.1...v0.18.2) - 2026-05-08
 - fix(s3): clean URL path to prevent 301 redirects and sort GetObjectTagging response by @sivchari in https://github.com/sivchari/kumo/pull/545
 - release v0.18.2 by @sivchari in https://github.com/sivchari/kumo/pull/544
