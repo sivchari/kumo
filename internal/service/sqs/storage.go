@@ -41,6 +41,7 @@ type Storage interface {
 	PurgeQueue(ctx context.Context, queueURL string) error
 	GetQueueAttributes(ctx context.Context, queueURL string, attributeNames []string) (map[string]string, error)
 	SetQueueAttributes(ctx context.Context, queueURL string, attributes map[string]string) error
+	ChangeMessageVisibility(ctx context.Context, queueURL, receiptHandle string, visibilityTimeout int) error
 }
 
 // QueueError represents an SQS queue error.
@@ -645,6 +646,26 @@ func (s *MemoryStorage) DeleteMessage(_ context.Context, queueURL, receiptHandle
 	}
 
 	delete(qd.Inflight, receiptHandle)
+
+	return nil
+}
+
+// ChangeMessageVisibility changes the visibility timeout of an inflight message.
+func (s *MemoryStorage) ChangeMessageVisibility(_ context.Context, queueURL, receiptHandle string, visibilityTimeout int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, qd, err := s.resolveQueueData(queueURL)
+	if err != nil {
+		return err
+	}
+
+	msg, exists := qd.Inflight[receiptHandle]
+	if !exists {
+		return ErrReceiptHandleInvalid
+	}
+
+	msg.VisibleAt = time.Now().Add(time.Duration(visibilityTimeout) * time.Second)
 
 	return nil
 }
