@@ -102,10 +102,20 @@ type MemoryStorage struct {
 	dataDir         string
 	baseURL         string
 	logger          *slog.Logger
+	// httpClient is shared across delivery goroutines so the underlying
+	// transport can pool connections instead of leaking one per event.
+	httpClient *http.Client
+	// deliveryCtx is cancelled by Close so in-flight async deliveries
+	// (Lambda / SQS / API destination Invokes) abort on shutdown instead
+	// of outliving the server.
+	deliveryCtx    context.Context //nolint:containedctx // intentional: scopes background goroutines to storage lifetime
+	deliveryCancel context.CancelFunc
 }
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	s := &MemoryStorage{
 		EventBuses:      make(map[string]*EventBus),
 		Rules:           make(map[string]map[string]*Rule),
@@ -116,6 +126,9 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		accountID:       "000000000000",
 		baseURL:         "http://localhost:4566",
 		logger:          slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		httpClient:      &http.Client{Timeout: 5 * time.Second},
+		deliveryCtx:     ctx,
+		deliveryCancel:  cancel,
 	}
 	for _, o := range opts {
 		o(s)
@@ -185,6 +198,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
+	if s.deliveryCancel != nil {
+		s.deliveryCancel()
+	}
+
 	if s.dataDir == "" {
 		return nil
 	}
@@ -695,7 +712,7 @@ func (s *MemoryStorage) deliverToHTTP(dest *APIDestination, target *Target, payl
 		method = http.MethodPost
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(s.deliveryCtx, method, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		s.logger.Error("failed to create HTTP request for API destination", "error", err, "endpoint", endpoint)
 
@@ -706,9 +723,7 @@ func (s *MemoryStorage) deliverToHTTP(dest *APIDestination, target *Target, payl
 	req.Header.Set("User-Agent", "Amazon/EventBridge/ApiDestinations")
 	applyHTTPParameters(req, target.HTTPParameters)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		s.logger.Error("failed to deliver event to API destination", "error", err, "endpoint", endpoint)
 
@@ -757,7 +772,7 @@ func (s *MemoryStorage) deliverToSQS(target *Target, payload []byte) {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.baseURL+"/", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(s.deliveryCtx, http.MethodPost, s.baseURL+"/", bytes.NewReader(body))
 	if err != nil {
 		s.logger.Error("failed to create SQS request", "error", err, "queue", queueName)
 
@@ -767,9 +782,7 @@ func (s *MemoryStorage) deliverToSQS(target *Target, payload []byte) {
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	req.Header.Set("X-Amz-Target", "AmazonSQS.SendMessage")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		s.logger.Error("failed to deliver event to SQS", "error", err, "queue", queueName)
 
@@ -806,7 +819,7 @@ func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
 	functionName := parts[6]
 	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", s.baseURL, functionName)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(s.deliveryCtx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		s.logger.Error("failed to create Lambda invoke request", "error", err, "function", functionName)
 
@@ -816,9 +829,7 @@ func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Amz-Invocation-Type", "Event")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		s.logger.Error("failed to deliver event to Lambda", "error", err, "function", functionName)
 
