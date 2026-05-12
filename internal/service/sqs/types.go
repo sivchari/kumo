@@ -20,6 +20,7 @@ type Queue struct {
 	ReceiveWaitTimeSeconds    int
 	FifoQueue                 bool
 	ContentBasedDeduplication bool
+	Policy                    string // JSON string: IAM policy document
 	RedrivePolicy             string // JSON string: {"deadLetterTargetArn":"...","maxReceiveCount":"N"}
 	MaxReceiveCount           int    // Parsed from RedrivePolicy
 	DeadLetterTargetArn       string // Parsed from RedrivePolicy

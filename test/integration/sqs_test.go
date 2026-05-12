@@ -651,3 +651,48 @@ func TestSQS_FIFOQueue_MissingDeduplicationId(t *testing.T) {
 		t.Error("expected error when sending message without MessageDeduplicationId and ContentBasedDeduplication disabled")
 	}
 }
+
+func TestSQS_QueuePolicy(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-policy"
+
+	// Create queue.
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	policyDoc := `{"Version":"2012-10-17","Statement":[{"Sid":"AllowSNS","Effect":"Allow","Principal":{"Service":"sns.amazonaws.com"},"Action":"sqs:SendMessage","Resource":"*"}]}`
+
+	// SetQueueAttributes with Policy.
+	_, err = client.SetQueueAttributes(ctx, &sqs.SetQueueAttributesInput{
+		QueueUrl: createOutput.QueueUrl,
+		Attributes: map[string]string{
+			"Policy": policyDoc,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GetQueueAttributes should return the Policy.
+	getOutput, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       createOutput.QueueUrl,
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameAll},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields(
+		"QueueArn", "CreatedTimestamp", "LastModifiedTimestamp", "ResultMetadata",
+	)).Assert(t.Name(), getOutput)
+}

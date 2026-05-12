@@ -711,6 +711,10 @@ func (s *MemoryStorage) GetQueueAttributes(_ context.Context, queueURL string, a
 		"ContentBasedDeduplication":             fmt.Sprintf("%t", q.ContentBasedDeduplication),
 	}
 
+	if q.Policy != "" {
+		allAttrs["Policy"] = q.Policy
+	}
+
 	if q.RedrivePolicy != "" {
 		allAttrs["RedrivePolicy"] = q.RedrivePolicy
 	}
@@ -762,6 +766,8 @@ func applyQueueAttributes(q *Queue, attrs map[string]string) {
 			_, _ = fmt.Sscanf(val, "%d", &q.ReceiveWaitTimeSeconds)
 		case "ContentBasedDeduplication":
 			q.ContentBasedDeduplication = val == "true"
+		case "Policy":
+			q.Policy = val
 		case "RedrivePolicy":
 			q.RedrivePolicy = val
 			parseRedrivePolicy(q, val)
