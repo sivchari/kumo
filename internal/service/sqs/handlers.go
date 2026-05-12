@@ -470,28 +470,36 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 // ChangeMessageVisibility handles the ChangeMessageVisibility action.
 func (s *Service) ChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
 	var req ChangeMessageVisibilityRequest
+
 	if err := readJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
+
 		return
 	}
 
 	if req.QueueURL == "" {
 		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
+
 		return
 	}
 
 	if req.ReceiptHandle == "" {
 		writeSQSError(w, "MissingParameter", "ReceiptHandle is required", http.StatusBadRequest)
+
 		return
 	}
 
 	if err := s.storage.ChangeMessageVisibility(r.Context(), req.QueueURL, req.ReceiptHandle, req.VisibilityTimeout); err != nil {
 		var qErr *QueueError
+
 		if errors.As(err, &qErr) {
 			writeSQSError(w, qErr.Code, qErr.Message, http.StatusBadRequest)
+
 			return
 		}
+
 		writeSQSError(w, "InternalError", "Internal server error", http.StatusInternalServerError)
+
 		return
 	}
 
