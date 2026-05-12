@@ -75,6 +75,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.DeleteParameters(w, r)
 	case "DescribeParameters":
 		s.DescribeParameters(w, r)
+	case "ListTagsForResource":
+		s.ListTagsForResource(w, r)
+	case "AddTagsToResource":
+		s.AddTagsToResource(w, r)
+	case "RemoveTagsFromResource":
+		s.RemoveTagsFromResource(w, r)
 	default:
 		writeSSMError(w, ErrInvalidParameterValue, "The action "+action+" is not valid", http.StatusBadRequest)
 	}
