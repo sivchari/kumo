@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/sivchari/kumo/internal/service/iam"
 )
@@ -87,10 +86,6 @@ func (h *awsIAMRole) Read(ctx context.Context, identifier string) ([]byte, error
 
 	role, err := storage.GetRole(ctx, identifier)
 	if err != nil {
-		// IAM storage surfaces NoSuchEntity-style errors as Go errors with
-		// a name in the message; treat anything containing "not exist" or
-		// "no such" as NotFound. The exact wording can be normalised here
-		// once the IAM error type is exported.
 		if isIAMNotFound(err) {
 			return nil, &NotFoundError{Message: "role " + identifier + " does not exist"}
 		}
@@ -192,15 +187,9 @@ func assumeRolePolicyAsString(raw json.RawMessage) (string, error) {
 	return string(raw), nil
 }
 
-// isIAMNotFound returns true when err looks like a NoSuchEntity error
-// from the IAM storage. Until the IAM package exports a typed error,
-// we match on the message — the storage uses consistent wording.
+// isIAMNotFound returns true for typed NoSuchEntity errors from IAM storage.
 func isIAMNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
+	var iamErr *iam.Error
 
-	msg := err.Error()
-
-	return strings.Contains(msg, "NoSuchEntity") || strings.Contains(msg, "does not exist") || strings.Contains(msg, "not found")
+	return errors.As(err, &iamErr) && iamErr.Code == "NoSuchEntity"
 }

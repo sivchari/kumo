@@ -14,6 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/athena v1.57.0
 	github.com/aws/aws-sdk-go-v2/service/backup v1.54.8
 	github.com/aws/aws-sdk-go-v2/service/batch v1.60.0
+	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.29.14
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.6
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.60.0
 	github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.55.6

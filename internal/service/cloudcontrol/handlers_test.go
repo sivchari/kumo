@@ -3,9 +3,12 @@ package cloudcontrol
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sivchari/kumo/internal/service/iam"
 )
 
 // stubHandler is a Handler implementation backed by an in-memory map. It
@@ -179,5 +182,15 @@ func TestCloudControl_GetResourceRequestStatus_AlwaysSuccess(t *testing.T) {
 	)
 	if code != 200 || !strings.Contains(body, `"OperationStatus":"SUCCESS"`) || !strings.Contains(body, `"any-token"`) {
 		t.Fatalf("status: code=%d body=%s", code, body)
+	}
+}
+
+func TestIsIAMNotFoundUsesTypedIAMError(t *testing.T) {
+	if !isIAMNotFound(&iam.Error{Code: "NoSuchEntity", Message: "missing"}) {
+		t.Fatalf("NoSuchEntity iam.Error should be treated as not found")
+	}
+
+	if isIAMNotFound(errors.New("role not found")) {
+		t.Fatalf("plain text errors should not be treated as IAM not found")
 	}
 }

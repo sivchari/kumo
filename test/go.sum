@@ -38,6 +38,8 @@ github.com/aws/aws-sdk-go-v2/service/backup v1.54.8 h1:Sc1eQ0cuid0QJHhoZOIH01kfa
 github.com/aws/aws-sdk-go-v2/service/backup v1.54.8/go.mod h1:P37vVdxz0IgUmoNUH5XPIo7Ka/a5OB5/o9Jbga+NBpI=
 github.com/aws/aws-sdk-go-v2/service/batch v1.60.0 h1:3cvOakiTtrJ1aAhrOxdObtdu56JT8WfsVerxCkCJvVk=
 github.com/aws/aws-sdk-go-v2/service/batch v1.60.0/go.mod h1:AsiSt6Dqk71ynOK1sB4sEC2e9tf/h2pbgaodAKRVxIY=
+github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.29.14 h1:ImtrKaec9pN/hz2rCS0IiVUBGKjxS9ZFM3MHNVoZTiY=
+github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.29.14/go.mod h1:7lrvANo4D0kDvxGrcKXEocfULnurpaYBiPRf17ri2lU=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.6 h1:3Rzut9v4ULIX3kjA6w3/Zaq2g8wBx6qJXB4BhQhIgjs=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.6/go.mod h1:skaILkh1I1KNecsZHyNL4c6hdHop7apjt6YzAhezMkc=
 github.com/aws/aws-sdk-go-v2/service/cloudfront v1.60.0 h1:RUQqU9L1LnFJ+9t5hsSB7GI6dVvJDCnG4WgRlDeHK6E=
