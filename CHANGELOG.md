@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.20.0](https://github.com/sivchari/kumo/compare/v0.19.0...v0.20.0) - 2026-05-12
+- feat(s3): PutBucketLogging / GetBucketLogging by @mizchi in https://github.com/sivchari/kumo/pull/577
+- feat(apigateway): bare-prefix routes + DeleteMethod + path-extract fix by @mizchi in https://github.com/sivchari/kumo/pull/602
+- feat(server): KUMO_PPROF and KUMO_LOG_LEVEL env knobs by @mizchi in https://github.com/sivchari/kumo/pull/609
+- feat(s3): conditional requests + presigned response-* overrides + ListObjectsV1 + Object ACL by @mizchi in https://github.com/sivchari/kumo/pull/587
+- feat(eventbridge): Lambda targets + content filters + tag stubs by @mizchi in https://github.com/sivchari/kumo/pull/591
+- fix(sqs): avoid nil map panic in ReceiveMessage after persisted reload by @hirasawayuki in https://github.com/sivchari/kumo/pull/624
+- fix(dynamodb): cli accepts object form for --local/global-secondary-indexes by @hirasawayuki in https://github.com/sivchari/kumo/pull/623
+- fix(s3): decode URL-encoded x-amz-copy-source before parsing by @hc100 in https://github.com/sivchari/kumo/pull/617
+- feat(s3): BucketWebsite + BucketLifecycle + Object Restore by @mizchi in https://github.com/sivchari/kumo/pull/588
+- release v0.20.0 by @sivchari in https://github.com/sivchari/kumo/pull/625
+
 ## [v0.19.0](https://github.com/sivchari/kumo/compare/v0.18.2...v0.19.0) - 2026-05-11
 - feat(ec2): implement CreateTags / DeleteTags / DescribeTags by @mizchi in https://github.com/sivchari/kumo/pull/547
 - feat(iam): inline role policies, ListAttachedRolePolicies, OIDC provider by @mizchi in https://github.com/sivchari/kumo/pull/548
