@@ -2,11 +2,14 @@ package cloudfront
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestEdge_HitMissPattern stands up a tiny origin and walks through
@@ -115,6 +118,106 @@ func TestEdge_VarySplit(t *testing.T) {
 	}
 }
 
+func TestEdgeCache_StoreKeepsDifferentVaryHeaderNames(t *testing.T) {
+	t.Parallel()
+
+	c := newEdgeCache()
+
+	c.store("dist", "/asset", &cacheEntry{
+		Header:     http.Header{"Vary": {"Accept-Encoding"}},
+		StoredAt:   time.Now(),
+		TTL:        time.Minute,
+		Vary:       []string{"accept-encoding"},
+		VaryValues: map[string]string{"accept-encoding": ""},
+	})
+	c.store("dist", "/asset", &cacheEntry{
+		Header:     http.Header{"Vary": {"Accept-Language"}},
+		StoredAt:   time.Now(),
+		TTL:        time.Minute,
+		Vary:       []string{"accept-language"},
+		VaryValues: map[string]string{"accept-language": ""},
+	})
+
+	if got := len(c.entries["dist"]["/asset"]); got != 2 {
+		t.Fatalf("different Vary names must not replace each other; variants = %d, want 2", got)
+	}
+}
+
+func TestEdgeCache_StoreEvictsOldestEntriesAtCap(t *testing.T) {
+	t.Parallel()
+
+	c := newEdgeCache()
+
+	for i := 0; i < 1100; i++ {
+		c.store("dist", fmt.Sprintf("/asset-%04d", i), &cacheEntry{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Cache-Control": {"public, max-age=60"}},
+			Body:       []byte("payload"),
+			StoredAt:   time.Unix(int64(i), 0),
+			TTL:        time.Minute,
+		})
+	}
+
+	if got := edgeCacheEntryCount(c); got > 1024 {
+		t.Fatalf("edge cache entry count = %d, want <= 1024", got)
+	}
+
+	if _, ok := c.lookup("dist", "/asset-0000", httptest.NewRequest(http.MethodGet, "/asset-0000", http.NoBody)); ok {
+		t.Fatalf("oldest entry should have been evicted")
+	}
+
+	if _, ok := c.lookup("dist", "/asset-1099", httptest.NewRequest(http.MethodGet, "/asset-1099", http.NoBody)); !ok {
+		t.Fatalf("newest entry should remain cached")
+	}
+}
+
+func TestEdge_StaleWhileRevalidateRaceFree(t *testing.T) {
+	var hits atomic.Int64
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit := hits.Add(1)
+		w.Header().Set("Cache-Control", "public, max-age=1")
+		w.Header().Set("CDN-Cache-Control", "max-age=1, stale-while-revalidate=60")
+		w.Header().Set("ETag", `"edge-race"`)
+
+		if r.Header.Get("If-None-Match") != "" {
+			w.WriteHeader(http.StatusNotModified)
+
+			return
+		}
+
+		_, _ = w.Write([]byte(fmt.Sprintf("body-%d", hit)))
+	}))
+	defer origin.Close()
+
+	svc := setupEdge(t, origin.URL)
+	_ = callEdge(t, svc, http.MethodGet, "/race", nil)
+
+	backdateEdgeEntries(svc, 2*time.Second)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			w := callEdge(t, svc, http.MethodGet, "/race", nil)
+			if w.Code != http.StatusOK {
+				t.Errorf("stale serve status = %d, want 200", w.Code)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Give the background revalidation goroutine time to complete. Under
+	// `go test -race`, the old implementation raced with the concurrent
+	// stale serves while updating the cached entry in place.
+	time.Sleep(50 * time.Millisecond)
+}
+
 // TestEdge_SMaxAgeOverride pins the s-maxage > max-age precedence the
 // cache rules enforce. If the cache used max-age (5s) by mistake the
 // second call would still hit, but we want to verify s-maxage (1s)
@@ -156,6 +259,34 @@ func TestEdge_SMaxAgeOverride(t *testing.T) {
 
 	if hits.Load() != 2 {
 		t.Fatalf("origin hits = %d, want 2 (cache should have been stale)", hits.Load())
+	}
+}
+
+func edgeCacheEntryCount(c *edgeCache) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	total := 0
+
+	for _, dm := range c.entries {
+		for _, variants := range dm {
+			total += len(variants)
+		}
+	}
+
+	return total
+}
+
+func backdateEdgeEntries(svc *Service, d time.Duration) {
+	svc.edgeCache.mu.Lock()
+	defer svc.edgeCache.mu.Unlock()
+
+	for _, dm := range svc.edgeCache.entries {
+		for _, variants := range dm {
+			for _, e := range variants {
+				e.StoredAt = e.StoredAt.Add(-d)
+			}
+		}
 	}
 }
 

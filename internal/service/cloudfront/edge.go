@@ -15,6 +15,8 @@ import (
 	"github.com/sivchari/kumo/internal/service/cloudfront/cache"
 )
 
+const maxEdgeCacheEntries = 1024
+
 // cacheEntry is one cached response variant for a distribution.
 type cacheEntry struct {
 	StatusCode           int
@@ -94,6 +96,51 @@ func (c *edgeCache) store(distID, base string, entry *cacheEntry) {
 	}
 
 	c.entries[distID][base] = append(variants, entry)
+	c.evictOldestLocked(maxEdgeCacheEntries)
+}
+
+func (c *edgeCache) evictOldestLocked(maxEntries int) {
+	if maxEntries <= 0 {
+		return
+	}
+
+	total := 0
+	oldestDistID := ""
+	oldestBase := ""
+	oldestIndex := -1
+	oldestStoredAt := time.Time{}
+
+	for distID, dm := range c.entries {
+		for base, variants := range dm {
+			for i, entry := range variants {
+				total++
+
+				if oldestIndex == -1 || entry.StoredAt.Before(oldestStoredAt) {
+					oldestDistID = distID
+					oldestBase = base
+					oldestIndex = i
+					oldestStoredAt = entry.StoredAt
+				}
+			}
+		}
+	}
+
+	if total <= maxEntries || oldestIndex == -1 {
+		return
+	}
+
+	variants := c.entries[oldestDistID][oldestBase]
+	variants = append(variants[:oldestIndex], variants[oldestIndex+1:]...)
+
+	if len(variants) == 0 {
+		delete(c.entries[oldestDistID], oldestBase)
+	} else {
+		c.entries[oldestDistID][oldestBase] = variants
+	}
+
+	if len(c.entries[oldestDistID]) == 0 {
+		delete(c.entries, oldestDistID)
+	}
 }
 
 // matchesVary reports whether the request's headers for the entry's
@@ -181,7 +228,11 @@ func sameVarySignature(a, b *cacheEntry) bool {
 		return false
 	}
 
-	for _, name := range a.Vary {
+	for i, name := range a.Vary {
+		if name != b.Vary[i] {
+			return false
+		}
+
 		if !varyValueEqual(name, a.VaryValues[name], b.VaryValues[name]) {
 			return false
 		}
@@ -342,9 +393,7 @@ func (s *Service) kickBackgroundRevalidate(distID, base string, r *http.Request,
 		}
 
 		if upstream.StatusCode == http.StatusNotModified {
-			mergeRevalidatedHeaders(entry.Header, upstream.Header)
-			entry.StoredAt = time.Now()
-			entry.TTL = cache.EffectiveTTL(entry.Header, cfg, time.Now())
+			s.edgeCache.store(distID, base, refreshedEntry(entry, upstream.Header, cfg, time.Now()))
 
 			return
 		}
@@ -396,11 +445,10 @@ func (s *Service) revalidate(w http.ResponseWriter, r *http.Request, distID, bas
 
 	if upstream.StatusCode == http.StatusNotModified {
 		// Refresh: keep the cached body, update headers + reset TTL.
-		mergeRevalidatedHeaders(entry.Header, upstream.Header)
-		entry.StoredAt = time.Now()
-		entry.TTL = cache.EffectiveTTL(entry.Header, cfg, time.Now())
+		refreshed := refreshedEntry(entry, upstream.Header, cfg, time.Now())
+		s.edgeCache.store(distID, base, refreshed)
 
-		serveFromCache(w, r, entry, 0)
+		serveFromCache(w, r, refreshed, 0)
 
 		return true
 	}
@@ -412,14 +460,36 @@ func (s *Service) revalidate(w http.ResponseWriter, r *http.Request, distID, bas
 	return true
 }
 
-// mergeRevalidatedHeaders applies the headers a 304 response brought
-// back. RFC 9111 §4.3.4 says the cache replaces validators / cache
-// directives but keeps the rest.
-func mergeRevalidatedHeaders(cached, fresh http.Header) {
+// refreshedEntry returns a replacement cache entry with the headers a
+// 304 response brought back. RFC 9111 Section 4.3.4 says the cache
+// replaces validators / cache directives but keeps the rest.
+func refreshedEntry(entry *cacheEntry, fresh http.Header, cfg cache.DistributionConfig, now time.Time) *cacheEntry {
+	header := entry.Header.Clone()
+
 	for _, h := range []string{"Cache-Control", "ETag", "Last-Modified", "Expires", "Vary", "Date"} {
 		if v := fresh.Get(h); v != "" {
-			cached.Set(h, v)
+			header.Set(h, v)
 		}
+	}
+
+	vary := append([]string(nil), entry.Vary...)
+	varyValues := make(map[string]string, len(entry.VaryValues))
+
+	for k, v := range entry.VaryValues {
+		varyValues[k] = v
+	}
+
+	return &cacheEntry{
+		StatusCode:           entry.StatusCode,
+		Header:               header,
+		Body:                 append([]byte(nil), entry.Body...),
+		StoredAt:             now,
+		InitialAge:           entry.InitialAge,
+		TTL:                  cache.EffectiveTTL(header, cfg, now),
+		StaleWhileRevalidate: entry.StaleWhileRevalidate,
+		StaleIfError:         entry.StaleIfError,
+		Vary:                 vary,
+		VaryValues:           varyValues,
 	}
 }
 
