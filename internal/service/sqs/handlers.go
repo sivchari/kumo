@@ -744,8 +744,6 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.ReceiveMessage(w, r)
 	case "DeleteMessage":
 		s.DeleteMessage(w, r)
-	case "ChangeMessageVisibility":
-	    s.ChangeMessageVisibility(w, r)
 	case "DeleteMessageBatch":
 		s.DeleteMessageBatch(w, r)
 	case "PurgeQueue":
