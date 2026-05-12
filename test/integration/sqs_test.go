@@ -651,3 +651,69 @@ func TestSQS_FIFOQueue_MissingDeduplicationId(t *testing.T) {
 		t.Error("expected error when sending message without MessageDeduplicationId and ContentBasedDeduplication disabled")
 	}
 }
+
+func TestSQS_ChangeMessageVisibility(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-change-visibility"
+
+	// Create queue.
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	// Send message.
+	_, err = client.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    createOutput.QueueUrl,
+		MessageBody: aws.String("test message"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Receive message (makes it inflight).
+	receiveOutput, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+		VisibilityTimeout:   30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(receiveOutput.Messages) == 0 {
+		t.Fatal("expected 1 message, got 0")
+	}
+
+	// Change visibility timeout.
+	_, err = client.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
+		QueueUrl:          createOutput.QueueUrl,
+		ReceiptHandle:     receiveOutput.Messages[0].ReceiptHandle,
+		VisibilityTimeout: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify message is still inflight (not visible).
+	receiveOutput2, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(receiveOutput2.Messages) != 0 {
+		t.Error("expected message to still be inflight after ChangeMessageVisibility")
+	}
+}
