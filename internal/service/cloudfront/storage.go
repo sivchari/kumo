@@ -65,6 +65,10 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Distributions: make(map[string]*Distribution),
 		Invalidations: make(map[string]map[string]*Invalidation),
+		signing: signingStore{
+			PublicKeys: make(map[string]*PublicKey),
+			KeyGroups:  make(map[string]*KeyGroup),
+		},
 	}
 	for _, o := range opts {
 		o(s)
@@ -112,6 +116,8 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	if s.Invalidations == nil {
 		s.Invalidations = make(map[string]map[string]*Invalidation)
 	}
+
+	s.ensureSigningInit()
 
 	return nil
 }

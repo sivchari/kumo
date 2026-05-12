@@ -213,3 +213,42 @@ func TestKeyGroup_DeleteWhileReferencedByDistributionFails(t *testing.T) {
 		t.Fatalf("DeleteKeyGroup while referenced: status %d, want 409", delW.Code)
 	}
 }
+
+func TestSigningReadMethodsDoNotInitializeNilMaps(t *testing.T) {
+	t.Parallel()
+
+	store := &MemoryStorage{}
+	ctx := context.Background()
+
+	if got := store.ListPublicKeys(ctx); len(got) != 0 {
+		t.Fatalf("ListPublicKeys len = %d, want 0", len(got))
+	}
+
+	if store.signing.PublicKeys != nil {
+		t.Fatalf("ListPublicKeys initialized PublicKeys under read lock")
+	}
+
+	if _, err := store.GetPublicKey(ctx, "missing"); err == nil {
+		t.Fatalf("GetPublicKey missing key error = nil")
+	}
+
+	if store.signing.PublicKeys != nil {
+		t.Fatalf("GetPublicKey initialized PublicKeys under read lock")
+	}
+
+	if got := store.ListKeyGroups(ctx); len(got) != 0 {
+		t.Fatalf("ListKeyGroups len = %d, want 0", len(got))
+	}
+
+	if store.signing.KeyGroups != nil {
+		t.Fatalf("ListKeyGroups initialized KeyGroups under read lock")
+	}
+
+	if _, err := store.GetKeyGroup(ctx, "missing"); err == nil {
+		t.Fatalf("GetKeyGroup missing key error = nil")
+	}
+
+	if store.signing.KeyGroups != nil {
+		t.Fatalf("GetKeyGroup initialized KeyGroups under read lock")
+	}
+}

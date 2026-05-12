@@ -50,8 +50,6 @@ func (s *MemoryStorage) GetPublicKey(_ context.Context, id string) (*PublicKey, 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	s.ensureSigningInit()
-
 	k, ok := s.signing.PublicKeys[id]
 	if !ok {
 		return nil, &Error{Code: errNoSuchPublicKey, Message: fmt.Sprintf("The public key %s does not exist", id)}
@@ -66,8 +64,6 @@ func (s *MemoryStorage) GetPublicKey(_ context.Context, id string) (*PublicKey, 
 func (s *MemoryStorage) ListPublicKeys(_ context.Context) []*PublicKey {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	s.ensureSigningInit()
 
 	out := make([]*PublicKey, 0, len(s.signing.PublicKeys))
 	for _, k := range s.signing.PublicKeys {
@@ -144,8 +140,6 @@ func (s *MemoryStorage) GetKeyGroup(_ context.Context, id string) (*KeyGroup, er
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	s.ensureSigningInit()
-
 	g, ok := s.signing.KeyGroups[id]
 	if !ok {
 		return nil, &Error{Code: errNoSuchKeyGroup, Message: fmt.Sprintf("The key group %s does not exist", id)}
@@ -158,8 +152,6 @@ func (s *MemoryStorage) GetKeyGroup(_ context.Context, id string) (*KeyGroup, er
 func (s *MemoryStorage) ListKeyGroups(_ context.Context) []*KeyGroup {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	s.ensureSigningInit()
 
 	out := make([]*KeyGroup, 0, len(s.signing.KeyGroups))
 	for _, g := range s.signing.KeyGroups {
