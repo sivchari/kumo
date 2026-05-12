@@ -176,6 +176,7 @@ func TestEdge_StaleWhileRevalidateRaceFree(t *testing.T) {
 
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hit := hits.Add(1)
+
 		w.Header().Set("Cache-Control", "public, max-age=1")
 		w.Header().Set("CDN-Cache-Control", "max-age=1, stale-while-revalidate=60")
 		w.Header().Set("ETag", `"edge-race"`)
@@ -186,7 +187,7 @@ func TestEdge_StaleWhileRevalidateRaceFree(t *testing.T) {
 			return
 		}
 
-		_, _ = w.Write([]byte(fmt.Sprintf("body-%d", hit)))
+		_, _ = fmt.Fprintf(w, "body-%d", hit)
 	}))
 	defer origin.Close()
 
