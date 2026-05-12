@@ -166,6 +166,8 @@ func (m *MemoryStorage) buildDBInstance(input *CreateDBInstanceInput) *DBInstanc
 		availabilityZone = defaultRegion + "a"
 	}
 
+	endpointAddr, endpointPort := endpointFor(input.Engine, input.DBInstanceIdentifier, m.getDefaultPort(input.Engine))
+
 	instance := &DBInstance{
 		DBInstanceIdentifier:       input.DBInstanceIdentifier,
 		DBInstanceClass:            input.DBInstanceClass,
@@ -188,11 +190,7 @@ func (m *MemoryStorage) buildDBInstance(input *CreateDBInstanceInput) *DBInstanc
 		DeletionProtection:         input.DeletionProtection,
 		Tags:                       input.Tags,
 		VpcSecurityGroups:          buildVpcSecurityGroups(input.VpcSecurityGroupIDs),
-		Endpoint: func() *Endpoint {
-			addr, port := endpointFor(input.Engine, input.DBInstanceIdentifier, m.getDefaultPort(input.Engine))
-
-			return &Endpoint{Address: addr, Port: port}
-		}(),
+		Endpoint:                   &Endpoint{Address: endpointAddr, Port: endpointPort},
 	}
 
 	return instance
