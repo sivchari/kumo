@@ -414,3 +414,59 @@ func TestSSM_SecureString_WithDecryptionFalse(t *testing.T) {
 			paramValue, aws.ToString(getOutputDecrypted.Parameter.Value))
 	}
 }
+
+func TestSSM_ListTagsForResource(t *testing.T) {
+	client := newSSMClient(t)
+	ctx := t.Context()
+	paramName := "/test/tag-param"
+
+	// Put a parameter to tag.
+	_, err := client.PutParameter(ctx, &ssm.PutParameterInput{
+		Name:  aws.String(paramName),
+		Value: aws.String("tag-test-value"),
+		Type:  types.ParameterTypeString,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteParameter(context.Background(), &ssm.DeleteParameterInput{
+			Name: aws.String(paramName),
+		})
+	})
+
+	// ListTagsForResource should succeed with empty tag list.
+	listOutput, err := client.ListTagsForResource(ctx, &ssm.ListTagsForResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), listOutput)
+
+	// AddTagsToResource should succeed (no-op stub).
+	addOutput, err := client.AddTagsToResource(ctx, &ssm.AddTagsToResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("test")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_add", addOutput)
+
+	// RemoveTagsFromResource should succeed (no-op stub).
+	removeOutput, err := client.RemoveTagsFromResource(ctx, &ssm.RemoveTagsFromResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+		TagKeys:      []string{"env"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_remove", removeOutput)
+}
