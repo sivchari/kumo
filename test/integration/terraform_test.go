@@ -32,31 +32,6 @@ func findTofuOrTerraform(t *testing.T) string {
 	return ""
 }
 
-// init sets TF_PLUGIN_CACHE_DIR if the user has not configured one.
-//
-// Each runTerraformFixture call uses its own t.TempDir as the working
-// directory, which means every `tf.Init` would otherwise re-download the
-// AWS provider (~22 seconds each, ~600 MB). The cache makes the second
-// and later inits effectively instant. The directory is left in place so
-// repeat runs across processes also benefit.
-func init() {
-	if os.Getenv("TF_PLUGIN_CACHE_DIR") != "" {
-		return
-	}
-
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return
-	}
-
-	cache = filepath.Join(cache, "kumo-tofu-plugins")
-	if err := os.MkdirAll(cache, 0o750); err != nil {
-		return
-	}
-
-	_ = os.Setenv("TF_PLUGIN_CACHE_DIR", cache)
-}
-
 // providerTFTemplate is a parameterized provider.tf body. Tests pick which
 // service endpoints to populate so kumo only sees the call surface for the
 // resources under test.
@@ -137,6 +112,10 @@ func runTerraformFixture(t *testing.T, providerBody, mainBody string, verify fun
 		t.Fatalf("tfexec.NewTerraform: %v", err)
 	}
 
+	if err := tf.SetEnv(terraformEnvWithPluginCache(t)); err != nil {
+		t.Fatalf("terraform env: %v", err)
+	}
+
 	ctx := t.Context()
 
 	if err := tf.Init(ctx); err != nil {
@@ -154,6 +133,50 @@ func runTerraformFixture(t *testing.T, providerBody, mainBody string, verify fun
 	})
 
 	verify(t)
+}
+
+// terraformEnvWithPluginCache returns a per-Terraform-process environment.
+// Each fixture uses its own t.TempDir as the working directory, so without a
+// provider cache every tf.Init would re-download the AWS provider. The cache
+// directory is shared across test runs without mutating the process env.
+func terraformEnvWithPluginCache(t *testing.T) map[string]string {
+	t.Helper()
+
+	env := make(map[string]string)
+	for _, kv := range os.Environ() {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+
+		env[key] = value
+	}
+
+	if env["TF_PLUGIN_CACHE_DIR"] == "" {
+		cache, err := os.UserCacheDir()
+		if err == nil {
+			cache = filepath.Join(cache, "kumo-tofu-plugins")
+			if err := os.MkdirAll(cache, 0o750); err == nil {
+				env["TF_PLUGIN_CACHE_DIR"] = cache
+			}
+		}
+	}
+
+	return tfexec.CleanEnv(env)
+}
+
+func TestTerraformEnvWithPluginCacheDoesNotMutateProcessEnv(t *testing.T) {
+	t.Setenv("TF_PLUGIN_CACHE_DIR", "")
+
+	env := terraformEnvWithPluginCache(t)
+
+	if got := os.Getenv("TF_PLUGIN_CACHE_DIR"); got != "" {
+		t.Fatalf("process TF_PLUGIN_CACHE_DIR = %q, want empty", got)
+	}
+
+	if env["TF_PLUGIN_CACHE_DIR"] == "" {
+		t.Fatalf("terraform env TF_PLUGIN_CACHE_DIR is empty")
+	}
 }
 
 const terraformS3MainTF = `
