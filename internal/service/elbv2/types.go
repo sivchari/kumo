@@ -658,3 +658,74 @@ type XMLModifyListenerResponse struct {
 type XMLModifyListenerResult struct {
 	Listeners XMLListeners `xml:"Listeners"`
 }
+
+// XMLDescribeTagsResponse is the XML response for DescribeTags.
+type XMLDescribeTagsResponse struct {
+	XMLName            xml.Name              `xml:"DescribeTagsResponse"`
+	Xmlns              string                `xml:"xmlns,attr"`
+	DescribeTagsResult XMLDescribeTagsResult `xml:"DescribeTagsResult"`
+	ResponseMetadata   XMLResponseMetadata   `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeTagsResult contains tag descriptions.
+type XMLDescribeTagsResult struct {
+	TagDescriptions XMLTagDescriptions `xml:"TagDescriptions"`
+}
+
+// XMLTagDescriptions contains a list of tag descriptions.
+type XMLTagDescriptions struct {
+	Members []XMLTagDescription `xml:"member"`
+}
+
+// XMLTagDescription represents tags attached to a resource.
+type XMLTagDescription struct {
+	ResourceArn string          `xml:"ResourceArn"`
+	Tags        XMLEmptyMembers `xml:"Tags"`
+}
+
+// XMLEmptyMembers represents an empty AWS Query member list.
+type XMLEmptyMembers struct {
+	Members []struct{} `xml:"member"`
+}
+
+// XMLDescribeCapacityReservationResponse is the XML response for DescribeCapacityReservation.
+type XMLDescribeCapacityReservationResponse struct {
+	XMLName                           xml.Name                     `xml:"DescribeCapacityReservationResponse"`
+	Xmlns                             string                       `xml:"xmlns,attr"`
+	DescribeCapacityReservationResult XMLCapacityReservationResult `xml:"DescribeCapacityReservationResult"`
+	ResponseMetadata                  XMLResponseMetadata          `xml:"ResponseMetadata"`
+}
+
+// XMLCapacityReservationResult contains capacity reservation metadata.
+type XMLCapacityReservationResult struct {
+	LastModifiedTime          string          `xml:"LastModifiedTime,omitempty"`
+	DecreaseRequestsRemaining int             `xml:"DecreaseRequestsRemaining"`
+	CapacityReservationState  XMLEmptyMembers `xml:"CapacityReservationState"`
+}
+
+// XMLDescribeListenerAttributesResponse is the XML response for DescribeListenerAttributes.
+type XMLDescribeListenerAttributesResponse struct {
+	XMLName          xml.Name                    `xml:"DescribeListenerAttributesResponse"`
+	Xmlns            string                      `xml:"xmlns,attr"`
+	Result           XMLListenerAttributesResult `xml:"DescribeListenerAttributesResult"`
+	ResponseMetadata XMLResponseMetadata         `xml:"ResponseMetadata"`
+}
+
+// XMLListenerAttributesResult contains listener attributes.
+type XMLListenerAttributesResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
+}
+
+// XMLAddTagsResponse is the XML response for AddTags.
+type XMLAddTagsResponse struct {
+	XMLName          xml.Name            `xml:"AddTagsResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLRemoveTagsResponse is the XML response for RemoveTags.
+type XMLRemoveTagsResponse struct {
+	XMLName          xml.Name            `xml:"RemoveTagsResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
