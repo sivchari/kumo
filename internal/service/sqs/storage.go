@@ -147,6 +147,26 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Queues = make(map[string]*QueueData)
 	}
 
+	// Non-persisted fields (json:"-" / unexported) are zero after unmarshal;
+	// re-init so ReceiveMessage doesn't panic on a nil map.
+	for _, qd := range s.Queues {
+		if qd == nil {
+			continue
+		}
+
+		if qd.Inflight == nil {
+			qd.Inflight = make(map[string]*Message)
+		}
+
+		if qd.notify == nil {
+			qd.notify = make(chan struct{}, 1)
+		}
+
+		if qd.Queue != nil && qd.Queue.FifoQueue && qd.DeduplicationCache == nil {
+			qd.DeduplicationCache = make(map[string]DeduplicationEntry)
+		}
+	}
+
 	return nil
 }
 
