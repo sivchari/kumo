@@ -753,7 +753,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	case "SetQueueAttributes":
 		s.SetQueueAttributes(w, r)
     case "ChangeMessageVisibility":
-	    s.ChangeMessageVisibility(w, r)
+		s.ChangeMessageVisibility(w, r)
 	default:
 		writeSQSError(w, "InvalidAction", "The action "+action+" is not valid", http.StatusBadRequest)
 	}
