@@ -459,6 +459,11 @@ kumo provides additional endpoints under the `/kumo/` prefix for testing purpose
 |--------|------|-------------|
 | GET | `/kumo/ses/v2/sent-emails` | Retrieve a list of emails sent via the SES v2 `SendEmail` API |
 | GET | `/kumo/pinpointsmsvoicev2/sent-messages` | Retrieve a list of SMS messages sent via the Pinpoint SMS Voice v2 `SendTextMessage` API |
+| GET | `/kumo/billing/usage` | Retrieve aggregated metered usage |
+| POST | `/kumo/billing/reset` | Reset metered usage |
+| GET | `/kumo/billing/rate-card` | Retrieve the caller-provided rate card |
+| PUT | `/kumo/billing/rate-card` | Replace the caller-provided rate card |
+| GET | `/kumo/billing/cost` | Calculate cost from current usage and rate card |
 
 ### Example: Retrieving sent emails
 
@@ -506,6 +511,39 @@ Response:
   ]
 }
 ```
+
+### Example: Billing usage and cost
+
+kumo can meter request counts and transfer sizes for AWS API requests that pass through the server. Prices are supplied by the caller, so tests can use AWS Pricing Calculator-style assumptions without baking public AWS prices into kumo.
+
+```bash
+curl -X PUT http://localhost:4566/kumo/billing/rate-card \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "currency": "USD",
+    "rates": [
+      {
+        "service": "s3",
+        "dimension": "requests.put_object",
+        "unit": "1000_requests",
+        "price": 0.005
+      },
+      {
+        "service": "s3",
+        "dimension": "response.bytes",
+        "unit": "GB",
+        "price": 0.09
+      }
+    ]
+  }'
+```
+
+```bash
+curl http://localhost:4566/kumo/billing/usage
+curl http://localhost:4566/kumo/billing/cost
+```
+
+Initial dimensions are `requests.total`, `requests.<operation>`, `request.bytes`, and `response.bytes`.
 
 ## Development
 
