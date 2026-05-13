@@ -995,7 +995,15 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 	// Validate and assemble parts
 	var combinedBody []byte
 
+	previousPartNumber := 0
+
 	for _, pr := range parts {
+		if pr.PartNumber <= previousPartNumber {
+			return nil, &MultipartError{Code: "InvalidPartOrder", Message: "The list of parts was not in ascending order. Parts must be ordered by part number.", UploadID: uploadID}
+		}
+
+		previousPartNumber = pr.PartNumber
+
 		part, ok := upload.Parts[pr.PartNumber]
 		if !ok {
 			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
