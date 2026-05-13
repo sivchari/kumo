@@ -163,6 +163,12 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := r.URL.Query()["cors"]; ok {
+		s.GetBucketCors(w, r)
+
+		return
+	}
+
 	if handled := s.serveBucketSubresourceStub(w, r); handled {
 		return
 	}
@@ -2282,6 +2288,22 @@ func (s *Service) PutBucketCors(w http.ResponseWriter, r *http.Request) {
 	s.storage.SetCORSConfiguration(r.Context(), bucket, config.CORSRules)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// GetBucketCors handles GET /{bucket}?cors. Returns the CORS configuration
+// previously set by PutBucketCors, or NoSuchCORSConfiguration if none.
+func (s *Service) GetBucketCors(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	rules := s.storage.GetCORSRules(r.Context(), bucket)
+
+	if len(rules) == 0 {
+		writeS3Error(w, r, "NoSuchCORSConfiguration", "The CORS configuration does not exist", http.StatusNotFound)
+
+		return
+	}
+
+	writeXMLResponse(w, CORSConfiguration{CORSRules: rules})
 }
 
 // handleMultipartError handles errors from multipart upload operations.

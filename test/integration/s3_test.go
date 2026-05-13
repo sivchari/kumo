@@ -1713,3 +1713,59 @@ func TestS3_BucketSubresourceStubs_NoSuchErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestS3_BucketCors(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-bucket-cors"
+
+	// Create bucket.
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+	})
+
+	// GetBucketCors before setting should return error.
+	_, err = client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+		Bucket: aws.String(bucket),
+	})
+	if err == nil {
+		t.Fatal("expected NoSuchCORSConfiguration error")
+	}
+
+	// PutBucketCors.
+	_, err = client.PutBucketCors(ctx, &s3.PutBucketCorsInput{
+		Bucket: aws.String(bucket),
+		CORSConfiguration: &types.CORSConfiguration{
+			CORSRules: []types.CORSRule{
+				{
+					AllowedHeaders: []string{"*"},
+					AllowedMethods: []string{"GET", "PUT"},
+					AllowedOrigins: []string{"https://example.com"},
+					ExposeHeaders:  []string{"ETag"},
+					MaxAgeSeconds:  aws.Int32(300),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GetBucketCors after setting should return the CORS rules.
+	getOutput, err := client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), getOutput)
+}
