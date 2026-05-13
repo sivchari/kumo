@@ -64,7 +64,7 @@ func splitByteRangeSpec(header string) (string, string, bool) {
 // 100-byte object returns the whole object.
 func parseSuffixRange(endRaw string, totalSize int64) (int64, int64, bool) {
 	n, err := strconv.ParseInt(endRaw, 10, 64)
-	if err != nil || n <= 0 {
+	if err != nil || n <= 0 || totalSize <= 0 {
 		return 0, 0, false
 	}
 
