@@ -10,6 +10,8 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
+const errCodeValidation = "ValidationException"
+
 //nolint:cyclop,funlen // Test function exercises multiple storage operations sequentially.
 func TestConditionThroughStorage(t *testing.T) {
 	t.Parallel()
@@ -878,8 +880,6 @@ func TestFilterExpressionFailsClosed(t *testing.T) {
 		t.Fatalf("expected 2 of 3 items to match IN filter, got %d of %d", len(items), scanned)
 	}
 
-	const errCodeValidation = "ValidationException"
-
 	// An unparseable filter is a ValidationException, not match-all.
 	items, _, scanned, err = s.Scan(ctx, "filter-test", "complete garbage !!!",
 		nil, nil, 0, nil, nil, nil)
@@ -912,8 +912,6 @@ func TestFilterExpressionFailsClosed(t *testing.T) {
 // ValidationException rather than a silent empty result.
 func TestExpressionValidationEdgeCases(t *testing.T) {
 	t.Parallel()
-
-	const errCodeValidation = "ValidationException"
 
 	s := NewMemoryStorage("http://localhost:4566")
 	ctx := context.Background()

@@ -40,7 +40,7 @@ func TestUpdateItemRejectsKeyAttributeUpdates(t *testing.T) {
 			}
 
 			var tableErr *TableError
-			if !errors.As(err, &tableErr) || tableErr.Code != "ValidationException" {
+			if !errors.As(err, &tableErr) || tableErr.Code != errCodeValidation {
 				t.Fatalf("expected ValidationException, got %v", err)
 			}
 
@@ -57,6 +57,38 @@ func TestUpdateItemRejectsKeyAttributeUpdates(t *testing.T) {
 				t.Fatalf("range key was mutated: %#v", item["sk"])
 			}
 		})
+	}
+}
+
+func TestTransactWriteItemsRejectsKeyAttributeUpdates(t *testing.T) {
+	t.Parallel()
+
+	store := newKeyUpdateTestStorage(t)
+	key := Item{"pk": {S: ptr("seed")}, "sk": {S: ptr("sort")}}
+
+	_, err := store.TransactWriteItems(context.Background(), []TransactWriteItem{{
+		Update: &TransactUpdate{
+			TableName:        "key-update-test",
+			Key:              key,
+			UpdateExpression: "REMOVE pk",
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected TransactWriteItems to reject key attribute update")
+	}
+
+	var tableErr *TableError
+	if !errors.As(err, &tableErr) || tableErr.Code != errCodeValidation {
+		t.Fatalf("expected ValidationException, got %v", err)
+	}
+
+	item, err := store.GetItem(context.Background(), "key-update-test", key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if item["pk"].S == nil || *item["pk"].S != "seed" {
+		t.Fatalf("hash key was mutated: %#v", item["pk"])
 	}
 }
 

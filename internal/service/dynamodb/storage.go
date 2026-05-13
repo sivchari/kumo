@@ -1906,60 +1906,84 @@ func (m *MemoryStorage) validateTransactWriteItem(twi TransactWriteItem) (*Cance
 
 	switch {
 	case twi.Put != nil:
-		td, exists := m.Tables[twi.Put.TableName]
-		if !exists {
-			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Put.TableName)}
-		}
-
-		if err := validateItemKey(td.Table, twi.Put.Item); err != nil {
-			return nil, err
-		}
-
-		return m.checkTransactCondition(twi.Put.TableName, twi.Put.Item, ConditionInput{
-			Expression: twi.Put.ConditionExpression, ExprNames: twi.Put.ExpressionAttributeNames, ExprValues: twi.Put.ExpressionAttributeValues,
-		})
+		return m.validateTransactPut(twi.Put)
 	case twi.Delete != nil:
-		td, exists := m.Tables[twi.Delete.TableName]
-		if !exists {
-			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Delete.TableName)}
-		}
-
-		if err := validateKey(td.Table, twi.Delete.Key); err != nil {
-			return nil, err
-		}
-
-		return m.checkTransactCondition(twi.Delete.TableName, twi.Delete.Key, ConditionInput{
-			Expression: twi.Delete.ConditionExpression, ExprNames: twi.Delete.ExpressionAttributeNames, ExprValues: twi.Delete.ExpressionAttributeValues,
-		})
+		return m.validateTransactDelete(twi.Delete)
 	case twi.Update != nil:
-		td, exists := m.Tables[twi.Update.TableName]
-		if !exists {
-			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Update.TableName)}
-		}
-
-		if err := validateKey(td.Table, twi.Update.Key); err != nil {
-			return nil, err
-		}
-
-		return m.checkTransactCondition(twi.Update.TableName, twi.Update.Key, ConditionInput{
-			Expression: twi.Update.ConditionExpression, ExprNames: twi.Update.ExpressionAttributeNames, ExprValues: twi.Update.ExpressionAttributeValues,
-		})
+		return m.validateTransactUpdate(twi.Update)
 	case twi.ConditionCheck != nil:
-		td, exists := m.Tables[twi.ConditionCheck.TableName]
-		if !exists {
-			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.ConditionCheck.TableName)}
-		}
-
-		if err := validateKey(td.Table, twi.ConditionCheck.Key); err != nil {
-			return nil, err
-		}
-
-		return m.checkTransactCondition(twi.ConditionCheck.TableName, twi.ConditionCheck.Key, ConditionInput{
-			Expression: twi.ConditionCheck.ConditionExpression, ExprNames: twi.ConditionCheck.ExpressionAttributeNames, ExprValues: twi.ConditionCheck.ExpressionAttributeValues,
-		})
+		return m.validateTransactConditionCheck(twi.ConditionCheck)
 	}
 
 	return nil, newValidationException("TransactItems member must contain exactly one action")
+}
+
+// validateTransactPut validates a Put action's item key and condition.
+func (m *MemoryStorage) validateTransactPut(put *TransactPut) (*CancellationReason, error) {
+	td, exists := m.Tables[put.TableName]
+	if !exists {
+		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", put.TableName)}
+	}
+
+	if err := validateItemKey(td.Table, put.Item); err != nil {
+		return nil, err
+	}
+
+	return m.checkTransactCondition(put.TableName, put.Item, ConditionInput{
+		Expression: put.ConditionExpression, ExprNames: put.ExpressionAttributeNames, ExprValues: put.ExpressionAttributeValues,
+	})
+}
+
+// validateTransactDelete validates a Delete action's key and condition.
+func (m *MemoryStorage) validateTransactDelete(del *TransactDelete) (*CancellationReason, error) {
+	td, exists := m.Tables[del.TableName]
+	if !exists {
+		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", del.TableName)}
+	}
+
+	if err := validateKey(td.Table, del.Key); err != nil {
+		return nil, err
+	}
+
+	return m.checkTransactCondition(del.TableName, del.Key, ConditionInput{
+		Expression: del.ConditionExpression, ExprNames: del.ExpressionAttributeNames, ExprValues: del.ExpressionAttributeValues,
+	})
+}
+
+// validateTransactUpdate validates an Update action's key, update expression, and condition.
+func (m *MemoryStorage) validateTransactUpdate(upd *TransactUpdate) (*CancellationReason, error) {
+	td, exists := m.Tables[upd.TableName]
+	if !exists {
+		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", upd.TableName)}
+	}
+
+	if err := validateKey(td.Table, upd.Key); err != nil {
+		return nil, err
+	}
+
+	if err := validateUpdateExpressionDoesNotTouchKeys(upd.UpdateExpression, upd.ExpressionAttributeNames, td.Table.KeySchema); err != nil {
+		return nil, err
+	}
+
+	return m.checkTransactCondition(upd.TableName, upd.Key, ConditionInput{
+		Expression: upd.ConditionExpression, ExprNames: upd.ExpressionAttributeNames, ExprValues: upd.ExpressionAttributeValues,
+	})
+}
+
+// validateTransactConditionCheck validates a ConditionCheck action's key and condition.
+func (m *MemoryStorage) validateTransactConditionCheck(cc *TransactConditionCheck) (*CancellationReason, error) {
+	td, exists := m.Tables[cc.TableName]
+	if !exists {
+		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", cc.TableName)}
+	}
+
+	if err := validateKey(td.Table, cc.Key); err != nil {
+		return nil, err
+	}
+
+	return m.checkTransactCondition(cc.TableName, cc.Key, ConditionInput{
+		Expression: cc.ConditionExpression, ExprNames: cc.ExpressionAttributeNames, ExprValues: cc.ExpressionAttributeValues,
+	})
 }
 
 // checkTransactCondition checks a condition against the existing item in a table.
