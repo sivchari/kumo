@@ -22,6 +22,10 @@ import (
 // for a follow-up since the typical S3 consumer (multipart download)
 // only sends single-range requests.
 func parseByteRange(header string, totalSize int64) (start, end int64, ok bool) {
+	if totalSize <= 0 {
+		return 0, 0, false
+	}
+
 	startRaw, endRaw, valid := splitByteRangeSpec(header)
 	if !valid {
 		return 0, 0, false
