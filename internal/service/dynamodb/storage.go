@@ -21,6 +21,10 @@ import (
 const (
 	defaultRegion    = "us-east-1"
 	defaultAccountID = "000000000000"
+	updateActionAdd  = "ADD"
+	updateActionDel  = "DELETE"
+	updateActionRem  = "REMOVE"
+	updateActionSet  = "SET"
 )
 
 // Storage defines the interface for DynamoDB storage operations.
@@ -569,7 +573,12 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 
 	// Parse and apply update expression.
 	if updateExpr != "" {
-		item = m.applyUpdateExpression(item, updateExpr, exprNames, exprValues)
+		updated, err := m.applyValidatedUpdateExpression(td.Table, item, updateExpr, exprNames, exprValues)
+		if err != nil {
+			return nil, err
+		}
+
+		item = updated
 	}
 
 	td.Items[keyStr] = item
@@ -1298,18 +1307,94 @@ func (m *MemoryStorage) applyUpdateExpression(item Item, updateExpr string, expr
 
 	for _, clause := range clauses {
 		switch clause.action {
-		case "SET":
+		case updateActionSet:
 			item = applySetClause(item, clause.body, exprValues)
-		case "ADD":
+		case updateActionAdd:
 			item = applyAddClause(item, clause.body, exprValues)
-		case "DELETE":
+		case updateActionDel:
 			item = applyDeleteClause(item, clause.body, exprValues)
-		case "REMOVE":
+		case updateActionRem:
 			item = applyRemoveClause(item, clause.body)
 		}
 	}
 
 	return item
+}
+
+func (m *MemoryStorage) applyValidatedUpdateExpression(table *Table, item Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) (Item, error) {
+	if err := validateUpdateExpressionDoesNotTouchKeys(updateExpr, exprNames, table.KeySchema); err != nil {
+		return nil, err
+	}
+
+	return m.applyUpdateExpression(item, updateExpr, exprNames, exprValues), nil
+}
+
+func validateUpdateExpressionDoesNotTouchKeys(updateExpr string, exprNames map[string]string, keySchema []KeySchemaElement) error {
+	keyNames := make(map[string]struct{}, len(keySchema))
+	for _, key := range keySchema {
+		keyNames[key.AttributeName] = struct{}{}
+	}
+
+	if len(keyNames) == 0 {
+		return nil
+	}
+
+	expr := resolveNames(updateExpr, exprNames)
+	for _, clause := range parseUpdateClauses(expr) {
+		for _, path := range updatedAttributePaths(clause) {
+			attrName := topLevelAttribute(path)
+			if _, ok := keyNames[attrName]; ok {
+				return &TableError{
+					Code:    "ValidationException",
+					Message: "One or more parameter values were invalid: Cannot update key attribute " + attrName,
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func updatedAttributePaths(clause updateClause) []string {
+	switch clause.action {
+	case updateActionSet:
+		assignments := splitAssignments(clause.body)
+		paths := make([]string, 0, len(assignments))
+
+		for _, assignment := range assignments {
+			parts := strings.SplitN(strings.TrimSpace(assignment), "=", 2)
+			if len(parts) == 2 {
+				paths = append(paths, parts[0])
+			}
+		}
+
+		return paths
+	case updateActionAdd, updateActionDel:
+		actions := strings.Split(clause.body, ",")
+		paths := make([]string, 0, len(actions))
+
+		for _, action := range actions {
+			fields := strings.Fields(strings.TrimSpace(action))
+			if len(fields) > 0 {
+				paths = append(paths, fields[0])
+			}
+		}
+
+		return paths
+	case updateActionRem:
+		return strings.Split(clause.body, ",")
+	default:
+		return nil
+	}
+}
+
+func topLevelAttribute(path string) string {
+	path = strings.TrimSpace(path)
+	if idx := strings.IndexAny(path, ".["); idx >= 0 {
+		return strings.TrimSpace(path[:idx])
+	}
+
+	return path
 }
 
 type updateClause struct {
@@ -1319,7 +1404,7 @@ type updateClause struct {
 
 // parseUpdateClauses splits an update expression into individual clauses.
 func parseUpdateClauses(expr string) []updateClause {
-	keywords := []string{"SET", "ADD", "DELETE", "REMOVE"}
+	keywords := []string{updateActionSet, updateActionAdd, updateActionDel, updateActionRem}
 	upper := asciiUpper(expr)
 
 	type pos struct {

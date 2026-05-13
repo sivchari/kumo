@@ -885,9 +885,9 @@ func convertAttributeUpdates(req *UpdateItemRequest) {
 			req.ExpressionAttributeValues[valueKey] = update.Value
 
 			setParts = append(setParts, nameKey+" = "+valueKey)
-		case "DELETE":
+		case updateActionDel:
 			removeParts = append(removeParts, nameKey)
-		case "ADD":
+		case updateActionAdd:
 			req.ExpressionAttributeValues[valueKey] = update.Value
 
 			addParts = append(addParts, nameKey+" "+valueKey)
@@ -899,15 +899,15 @@ func convertAttributeUpdates(req *UpdateItemRequest) {
 	var parts []string
 
 	if len(setParts) > 0 {
-		parts = append(parts, "SET "+strings.Join(setParts, ", "))
+		parts = append(parts, updateActionSet+" "+strings.Join(setParts, ", "))
 	}
 
 	if len(removeParts) > 0 {
-		parts = append(parts, "REMOVE "+strings.Join(removeParts, ", "))
+		parts = append(parts, updateActionRem+" "+strings.Join(removeParts, ", "))
 	}
 
 	if len(addParts) > 0 {
-		parts = append(parts, "ADD "+strings.Join(addParts, ", "))
+		parts = append(parts, updateActionAdd+" "+strings.Join(addParts, ", "))
 	}
 
 	req.UpdateExpression = strings.Join(parts, " ")
