@@ -31,7 +31,7 @@ type Storage interface {
 	BucketExists(ctx context.Context, name string) (bool, error)
 
 	// Object operations
-	PutObject(ctx context.Context, bucket, key string, body io.Reader, metadata map[string]string) (*Object, error)
+	PutObject(ctx context.Context, bucket, key string, body io.Reader, metadata map[string]string, options ...PutObjectOptions) (*Object, error)
 	GetObject(ctx context.Context, bucket, key string) (*Object, error)
 	GetObjectVersion(ctx context.Context, bucket, key, versionID string) (*Object, error)
 	DeleteObject(ctx context.Context, bucket, key string) (*Object, error)
@@ -64,6 +64,8 @@ type Storage interface {
 	// Notification and CORS
 	SetEventBridgeNotification(ctx context.Context, bucket string, enabled bool)
 	IsEventBridgeEnabled(ctx context.Context, bucket string) bool
+	PutBucketNotificationConfiguration(ctx context.Context, bucket string, cfg *NotificationConfiguration) error
+	GetBucketNotificationConfiguration(ctx context.Context, bucket string) (*NotificationConfiguration, error)
 	SetCORSConfiguration(ctx context.Context, bucket string, rules []CORSRule)
 	GetCORSRules(ctx context.Context, bucket string) []CORSRule
 
@@ -126,6 +128,7 @@ type MemoryBucket struct {
 	VersionIDCounter   uint64                      `json:"versionIdcounter"`            // counter for generating version IDs
 	MultipartUploads   map[string]*MultipartUpload `json:"-"`                           // uploadID -> MultipartUpload
 	EventBridgeEnabled bool                        `json:"eventBridgeEnabled"`          // EventBridge notification
+	Notification       *NotificationConfiguration  `json:"notification,omitempty"`      // bucket notification targets
 	CORSRules          []CORSRule                  `json:"corsRules,omitempty"`         // CORS configuration
 	PublicAccessBlock  *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"` // public access block configuration
 	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
@@ -303,7 +306,7 @@ func (s *MemoryStorage) BucketExists(_ context.Context, name string) (bool, erro
 }
 
 // PutObject stores an object.
-func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io.Reader, metadata map[string]string) (*Object, error) {
+func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io.Reader, metadata map[string]string, options ...PutObjectOptions) (*Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -338,6 +341,8 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 		obj.ContentType = "application/octet-stream"
 	}
 
+	applyPutObjectOptions(obj, options)
+
 	// Handle versioning
 	switch b.VersioningStatus {
 	case VersioningEnabled:
@@ -368,6 +373,16 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 	b.Objects[key] = obj
 
 	return obj, nil
+}
+
+func applyPutObjectOptions(obj *Object, options []PutObjectOptions) {
+	if len(options) == 0 {
+		return
+	}
+
+	obj.ServerSideEncryption = options[0].ServerSideEncryption
+	obj.SSEKMSKeyID = options[0].SSEKMSKeyID
+	obj.SSEBucketKeyEnabledRaw = options[0].SSEBucketKeyEnabledRaw
 }
 
 // GetObject retrieves an object.
@@ -577,12 +592,15 @@ func (s *MemoryStorage) HeadObject(_ context.Context, bucket, key string) (*Obje
 
 	// Return metadata only (no body)
 	return &Object{
-		Key:          obj.Key,
-		ContentType:  obj.ContentType,
-		ETag:         obj.ETag,
-		Size:         obj.Size,
-		LastModified: obj.LastModified,
-		Metadata:     obj.Metadata,
+		Key:                    obj.Key,
+		ContentType:            obj.ContentType,
+		ETag:                   obj.ETag,
+		Size:                   obj.Size,
+		LastModified:           obj.LastModified,
+		Metadata:               obj.Metadata,
+		ServerSideEncryption:   obj.ServerSideEncryption,
+		SSEKMSKeyID:            obj.SSEKMSKeyID,
+		SSEBucketKeyEnabledRaw: obj.SSEBucketKeyEnabledRaw,
 	}, nil
 }
 
@@ -1177,6 +1195,15 @@ func (s *MemoryStorage) SetEventBridgeNotification(_ context.Context, bucket str
 
 	if b, exists := s.Buckets[bucket]; exists {
 		b.EventBridgeEnabled = enabled
+		if b.Notification == nil {
+			b.Notification = &NotificationConfiguration{}
+		}
+
+		if enabled {
+			b.Notification.EventBridgeConfig = &EventBridgeConfig{}
+		} else {
+			b.Notification.EventBridgeConfig = nil
+		}
 	}
 }
 
@@ -1190,6 +1217,74 @@ func (s *MemoryStorage) IsEventBridgeEnabled(_ context.Context, bucket string) b
 	}
 
 	return false
+}
+
+// PutBucketNotificationConfiguration stores bucket notification targets.
+func (s *MemoryStorage) PutBucketNotificationConfiguration(_ context.Context, bucket string, cfg *NotificationConfiguration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	cloned := cloneNotificationConfiguration(cfg)
+	b.Notification = cloned
+	b.EventBridgeEnabled = cloned.EventBridgeConfig != nil
+
+	return nil
+}
+
+// GetBucketNotificationConfiguration returns the bucket notification config.
+func (s *MemoryStorage) GetBucketNotificationConfiguration(_ context.Context, bucket string) (*NotificationConfiguration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	return cloneNotificationConfiguration(b.Notification), nil
+}
+
+func cloneNotificationConfiguration(cfg *NotificationConfiguration) *NotificationConfiguration {
+	if cfg == nil {
+		return &NotificationConfiguration{}
+	}
+
+	out := &NotificationConfiguration{}
+	if cfg.EventBridgeConfig != nil {
+		out.EventBridgeConfig = &EventBridgeConfig{}
+	}
+
+	if len(cfg.QueueConfigurations) > 0 {
+		out.QueueConfigurations = make([]QueueNotificationConfiguration, len(cfg.QueueConfigurations))
+		for i, q := range cfg.QueueConfigurations {
+			out.QueueConfigurations[i] = QueueNotificationConfiguration{
+				ID:     q.ID,
+				Queue:  q.Queue,
+				Events: append([]string(nil), q.Events...),
+				Filter: cloneNotificationFilter(q.Filter),
+			}
+		}
+	}
+
+	return out
+}
+
+func cloneNotificationFilter(filter *NotificationFilter) *NotificationFilter {
+	if filter == nil {
+		return nil
+	}
+
+	out := &NotificationFilter{}
+	if filter.S3Key != nil {
+		out.S3Key = &KeyFilter{Rules: append([]FilterRule(nil), filter.S3Key.Rules...)}
+	}
+
+	return out
 }
 
 // SetCORSConfiguration sets the CORS configuration for a bucket.

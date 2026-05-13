@@ -26,7 +26,14 @@ const (
 	// contentTypeHeader is the canonical "Content-Type" string. Hoisted
 	// to a const because the metadata-pass loop excludes it in three
 	// different handlers — goconst was flagging the literal.
-	contentTypeHeader = "Content-Type"
+	contentTypeHeader                  = "Content-Type"
+	objectTaggingHeader                = "x-amz-tagging"
+	sseAlgorithmHeader                 = "x-amz-server-side-encryption"
+	sseKMSKeyIDHeader                  = "x-amz-server-side-encryption-aws-kms-key-id"
+	sseBucketKeyEnabledHeader          = "x-amz-server-side-encryption-bucket-key-enabled"
+	canonicalSSEAlgorithmHeader        = "x-amz-server-side-encryption"
+	canonicalSSEKMSKeyIDHeader         = "x-amz-server-side-encryption-aws-kms-key-id"
+	canonicalSSEBucketKeyEnabledHeader = "x-amz-server-side-encryption-bucket-key-enabled"
 )
 
 // applyCORSHeaders sets CORS response headers if the bucket has CORS configured and the request Origin matches.
@@ -159,6 +166,12 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 
 	if _, ok := r.URL.Query()["lifecycle"]; ok {
 		s.GetBucketLifecycleConfiguration(w, r)
+
+		return
+	}
+
+	if _, ok := r.URL.Query()["notification"]; ok {
+		s.GetBucketNotificationConfiguration(w, r)
 
 		return
 	}
@@ -710,34 +723,22 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucket := r.PathValue("bucket")
-	key := r.PathValue("key")
+	bucket, key, ok := putObjectTarget(w, r)
+	if !ok {
+		return
+	}
 
-	if bucket == "" {
-		writeS3Error(w, r, "InvalidBucketName", "The specified bucket is not valid.", http.StatusBadRequest)
+	tags, hasTags, err := parseObjectTaggingHeader(r.Header.Get(objectTaggingHeader))
+	if err != nil {
+		writeS3Error(w, r, "InvalidTag", "The Tagging header is not valid", http.StatusBadRequest)
 
 		return
 	}
 
-	if key == "" {
-		writeS3Error(w, r, "InvalidArgument", "Invalid key", http.StatusBadRequest)
+	metadata := objectMetadataFromHeaders(r.Header)
+	putOptions := objectSSEOptionsFromHeaders(r.Header)
 
-		return
-	}
-
-	metadata := make(map[string]string)
-	if ct := r.Header.Get("Content-Type"); ct != "" {
-		metadata["Content-Type"] = ct
-	}
-
-	// Extract x-amz-meta-* headers
-	for name, values := range r.Header {
-		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
-			metadata[metaKey] = values[0]
-		}
-	}
-
-	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, metadata)
+	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, metadata, putOptions)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -751,7 +752,12 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if hasTags && !s.storeObjectTaggingHeader(w, r, bucket, key, tags) {
+		return
+	}
+
 	w.Header().Set("ETag", obj.ETag)
+	writeObjectSSEHeaders(w, obj)
 
 	if obj.VersionID != "" {
 		w.Header().Set("x-amz-version-id", obj.VersionID)
@@ -761,6 +767,89 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 
 	// Emit EventBridge notification if enabled.
 	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
+}
+
+func putObjectTarget(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	bucket := r.PathValue("bucket")
+	key := r.PathValue("key")
+
+	if bucket == "" {
+		writeS3Error(w, r, "InvalidBucketName", "The specified bucket is not valid.", http.StatusBadRequest)
+
+		return "", "", false
+	}
+
+	if key == "" {
+		writeS3Error(w, r, "InvalidArgument", "Invalid key", http.StatusBadRequest)
+
+		return "", "", false
+	}
+
+	return bucket, key, true
+}
+
+func objectMetadataFromHeaders(headers http.Header) map[string]string {
+	metadata := make(map[string]string)
+	if ct := headers.Get("Content-Type"); ct != "" {
+		metadata["Content-Type"] = ct
+	}
+
+	for name, values := range headers {
+		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
+			metadata[metaKey] = values[0]
+		}
+	}
+
+	return metadata
+}
+
+func (s *Service) storeObjectTaggingHeader(w http.ResponseWriter, r *http.Request, bucket, key string, tags map[string]string) bool {
+	if err := s.storage.PutObjectTagging(r.Context(), bucket, key, tags); err != nil {
+		var bucketErr *BucketError
+		if errors.As(err, &bucketErr) {
+			writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
+
+			return false
+		}
+
+		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return false
+	}
+
+	return true
+}
+
+func parseObjectTaggingHeader(raw string) (map[string]string, bool, error) {
+	if raw == "" {
+		return nil, false, nil
+	}
+
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil, false, fmt.Errorf("parse tagging header: %w", err)
+	}
+
+	tags := make(map[string]string, len(values))
+
+	for key, vals := range values {
+		value := ""
+		if len(vals) > 0 {
+			value = vals[0]
+		}
+
+		tags[key] = value
+	}
+
+	return tags, true, nil
+}
+
+func objectSSEOptionsFromHeaders(headers http.Header) PutObjectOptions {
+	return PutObjectOptions{
+		ServerSideEncryption:   headers.Get(sseAlgorithmHeader),
+		SSEKMSKeyID:            headers.Get(sseKMSKeyIDHeader),
+		SSEBucketKeyEnabledRaw: headers.Get(sseBucketKeyEnabledHeader),
+	}
 }
 
 // CopyObject handles PUT /{bucket}/{key} with X-Amz-Copy-Source header.
@@ -935,6 +1024,7 @@ func writePartialObjectResponse(w http.ResponseWriter, obj *Object, start, end i
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("ETag", obj.ETag)
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
+	writeObjectSSEHeaders(w, obj)
 
 	if obj.VersionID != "" {
 		w.Header().Set("x-amz-version-id", obj.VersionID)
@@ -1025,6 +1115,7 @@ func writeObjectResponse(w http.ResponseWriter, obj *Object) {
 	w.Header().Set("ETag", obj.ETag)
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
 	w.Header().Set("Accept-Ranges", "bytes")
+	writeObjectSSEHeaders(w, obj)
 
 	if obj.VersionID != "" {
 		w.Header().Set("x-amz-version-id", obj.VersionID)
@@ -1039,6 +1130,20 @@ func writeObjectResponse(w http.ResponseWriter, obj *Object) {
 	w.WriteHeader(http.StatusOK)
 
 	_, _ = w.Write(obj.Body)
+}
+
+func writeObjectSSEHeaders(w http.ResponseWriter, obj *Object) {
+	if obj.ServerSideEncryption != "" {
+		w.Header().Set(canonicalSSEAlgorithmHeader, obj.ServerSideEncryption)
+	}
+
+	if obj.SSEKMSKeyID != "" {
+		w.Header().Set(canonicalSSEKMSKeyIDHeader, obj.SSEKMSKeyID)
+	}
+
+	if obj.SSEBucketKeyEnabledRaw != "" {
+		w.Header().Set(canonicalSSEBucketKeyEnabledHeader, obj.SSEBucketKeyEnabledRaw)
+	}
 }
 
 // DeleteObject handles DELETE /{bucket}/{key...} - delete an object.
@@ -1211,6 +1316,7 @@ func (s *Service) HeadObject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", obj.ETag)
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
 	w.Header().Set("Accept-Ranges", "bytes")
+	writeObjectSSEHeaders(w, obj)
 
 	// Set metadata headers
 	for k, v := range obj.Metadata {
@@ -2268,10 +2374,41 @@ func (s *Service) PutBucketNotificationConfiguration(w http.ResponseWriter, r *h
 		return
 	}
 
-	enabled := config.EventBridgeConfig != nil
-	s.storage.SetEventBridgeNotification(r.Context(), bucket, enabled)
+	if err := s.storage.PutBucketNotificationConfiguration(r.Context(), bucket, &config); err != nil {
+		var bucketErr *BucketError
+		if errors.As(err, &bucketErr) {
+			writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
+
+			return
+		}
+
+		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// GetBucketNotificationConfiguration handles GET /{bucket}?notification.
+func (s *Service) GetBucketNotificationConfiguration(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	config, err := s.storage.GetBucketNotificationConfiguration(r.Context(), bucket)
+	if err != nil {
+		var bucketErr *BucketError
+		if errors.As(err, &bucketErr) {
+			writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
+
+			return
+		}
+
+		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeXMLResponse(w, config)
 }
 
 // PutBucketCors handles PUT /{bucket}?cors.

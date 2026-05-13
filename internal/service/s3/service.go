@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -99,12 +100,16 @@ func (s *Service) Close() error {
 	return nil
 }
 
-// emitObjectCreatedEvent sends an S3 Object Created event to EventBridge.
+// emitObjectCreatedEvent sends an S3 Object Created event to configured bucket notifications.
 func (s *Service) emitObjectCreatedEvent(ctx context.Context, bucket, key string, size int64, etag string) {
-	if !s.storage.IsEventBridgeEnabled(ctx, bucket) {
-		return
+	if s.storage.IsEventBridgeEnabled(ctx, bucket) {
+		s.emitObjectCreatedEventBridgeEvent(ctx, bucket, key, size, etag)
 	}
 
+	s.emitObjectCreatedQueueNotifications(ctx, bucket, key, size, etag)
+}
+
+func (s *Service) emitObjectCreatedEventBridgeEvent(ctx context.Context, bucket, key string, size int64, etag string) {
 	detail := map[string]any{
 		"version":    "0",
 		"bucket":     map[string]string{"name": bucket},
@@ -126,6 +131,131 @@ func (s *Service) emitObjectCreatedEvent(ctx context.Context, bucket, key string
 	})
 
 	s.putEvents(ctx, body, bucket, key)
+}
+
+func (s *Service) emitObjectCreatedQueueNotifications(ctx context.Context, bucket, key string, size int64, etag string) {
+	cfg, err := s.storage.GetBucketNotificationConfiguration(ctx, bucket)
+	if err != nil || cfg == nil {
+		return
+	}
+
+	for _, queueConfig := range cfg.QueueConfigurations {
+		if !notificationEventsMatch(queueConfig.Events, "s3:ObjectCreated:Put") {
+			continue
+		}
+
+		if !notificationFilterMatches(queueConfig.Filter, key) {
+			continue
+		}
+
+		payload, err := json.Marshal(map[string]any{
+			"Records": []map[string]any{{
+				"eventVersion": "2.1",
+				"eventSource":  "aws:s3",
+				"awsRegion":    "us-east-1",
+				"eventTime":    time.Now().UTC().Format(time.RFC3339),
+				"eventName":    "ObjectCreated:Put",
+				"s3": map[string]any{
+					"bucket": map[string]string{
+						"name": bucket,
+						"arn":  "arn:aws:s3:::" + bucket,
+					},
+					"object": map[string]any{
+						"key":  key,
+						"size": size,
+						"eTag": strings.Trim(etag, `"`),
+					},
+				},
+			}},
+		})
+		if err != nil {
+			s.logger.Error("failed to marshal S3 queue notification", "error", err)
+
+			continue
+		}
+
+		s.sendSQSNotification(ctx, queueConfig.Queue, payload)
+	}
+}
+
+func notificationEventsMatch(events []string, event string) bool {
+	for _, configured := range events {
+		if configured == event || configured == "s3:ObjectCreated:*" || configured == "s3:*" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func notificationFilterMatches(filter *NotificationFilter, key string) bool {
+	if filter == nil || filter.S3Key == nil {
+		return true
+	}
+
+	for _, rule := range filter.S3Key.Rules {
+		switch strings.ToLower(rule.Name) {
+		case "prefix":
+			if !strings.HasPrefix(key, rule.Value) {
+				return false
+			}
+		case "suffix":
+			if !strings.HasSuffix(key, rule.Value) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func (s *Service) sendSQSNotification(ctx context.Context, queueARN string, payload []byte) {
+	queueURL := s.sqsQueueURL(queueARN)
+	if queueURL == "" {
+		return
+	}
+
+	body, err := json.Marshal(map[string]string{
+		"QueueUrl":    queueURL,
+		"MessageBody": string(payload),
+	})
+	if err != nil {
+		s.logger.Error("failed to marshal SQS SendMessage request", "error", err)
+
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/", bytes.NewReader(body))
+	if err != nil {
+		s.logger.Error("failed to create SQS SendMessage request", "error", err)
+
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("X-Amz-Target", "AmazonSQS.SendMessage")
+
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		s.logger.Error("failed to deliver S3 notification to SQS", "error", err, "queue", queueARN)
+
+		return
+	}
+
+	_ = resp.Body.Close()
+}
+
+func (s *Service) sqsQueueURL(queueARN string) string {
+	if !strings.HasPrefix(queueARN, "arn:") {
+		return queueARN
+	}
+
+	parts := strings.Split(queueARN, ":")
+	if len(parts) < 6 {
+		return ""
+	}
+
+	return s.baseURL + "/" + parts[4] + "/" + parts[5]
 }
 
 // putEvents sends a PutEvents request to the internal EventBridge endpoint.

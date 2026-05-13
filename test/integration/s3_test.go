@@ -1471,6 +1471,135 @@ func TestS3_PutAndGetObjectTagging(t *testing.T) {
 	}
 }
 
+func TestS3_PutObjectTaggingHeader(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-tagging-header"
+	key := "test-object"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+	})
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:  aws.String(bucket),
+		Key:     aws.String(key),
+		Body:    strings.NewReader("tagged-body"),
+		Tagging: aws.String("env=dev&team=platform"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tagOutput, err := client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]string{}
+	for _, tag := range tagOutput.TagSet {
+		got[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+	}
+
+	if got["env"] != "dev" || got["team"] != "platform" {
+		t.Fatalf("tags = %#v, want env=dev team=platform", got)
+	}
+}
+
+func TestS3_PutObjectSSEKMSHeaders(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-sse-kms"
+	key := "kms-object"
+	kmsKeyID := "arn:aws:kms:us-east-1:123456789012:key/test"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+	})
+
+	putOutput, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 strings.NewReader("encrypted-body"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String(kmsKeyID),
+		BucketKeyEnabled:     aws.Bool(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if putOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Fatalf("PutObject SSE = %q, want %q", putOutput.ServerSideEncryption, types.ServerSideEncryptionAwsKms)
+	}
+
+	headOutput, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if headOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Fatalf("HeadObject SSE = %q, want %q", headOutput.ServerSideEncryption, types.ServerSideEncryptionAwsKms)
+	}
+
+	if aws.ToString(headOutput.SSEKMSKeyId) != kmsKeyID {
+		t.Fatalf("HeadObject SSEKMSKeyId = %q, want %q", aws.ToString(headOutput.SSEKMSKeyId), kmsKeyID)
+	}
+
+	if !aws.ToBool(headOutput.BucketKeyEnabled) {
+		t.Fatal("HeadObject BucketKeyEnabled = false, want true")
+	}
+
+	getOutput, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getOutput.Body.Close()
+
+	if getOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Fatalf("GetObject SSE = %q, want %q", getOutput.ServerSideEncryption, types.ServerSideEncryptionAwsKms)
+	}
+
+	if aws.ToString(getOutput.SSEKMSKeyId) != kmsKeyID {
+		t.Fatalf("GetObject SSEKMSKeyId = %q, want %q", aws.ToString(getOutput.SSEKMSKeyId), kmsKeyID)
+	}
+}
+
 func TestS3_PutObject_KeyWithLeadingSlash(t *testing.T) {
 	client := newS3Client(t)
 	ctx := t.Context()

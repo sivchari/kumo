@@ -31,16 +31,26 @@ type LoggingEnabledStatus struct {
 
 // Object represents an S3 object.
 type Object struct {
-	Key            string
-	Body           []byte
-	ETag           string
-	Size           int64
-	LastModified   time.Time
-	ContentType    string
-	Metadata       map[string]string
-	Tags           map[string]string
-	VersionID      string
-	IsDeleteMarker bool
+	Key                    string
+	Body                   []byte
+	ETag                   string
+	Size                   int64
+	LastModified           time.Time
+	ContentType            string
+	Metadata               map[string]string
+	Tags                   map[string]string
+	VersionID              string
+	IsDeleteMarker         bool
+	ServerSideEncryption   string
+	SSEKMSKeyID            string
+	SSEBucketKeyEnabledRaw string
+}
+
+// PutObjectOptions carries optional headers that affect stored object metadata.
+type PutObjectOptions struct {
+	ServerSideEncryption   string
+	SSEKMSKeyID            string
+	SSEBucketKeyEnabledRaw string
 }
 
 // Tagging represents the XML structure for S3 object tagging.
@@ -356,12 +366,37 @@ type CopyRange struct {
 
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
-	XMLName           xml.Name           `xml:"NotificationConfiguration"`
-	EventBridgeConfig *EventBridgeConfig `xml:"EventBridgeConfiguration,omitempty"`
+	XMLName             xml.Name                         `xml:"NotificationConfiguration"`
+	EventBridgeConfig   *EventBridgeConfig               `xml:"EventBridgeConfiguration,omitempty"`
+	QueueConfigurations []QueueNotificationConfiguration `xml:"QueueConfiguration,omitempty"`
 }
 
 // EventBridgeConfig represents EventBridge notification configuration.
 type EventBridgeConfig struct{}
+
+// QueueNotificationConfiguration represents an S3 notification target for SQS.
+type QueueNotificationConfiguration struct {
+	ID     string              `xml:"Id,omitempty"`
+	Queue  string              `xml:"Queue"`
+	Events []string            `xml:"Event"`
+	Filter *NotificationFilter `xml:"Filter,omitempty"`
+}
+
+// NotificationFilter scopes an S3 notification to matching object keys.
+type NotificationFilter struct {
+	S3Key *KeyFilter `xml:"S3Key,omitempty"`
+}
+
+// KeyFilter contains prefix/suffix filter rules.
+type KeyFilter struct {
+	Rules []FilterRule `xml:"FilterRule"`
+}
+
+// FilterRule represents a single S3 notification key filter rule.
+type FilterRule struct {
+	Name  string `xml:"Name"`
+	Value string `xml:"Value"`
+}
 
 // CORSConfiguration represents S3 bucket CORS configuration (XML request body).
 type CORSConfiguration struct {
