@@ -652,6 +652,54 @@ func TestSQS_FIFOQueue_MissingDeduplicationId(t *testing.T) {
 	}
 }
 
+func TestSQS_FIFOBatchReceive(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-fifo-batch-recv.fifo"
+
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+		Attributes: map[string]string{
+			"FifoQueue":                 "true",
+			"ContentBasedDeduplication": "true",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	// Send 3 messages in the same group.
+	for i := range 3 {
+		_, err = client.SendMessage(ctx, &sqs.SendMessageInput{
+			QueueUrl:       createOutput.QueueUrl,
+			MessageBody:    aws.String(fmt.Sprintf("msg-%d", i)),
+			MessageGroupId: aws.String("group1"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Receive should return all 3 in one batch.
+	recvOutput, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput.Messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(recvOutput.Messages))
+	}
+}
+
 func TestSQS_QueuePolicy(t *testing.T) {
 	client := newSQSClient(t)
 	ctx := t.Context()

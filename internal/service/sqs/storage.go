@@ -614,11 +614,6 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 		// Deliver the message: make invisible and add to inflight.
 		if s.deliverMessage(qd, msg, now, visibilityTimeout) {
 			result = append(result, msg)
-
-			// FIFO: lock the group after delivering a message from it.
-			if lockedGroups != nil && msg.MessageGroupID != "" {
-				lockedGroups[msg.MessageGroupID] = struct{}{}
-			}
 		}
 	}
 
