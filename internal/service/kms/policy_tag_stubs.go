@@ -11,14 +11,11 @@ import (
 // AccountRootEnable statement.
 const defaultKeyPolicy = `{"Version":"2012-10-17","Id":"key-default-1","Statement":[{"Sid":"Enable IAM User Permissions","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"kms:*","Resource":"*"}]}`
 
-// GetKeyPolicy returns the default key policy for any existing key.
+// GetKeyPolicy returns the key policy for an existing key.
 //
 // terraform-provider-aws calls GetKeyPolicy on every refresh of aws_kms_key
 // (and immediately after CreateKey) to populate the `policy` attribute.
 // Without it, `tofu apply` errors out before the create call returns.
-//
-// Key policies are not modeled in storage yet; this stub returns the AWS
-// default policy so refresh paths complete and drift detection stays stable.
 func (s *Service) GetKeyPolicy(w http.ResponseWriter, r *http.Request) {
 	var req getKeyPolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
@@ -27,20 +24,45 @@ func (s *Service) GetKeyPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.storage.GetKey(r.Context(), req.KeyID); err != nil {
+	key, err := s.storage.GetKey(r.Context(), req.KeyID)
+	if err != nil {
 		handleKMSError(w, err)
 
 		return
 	}
 
+	policy := key.Policy
+	if policy == "" {
+		policy = defaultKeyPolicy
+	}
+
 	writeKMSResponse(w, getKeyPolicyResponse{
-		Policy:     defaultKeyPolicy,
+		Policy:     policy,
 		PolicyName: "default",
 	})
 }
 
-// PutKeyPolicy accepts and discards a key policy update.
-func (s *Service) PutKeyPolicy(w http.ResponseWriter, _ *http.Request) {
+// PutKeyPolicy stores a key policy for an existing key.
+//
+// terraform-provider-aws calls PutKeyPolicy after CreateKey when a custom
+// policy is specified, then polls GetKeyPolicy until the policy matches.
+func (s *Service) PutKeyPolicy(w http.ResponseWriter, r *http.Request) {
+	var req putKeyPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	key, err := s.storage.GetKey(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	key.Policy = req.Policy
+
 	writeKMSResponse(w, struct{}{})
 }
 

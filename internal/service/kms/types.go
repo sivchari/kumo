@@ -74,6 +74,7 @@ type Key struct {
 	MultiRegionConfig     *MultiRegionConfig
 	PendingDeletionWindow int32
 	Tags                  map[string]string
+	Policy                string // IAM key policy document
 	// Simulated key material for encryption/decryption.
 	KeyMaterial []byte
 }
@@ -348,9 +349,16 @@ func (e *ServiceError) Error() string {
 	return e.Message
 }
 
-// getKeyPolicyRequest is the wire shape of GetKeyPolicy / PutKeyPolicy.
+// getKeyPolicyRequest is the wire shape of GetKeyPolicy.
 type getKeyPolicyRequest struct {
 	KeyID      string `json:"KeyId"`
+	PolicyName string `json:"PolicyName,omitempty"`
+}
+
+// putKeyPolicyRequest is the wire shape of PutKeyPolicy.
+type putKeyPolicyRequest struct {
+	KeyID      string `json:"KeyId"`
+	Policy     string `json:"Policy"`
 	PolicyName string `json:"PolicyName,omitempty"`
 }
 

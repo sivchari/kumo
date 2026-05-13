@@ -396,3 +396,55 @@ func TestKMS_EncryptWithAlias(t *testing.T) {
 		t.Errorf("plaintext mismatch: got %s, want %s", decryptOutput.Plaintext, plaintext)
 	}
 }
+
+func TestKMS_KeyPolicy(t *testing.T) {
+	client := newKMSClient(t)
+	ctx := t.Context()
+
+	customPolicy := `{"Version":"2012-10-17","Statement":[{"Sid":"Custom","Effect":"Allow","Principal":{"AWS":"*"},"Action":"kms:*","Resource":"*"}]}`
+
+	createOutput, err := client.CreateKey(ctx, &kms.CreateKeyInput{
+		Description: aws.String("test-key-policy"),
+		Policy:      aws.String(customPolicy),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyID := *createOutput.KeyMetadata.KeyId
+
+	t.Cleanup(func() {
+		_, _ = client.ScheduleKeyDeletion(context.Background(), &kms.ScheduleKeyDeletionInput{
+			KeyId:               aws.String(keyID),
+			PendingWindowInDays: aws.Int32(7),
+		})
+	})
+
+	// GetKeyPolicy should return the custom policy.
+	getOutput, err := client.GetKeyPolicy(ctx, &kms.GetKeyPolicyInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get", getOutput)
+
+	// PutKeyPolicy with a new policy.
+	newPolicy := `{"Version":"2012-10-17","Statement":[{"Sid":"Updated","Effect":"Allow","Principal":{"AWS":"*"},"Action":"kms:Encrypt","Resource":"*"}]}`
+	_, err = client.PutKeyPolicy(ctx, &kms.PutKeyPolicyInput{
+		KeyId:  aws.String(keyID),
+		Policy: aws.String(newPolicy),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GetKeyPolicy should return the updated policy.
+	getOutput2, err := client.GetKeyPolicy(ctx, &kms.GetKeyPolicyInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_updated", getOutput2)
+}
