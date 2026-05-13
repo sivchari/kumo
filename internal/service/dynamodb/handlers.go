@@ -419,6 +419,8 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 		req.ExpressionAttributeValues,
 		req.Limit,
 		req.ExclusiveStartKey,
+		req.Segment,
+		req.TotalSegments,
 	)
 	if err != nil {
 		var tErr *TableError

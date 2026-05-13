@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,7 +32,7 @@ type Storage interface {
 	DeleteItem(ctx context.Context, tableName string, key Item, returnOld bool, cond ConditionInput) (Item, error)
 	UpdateItem(ctx context.Context, tableName string, key Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, returnValues string, cond ConditionInput) (Item, error)
 	Query(ctx context.Context, tableName, indexName string, keyCondExpr string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, scanForward bool) ([]Item, Item, int, error)
-	Scan(ctx context.Context, tableName string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item) ([]Item, Item, int, error)
+	Scan(ctx context.Context, tableName string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, segment, totalSegments *int) ([]Item, Item, int, error)
 	TransactWriteItems(ctx context.Context, items []TransactWriteItem) ([]CancellationReason, error)
 	TransactGetItems(ctx context.Context, items []TransactGetItem) ([]Item, error)
 	BatchWriteItem(ctx context.Context, requestItems map[string][]WriteRequest) (map[string][]WriteRequest, error)
@@ -671,7 +672,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 // Scan scans items from a table.
 //
 //nolint:funlen // Scan requires pagination logic that exceeds line limit.
-func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item) ([]Item, Item, int, error) {
+func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, segment, totalSegments *int) ([]Item, Item, int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -683,12 +684,21 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		}
 	}
 
+	if err := validateScanSegment(segment, totalSegments); err != nil {
+		return nil, nil, 0, err
+	}
+
 	// Collect all items.
 	var results []Item
 
 	scannedCount := 0
 
 	for _, item := range td.Items {
+		key := m.serializeKey(td.Table, item)
+		if !scanSegmentMatches(key, segment, totalSegments) {
+			continue
+		}
+
 		scannedCount++
 
 		// Apply filter expression.
@@ -748,6 +758,47 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 	}
 
 	return results, lastEvaluatedKey, scannedCount, nil
+}
+
+func validateScanSegment(segment, totalSegments *int) error {
+	if segment == nil && totalSegments == nil {
+		return nil
+	}
+
+	if segment == nil || totalSegments == nil {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "Segment and TotalSegments must be specified together",
+		}
+	}
+
+	if *totalSegments <= 0 {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "TotalSegments must be greater than zero",
+		}
+	}
+
+	if *segment < 0 || *segment >= *totalSegments {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "Segment must be greater than or equal to zero and less than TotalSegments",
+		}
+	}
+
+	return nil
+}
+
+func scanSegmentMatches(key string, segment, totalSegments *int) bool {
+	if segment == nil || totalSegments == nil {
+		return true
+	}
+
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(key))
+
+	//nolint:gosec // totalSegments is validated to be positive before this helper is called.
+	return int(h.Sum64()%uint64(*totalSegments)) == *segment
 }
 
 // serializeKey creates a string key from the primary key attributes.
