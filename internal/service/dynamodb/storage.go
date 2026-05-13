@@ -401,6 +401,10 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 		}
 	}
 
+	if err := validateItemKey(td.Table, item); err != nil {
+		return nil, err
+	}
+
 	key := m.serializeKey(td.Table, item)
 
 	// Evaluate condition against existing item (nil if not exists).
@@ -457,6 +461,10 @@ func (m *MemoryStorage) GetItem(_ context.Context, tableName string, key Item) (
 		}
 	}
 
+	if err := validateKey(td.Table, key); err != nil {
+		return nil, err
+	}
+
 	keyStr := m.serializeKey(td.Table, key)
 	if item, ok := td.Items[keyStr]; ok {
 		return m.copyItem(item), nil
@@ -477,6 +485,10 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 			Code:    "ResourceNotFoundException",
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
+	}
+
+	if err := validateKey(td.Table, key); err != nil {
+		return nil, err
 	}
 
 	keyStr := m.serializeKey(td.Table, key)
@@ -521,7 +533,7 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 
 // UpdateItem updates an item in a table.
 //
-//nolint:funlen // Item update with expression evaluation.
+//nolint:funlen // UpdateItem keeps validation, condition evaluation, mutation, and return value handling together.
 func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, returnValues string, cond ConditionInput) (Item, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -532,6 +544,10 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 			Code:    "ResourceNotFoundException",
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
+	}
+
+	if err := validateKey(td.Table, key); err != nil {
+		return nil, err
 	}
 
 	keyStr := m.serializeKey(td.Table, key)
@@ -928,6 +944,70 @@ func (m *MemoryStorage) serializeAttributeValue(av AttributeValue) string {
 	}
 
 	return "NULL:" + uuid.New().String()
+}
+
+func validateItemKey(table *Table, item Item) error {
+	return validateKeyAttributes(table, item, false)
+}
+
+func validateKey(table *Table, key Item) error {
+	return validateKeyAttributes(table, key, true)
+}
+
+func validateKeyAttributes(table *Table, item Item, keyOnly bool) error {
+	if item == nil {
+		return newKeySchemaValidationException()
+	}
+
+	if keyOnly && len(item) != len(table.KeySchema) {
+		return newKeySchemaValidationException()
+	}
+
+	attrTypes := keyAttributeTypes(table)
+
+	for _, ks := range table.KeySchema {
+		av, ok := item[ks.AttributeName]
+		if !ok {
+			return newKeySchemaValidationException()
+		}
+
+		if !matchesKeyAttributeType(av, attrTypes[ks.AttributeName]) {
+			return newKeySchemaValidationException()
+		}
+	}
+
+	return nil
+}
+
+func keyAttributeTypes(table *Table) map[string]string {
+	types := make(map[string]string, len(table.AttributeDefinitions))
+	for _, def := range table.AttributeDefinitions {
+		types[def.AttributeName] = def.AttributeType
+	}
+
+	return types
+}
+
+//nolint:gocritic // AttributeValue is passed by value consistently in storage helpers.
+func matchesKeyAttributeType(av AttributeValue, attrType string) bool {
+	switch attrType {
+	case "S":
+		return av.S != nil
+	case "N":
+		return av.N != nil
+	case "B":
+		return av.B != nil
+	default:
+		return false
+	}
+}
+
+func newKeySchemaValidationException() *TableError {
+	return newValidationException("The provided key element does not match the schema")
+}
+
+func newValidationException(message string) *TableError {
+	return &TableError{Code: "ValidationException", Message: message}
 }
 
 // copyItem creates a deep copy of an item.
@@ -1618,29 +1698,89 @@ func (m *MemoryStorage) TransactWriteItems(_ context.Context, items []TransactWr
 	return nil, nil // Success: nil CancellationReasons means no failures.
 }
 
+func countTransactWriteActions(twi TransactWriteItem) int {
+	count := 0
+	if twi.ConditionCheck != nil {
+		count++
+	}
+
+	if twi.Delete != nil {
+		count++
+	}
+
+	if twi.Put != nil {
+		count++
+	}
+
+	if twi.Update != nil {
+		count++
+	}
+
+	return count
+}
+
 // validateTransactWriteItem validates a single write item's condition without applying changes.
 func (m *MemoryStorage) validateTransactWriteItem(twi TransactWriteItem) (*CancellationReason, error) {
+	if countTransactWriteActions(twi) != 1 {
+		return nil, newValidationException("TransactItems member must contain exactly one action")
+	}
+
 	switch {
 	case twi.Put != nil:
+		td, exists := m.Tables[twi.Put.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Put.TableName)}
+		}
+
+		if err := validateItemKey(td.Table, twi.Put.Item); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.Put.TableName, twi.Put.Item, ConditionInput{
 			Expression: twi.Put.ConditionExpression, ExprNames: twi.Put.ExpressionAttributeNames, ExprValues: twi.Put.ExpressionAttributeValues,
 		})
 	case twi.Delete != nil:
+		td, exists := m.Tables[twi.Delete.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Delete.TableName)}
+		}
+
+		if err := validateKey(td.Table, twi.Delete.Key); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.Delete.TableName, twi.Delete.Key, ConditionInput{
 			Expression: twi.Delete.ConditionExpression, ExprNames: twi.Delete.ExpressionAttributeNames, ExprValues: twi.Delete.ExpressionAttributeValues,
 		})
 	case twi.Update != nil:
+		td, exists := m.Tables[twi.Update.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Update.TableName)}
+		}
+
+		if err := validateKey(td.Table, twi.Update.Key); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.Update.TableName, twi.Update.Key, ConditionInput{
 			Expression: twi.Update.ConditionExpression, ExprNames: twi.Update.ExpressionAttributeNames, ExprValues: twi.Update.ExpressionAttributeValues,
 		})
 	case twi.ConditionCheck != nil:
+		td, exists := m.Tables[twi.ConditionCheck.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.ConditionCheck.TableName)}
+		}
+
+		if err := validateKey(td.Table, twi.ConditionCheck.Key); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.ConditionCheck.TableName, twi.ConditionCheck.Key, ConditionInput{
 			Expression: twi.ConditionCheck.ConditionExpression, ExprNames: twi.ConditionCheck.ExpressionAttributeNames, ExprValues: twi.ConditionCheck.ExpressionAttributeValues,
 		})
 	}
 
-	//nolint:nilnil // No action specified is valid (returns success).
-	return nil, nil
+	return nil, newValidationException("TransactItems member must contain exactly one action")
 }
 
 // checkTransactCondition checks a condition against the existing item in a table.
@@ -1710,7 +1850,7 @@ func (m *MemoryStorage) TransactGetItems(_ context.Context, items []TransactGetI
 
 	for i, tgi := range items {
 		if tgi.Get == nil {
-			continue
+			return nil, newValidationException("TransactGetItems member must contain Get")
 		}
 
 		td, exists := m.Tables[tgi.Get.TableName]
@@ -1719,6 +1859,10 @@ func (m *MemoryStorage) TransactGetItems(_ context.Context, items []TransactGetI
 				Code:    "ResourceNotFoundException",
 				Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tgi.Get.TableName),
 			}
+		}
+
+		if err := validateKey(td.Table, tgi.Get.Key); err != nil {
+			return nil, err
 		}
 
 		key := m.serializeKey(td.Table, tgi.Get.Key)
@@ -1745,11 +1889,23 @@ func (m *MemoryStorage) BatchWriteItem(_ context.Context, requestItems map[strin
 		}
 
 		for _, req := range requests {
+			if countBatchWriteActions(req) != 1 {
+				return nil, newValidationException("WriteRequest must contain exactly one action")
+			}
+
 			switch {
 			case req.PutRequest != nil:
+				if err := validateItemKey(td.Table, req.PutRequest.Item); err != nil {
+					return nil, err
+				}
+
 				key := m.serializeKey(td.Table, req.PutRequest.Item)
 				td.Items[key] = m.copyItem(req.PutRequest.Item)
 			case req.DeleteRequest != nil:
+				if err := validateKey(td.Table, req.DeleteRequest.Key); err != nil {
+					return nil, err
+				}
+
 				key := m.serializeKey(td.Table, req.DeleteRequest.Key)
 				delete(td.Items, key)
 			}
@@ -1760,6 +1916,19 @@ func (m *MemoryStorage) BatchWriteItem(_ context.Context, requestItems map[strin
 
 	// kumo processes all items; never returns UnprocessedItems.
 	return nil, nil //nolint:nilnil // Intentional: nil UnprocessedItems means all items were processed.
+}
+
+func countBatchWriteActions(req WriteRequest) int {
+	count := 0
+	if req.PutRequest != nil {
+		count++
+	}
+
+	if req.DeleteRequest != nil {
+		count++
+	}
+
+	return count
 }
 
 // BatchGetItem retrieves multiple items across tables.
@@ -1781,6 +1950,10 @@ func (m *MemoryStorage) BatchGetItem(_ context.Context, requestItems map[string]
 		var items []Item
 
 		for _, key := range ka.Keys {
+			if err := validateKey(td.Table, key); err != nil {
+				return nil, err
+			}
+
 			keyStr := m.serializeKey(td.Table, key)
 			if item, ok := td.Items[keyStr]; ok {
 				items = append(items, m.copyItem(item))
