@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
@@ -305,6 +306,62 @@ func TestTerraform_CloudWatchLogs(t *testing.T) {
 		if len(streams.LogStreams) != 1 {
 			t.Fatalf("expected 1 log stream, got %d", len(streams.LogStreams))
 		}
+	})
+}
+
+const terraformSNSMainTF = `
+resource "aws_sns_topic" "demo" {
+  name = "tf-integration-topic"
+
+  tags = {
+    env = "terraform"
+  }
+}
+`
+
+// TestTerraform_SNS_Topic covers the topic lifecycle and tag read path used by
+// the Terraform AWS provider.
+func TestTerraform_SNS_Topic(t *testing.T) {
+	t.Parallel()
+
+	runTerraformFixture(t, providerTF("sns"), terraformSNSMainTF, func(t *testing.T) {
+		t.Helper()
+
+		ctx := t.Context()
+		client := newSNSClient(t)
+
+		topics, err := client.ListTopics(ctx, &sns.ListTopicsInput{})
+		if err != nil {
+			t.Fatalf("ListTopics: %v", err)
+		}
+
+		var topicARN string
+		for _, topic := range topics.Topics {
+			if strings.HasSuffix(aws.ToString(topic.TopicArn), ":tf-integration-topic") {
+				topicARN = aws.ToString(topic.TopicArn)
+
+				break
+			}
+		}
+
+		if topicARN == "" {
+			t.Fatalf("topic tf-integration-topic not found in ListTopics response")
+		}
+
+		tags, err := client.ListTagsForResource(ctx, &sns.ListTagsForResourceInput{
+			ResourceArn: aws.String(topicARN),
+		})
+		if err != nil {
+			t.Fatalf("ListTagsForResource: %v", err)
+		}
+
+		for _, tag := range tags.Tags {
+			if aws.ToString(tag.Key) == "env" && aws.ToString(tag.Value) == "terraform" {
+				return
+			}
+		}
+
+		t.Fatalf("env=terraform tag not found for %s", topicARN)
 	})
 }
 
