@@ -60,8 +60,6 @@ func TestRouterAppliesConfiguredLatency(t *testing.T) {
 }
 
 func TestServerDoesNotExposeChaosControlEndpoints(t *testing.T) {
-	t.Parallel()
-
 	srv := New(Config{LogLevel: slog.LevelError})
 	req := httptest.NewRequest(http.MethodGet, "/kumo/chaos/rules", http.NoBody)
 	rec := httptest.NewRecorder()
@@ -74,8 +72,6 @@ func TestServerDoesNotExposeChaosControlEndpoints(t *testing.T) {
 }
 
 func TestServerLoadsLatencyConfigFile(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	path := filepath.Join(dir, "latency.json")
 	body := []byte(`{
