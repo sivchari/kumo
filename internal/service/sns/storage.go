@@ -32,6 +32,7 @@ type Storage interface {
 	DeleteTopic(ctx context.Context, topicARN string) error
 	ListTopics(ctx context.Context, nextToken string) ([]*Topic, string, error)
 	Subscribe(ctx context.Context, topicARN, protocol, endpoint string, attributes map[string]string) (*Subscription, error)
+	GetSubscription(ctx context.Context, subscriptionARN string) (*Subscription, error)
 	Unsubscribe(ctx context.Context, subscriptionARN string) error
 	Publish(ctx context.Context, topicARN, message, subject string, attributes map[string]MessageAttribute) (string, error)
 	ListSubscriptions(ctx context.Context, nextToken string) ([]*Subscription, string, error)
@@ -322,6 +323,22 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 
 	m.Subscriptions[subscriptionARN] = subscription
 	topic.Subscriptions[subscriptionARN] = subscription
+
+	return subscription, nil
+}
+
+// GetSubscription returns a subscription by ARN.
+func (m *MemoryStorage) GetSubscription(_ context.Context, subscriptionARN string) (*Subscription, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	subscription, exists := m.Subscriptions[subscriptionARN]
+	if !exists {
+		return nil, &TopicError{
+			Code:    "NotFound",
+			Message: fmt.Sprintf("Subscription does not exist: %s", subscriptionARN),
+		}
+	}
 
 	return subscription, nil
 }

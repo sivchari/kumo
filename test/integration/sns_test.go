@@ -298,3 +298,50 @@ func TestSNS_CreateTopicIdempotent(t *testing.T) {
 			*createOutput1.TopicArn, *createOutput2.TopicArn)
 	}
 }
+
+func TestSNS_GetSubscriptionAttributes(t *testing.T) {
+	client := newSNSClient(t)
+	ctx := t.Context()
+	topicName := "test-get-sub-attrs"
+
+	// Create topic.
+	topicOutput, err := client.CreateTopic(ctx, &sns.CreateTopicInput{
+		Name: aws.String(topicName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTopic(context.Background(), &sns.DeleteTopicInput{
+			TopicArn: topicOutput.TopicArn,
+		})
+	})
+
+	// Subscribe with SQS protocol.
+	subOutput, err := client.Subscribe(ctx, &sns.SubscribeInput{
+		TopicArn: topicOutput.TopicArn,
+		Protocol: aws.String("sqs"),
+		Endpoint: aws.String("arn:aws:sqs:us-east-1:000000000000:test-queue"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.Unsubscribe(context.Background(), &sns.UnsubscribeInput{
+			SubscriptionArn: subOutput.SubscriptionArn,
+		})
+	})
+
+	// GetSubscriptionAttributes.
+	getOutput, err := client.GetSubscriptionAttributes(ctx, &sns.GetSubscriptionAttributesInput{
+		SubscriptionArn: subOutput.SubscriptionArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields(
+		"SubscriptionArn", "TopicArn", "ResultMetadata",
+	)).Assert(t.Name(), getOutput)
+}

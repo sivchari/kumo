@@ -371,6 +371,24 @@ type XMLUntagResourceResponse struct {
 	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
 }
 
+// getSubscriptionAttributesRequest is the request for GetSubscriptionAttributes.
+type getSubscriptionAttributesRequest struct {
+	SubscriptionArn string `json:"SubscriptionArn"`
+}
+
+// XMLGetSubscriptionAttributesResponse is the XML response for GetSubscriptionAttributes.
+type XMLGetSubscriptionAttributesResponse struct {
+	XMLName                         struct{}                           `xml:"GetSubscriptionAttributesResponse"`
+	Xmlns                           string                             `xml:"xmlns,attr"`
+	GetSubscriptionAttributesResult XMLGetSubscriptionAttributesResult `xml:"GetSubscriptionAttributesResult"`
+	ResponseMetadata                ResponseMetadata                   `xml:"ResponseMetadata"`
+}
+
+// XMLGetSubscriptionAttributesResult contains the attribute map.
+type XMLGetSubscriptionAttributesResult struct {
+	Attributes XMLAttributesMap `xml:"Attributes"`
+}
+
 // setTopicAttributesRequest is the wire shape after the Query dispatcher
 // converts terraform's form-encoded body to JSON.
 //
