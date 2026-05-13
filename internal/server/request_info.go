@@ -42,7 +42,7 @@ func (r *Router) requestInfo(routeService, method, pattern string, req *http.Req
 		return info
 	}
 
-	if isQueryProtocolRequest(req) {
+	if routeService == "" && isQueryProtocolRequest(req) {
 		r.applyQueryInfo(&info, req)
 
 		return info
