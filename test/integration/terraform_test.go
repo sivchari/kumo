@@ -13,9 +13,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
@@ -362,6 +368,264 @@ func TestTerraform_SNS_Topic(t *testing.T) {
 		}
 
 		t.Fatalf("env=terraform tag not found for %s", topicARN)
+	})
+}
+
+const terraformSQSMainTF = `
+resource "aws_sqs_queue" "demo" {
+  name                       = "tf-integration-queue"
+  visibility_timeout_seconds = 45
+
+  tags = {
+    env = "terraform"
+  }
+}
+`
+
+// TestTerraform_SQS_Queue covers the queue lifecycle, attribute readback, and
+// tag path used by the Terraform AWS provider.
+func TestTerraform_SQS_Queue(t *testing.T) {
+	t.Parallel()
+
+	runTerraformFixture(t, providerTF("sqs"), terraformSQSMainTF, func(t *testing.T) {
+		t.Helper()
+
+		ctx := t.Context()
+		client := newSQSClient(t)
+
+		queue, err := client.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{
+			QueueName: aws.String("tf-integration-queue"),
+		})
+		if err != nil {
+			t.Fatalf("GetQueueUrl: %v", err)
+		}
+
+		attrs, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+			QueueUrl:       queue.QueueUrl,
+			AttributeNames: []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameVisibilityTimeout},
+		})
+		if err != nil {
+			t.Fatalf("GetQueueAttributes: %v", err)
+		}
+
+		if got := attrs.Attributes[string(sqstypes.QueueAttributeNameVisibilityTimeout)]; got != "45" {
+			t.Fatalf("VisibilityTimeout = %q, want 45", got)
+		}
+
+		tags, err := client.ListQueueTags(ctx, &sqs.ListQueueTagsInput{
+			QueueUrl: queue.QueueUrl,
+		})
+		if err != nil {
+			t.Fatalf("ListQueueTags: %v", err)
+		}
+
+		if got := tags.Tags["env"]; got != "terraform" {
+			t.Fatalf("env tag = %q, want terraform", got)
+		}
+	})
+}
+
+const terraformDynamoDBMainTF = `
+resource "aws_dynamodb_table" "demo" {
+  name         = "tf-integration-table"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  tags = {
+    env = "terraform"
+  }
+}
+`
+
+// TestTerraform_DynamoDB_Table covers the table lifecycle, billing mode, and
+// tag read path used by the Terraform AWS provider.
+func TestTerraform_DynamoDB_Table(t *testing.T) {
+	t.Parallel()
+
+	runTerraformFixture(t, providerTF("dynamodb"), terraformDynamoDBMainTF, func(t *testing.T) {
+		t.Helper()
+
+		ctx := t.Context()
+		client := newDynamoDBClient(t)
+
+		desc, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+			TableName: aws.String("tf-integration-table"),
+		})
+		if err != nil {
+			t.Fatalf("DescribeTable: %v", err)
+		}
+
+		if aws.ToString(desc.Table.TableName) != "tf-integration-table" {
+			t.Fatalf("TableName = %q, want tf-integration-table", aws.ToString(desc.Table.TableName))
+		}
+
+		if desc.Table.BillingModeSummary == nil || string(desc.Table.BillingModeSummary.BillingMode) != "PAY_PER_REQUEST" {
+			t.Fatalf("BillingModeSummary = %#v, want PAY_PER_REQUEST", desc.Table.BillingModeSummary)
+		}
+
+		backups, err := client.DescribeContinuousBackups(ctx, &dynamodb.DescribeContinuousBackupsInput{
+			TableName: aws.String("tf-integration-table"),
+		})
+		if err != nil {
+			t.Fatalf("DescribeContinuousBackups: %v", err)
+		}
+
+		if backups.ContinuousBackupsDescription.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus != dynamodbtypes.PointInTimeRecoveryStatusDisabled {
+			t.Fatalf("PointInTimeRecoveryStatus = %s, want DISABLED", backups.ContinuousBackupsDescription.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus)
+		}
+
+		tags, err := client.ListTagsOfResource(ctx, &dynamodb.ListTagsOfResourceInput{
+			ResourceArn: desc.Table.TableArn,
+		})
+		if err != nil {
+			t.Fatalf("ListTagsOfResource: %v", err)
+		}
+
+		for _, tag := range tags.Tags {
+			if aws.ToString(tag.Key) == "env" && aws.ToString(tag.Value) == "terraform" {
+				return
+			}
+		}
+
+		t.Fatalf("env=terraform tag not found for %s", aws.ToString(desc.Table.TableArn))
+	})
+}
+
+const terraformSecretsManagerMainTF = `
+resource "aws_secretsmanager_secret" "demo" {
+  name                    = "tf-integration-secret"
+  description             = "managed by terraform integration test"
+  recovery_window_in_days = 0
+
+  tags = {
+    env = "terraform"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "demo" {
+  secret_id     = aws_secretsmanager_secret.demo.id
+  secret_string = "{\"hello\":\"terraform\"}"
+}
+`
+
+// TestTerraform_SecretsManager_Secret covers a split resource pattern where
+// Terraform creates metadata first, then writes the secret value separately.
+func TestTerraform_SecretsManager_Secret(t *testing.T) {
+	t.Parallel()
+
+	runTerraformFixture(t, providerTF("secretsmanager"), terraformSecretsManagerMainTF, func(t *testing.T) {
+		t.Helper()
+
+		ctx := t.Context()
+		client := newSecretsManagerClient(t)
+
+		desc, err := client.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
+			SecretId: aws.String("tf-integration-secret"),
+		})
+		if err != nil {
+			t.Fatalf("DescribeSecret: %v", err)
+		}
+
+		value, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+			SecretId: desc.ARN,
+		})
+		if err != nil {
+			t.Fatalf("GetSecretValue: %v", err)
+		}
+
+		if got := aws.ToString(value.SecretString); got != `{"hello":"terraform"}` {
+			t.Fatalf("SecretString = %q, want terraform JSON", got)
+		}
+
+		for _, tag := range desc.Tags {
+			if aws.ToString(tag.Key) == "env" && aws.ToString(tag.Value) == "terraform" {
+				return
+			}
+		}
+
+		t.Fatalf("env=terraform tag not found for %s", aws.ToString(desc.ARN))
+	})
+}
+
+const terraformEventBridgeMainTF = `
+resource "aws_sqs_queue" "target" {
+  name = "tf-integration-event-target"
+}
+
+resource "aws_cloudwatch_event_rule" "demo" {
+  name          = "tf-integration-rule"
+  event_pattern = "{\"source\":[\"kumo.terraform\"]}"
+
+  tags = {
+    env = "terraform"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "demo" {
+  rule      = aws_cloudwatch_event_rule.demo.name
+  target_id = "tf-target"
+  arn       = aws_sqs_queue.target.arn
+}
+`
+
+// TestTerraform_EventBridge_Target covers a cross-service dependency graph:
+// create an SQS queue, create an EventBridge rule, then attach the queue as a
+// target by consuming the queue ARN.
+func TestTerraform_EventBridge_Target(t *testing.T) {
+	t.Parallel()
+
+	runTerraformFixture(t, providerTF("events", "sqs"), terraformEventBridgeMainTF, func(t *testing.T) {
+		t.Helper()
+
+		ctx := t.Context()
+		client := newEventBridgeClient(t)
+
+		rule, err := client.DescribeRule(ctx, &eventbridge.DescribeRuleInput{
+			Name: aws.String("tf-integration-rule"),
+		})
+		if err != nil {
+			t.Fatalf("DescribeRule: %v", err)
+		}
+
+		tags, err := client.ListTagsForResource(ctx, &eventbridge.ListTagsForResourceInput{
+			ResourceARN: rule.Arn,
+		})
+		if err != nil {
+			t.Fatalf("ListTagsForResource: %v", err)
+		}
+
+		var foundTag bool
+		for _, tag := range tags.Tags {
+			if aws.ToString(tag.Key) == "env" && aws.ToString(tag.Value) == "terraform" {
+				foundTag = true
+
+				break
+			}
+		}
+
+		if !foundTag {
+			t.Fatalf("env=terraform tag not found for %s", aws.ToString(rule.Arn))
+		}
+
+		targets, err := client.ListTargetsByRule(ctx, &eventbridge.ListTargetsByRuleInput{
+			Rule: aws.String("tf-integration-rule"),
+		})
+		if err != nil {
+			t.Fatalf("ListTargetsByRule: %v", err)
+		}
+
+		if len(targets.Targets) != 1 {
+			t.Fatalf("expected 1 EventBridge target, got %d", len(targets.Targets))
+		}
+
+		if got := aws.ToString(targets.Targets[0].Id); got != "tf-target" {
+			t.Fatalf("target ID = %q, want tf-target", got)
+		}
 	})
 }
 
