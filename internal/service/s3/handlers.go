@@ -766,7 +766,7 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	// Emit EventBridge notification if enabled.
-	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
+	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag, objectCreatedPutEvent)
 }
 
 func putObjectTarget(w http.ResponseWriter, r *http.Request) (string, string, bool) {
@@ -857,29 +857,22 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	dstBucket := r.PathValue("bucket")
 	dstKey := r.PathValue("key")
 
-	copySource := r.Header.Get("X-Amz-Copy-Source")
-	srcBucket, srcKey := parseCopySource(copySource)
-
-	if srcBucket == "" || srcKey == "" {
-		writeS3Error(w, r, "InvalidArgument", "Invalid copy source", http.StatusBadRequest)
-
+	srcObj, ok := s.copyObjectSource(w, r)
+	if !ok {
 		return
 	}
 
-	srcObj, err := s.storage.GetObject(r.Context(), srcBucket, srcKey)
+	metadata := copyObjectMetadata(r.Header, srcObj)
+	putOptions := copyObjectSSEOptions(r.Header, srcObj)
+
+	tags, err := copyObjectTags(r.Header, srcObj)
 	if err != nil {
-		handleGetObjectError(w, r, err)
+		writeS3Error(w, r, "InvalidTag", "The Tagging header is not valid", http.StatusBadRequest)
 
 		return
 	}
 
-	if !evalCopySourcePreconditions(r.Header, srcObj.ETag, srcObj.LastModified) {
-		writeS3Error(w, r, "PreconditionFailed", "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
-
-		return
-	}
-
-	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), srcObj.Metadata)
+	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), metadata, putOptions)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -893,14 +886,98 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(tags) > 0 && !s.storeObjectTaggingHeader(w, r, dstBucket, dstKey, tags) {
+		return
+	}
+
 	result := CopyObjectResult{
 		ETag:         dstObj.ETag,
 		LastModified: dstObj.LastModified.Format(timeFormatISO),
 	}
 
+	writeObjectSSEHeaders(w, dstObj)
 	writeXMLResponse(w, result)
 
-	go s.emitObjectCreatedEvent(context.Background(), dstBucket, dstKey, dstObj.Size, dstObj.ETag)
+	go s.emitObjectCreatedEvent(context.Background(), dstBucket, dstKey, dstObj.Size, dstObj.ETag, objectCreatedCopyEvent)
+}
+
+func (s *Service) copyObjectSource(w http.ResponseWriter, r *http.Request) (*Object, bool) {
+	copySource := r.Header.Get("X-Amz-Copy-Source")
+	srcBucket, srcKey := parseCopySource(copySource)
+
+	if srcBucket == "" || srcKey == "" {
+		writeS3Error(w, r, "InvalidArgument", "Invalid copy source", http.StatusBadRequest)
+
+		return nil, false
+	}
+
+	srcObj, err := s.storage.GetObject(r.Context(), srcBucket, srcKey)
+	if err != nil {
+		handleGetObjectError(w, r, err)
+
+		return nil, false
+	}
+
+	if !evalCopySourcePreconditions(r.Header, srcObj.ETag, srcObj.LastModified) {
+		writeS3Error(w, r, "PreconditionFailed", "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
+
+		return nil, false
+	}
+
+	return srcObj, true
+}
+
+func copyObjectMetadata(headers http.Header, srcObj *Object) map[string]string {
+	if strings.EqualFold(headers.Get("x-amz-metadata-directive"), "REPLACE") {
+		return objectMetadataFromHeaders(headers)
+	}
+
+	return cloneStringMap(srcObj.Metadata)
+}
+
+func copyObjectSSEOptions(headers http.Header, srcObj *Object) PutObjectOptions {
+	options := objectSSEOptionsFromObject(srcObj)
+	replacement := objectSSEOptionsFromHeaders(headers)
+
+	if replacement.ServerSideEncryption != "" {
+		options.ServerSideEncryption = replacement.ServerSideEncryption
+	}
+
+	if replacement.SSEKMSKeyID != "" {
+		options.SSEKMSKeyID = replacement.SSEKMSKeyID
+	}
+
+	if replacement.SSEBucketKeyEnabledRaw != "" {
+		options.SSEBucketKeyEnabledRaw = replacement.SSEBucketKeyEnabledRaw
+	}
+
+	return options
+}
+
+func objectSSEOptionsFromObject(obj *Object) PutObjectOptions {
+	return PutObjectOptions{
+		ServerSideEncryption:   obj.ServerSideEncryption,
+		SSEKMSKeyID:            obj.SSEKMSKeyID,
+		SSEBucketKeyEnabledRaw: obj.SSEBucketKeyEnabledRaw,
+	}
+}
+
+func copyObjectTags(headers http.Header, srcObj *Object) (map[string]string, error) {
+	tags := cloneStringMap(srcObj.Tags)
+
+	if strings.EqualFold(headers.Get("x-amz-tagging-directive"), "REPLACE") {
+		parsed, hasTags, err := parseObjectTaggingHeader(headers.Get(objectTaggingHeader))
+		if err != nil {
+			return nil, err
+		}
+
+		tags = map[string]string{}
+		if hasTags {
+			tags = parsed
+		}
+	}
+
+	return tags, nil
 }
 
 // parseCopySource parses the X-Amz-Copy-Source header value.
@@ -1133,16 +1210,20 @@ func writeObjectResponse(w http.ResponseWriter, obj *Object) {
 }
 
 func writeObjectSSEHeaders(w http.ResponseWriter, obj *Object) {
-	if obj.ServerSideEncryption != "" {
-		w.Header().Set(canonicalSSEAlgorithmHeader, obj.ServerSideEncryption)
+	writePutObjectOptionsSSEHeaders(w, objectSSEOptionsFromObject(obj))
+}
+
+func writePutObjectOptionsSSEHeaders(w http.ResponseWriter, options PutObjectOptions) {
+	if options.ServerSideEncryption != "" {
+		w.Header().Set(canonicalSSEAlgorithmHeader, options.ServerSideEncryption)
 	}
 
-	if obj.SSEKMSKeyID != "" {
-		w.Header().Set(canonicalSSEKMSKeyIDHeader, obj.SSEKMSKeyID)
+	if options.SSEKMSKeyID != "" {
+		w.Header().Set(canonicalSSEKMSKeyIDHeader, options.SSEKMSKeyID)
 	}
 
-	if obj.SSEBucketKeyEnabledRaw != "" {
-		w.Header().Set(canonicalSSEBucketKeyEnabledHeader, obj.SSEBucketKeyEnabledRaw)
+	if options.SSEBucketKeyEnabledRaw != "" {
+		w.Header().Set(canonicalSSEBucketKeyEnabledHeader, options.SSEBucketKeyEnabledRaw)
 	}
 }
 
@@ -2010,7 +2091,20 @@ func (s *Service) CreateMultipartUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	upload, err := s.storage.CreateMultipartUpload(r.Context(), bucket, key)
+	tags, _, err := parseObjectTaggingHeader(r.Header.Get(objectTaggingHeader))
+	if err != nil {
+		writeS3Error(w, r, "InvalidTag", "The Tagging header is not valid", http.StatusBadRequest)
+
+		return
+	}
+
+	options := CreateMultipartUploadOptions{
+		Metadata:   objectMetadataFromHeaders(r.Header),
+		Tags:       tags,
+		PutOptions: objectSSEOptionsFromHeaders(r.Header),
+	}
+
+	upload, err := s.storage.CreateMultipartUpload(r.Context(), bucket, key, options)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -2031,6 +2125,7 @@ func (s *Service) CreateMultipartUpload(w http.ResponseWriter, r *http.Request) 
 		UploadID: upload.UploadID,
 	}
 
+	writePutObjectOptionsSSEHeaders(w, upload.PutOptions)
 	writeXMLResponse(w, result)
 }
 
@@ -2211,7 +2306,10 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 		ETag:     obj.ETag,
 	}
 
+	writeObjectSSEHeaders(w, obj)
 	writeXMLResponse(w, result)
+
+	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag, objectCreatedCompleteMultipartUploadEvent)
 }
 
 // AbortMultipartUpload handles DELETE /{bucket}/{key}?uploadId={uploadId} - abort a multipart upload.

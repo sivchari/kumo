@@ -53,6 +53,13 @@ type PutObjectOptions struct {
 	SSEBucketKeyEnabledRaw string
 }
 
+// CreateMultipartUploadOptions carries object metadata set at initiate time.
+type CreateMultipartUploadOptions struct {
+	Metadata   map[string]string
+	Tags       map[string]string
+	PutOptions PutObjectOptions
+}
+
 // Tagging represents the XML structure for S3 object tagging.
 type Tagging struct {
 	XMLName xml.Name `xml:"Tagging"`
@@ -251,11 +258,14 @@ type DeleteObjectError struct {
 
 // MultipartUpload represents an in-progress multipart upload.
 type MultipartUpload struct {
-	Bucket    string
-	Key       string
-	UploadID  string
-	Initiated time.Time
-	Parts     map[int]*Part // partNumber -> Part
+	Bucket     string
+	Key        string
+	UploadID   string
+	Initiated  time.Time
+	Parts      map[int]*Part // partNumber -> Part
+	Metadata   map[string]string
+	Tags       map[string]string
+	PutOptions PutObjectOptions
 }
 
 // Part represents a part in a multipart upload.
@@ -366,9 +376,10 @@ type CopyRange struct {
 
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
-	XMLName             xml.Name                         `xml:"NotificationConfiguration"`
-	EventBridgeConfig   *EventBridgeConfig               `xml:"EventBridgeConfiguration,omitempty"`
-	QueueConfigurations []QueueNotificationConfiguration `xml:"QueueConfiguration,omitempty"`
+	XMLName                      xml.Name                                  `xml:"NotificationConfiguration"`
+	EventBridgeConfig            *EventBridgeConfig                        `xml:"EventBridgeConfiguration,omitempty"`
+	LambdaFunctionConfigurations []LambdaFunctionNotificationConfiguration `xml:"CloudFunctionConfiguration,omitempty"`
+	QueueConfigurations          []QueueNotificationConfiguration          `xml:"QueueConfiguration,omitempty"`
 }
 
 // EventBridgeConfig represents EventBridge notification configuration.
@@ -380,6 +391,14 @@ type QueueNotificationConfiguration struct {
 	Queue  string              `xml:"Queue"`
 	Events []string            `xml:"Event"`
 	Filter *NotificationFilter `xml:"Filter,omitempty"`
+}
+
+// LambdaFunctionNotificationConfiguration represents an S3 notification target for Lambda.
+type LambdaFunctionNotificationConfiguration struct {
+	ID            string              `xml:"Id,omitempty"`
+	CloudFunction string              `xml:"CloudFunction"`
+	Events        []string            `xml:"Event"`
+	Filter        *NotificationFilter `xml:"Filter,omitempty"`
 }
 
 // NotificationFilter scopes an S3 notification to matching object keys.

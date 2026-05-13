@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,12 @@ import (
 )
 
 const defaultBaseURL = "http://localhost:4566"
+
+const (
+	objectCreatedPutEvent                     = "s3:ObjectCreated:Put"
+	objectCreatedCopyEvent                    = "s3:ObjectCreated:Copy"
+	objectCreatedCompleteMultipartUploadEvent = "s3:ObjectCreated:CompleteMultipartUpload"
+)
 
 // Compile-time check that Service implements io.Closer.
 var _ io.Closer = (*Service)(nil)
@@ -101,12 +108,13 @@ func (s *Service) Close() error {
 }
 
 // emitObjectCreatedEvent sends an S3 Object Created event to configured bucket notifications.
-func (s *Service) emitObjectCreatedEvent(ctx context.Context, bucket, key string, size int64, etag string) {
+func (s *Service) emitObjectCreatedEvent(ctx context.Context, bucket, key string, size int64, etag, event string) {
 	if s.storage.IsEventBridgeEnabled(ctx, bucket) {
 		s.emitObjectCreatedEventBridgeEvent(ctx, bucket, key, size, etag)
 	}
 
-	s.emitObjectCreatedQueueNotifications(ctx, bucket, key, size, etag)
+	s.emitObjectCreatedQueueNotifications(ctx, bucket, key, size, etag, event)
+	s.emitObjectCreatedLambdaNotifications(ctx, bucket, key, size, etag, event)
 }
 
 func (s *Service) emitObjectCreatedEventBridgeEvent(ctx context.Context, bucket, key string, size int64, etag string) {
@@ -133,14 +141,14 @@ func (s *Service) emitObjectCreatedEventBridgeEvent(ctx context.Context, bucket,
 	s.putEvents(ctx, body, bucket, key)
 }
 
-func (s *Service) emitObjectCreatedQueueNotifications(ctx context.Context, bucket, key string, size int64, etag string) {
+func (s *Service) emitObjectCreatedQueueNotifications(ctx context.Context, bucket, key string, size int64, etag, event string) {
 	cfg, err := s.storage.GetBucketNotificationConfiguration(ctx, bucket)
 	if err != nil || cfg == nil {
 		return
 	}
 
 	for _, queueConfig := range cfg.QueueConfigurations {
-		if !notificationEventsMatch(queueConfig.Events, "s3:ObjectCreated:Put") {
+		if !notificationEventsMatch(queueConfig.Events, event) {
 			continue
 		}
 
@@ -148,26 +156,7 @@ func (s *Service) emitObjectCreatedQueueNotifications(ctx context.Context, bucke
 			continue
 		}
 
-		payload, err := json.Marshal(map[string]any{
-			"Records": []map[string]any{{
-				"eventVersion": "2.1",
-				"eventSource":  "aws:s3",
-				"awsRegion":    "us-east-1",
-				"eventTime":    time.Now().UTC().Format(time.RFC3339),
-				"eventName":    "ObjectCreated:Put",
-				"s3": map[string]any{
-					"bucket": map[string]string{
-						"name": bucket,
-						"arn":  "arn:aws:s3:::" + bucket,
-					},
-					"object": map[string]any{
-						"key":  key,
-						"size": size,
-						"eTag": strings.Trim(etag, `"`),
-					},
-				},
-			}},
-		})
+		payload, err := objectCreatedNotificationPayload(bucket, key, size, etag, event)
 		if err != nil {
 			s.logger.Error("failed to marshal S3 queue notification", "error", err)
 
@@ -176,6 +165,60 @@ func (s *Service) emitObjectCreatedQueueNotifications(ctx context.Context, bucke
 
 		s.sendSQSNotification(ctx, queueConfig.Queue, payload)
 	}
+}
+
+func (s *Service) emitObjectCreatedLambdaNotifications(ctx context.Context, bucket, key string, size int64, etag, event string) {
+	cfg, err := s.storage.GetBucketNotificationConfiguration(ctx, bucket)
+	if err != nil || cfg == nil {
+		return
+	}
+
+	for _, lambdaConfig := range cfg.LambdaFunctionConfigurations {
+		if !notificationEventsMatch(lambdaConfig.Events, event) {
+			continue
+		}
+
+		if !notificationFilterMatches(lambdaConfig.Filter, key) {
+			continue
+		}
+
+		payload, err := objectCreatedNotificationPayload(bucket, key, size, etag, event)
+		if err != nil {
+			s.logger.Error("failed to marshal S3 Lambda notification", "error", err)
+
+			continue
+		}
+
+		s.sendLambdaNotification(ctx, lambdaConfig.CloudFunction, payload)
+	}
+}
+
+func objectCreatedNotificationPayload(bucket, key string, size int64, etag, event string) ([]byte, error) {
+	body, err := json.Marshal(map[string]any{
+		"Records": []map[string]any{{
+			"eventVersion": "2.1",
+			"eventSource":  "aws:s3",
+			"awsRegion":    "us-east-1",
+			"eventTime":    time.Now().UTC().Format(time.RFC3339),
+			"eventName":    strings.TrimPrefix(event, "s3:"),
+			"s3": map[string]any{
+				"bucket": map[string]string{
+					"name": bucket,
+					"arn":  "arn:aws:s3:::" + bucket,
+				},
+				"object": map[string]any{
+					"key":  key,
+					"size": size,
+					"eTag": strings.Trim(etag, `"`),
+				},
+			},
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal object created notification: %w", err)
+	}
+
+	return body, nil
 }
 
 func notificationEventsMatch(events []string, event string) bool {
@@ -243,6 +286,47 @@ func (s *Service) sendSQSNotification(ctx context.Context, queueARN string, payl
 	}
 
 	_ = resp.Body.Close()
+}
+
+func (s *Service) sendLambdaNotification(ctx context.Context, functionARN string, payload []byte) {
+	functionName := lambdaFunctionName(functionARN)
+	if functionName == "" {
+		return
+	}
+
+	endpoint := s.baseURL + "/lambda/2015-03-31/functions/" + url.PathEscape(functionName) + "/invocations"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		s.logger.Error("failed to create Lambda invoke request", "error", err, "function", functionName)
+
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Amz-Invocation-Type", "Event")
+
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		s.logger.Error("failed to deliver S3 notification to Lambda", "error", err, "function", functionName)
+
+		return
+	}
+
+	_ = resp.Body.Close()
+}
+
+func lambdaFunctionName(functionARN string) string {
+	if !strings.HasPrefix(functionARN, "arn:") {
+		return functionARN
+	}
+
+	parts := strings.Split(functionARN, ":")
+	if len(parts) < 7 || parts[5] != "function" {
+		return ""
+	}
+
+	return parts[6]
 }
 
 func (s *Service) sqsQueueURL(queueARN string) string {

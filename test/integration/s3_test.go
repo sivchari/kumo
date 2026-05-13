@@ -1600,6 +1600,184 @@ func TestS3_PutObjectSSEKMSHeaders(t *testing.T) {
 	}
 }
 
+func TestS3_CopyObjectCopiesTagsAndSSEKMSHeaders(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-copy-object-tags-sse"
+	srcKey := "source"
+	dstKey := "dest"
+	kmsKeyID := "arn:aws:kms:us-east-1:123456789012:key/copy"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(srcKey),
+		})
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(dstKey),
+		})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+	})
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(srcKey),
+		Body:                 strings.NewReader("copy-source"),
+		Tagging:              aws.String("env=dev&team=platform"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String(kmsKeyID),
+		BucketKeyEnabled:     aws.Bool(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(dstKey),
+		CopySource: aws.String(bucket + "/" + srcKey),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertS3ObjectTags(t, client, bucket, dstKey, map[string]string{"env": "dev", "team": "platform"})
+	assertS3ObjectSSEKMS(t, client, bucket, dstKey, kmsKeyID)
+}
+
+func TestS3_MultipartUploadTagsAndSSEKMSHeaders(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-multipart-tags-sse"
+	key := "large-object"
+	kmsKeyID := "arn:aws:kms:us-east-1:123456789012:key/multipart"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+	})
+
+	createOutput, err := client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Tagging:              aws.String("env=prod"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String(kmsKeyID),
+		BucketKeyEnabled:     aws.Bool(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if createOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Fatalf("CreateMultipartUpload SSE = %q, want %q", createOutput.ServerSideEncryption, types.ServerSideEncryptionAwsKms)
+	}
+
+	uploadPartOutput, err := client.UploadPart(ctx, &s3.UploadPartInput{
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(key),
+		UploadId:   createOutput.UploadId,
+		PartNumber: aws.Int32(1),
+		Body:       strings.NewReader("multipart-body"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	completeOutput, err := client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(bucket),
+		Key:      aws.String(key),
+		UploadId: createOutput.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: []types.CompletedPart{
+				{
+					ETag:       uploadPartOutput.ETag,
+					PartNumber: aws.Int32(1),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if completeOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Fatalf("CompleteMultipartUpload SSE = %q, want %q", completeOutput.ServerSideEncryption, types.ServerSideEncryptionAwsKms)
+	}
+
+	assertS3ObjectTags(t, client, bucket, key, map[string]string{"env": "prod"})
+	assertS3ObjectSSEKMS(t, client, bucket, key, kmsKeyID)
+}
+
+func assertS3ObjectTags(t *testing.T, client *s3.Client, bucket, key string, want map[string]string) {
+	t.Helper()
+
+	output, err := client.GetObjectTagging(t.Context(), &s3.GetObjectTaggingInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]string{}
+	for _, tag := range output.TagSet {
+		got[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+	}
+
+	for key, value := range want {
+		if got[key] != value {
+			t.Fatalf("tag %q = %q, want %q (all=%v)", key, got[key], value, got)
+		}
+	}
+}
+
+func assertS3ObjectSSEKMS(t *testing.T, client *s3.Client, bucket, key, kmsKeyID string) {
+	t.Helper()
+
+	output, err := client.HeadObject(t.Context(), &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if output.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Fatalf("HeadObject SSE = %q, want %q", output.ServerSideEncryption, types.ServerSideEncryptionAwsKms)
+	}
+
+	if aws.ToString(output.SSEKMSKeyId) != kmsKeyID {
+		t.Fatalf("HeadObject SSEKMSKeyId = %q, want %q", aws.ToString(output.SSEKMSKeyId), kmsKeyID)
+	}
+
+	if !aws.ToBool(output.BucketKeyEnabled) {
+		t.Fatal("HeadObject BucketKeyEnabled = false, want true")
+	}
+}
+
 func TestS3_PutObject_KeyWithLeadingSlash(t *testing.T) {
 	client := newS3Client(t)
 	ctx := t.Context()

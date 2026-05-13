@@ -45,7 +45,7 @@ type Storage interface {
 	ListObjectVersions(ctx context.Context, bucket, prefix, delimiter string, maxKeys int) ([]Object, []string, error)
 
 	// Multipart upload operations
-	CreateMultipartUpload(ctx context.Context, bucket, key string) (*MultipartUpload, error)
+	CreateMultipartUpload(ctx context.Context, bucket, key string, options ...CreateMultipartUploadOptions) (*MultipartUpload, error)
 	UploadPart(ctx context.Context, bucket, key, uploadID string, partNumber int, body io.Reader) (*Part, error)
 	CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []PartRequest) (*Object, error)
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
@@ -385,6 +385,19 @@ func applyPutObjectOptions(obj *Object, options []PutObjectOptions) {
 	obj.SSEBucketKeyEnabledRaw = options[0].SSEBucketKeyEnabledRaw
 }
 
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+
+	return out
+}
+
 // GetObject retrieves an object.
 func (s *MemoryStorage) GetObject(_ context.Context, bucket, key string) (*Object, error) {
 	s.mu.RLock()
@@ -447,7 +460,7 @@ func (s *MemoryStorage) PutObjectTagging(_ context.Context, bucket, key string, 
 		return &BucketError{Code: "NoSuchKey", Message: "The specified key does not exist."}
 	}
 
-	obj.Tags = tags
+	obj.Tags = cloneStringMap(tags)
 	bd.Objects[key] = obj
 
 	return nil
@@ -472,7 +485,7 @@ func (s *MemoryStorage) GetObjectTagging(_ context.Context, bucket, key string) 
 		return map[string]string{}, nil
 	}
 
-	return obj.Tags, nil
+	return cloneStringMap(obj.Tags), nil
 }
 
 // DeleteObject deletes an object.
@@ -597,7 +610,7 @@ func (s *MemoryStorage) HeadObject(_ context.Context, bucket, key string) (*Obje
 		ETag:                   obj.ETag,
 		Size:                   obj.Size,
 		LastModified:           obj.LastModified,
-		Metadata:               obj.Metadata,
+		Metadata:               cloneStringMap(obj.Metadata),
 		ServerSideEncryption:   obj.ServerSideEncryption,
 		SSEKMSKeyID:            obj.SSEKMSKeyID,
 		SSEBucketKeyEnabledRaw: obj.SSEBucketKeyEnabledRaw,
@@ -875,7 +888,7 @@ func (e *MultipartError) Error() string {
 }
 
 // CreateMultipartUpload creates a new multipart upload.
-func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key string) (*MultipartUpload, error) {
+func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key string, options ...CreateMultipartUploadOptions) (*MultipartUpload, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -892,10 +905,21 @@ func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key str
 		Initiated: time.Now(),
 		Parts:     make(map[int]*Part),
 	}
+	applyCreateMultipartUploadOptions(upload, options)
 
 	b.MultipartUploads[uploadID] = upload
 
 	return upload, nil
+}
+
+func applyCreateMultipartUploadOptions(upload *MultipartUpload, options []CreateMultipartUploadOptions) {
+	if len(options) == 0 {
+		return
+	}
+
+	upload.Metadata = cloneStringMap(options[0].Metadata)
+	upload.Tags = cloneStringMap(options[0].Tags)
+	upload.PutOptions = options[0].PutOptions
 }
 
 // UploadPart uploads a part of a multipart upload.
@@ -1037,6 +1061,13 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 		Size:         int64(len(combinedBody)),
 		LastModified: time.Now(),
 		ContentType:  "application/octet-stream",
+		Metadata:     cloneStringMap(upload.Metadata),
+		Tags:         cloneStringMap(upload.Tags),
+	}
+	applyPutObjectOptions(obj, []PutObjectOptions{upload.PutOptions})
+
+	if ct := obj.Metadata["Content-Type"]; ct != "" {
+		obj.ContentType = ct
 	}
 
 	b.Objects[key] = obj
@@ -1257,6 +1288,18 @@ func cloneNotificationConfiguration(cfg *NotificationConfiguration) *Notificatio
 	out := &NotificationConfiguration{}
 	if cfg.EventBridgeConfig != nil {
 		out.EventBridgeConfig = &EventBridgeConfig{}
+	}
+
+	if len(cfg.LambdaFunctionConfigurations) > 0 {
+		out.LambdaFunctionConfigurations = make([]LambdaFunctionNotificationConfiguration, len(cfg.LambdaFunctionConfigurations))
+		for i, l := range cfg.LambdaFunctionConfigurations {
+			out.LambdaFunctionConfigurations[i] = LambdaFunctionNotificationConfiguration{
+				ID:            l.ID,
+				CloudFunction: l.CloudFunction,
+				Events:        append([]string(nil), l.Events...),
+				Filter:        cloneNotificationFilter(l.Filter),
+			}
+		}
 	}
 
 	if len(cfg.QueueConfigurations) > 0 {
