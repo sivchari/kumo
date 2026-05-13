@@ -32,6 +32,10 @@ const (
 	taggingDirectiveCopy    = "COPY"
 	taggingDirectiveReplace = "REPLACE"
 	taggingHeader           = "X-Amz-Tagging"
+
+	metadataDirectiveHeader  = "X-Amz-Metadata-Directive"
+	metadataDirectiveCopy    = "COPY"
+	metadataDirectiveReplace = "REPLACE"
 )
 
 // applyCORSHeaders sets CORS response headers if the bucket has CORS configured and the request Origin matches.
@@ -761,9 +765,7 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metadata := extractObjectMetadata(r)
-
-	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, metadata)
+	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, extractObjectMetadata(r.Header))
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -827,6 +829,13 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	metadata, err := copyObjectMetadata(r.Header, srcObj.Metadata)
+	if err != nil {
+		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	tags, err := s.copyObjectTags(r.Context(), r.Header, srcBucket, srcKey)
 	if err != nil {
 		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
@@ -834,7 +843,7 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), srcObj.Metadata)
+	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), metadata)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -887,6 +896,44 @@ func (s *Service) getCopySource(ctx context.Context, bucket, key, versionID stri
 	}
 
 	return obj, nil
+}
+
+func extractObjectMetadata(header http.Header) map[string]string {
+	metadata := make(map[string]string)
+	if ct := header.Get(contentTypeHeader); ct != "" {
+		metadata[contentTypeHeader] = ct
+	}
+
+	for name, values := range header {
+		if len(values) == 0 {
+			continue
+		}
+
+		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
+			metadata[metaKey] = values[0]
+		}
+	}
+
+	if sse := header.Get("X-Amz-Server-Side-Encryption"); sse != "" {
+		metadata["x-amz-server-side-encryption"] = sse
+	}
+
+	if sseKey := header.Get("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"); sseKey != "" {
+		metadata["x-amz-server-side-encryption-aws-kms-key-id"] = sseKey
+	}
+
+	return metadata
+}
+
+func copyObjectMetadata(header http.Header, src map[string]string) (map[string]string, error) {
+	switch strings.ToUpper(header.Get(metadataDirectiveHeader)) {
+	case "", metadataDirectiveCopy:
+		return cloneStringMap(src), nil
+	case metadataDirectiveReplace:
+		return extractObjectMetadata(header), nil
+	default:
+		return nil, errors.New("invalid metadata directive")
+	}
 }
 
 func (s *Service) copyObjectTags(ctx context.Context, header http.Header, srcBucket, srcKey string) (map[string]string, error) {
@@ -2463,31 +2510,6 @@ func handleMultipartError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
-}
-
-// extractObjectMetadata builds the metadata map from request headers.
-func extractObjectMetadata(r *http.Request) map[string]string {
-	metadata := make(map[string]string)
-
-	if ct := r.Header.Get("Content-Type"); ct != "" {
-		metadata["Content-Type"] = ct
-	}
-
-	for name, values := range r.Header {
-		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
-			metadata[metaKey] = values[0]
-		}
-	}
-
-	if sse := r.Header.Get("X-Amz-Server-Side-Encryption"); sse != "" {
-		metadata["x-amz-server-side-encryption"] = sse
-	}
-
-	if sseKey := r.Header.Get("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"); sseKey != "" {
-		metadata["x-amz-server-side-encryption-aws-kms-key-id"] = sseKey
-	}
-
-	return metadata
 }
 
 // parseTaggingHeader parses the x-amz-tagging header value.
