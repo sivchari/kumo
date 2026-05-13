@@ -1,13 +1,15 @@
 package cloudfront
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/fastschema/qjs"
 )
 
 // runFunctionResult mirrors the AWS TestFunction response: stdout-like
@@ -35,44 +37,58 @@ const (
 	maxConsoleLogBytes = 64 * 1024
 )
 
+var (
+	errExecutionTimeout      = errors.New("execution timeout")
+	errMissingFunctionHandle = errors.New("function did not define a global `handler(event)`")
+)
+
 // runFunction evaluates code with the given event JSON and returns the
 // captured output. The contract matches CloudFront Functions: the
 // script must define `function handler(event)`, the event is the
 // parsed eventJSON, and the handler's return value is JSON-serialised
 // into FunctionOutput. console.log calls accumulate into LogLines.
-func runFunction(code []byte, eventJSON string) runFunctionResult {
-	vm := goja.New()
-	vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+func runFunction(code []byte, eventJSON string) (result runFunctionResult) {
+	logs := &console{}
 
-	logs := installConsole(vm)
+	var timedOut atomic.Bool
 
-	if err := installEvent(vm, eventJSON); err != nil {
-		return runFunctionResult{LogLines: logs.lines(), Error: err.Error()}
-	}
+	defer recoverRunFunction(&result, &logs, &timedOut)
 
-	if _, err := vm.RunString(string(code)); err != nil {
-		return runFunctionResult{LogLines: logs.lines(), Error: err.Error()}
-	}
+	execCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	handler, ok := goja.AssertFunction(vm.Get("handler"))
-	if !ok {
-		return runFunctionResult{
-			LogLines: logs.lines(),
-			Error:    "function did not define a global `handler(event)`",
-		}
-	}
-
-	timer := time.AfterFunc(defaultExecutionTimeout, func() {
-		vm.Interrupt(errors.New("execution timeout"))
-	})
-	defer timer.Stop()
-
-	ev := vm.Get("event")
-
-	out, err := handler(goja.Undefined(), ev)
+	rt, ctx, err := newFunctionRuntime(execCtx)
 	if err != nil {
 		return runFunctionResult{LogLines: logs.lines(), Error: err.Error()}
 	}
+	defer rt.Close()
+
+	logs = installConsole(ctx)
+
+	if err := installEvent(ctx, eventJSON); err != nil {
+		return runFunctionResult{LogLines: logs.lines(), Error: err.Error()}
+	}
+
+	value, handler, err := loadFunctionHandler(ctx, code)
+	if err != nil {
+		return runFunctionResult{LogLines: logs.lines(), Error: err.Error()}
+	}
+
+	if value != nil {
+		defer value.Free()
+	}
+
+	defer handler.Free()
+
+	ev := ctx.Global().GetPropertyStr("event")
+	defer ev.Free()
+
+	out, err := invokeFunctionHandler(ctx, handler, ev, cancel, &timedOut)
+	if err != nil {
+		return runFunctionResult{LogLines: logs.lines(), Error: err.Error()}
+	}
+
+	defer out.Free()
 
 	encoded, err := encodeReturn(out)
 	if err != nil {
@@ -80,6 +96,82 @@ func runFunction(code []byte, eventJSON string) runFunctionResult {
 	}
 
 	return runFunctionResult{LogLines: logs.lines(), Output: encoded}
+}
+
+func newFunctionRuntime(execCtx context.Context) (*qjs.Runtime, *qjs.Context, error) {
+	rt, err := qjs.New(qjs.Option{
+		Context:            execCtx,
+		CloseOnContextDone: true,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("create qjs runtime: %w", err)
+	}
+
+	ctx := rt.Context()
+
+	return rt, ctx, nil
+}
+
+func loadFunctionHandler(ctx *qjs.Context, code []byte) (*qjs.Value, *qjs.Value, error) {
+	value, err := ctx.Eval("cloudfront-function.js", qjs.Code(string(code)))
+	if err != nil {
+		return nil, nil, fmt.Errorf("evaluate function source: %w", err)
+	}
+
+	handler := ctx.Global().GetPropertyStr("handler")
+	if !handler.IsFunction() {
+		handler.Free()
+
+		if value != nil {
+			value.Free()
+		}
+
+		return nil, nil, errMissingFunctionHandle
+	}
+
+	return value, handler, nil
+}
+
+func invokeFunctionHandler(
+	ctx *qjs.Context,
+	handler *qjs.Value,
+	ev *qjs.Value,
+	cancel context.CancelFunc,
+	timedOut *atomic.Bool,
+) (*qjs.Value, error) {
+	timer := time.AfterFunc(defaultExecutionTimeout, func() {
+		timedOut.Store(true)
+		cancel()
+	})
+	defer timer.Stop()
+
+	out, err := ctx.Invoke(handler, ctx.Global(), ev)
+
+	if timedOut.Load() {
+		if out != nil {
+			out.Free()
+		}
+
+		return nil, errExecutionTimeout
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("invoke function handler: %w", err)
+	}
+
+	return out, nil
+}
+
+func recoverRunFunction(result *runFunctionResult, logs **console, timedOut *atomic.Bool) {
+	if recovered := recover(); recovered != nil {
+		if timedOut.Load() {
+			*result = runFunctionResult{LogLines: (*logs).lines(), Error: errExecutionTimeout.Error()}
+
+			return
+		}
+
+		*result = runFunctionResult{LogLines: (*logs).lines(), Error: fmt.Sprint(recovered)}
+	}
 }
 
 // console accumulates log/info/warn/error lines, with both line-count
@@ -93,7 +185,7 @@ type console struct {
 
 func (c *console) lines() []string { return append([]string(nil), c.buf...) }
 
-func (c *console) emit(args []goja.Value) {
+func (c *console) emit(args []*qjs.Value) {
 	if len(c.buf) >= maxConsoleLogLines || c.totalSize >= maxConsoleLogBytes {
 		return
 	}
@@ -119,32 +211,30 @@ func (c *console) emit(args []goja.Value) {
 // share the same accumulator — real CloudFront Functions only have
 // console.log, but accepting the others avoids spurious failures from
 // scripts that lifted from a Node.js codebase.
-func installConsole(vm *goja.Runtime) *console {
+func installConsole(ctx *qjs.Context) *console {
 	c := &console{}
 
-	emit := func(call goja.FunctionCall) goja.Value {
-		c.emit(call.Arguments)
+	emit := func(this *qjs.This) (*qjs.Value, error) {
+		c.emit(this.Args())
 
-		return goja.Undefined()
+		return this.Context().NewUndefined(), nil
 	}
 
-	cons := vm.NewObject()
+	cons := ctx.NewObject()
 	for _, name := range []string{"log", "info", "warn", "error"} {
-		_ = cons.Set(name, emit)
+		cons.SetPropertyStr(name, ctx.Function(emit))
 	}
 
-	_ = vm.Set("console", cons)
+	ctx.Global().SetPropertyStr("console", cons)
 
 	return c
 }
 
 // installEvent decodes the JSON event into a JS object and binds it
 // to the global `event` name.
-func installEvent(vm *goja.Runtime, eventJSON string) error {
+func installEvent(ctx *qjs.Context, eventJSON string) error {
 	if strings.TrimSpace(eventJSON) == "" {
-		if err := vm.Set("event", goja.Null()); err != nil {
-			return fmt.Errorf("failed to install event: %w", err)
-		}
+		ctx.Global().SetPropertyStr("event", ctx.NewNull())
 
 		return nil
 	}
@@ -154,26 +244,22 @@ func installEvent(vm *goja.Runtime, eventJSON string) error {
 		return fmt.Errorf("invalid event JSON: %w", err)
 	}
 
-	if err := vm.Set("event", parsed); err != nil {
-		return fmt.Errorf("failed to install event: %w", err)
-	}
+	ctx.Global().SetPropertyStr("event", ctx.ParseJSON(eventJSON))
 
 	return nil
 }
 
 // encodeReturn serialises the handler's return value back into JSON
 // the way CloudFront returns FunctionOutput.
-func encodeReturn(v goja.Value) (string, error) {
-	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+func encodeReturn(v *qjs.Value) (string, error) {
+	if v == nil || v.IsUndefined() || v.IsNull() {
 		return "", nil
 	}
 
-	exported := v.Export()
-
-	out, err := json.Marshal(exported)
+	out, err := v.JSONStringify()
 	if err != nil {
 		return "", fmt.Errorf("failed to encode handler return: %w", err)
 	}
 
-	return string(out), nil
+	return out, nil
 }
