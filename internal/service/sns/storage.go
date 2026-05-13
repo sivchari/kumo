@@ -156,6 +156,13 @@ func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes m
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if !isValidTopicName(name) {
+		return nil, &TopicError{
+			Code:    "InvalidParameter",
+			Message: "Topic name contains invalid characters",
+		}
+	}
+
 	arn := m.buildTopicARN(name)
 
 	// Return existing topic if it exists.
@@ -839,6 +846,36 @@ func (m *MemoryStorage) ListSubscriptionsByTopic(_ context.Context, topicARN, ne
 	}
 
 	return result, newNextToken, nil
+}
+
+func isValidTopicName(name string) bool {
+	return isValidMessagingName(name, 256)
+}
+
+func isValidMessagingName(name string, maxLen int) bool {
+	if name == "" || len(name) > maxLen {
+		return false
+	}
+
+	base := name
+	if strings.HasSuffix(name, ".fifo") {
+		base = strings.TrimSuffix(name, ".fifo")
+		if base == "" {
+			return false
+		}
+	} else if strings.Contains(name, ".") {
+		return false
+	}
+
+	for _, r := range base {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			continue
+		}
+
+		return false
+	}
+
+	return true
 }
 
 // buildTopicARN builds an ARN for a topic.
