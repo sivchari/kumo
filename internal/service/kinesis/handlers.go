@@ -448,6 +448,8 @@ func getErrorStatus(code string) int {
 		return http.StatusConflict
 	case errInvalidArgument:
 		return http.StatusBadRequest
+	case errValidation:
+		return http.StatusBadRequest
 	case errExpiredIterator:
 		return http.StatusBadRequest
 	default:
