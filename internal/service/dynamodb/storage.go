@@ -998,7 +998,7 @@ type updateClause struct {
 // parseUpdateClauses splits an update expression into individual clauses.
 func parseUpdateClauses(expr string) []updateClause {
 	keywords := []string{"SET", "ADD", "DELETE", "REMOVE"}
-	upper := strings.ToUpper(expr)
+	upper := asciiUpper(expr)
 
 	type pos struct {
 		idx    int
@@ -1051,6 +1051,17 @@ func parseUpdateClauses(expr string) []updateClause {
 	}
 
 	return clauses
+}
+
+func asciiUpper(s string) string {
+	out := []byte(s)
+	for i, b := range out {
+		if b >= 'a' && b <= 'z' {
+			out[i] = b - ('a' - 'A')
+		}
+	}
+
+	return string(out)
 }
 
 // applySetClause handles SET attr = :val, SET attr = if_not_exists(attr, :val).
