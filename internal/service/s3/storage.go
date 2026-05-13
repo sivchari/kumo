@@ -51,7 +51,7 @@ type Storage interface {
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
 	ListMultipartUploads(ctx context.Context, bucket, prefix string, maxUploads int) ([]*MultipartUpload, error)
 	ListParts(ctx context.Context, bucket, key, uploadID string, maxParts int) ([]*Part, error)
-	UploadPartCopy(ctx context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey string, copyRange *CopyRange) (*Part, error)
+	UploadPartCopy(ctx context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey, srcVersionID string, copyRange *CopyRange) (*Part, error)
 
 	// Object tagging
 	PutObjectTagging(ctx context.Context, bucket, key string, tags map[string]string) error
@@ -923,18 +923,13 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 // UploadPartCopy copies bytes from an existing object into a part of an
 // in-progress multipart upload. RFC-equivalent: AWS S3 UploadPartCopy.
 // `copyRange` may be nil to copy the entire source object.
-func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey string, copyRange *CopyRange) (*Part, error) {
+func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey, srcVersionID string, copyRange *CopyRange) (*Part, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	srcB, exists := s.Buckets[srcBucket]
-	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: srcBucket}
-	}
-
-	srcObj, exists := srcB.Objects[srcKey]
-	if !exists {
-		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: srcKey}
+	srcObj, err := s.objectForCopySourceLocked(srcBucket, srcKey, srcVersionID)
+	if err != nil {
+		return nil, err
 	}
 
 	dstB, exists := s.Buckets[dstBucket]
@@ -971,6 +966,36 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 	upload.Parts[partNumber] = part
 
 	return part, nil
+}
+
+func (s *MemoryStorage) objectForCopySourceLocked(bucket, key, versionID string) (*Object, error) {
+	srcB, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if versionID == "" {
+		srcObj, exists := srcB.Objects[key]
+		if !exists || srcObj.IsDeleteMarker {
+			return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		}
+
+		return srcObj, nil
+	}
+
+	for _, obj := range srcB.Versions[key] {
+		if obj.VersionID != versionID {
+			continue
+		}
+
+		if obj.IsDeleteMarker {
+			return nil, &ObjectError{Code: "MethodNotAllowed", Message: "The specified method is not allowed against this resource.", Key: key}
+		}
+
+		return obj, nil
+	}
+
+	return nil, &ObjectError{Code: "NoSuchVersion", Message: "The specified version does not exist.", Key: key}
 }
 
 // CompleteMultipartUpload completes a multipart upload by assembling parts.
