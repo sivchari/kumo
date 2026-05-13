@@ -27,6 +27,11 @@ const (
 	// to a const because the metadata-pass loop excludes it in three
 	// different handlers — goconst was flagging the literal.
 	contentTypeHeader = "Content-Type"
+
+	taggingDirectiveHeader  = "X-Amz-Tagging-Directive"
+	taggingDirectiveCopy    = "COPY"
+	taggingDirectiveReplace = "REPLACE"
+	taggingHeader           = "X-Amz-Tagging"
 )
 
 // applyCORSHeaders sets CORS response headers if the bucket has CORS configured and the request Origin matches.
@@ -820,6 +825,13 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tags, err := s.copyObjectTags(r.Context(), r.Header, srcBucket, srcKey)
+	if err != nil {
+		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), srcObj.Metadata)
 	if err != nil {
 		var bucketErr *BucketError
@@ -829,6 +841,12 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if err := s.storage.PutObjectTagging(r.Context(), dstBucket, dstKey, tags); err != nil {
 		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 
 		return
@@ -867,6 +885,52 @@ func (s *Service) getCopySource(ctx context.Context, bucket, key, versionID stri
 	}
 
 	return obj, nil
+}
+
+func (s *Service) copyObjectTags(ctx context.Context, header http.Header, srcBucket, srcKey string) (map[string]string, error) {
+	switch strings.ToUpper(header.Get(taggingDirectiveHeader)) {
+	case "", taggingDirectiveCopy:
+		tags, err := s.storage.GetObjectTagging(ctx, srcBucket, srcKey)
+		if err != nil {
+			return nil, fmt.Errorf("get source object tagging: %w", err)
+		}
+
+		return cloneStringMap(tags), nil
+	case taggingDirectiveReplace:
+		return parseObjectTaggingHeader(header.Get(taggingHeader))
+	default:
+		return nil, errors.New("invalid tagging directive")
+	}
+}
+
+func parseObjectTaggingHeader(raw string) (map[string]string, error) {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil, errors.New("invalid tagging")
+	}
+
+	tags := make(map[string]string, len(values))
+
+	for key, value := range values {
+		if len(value) == 0 {
+			tags[key] = ""
+
+			continue
+		}
+
+		tags[key] = value[0]
+	}
+
+	return tags, nil
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+
+	return dst
 }
 
 // parseCopySource parses the X-Amz-Copy-Source header value.
