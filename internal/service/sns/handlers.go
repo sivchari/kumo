@@ -449,6 +449,7 @@ func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Re
 		"ListSubscriptions":         s.ListSubscriptions,
 		"ListSubscriptionsByTopic":  s.ListSubscriptionsByTopic,
 		"GetSubscriptionAttributes": s.GetSubscriptionAttributes,
+		"SetSubscriptionAttributes": s.SetSubscriptionAttributes,
 		"GetTopicAttributes":        s.GetTopicAttributes,
 		"SetTopicAttributes":        s.SetTopicAttributes,
 		"ListTagsForResource":       s.ListTagsForResource,

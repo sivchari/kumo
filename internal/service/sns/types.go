@@ -376,6 +376,20 @@ type getSubscriptionAttributesRequest struct {
 	SubscriptionArn string `json:"SubscriptionArn"`
 }
 
+// setSubscriptionAttributesRequest is the request for SetSubscriptionAttributes.
+type setSubscriptionAttributesRequest struct {
+	SubscriptionArn string     `json:"SubscriptionArn"`
+	AttributeName   string     `json:"AttributeName"`
+	AttributeValue  flexString `json:"AttributeValue"`
+}
+
+// XMLSetSubscriptionAttributesResponse is the XML response for SetSubscriptionAttributes.
+type XMLSetSubscriptionAttributesResponse struct {
+	XMLName          struct{}         `xml:"SetSubscriptionAttributesResponse"`
+	Xmlns            string           `xml:"xmlns,attr"`
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
 // XMLGetSubscriptionAttributesResponse is the XML response for GetSubscriptionAttributes.
 type XMLGetSubscriptionAttributesResponse struct {
 	XMLName                         struct{}                           `xml:"GetSubscriptionAttributesResponse"`

@@ -33,6 +33,7 @@ type Storage interface {
 	ListTopics(ctx context.Context, nextToken string) ([]*Topic, string, error)
 	Subscribe(ctx context.Context, topicARN, protocol, endpoint string, attributes map[string]string) (*Subscription, error)
 	GetSubscription(ctx context.Context, subscriptionARN string) (*Subscription, error)
+	SetSubscriptionAttribute(ctx context.Context, subscriptionARN, name, value string) error
 	Unsubscribe(ctx context.Context, subscriptionARN string) error
 	Publish(ctx context.Context, topicARN, message, subject string, attributes map[string]MessageAttribute) (string, error)
 	ListSubscriptions(ctx context.Context, nextToken string) ([]*Subscription, string, error)
@@ -341,6 +342,28 @@ func (m *MemoryStorage) GetSubscription(_ context.Context, subscriptionARN strin
 	}
 
 	return subscription, nil
+}
+
+// SetSubscriptionAttribute sets a single attribute on a subscription.
+func (m *MemoryStorage) SetSubscriptionAttribute(_ context.Context, subscriptionARN, name, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	subscription, exists := m.Subscriptions[subscriptionARN]
+	if !exists {
+		return &TopicError{
+			Code:    "NotFound",
+			Message: fmt.Sprintf("Subscription does not exist: %s", subscriptionARN),
+		}
+	}
+
+	if subscription.SubscriptionAttributes == nil {
+		subscription.SubscriptionAttributes = make(map[string]string)
+	}
+
+	subscription.SubscriptionAttributes[name] = value
+
+	return nil
 }
 
 // Unsubscribe removes a subscription.

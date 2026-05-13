@@ -49,6 +49,42 @@ func (s *Service) GetSubscriptionAttributes(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// SetSubscriptionAttributes sets a single attribute on a subscription.
+//
+// terraform-provider-aws calls this after Subscribe to set attributes
+// like RawMessageDelivery, FilterPolicy, etc.
+func (s *Service) SetSubscriptionAttributes(w http.ResponseWriter, r *http.Request) {
+	var req setSubscriptionAttributesRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.SubscriptionArn == "" {
+		writeTopicError(w, errInvalidParameter, "SubscriptionArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.AttributeName == "" {
+		writeTopicError(w, errInvalidParameter, "AttributeName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SetSubscriptionAttribute(r.Context(), req.SubscriptionArn, req.AttributeName, req.AttributeValue.String()); err != nil {
+		handleTopicError(w, err)
+
+		return
+	}
+
+	writeXMLResponse(w, XMLSetSubscriptionAttributesResponse{
+		Xmlns:            snsXMLNS,
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
 // buildSubscriptionAttributeView returns the attribute map terraform expects.
 func buildSubscriptionAttributeView(sub *Subscription) map[string]string {
 	attrs := map[string]string{
