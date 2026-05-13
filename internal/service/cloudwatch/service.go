@@ -83,6 +83,7 @@ func (s *Service) Actions() []string {
 		"PutMetricAlarm",
 		"DeleteAlarms",
 		"DescribeAlarms",
+		"SetAlarmState",
 		// Tag stubs — see tag_stubs.go.
 		"ListTagsForResource",
 		"TagResource",
@@ -111,6 +112,8 @@ func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, ope
 		s.DeleteAlarmsCBOR(w, r)
 	case "DescribeAlarms":
 		s.DescribeAlarmsCBOR(w, r)
+	case "SetAlarmState":
+		s.SetAlarmStateCBOR(w, r)
 	default:
 		server.WriteCBORError(w, "InvalidAction", "The action "+operation+" is not valid", http.StatusBadRequest)
 	}

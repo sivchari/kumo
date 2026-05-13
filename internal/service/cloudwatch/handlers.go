@@ -623,6 +623,30 @@ func (s *Service) DescribeAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SetAlarmStateCBOR handles the SetAlarmState action via CBOR protocol.
+func (s *Service) SetAlarmStateCBOR(w http.ResponseWriter, r *http.Request) {
+	var req SetAlarmStateCBORRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.AlarmName == "" {
+		server.WriteCBORError(w, errInvalidParameter, "AlarmName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SetAlarmState(r.Context(), req.AlarmName, req.StateValue, req.StateReason); err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, struct{}{})
+}
+
 // handleCloudWatchCBORError handles CloudWatch errors for CBOR protocol.
 func handleCloudWatchCBORError(w http.ResponseWriter, err error) {
 	var cwErr *Error

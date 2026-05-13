@@ -25,6 +25,7 @@ type Storage interface {
 	PutMetricAlarm(ctx context.Context, req *PutMetricAlarmRequest) error
 	DeleteAlarms(ctx context.Context, alarmNames []string) error
 	DescribeAlarms(ctx context.Context, req *DescribeAlarmsRequest) (*DescribeAlarmsResult, error)
+	SetAlarmState(ctx context.Context, alarmName, stateValue, stateReason string) error
 }
 
 // MetricKey uniquely identifies a metric.
@@ -435,6 +436,26 @@ func (s *MemoryStorage) DeleteAlarms(_ context.Context, alarmNames []string) err
 	for _, name := range alarmNames {
 		delete(s.Alarms, name)
 	}
+
+	return nil
+}
+
+// SetAlarmState sets the state of an alarm.
+func (s *MemoryStorage) SetAlarmState(_ context.Context, alarmName, stateValue, stateReason string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	alarm, exists := s.Alarms[alarmName]
+	if !exists {
+		return &Error{
+			Code:    "ResourceNotFound",
+			Message: fmt.Sprintf("Alarm %s does not exist", alarmName),
+		}
+	}
+
+	alarm.StateValue = stateValue
+	alarm.StateReason = stateReason
+	alarm.StateUpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
 	return nil
 }
