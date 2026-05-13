@@ -21,7 +21,7 @@ const (
 
 // SQSPublisher is an interface for publishing messages to SQS.
 type SQSPublisher interface {
-	PublishToSQS(ctx context.Context, queueURL, messageBody string, attributes map[string]string) error
+	PublishToSQS(ctx context.Context, queueURL, messageBody, messageGroupID, messageDeduplicationID string, attributes map[string]string) error
 }
 
 // Storage defines the SNS storage interface.
@@ -35,7 +35,7 @@ type Storage interface {
 	GetSubscription(ctx context.Context, subscriptionARN string) (*Subscription, error)
 	SetSubscriptionAttribute(ctx context.Context, subscriptionARN, name, value string) error
 	Unsubscribe(ctx context.Context, subscriptionARN string) error
-	Publish(ctx context.Context, topicARN, message, subject string, attributes map[string]MessageAttribute) (string, error)
+	Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error)
 	ListSubscriptions(ctx context.Context, nextToken string) ([]*Subscription, string, error)
 	ListSubscriptionsByTopic(ctx context.Context, topicARN, nextToken string) ([]*Subscription, string, error)
 }
@@ -390,7 +390,7 @@ func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) e
 }
 
 // Publish publishes a message to a topic.
-func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject string, attributes map[string]MessageAttribute) (string, error) {
+func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error) {
 	m.mu.RLock()
 
 	topic, exists := m.Topics[topicARN]
@@ -414,7 +414,7 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject 
 
 	// Deliver to all subscriptions.
 	for _, sub := range subscriptions {
-		if err := m.deliverMessage(ctx, sub, message, subject, messageID, attributes); err != nil {
+		if err := m.deliverMessage(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
 			// Log error but continue delivering to other subscriptions.
 			continue
 		}
@@ -424,7 +424,7 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject 
 }
 
 // deliverMessage delivers a message to a subscription.
-func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID string, _ map[string]MessageAttribute) error {
+func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, _ map[string]MessageAttribute) error {
 	switch sub.Protocol {
 	case "sqs":
 		if m.SqsPublisher != nil {
@@ -435,7 +435,7 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 				attrs["Subject"] = subject
 			}
 
-			if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, message, attrs); err != nil {
+			if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, message, messageGroupID, messageDeduplicationID, attrs); err != nil {
 				return fmt.Errorf("failed to publish to SQS: %w", err)
 			}
 

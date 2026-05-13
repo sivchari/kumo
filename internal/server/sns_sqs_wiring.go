@@ -65,7 +65,7 @@ type snsToSQSPublisher struct {
 // PublishToSQS hands a single message to the SQS storage layer. The
 // MessageId / Subject attributes the SNS layer attaches are forwarded as
 // SQS message attributes (String type) so subscribers can read them.
-func (p *snsToSQSPublisher) PublishToSQS(ctx context.Context, endpoint, body string, attrs map[string]string) error {
+func (p *snsToSQSPublisher) PublishToSQS(ctx context.Context, endpoint, body, messageGroupID, messageDeduplicationID string, attrs map[string]string) error {
 	queueURL := p.endpointToQueueURL(endpoint)
 
 	mAttrs := make(map[string]sqs.MessageAttributeValue, len(attrs))
@@ -73,7 +73,7 @@ func (p *snsToSQSPublisher) PublishToSQS(ctx context.Context, endpoint, body str
 		mAttrs[k] = sqs.MessageAttributeValue{DataType: "String", StringValue: v}
 	}
 
-	_, err := p.storage.SendMessage(ctx, queueURL, body, 0, mAttrs, "", "")
+	_, err := p.storage.SendMessage(ctx, queueURL, body, 0, mAttrs, messageGroupID, messageDeduplicationID)
 	if err != nil {
 		return err //nolint:wrapcheck // adapter is a thin pass-through
 	}
