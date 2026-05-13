@@ -456,6 +456,14 @@ func tableToDescription(table *Table) TableDescription {
 		ItemCount:                 table.ItemCount,
 		TableSizeBytes:            table.TableSizeBytes,
 		DeletionProtectionEnabled: table.DeletionProtection,
+		LatestStreamArn:           table.LatestStreamArn,
+	}
+
+	if table.StreamEnabled {
+		desc.StreamSpecification = &StreamSpecification{
+			StreamEnabled:  true,
+			StreamViewType: table.StreamViewType,
+		}
 	}
 
 	if table.ProvisionedThroughput != nil {

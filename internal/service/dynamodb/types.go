@@ -210,6 +210,15 @@ type Table struct {
 	DeletionProtection     bool
 	TTLAttributeName       string
 	TTLEnabled             bool
+	StreamEnabled          bool
+	StreamViewType         string
+	LatestStreamArn        string
+}
+
+// StreamSpecification represents DynamoDB stream settings.
+type StreamSpecification struct {
+	StreamEnabled  bool   `json:"StreamEnabled"`
+	StreamViewType string `json:"StreamViewType,omitempty"`
 }
 
 // TableDescription represents a table description in responses.
@@ -227,6 +236,8 @@ type TableDescription struct {
 	ItemCount                 int64                             `json:"ItemCount"`
 	TableSizeBytes            int64                             `json:"TableSizeBytes"`
 	BillingModeSummary        *BillingModeSummary               `json:"BillingModeSummary,omitempty"`
+	StreamSpecification       *StreamSpecification              `json:"StreamSpecification,omitempty"`
+	LatestStreamArn           string                            `json:"LatestStreamArn,omitempty"`
 	DeletionProtectionEnabled bool                              `json:"DeletionProtectionEnabled"`
 }
 
@@ -251,6 +262,7 @@ type CreateTableRequest struct {
 	LocalSecondaryIndexes     []LocalSecondaryIndex  `json:"LocalSecondaryIndexes,omitempty"`
 	BillingMode               string                 `json:"BillingMode,omitempty"`
 	DeletionProtectionEnabled bool                   `json:"DeletionProtectionEnabled,omitempty"`
+	StreamSpecification       *StreamSpecification   `json:"StreamSpecification,omitempty"`
 }
 
 // CreateTableResponse is the response for CreateTable.

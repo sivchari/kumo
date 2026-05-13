@@ -224,6 +224,12 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		DeletionProtection:     req.DeletionProtectionEnabled,
 	}
 
+	if req.StreamSpecification != nil && req.StreamSpecification.StreamEnabled {
+		table.StreamEnabled = true
+		table.StreamViewType = req.StreamSpecification.StreamViewType
+		table.LatestStreamArn = fmt.Sprintf("%s/stream/%s", table.TableARN, time.Now().Format("2006-01-02T15:04:05.000"))
+	}
+
 	m.Tables[req.TableName] = &tableData{
 		Table: table,
 		Items: make(map[string]Item),
