@@ -218,6 +218,13 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if !isValidQueueName(name) {
+		return nil, &QueueError{
+			Code:    "InvalidParameterValue",
+			Message: "Queue name contains invalid characters",
+		}
+	}
+
 	queueURL := fmt.Sprintf("%s/000000000000/%s", s.baseURL, name)
 
 	if qd, exists := s.Queues[queueURL]; exists {
@@ -267,6 +274,32 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 	s.Queues[queueURL] = qd
 
 	return queue, nil
+}
+
+func isValidQueueName(name string) bool {
+	if name == "" || len(name) > 80 {
+		return false
+	}
+
+	base := name
+	if strings.HasSuffix(name, ".fifo") {
+		base = strings.TrimSuffix(name, ".fifo")
+		if base == "" {
+			return false
+		}
+	} else if strings.Contains(name, ".") {
+		return false
+	}
+
+	for _, r := range base {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			continue
+		}
+
+		return false
+	}
+
+	return true
 }
 
 // DeleteQueue deletes a queue.

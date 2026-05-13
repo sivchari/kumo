@@ -1,8 +1,55 @@
 package sqs
 
 import (
+	"errors"
 	"testing"
 )
+
+func TestMemoryStorage_CreateQueueRejectsDelimiterNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{
+		"bad/name",
+		"bad:name",
+		"bad%2Fname",
+	}
+
+	for _, name := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := NewMemoryStorage("http://localhost:4566")
+
+			_, err := s.CreateQueue(t.Context(), name, nil, nil)
+			expectQueueErrorCode(t, err, "InvalidParameterValue")
+		})
+	}
+}
+
+func TestMemoryStorage_CreateQueueAcceptsValidNames(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage("http://localhost:4566")
+
+	tests := []struct {
+		name  string
+		attrs map[string]string
+	}{
+		{name: "queue_name-1"},
+		{name: "queue-name.fifo", attrs: map[string]string{"FifoQueue": "true"}},
+	}
+
+	for _, tt := range tests {
+		queue, err := s.CreateQueue(t.Context(), tt.name, tt.attrs, nil)
+		if err != nil {
+			t.Fatalf("CreateQueue(%q): %v", tt.name, err)
+		}
+
+		if queue.Name != tt.name {
+			t.Fatalf("CreateQueue(%q) name = %q", tt.name, queue.Name)
+		}
+	}
+}
 
 func TestMemoryStorage_ResolveQueueData_HostnameMismatch(t *testing.T) {
 	t.Parallel()
@@ -137,6 +184,19 @@ func TestMemoryStorage_TagsLifecycle(t *testing.T) {
 
 	if len(tags) != 1 || tags["key2"] != tagValue2 {
 		t.Fatalf("unexpected tags after untag: %#v", tags)
+	}
+}
+
+func expectQueueErrorCode(t *testing.T, err error, code string) {
+	t.Helper()
+
+	var queueErr *QueueError
+	if !errors.As(err, &queueErr) {
+		t.Fatalf("got err %v, want QueueError code %s", err, code)
+	}
+
+	if queueErr.Code != code {
+		t.Fatalf("got QueueError code %s, want %s", queueErr.Code, code)
 	}
 }
 
