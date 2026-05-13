@@ -459,6 +459,16 @@ kumo provides additional endpoints under the `/kumo/` prefix for testing purpose
 |--------|------|-------------|
 | GET | `/kumo/ses/v2/sent-emails` | Retrieve a list of emails sent via the SES v2 `SendEmail` API |
 | GET | `/kumo/pinpointsmsvoicev2/sent-messages` | Retrieve a list of SMS messages sent via the Pinpoint SMS Voice v2 `SendTextMessage` API |
+| GET | `/kumo/chaos/services` | List service names and aliases accepted by chaos and billing rules |
+| GET | `/kumo/chaos/rules` | List active chaos rules |
+| PUT | `/kumo/chaos/rules/{id}` | Create or replace a chaos rule |
+| DELETE | `/kumo/chaos/rules/{id}` | Delete a chaos rule |
+| POST | `/kumo/chaos/reset` | Remove all chaos rules |
+| GET | `/kumo/billing/usage` | Retrieve metered API usage |
+| GET | `/kumo/billing/rate-card` | Retrieve the current billing rate card |
+| PUT | `/kumo/billing/rate-card` | Replace the billing rate card |
+| GET | `/kumo/billing/cost` | Estimate cost from metered usage and the current rate card |
+| POST | `/kumo/billing/reset` | Reset metered usage |
 
 ### Example: Retrieving sent emails
 
@@ -505,6 +515,45 @@ Response:
     }
   ]
 }
+```
+
+### Example: Injecting tail latency
+
+Chaos rules match normalized AWS service and operation names. Aliases such as `events`
+for EventBridge or `states` for Step Functions are accepted, but responses normalize
+service names to their AWS SDK-style names.
+
+```bash
+curl -X PUT http://localhost:4566/kumo/chaos/rules/s3-tail-latency \
+  -H 'content-type: application/json' \
+  -d '{
+    "enabled": true,
+    "match": {"service": "s3", "action": "PutObject"},
+    "fault": {
+      "type": "delay",
+      "latency": {"p50Ms": 20, "p95Ms": 300, "p99Ms": 1500, "maxMs": 3000}
+    }
+  }'
+```
+
+### Example: Estimating request cost
+
+The billing emulator records request counts and request/response bytes. Prices are
+provided by the caller so tests can model AWS Pricing Calculator-style scenarios
+without baking changing public AWS prices into kumo.
+
+```bash
+curl -X PUT http://localhost:4566/kumo/billing/rate-card \
+  -H 'content-type: application/json' \
+  -d '{
+    "currency": "USD",
+    "rates": [
+      {"service": "s3", "dimension": "requests.put_object", "unit": "1000_requests", "price": 0.005},
+      {"service": "s3", "dimension": "response.bytes", "unit": "GB", "price": 0.09}
+    ]
+  }'
+
+curl http://localhost:4566/kumo/billing/cost
 ```
 
 ## Development

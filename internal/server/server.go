@@ -17,8 +17,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sivchari/kumo/internal/billing"
+	"github.com/sivchari/kumo/internal/chaos"
 	"github.com/sivchari/kumo/internal/initdir"
 	"github.com/sivchari/kumo/internal/service"
+	"github.com/sivchari/kumo/internal/servicecatalog"
 )
 
 // Config holds the server configuration.
@@ -78,6 +81,9 @@ type Server struct {
 	jsonDispatcher  *JSONProtocolDispatcher
 	queryDispatcher *QueryProtocolDispatcher
 	cborDispatcher  *CBORProtocolDispatcher
+	catalog         *servicecatalog.Catalog
+	chaosEngine     *chaos.Engine
+	billingMeter    *billing.Meter
 	logger          *slog.Logger
 	server          *http.Server
 }
@@ -90,7 +96,14 @@ func New(config Config) *Server {
 	}))
 
 	registry := service.NewRegistry()
+	catalog := servicecatalog.NewDefault()
+	chaosEngine := chaos.NewEngine(catalog)
+	billingMeter := billing.NewMeter(catalog)
 	router := NewRouter(logger)
+	router.SetCatalog(catalog)
+	router.SetChaosEngine(chaosEngine)
+	router.SetBillingMeter(billingMeter)
+
 	jsonDispatcher := NewJSONProtocolDispatcher()
 	queryDispatcher := NewQueryProtocolDispatcher()
 	cborDispatcher := NewCBORProtocolDispatcher()
@@ -102,8 +115,13 @@ func New(config Config) *Server {
 		jsonDispatcher:  jsonDispatcher,
 		queryDispatcher: queryDispatcher,
 		cborDispatcher:  cborDispatcher,
+		catalog:         catalog,
+		chaosEngine:     chaosEngine,
+		billingMeter:    billingMeter,
 		logger:          logger,
 	}
+
+	registerControlRoutes(router, catalog, chaosEngine, billingMeter)
 
 	// Auto-register services from global registry
 	for _, svc := range service.Services() {
@@ -161,11 +179,12 @@ func (s *Server) Router() *Router {
 // RegisterService registers a service with the server.
 func (s *Server) RegisterService(svc service.Service) {
 	s.registry.Register(svc)
-	svc.RegisterRoutes(s.router)
+	svc.RegisterRoutes(serviceRouter{router: s.router, serviceName: svc.Name()})
 
 	// Check if service implements JSON protocol.
 	if jsonSvc, ok := svc.(service.JSONProtocolService); ok {
 		s.jsonDispatcher.Register(jsonSvc.TargetPrefix(), jsonSvc.DispatchAction)
+		s.router.RegisterJSONPrefix(jsonSvc.TargetPrefix(), svc.Name())
 		s.logger.Debug("registered JSON protocol service", "name", svc.Name(), "prefix", jsonSvc.TargetPrefix())
 	}
 
@@ -188,6 +207,7 @@ func (s *Server) RegisterService(svc service.Service) {
 	// Check if service implements CBOR protocol.
 	if cborSvc, ok := svc.(service.CBORProtocolService); ok {
 		s.cborDispatcher.Register(cborSvc.ServiceName(), cborSvc.DispatchCBORAction)
+		s.router.RegisterCBORServiceName(cborSvc.ServiceName(), svc.Name())
 		s.logger.Debug("registered CBOR protocol service", "name", svc.Name(), "serviceName", cborSvc.ServiceName())
 	}
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,12 +11,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/billing"
+	"github.com/sivchari/kumo/internal/chaos"
+	"github.com/sivchari/kumo/internal/servicecatalog"
 )
 
 // Route represents a registered HTTP route.
 type Route struct {
 	Method  string
 	Pattern string
+	Service string
 	Handler http.HandlerFunc
 }
 
@@ -25,6 +31,11 @@ type Router struct {
 	routes        []Route
 	prefixRouters map[string]*http.ServeMux // Separate routers for services with prefixes
 	logger        *slog.Logger
+	catalog       *servicecatalog.Catalog
+	chaosEngine   *chaos.Engine
+	billingMeter  *billing.Meter
+	jsonPrefixes  map[string]string
+	cborNames     map[string]string
 }
 
 // NewRouter creates a new router.
@@ -34,6 +45,9 @@ func NewRouter(logger *slog.Logger) *Router {
 		routes:        make([]Route, 0),
 		prefixRouters: make(map[string]*http.ServeMux),
 		logger:        logger,
+		catalog:       servicecatalog.NewDefault(),
+		jsonPrefixes:  make(map[string]string),
+		cborNames:     make(map[string]string),
 	}
 
 	return r
@@ -41,9 +55,15 @@ func NewRouter(logger *slog.Logger) *Router {
 
 // Handle registers a handler for the given method and pattern.
 func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
+	r.HandleWithService(method, pattern, "", handler)
+}
+
+// HandleWithService registers a handler annotated with the owning service.
+func (r *Router) HandleWithService(method, pattern, serviceName string, handler http.HandlerFunc) {
 	r.routes = append(r.routes, Route{
 		Method:  method,
 		Pattern: pattern,
+		Service: serviceName,
 		Handler: handler,
 	})
 
@@ -57,7 +77,7 @@ func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
 		}
 
 		fullPattern := method + " " + pattern
-		r.prefixRouters[prefix].HandleFunc(fullPattern, r.wrapHandler(method, pattern, handler))
+		r.prefixRouters[prefix].HandleFunc(fullPattern, r.wrapHandler(method, pattern, serviceName, handler))
 		r.logger.Debug("registered prefixed route", "method", method, "pattern", pattern, "prefix", prefix)
 
 		return
@@ -65,7 +85,7 @@ func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
 
 	// Use Go 1.22+ method pattern
 	fullPattern := method + " " + pattern
-	r.mux.HandleFunc(fullPattern, r.wrapHandler(method, pattern, handler))
+	r.mux.HandleFunc(fullPattern, r.wrapHandler(method, pattern, serviceName, handler))
 	r.logger.Debug("registered route", "method", method, "pattern", pattern)
 }
 
@@ -111,11 +131,39 @@ func (r *Router) HandleFunc(method, pattern string, handler http.HandlerFunc) {
 	r.Handle(method, pattern, handler)
 }
 
+// SetCatalog sets the service catalog used for request normalization.
+func (r *Router) SetCatalog(catalog *servicecatalog.Catalog) {
+	if catalog != nil {
+		r.catalog = catalog
+	}
+}
+
+// SetChaosEngine sets the chaos engine used by the router.
+func (r *Router) SetChaosEngine(engine *chaos.Engine) {
+	r.chaosEngine = engine
+}
+
+// SetBillingMeter sets the billing meter used by the router.
+func (r *Router) SetBillingMeter(meter *billing.Meter) {
+	r.billingMeter = meter
+}
+
+// RegisterJSONPrefix maps an AWS JSON X-Amz-Target prefix to a canonical service.
+func (r *Router) RegisterJSONPrefix(prefix, serviceName string) {
+	r.jsonPrefixes[prefix] = r.catalog.MustNormalize(serviceName)
+}
+
+// RegisterCBORServiceName maps a Smithy RPC v2 CBOR service name to a canonical service.
+func (r *Router) RegisterCBORServiceName(serviceName, canonical string) {
+	r.cborNames[serviceName] = r.catalog.MustNormalize(canonical)
+}
+
 // wrapHandler wraps a handler with logging and request ID injection.
-func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) http.HandlerFunc {
+func (r *Router) wrapHandler(method, pattern, serviceName string, handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
 		requestID := uuid.New().String()
+		info := r.requestInfo(serviceName, method, pattern, req)
 
 		// Add AWS-style headers
 		w.Header().Set("x-amz-request-id", requestID)
@@ -135,39 +183,97 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 		// Wrap response writer to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
+		// Apply AWS-aware chaos before the real handler runs.
+		if decision := r.evaluateChaos(&info); decision != nil {
+			if decision.Delay > 0 {
+				timer := time.NewTimer(decision.Delay)
+				select {
+				case <-timer.C:
+				case <-req.Context().Done():
+					timer.Stop()
+				}
+			}
+
+			if decision.Error != nil {
+				writeChaosError(wrapped, &info, *decision.Error)
+				r.recordBilling(&info, req, wrapped)
+				r.logRequest(method, pattern, req, wrapped, start, requestID)
+
+				return
+			}
+		}
+
 		// Call the actual handler
 		handler(wrapped, req)
 
-		// Build log attributes.
-		attrs := []any{
-			"method", method,
-			"path", req.URL.Path,
-			"pattern", pattern,
-			"status", wrapped.statusCode,
-			"duration", time.Since(start),
-			"request_id", requestID,
-		}
-
-		// Extract service and action from protocol headers.
-		if target := req.Header.Get("X-Amz-Target"); target != "" {
-			attrs = append(attrs, "target", target)
-		}
-
-		if action := req.URL.Query().Get("Action"); action != "" {
-			attrs = append(attrs, "action", action)
-		}
-
-		if ua := req.Header.Get("User-Agent"); ua != "" {
-			attrs = append(attrs, "ua", ua)
-		}
-
-		r.logger.Info("request", attrs...)
+		r.recordBilling(&info, req, wrapped)
+		r.logRequest(method, pattern, req, wrapped, start, requestID)
 
 		// Log request body at debug level.
 		if requestBody != "" {
 			r.logger.Debug("request body", "request_id", requestID, "body", requestBody)
 		}
 	}
+}
+
+func (r *Router) evaluateChaos(info *requestInfo) *chaos.Decision {
+	if r.chaosEngine == nil || info.isControl {
+		return nil
+	}
+
+	return r.chaosEngine.Evaluate(&info.RequestInfo)
+}
+
+func (r *Router) recordBilling(info *requestInfo, req *http.Request, wrapped *responseWriter) {
+	if r.billingMeter == nil || info.isControl {
+		return
+	}
+
+	requestBytes := req.ContentLength
+	if requestBytes < 0 {
+		requestBytes = 0
+	}
+
+	r.billingMeter.Record(&billing.RequestUsage{
+		Info:          info.RequestInfo,
+		RequestBytes:  requestBytes,
+		ResponseBytes: wrapped.bytesWritten,
+		Status:        wrapped.statusCode,
+	})
+}
+
+func (r *Router) logRequest(
+	method string,
+	pattern string,
+	req *http.Request,
+	wrapped *responseWriter,
+	start time.Time,
+	requestID string,
+) {
+	// Build log attributes.
+	attrs := []any{
+		"method", method,
+		"path", req.URL.Path,
+		"pattern", pattern,
+		"status", wrapped.statusCode,
+		"duration", time.Since(start),
+		"request_id", requestID,
+	}
+
+	// Extract service and action from protocol headers.
+	if target := req.Header.Get("X-Amz-Target"); target != "" {
+		attrs = append(attrs, "target", target)
+	}
+
+	if action := req.URL.Query().Get("Action"); action != "" {
+		attrs = append(attrs, "action", action)
+	}
+
+	if ua := req.Header.Get("User-Agent"); ua != "" {
+		attrs = append(attrs, "ua", ua)
+	}
+
+	r.logger.Info("request", attrs...)
 }
 
 // ServeHTTP implements http.Handler.
@@ -292,11 +398,24 @@ func extractBucketFromHost(host string) string {
 // responseWriter wraps http.ResponseWriter to capture the status code.
 type responseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode   int
+	bytesWritten int64
 }
 
 // WriteHeader captures the status code.
 func (w *responseWriter) WriteHeader(code int) {
 	w.statusCode = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// Write captures the response body size.
+func (w *responseWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	w.bytesWritten += int64(n)
+
+	if err != nil {
+		return n, fmt.Errorf("write response: %w", err)
+	}
+
+	return n, nil
 }
