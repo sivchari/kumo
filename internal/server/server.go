@@ -18,15 +18,18 @@ import (
 	"time"
 
 	"github.com/sivchari/kumo/internal/initdir"
+	"github.com/sivchari/kumo/internal/latency"
 	"github.com/sivchari/kumo/internal/service"
+	"github.com/sivchari/kumo/internal/servicecatalog"
 )
 
 // Config holds the server configuration.
 type Config struct {
-	Host     string
-	Port     int
-	LogLevel slog.Level
-	InitDir  string // Directory containing init scripts to execute on startup
+	Host          string
+	Port          int
+	LogLevel      slog.Level
+	InitDir       string // Directory containing init scripts to execute on startup
+	LatencyConfig string // JSON latency emulator config loaded on startup
 }
 
 // DefaultConfig returns the default server configuration.
@@ -50,6 +53,10 @@ func DefaultConfig() Config {
 		if p, err := strconv.Atoi(portStr); err == nil {
 			cfg.Port = p
 		}
+	}
+
+	if latencyConfig := os.Getenv("KUMO_LATENCY_CONFIG"); latencyConfig != "" {
+		cfg.LatencyConfig = latencyConfig
 	}
 
 	return cfg
@@ -78,6 +85,8 @@ type Server struct {
 	jsonDispatcher  *JSONProtocolDispatcher
 	queryDispatcher *QueryProtocolDispatcher
 	cborDispatcher  *CBORProtocolDispatcher
+	catalog         *servicecatalog.Catalog
+	latencyEngine   *latency.Engine
 	logger          *slog.Logger
 	server          *http.Server
 }
@@ -90,7 +99,12 @@ func New(config Config) *Server {
 	}))
 
 	registry := service.NewRegistry()
+	catalog := servicecatalog.NewDefault()
+	latencyEngine := latency.NewEngine(catalog)
 	router := NewRouter(logger)
+	router.SetCatalog(catalog)
+	router.SetLatencyEngine(latencyEngine)
+
 	jsonDispatcher := NewJSONProtocolDispatcher()
 	queryDispatcher := NewQueryProtocolDispatcher()
 	cborDispatcher := NewCBORProtocolDispatcher()
@@ -102,7 +116,17 @@ func New(config Config) *Server {
 		jsonDispatcher:  jsonDispatcher,
 		queryDispatcher: queryDispatcher,
 		cborDispatcher:  cborDispatcher,
+		catalog:         catalog,
+		latencyEngine:   latencyEngine,
 		logger:          logger,
+	}
+
+	if config.LatencyConfig != "" {
+		if err := latencyEngine.LoadFile(config.LatencyConfig); err != nil {
+			logger.Error("failed to load latency config", "path", config.LatencyConfig, "error", err)
+		} else {
+			logger.Info("loaded latency config", "path", config.LatencyConfig)
+		}
 	}
 
 	// Auto-register services from global registry
@@ -161,11 +185,12 @@ func (s *Server) Router() *Router {
 // RegisterService registers a service with the server.
 func (s *Server) RegisterService(svc service.Service) {
 	s.registry.Register(svc)
-	svc.RegisterRoutes(s.router)
+	svc.RegisterRoutes(serviceRouter{router: s.router, serviceName: svc.Name()})
 
 	// Check if service implements JSON protocol.
 	if jsonSvc, ok := svc.(service.JSONProtocolService); ok {
 		s.jsonDispatcher.Register(jsonSvc.TargetPrefix(), jsonSvc.DispatchAction)
+		s.router.RegisterJSONPrefix(jsonSvc.TargetPrefix(), svc.Name())
 		s.logger.Debug("registered JSON protocol service", "name", svc.Name(), "prefix", jsonSvc.TargetPrefix())
 	}
 
@@ -188,6 +213,7 @@ func (s *Server) RegisterService(svc service.Service) {
 	// Check if service implements CBOR protocol.
 	if cborSvc, ok := svc.(service.CBORProtocolService); ok {
 		s.cborDispatcher.Register(cborSvc.ServiceName(), cborSvc.DispatchCBORAction)
+		s.router.RegisterCBORServiceName(cborSvc.ServiceName(), svc.Name())
 		s.logger.Debug("registered CBOR protocol service", "name", svc.Name(), "serviceName", cborSvc.ServiceName())
 	}
 
