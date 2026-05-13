@@ -71,8 +71,6 @@ func TestKumoBillingControlEndpoints(t *testing.T) {
 }
 
 func TestServerDoesNotExposeLegacyControlEndpoints(t *testing.T) {
-	t.Parallel()
-
 	srv := New(Config{LogLevel: slog.LevelError})
 	req := httptest.NewRequest(http.MethodGet, "/kumo/chaos/rules", http.NoBody)
 	rec := httptest.NewRecorder()
