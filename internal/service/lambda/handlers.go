@@ -100,6 +100,26 @@ func (s *Service) GetFunction(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, http.StatusOK, resp)
 }
 
+// GetFunctionConfiguration handles GET /functions/{name}/configuration.
+// Returns only the configuration portion of GetFunction.
+func (s *Service) GetFunctionConfiguration(w http.ResponseWriter, r *http.Request) {
+	functionName := extractFunctionName(r.URL.Path)
+	if functionName == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	fn, err := s.storage.GetFunction(r.Context(), functionName)
+	if err != nil {
+		handleGetFunctionError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, functionToConfiguration(fn))
+}
+
 // DeleteFunction handles the DeleteFunction API.
 func (s *Service) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 	functionName := extractFunctionName(r.URL.Path)

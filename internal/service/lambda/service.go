@@ -50,6 +50,7 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}", s.GetFunction)
 		r.Handle("DELETE", prefix+"/2015-03-31/functions/{functionName}", s.DeleteFunction)
 		r.Handle("PUT", prefix+"/2015-03-31/functions/{functionName}/code", s.UpdateFunctionCode)
+		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/configuration", s.GetFunctionConfiguration)
 		r.Handle("PUT", prefix+"/2015-03-31/functions/{functionName}/configuration", s.UpdateFunctionConfiguration)
 		r.Handle("POST", prefix+"/2015-03-31/functions/{functionName}/invocations", s.Invoke)
 		r.Handle("POST", prefix+"/2015-03-31/event-source-mappings", s.CreateEventSourceMapping)

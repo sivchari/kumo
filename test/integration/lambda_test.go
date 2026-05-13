@@ -609,3 +609,36 @@ func TestLambda_EventSourceMapping_FunctionNotFound(t *testing.T) {
 		t.Fatal("expected error when creating event source mapping for non-existent function")
 	}
 }
+
+func TestLambda_GetFunctionConfiguration(t *testing.T) {
+	client := newLambdaClient(t)
+	ctx := t.Context()
+	functionName := "test-function-get-config"
+
+	_, err := client.CreateFunction(ctx, &lambda.CreateFunctionInput{
+		FunctionName: aws.String(functionName),
+		Runtime:      types.RuntimePython312,
+		Role:         aws.String("arn:aws:iam::000000000000:role/test-role"),
+		Handler:      aws.String("index.handler"),
+		Code: &types.FunctionCode{
+			ZipFile: []byte("fake-zip-content"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	getOutput, err := client.GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{
+		FunctionName: aws.String(functionName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "FunctionArn", "CodeSha256", "LastModified")).Assert(t.Name(), getOutput)
+}
