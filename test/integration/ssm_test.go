@@ -353,6 +353,70 @@ func TestSSM_DescribeParameters(t *testing.T) {
 	}
 }
 
+func TestSSM_DescribeParametersWithFilter(t *testing.T) {
+	client := newSSMClient(t)
+	ctx := t.Context()
+
+	params := []struct {
+		name  string
+		value string
+	}{
+		{"/test/filter/alpha", "a"},
+		{"/test/filter/beta", "b"},
+	}
+
+	for _, p := range params {
+		_, err := client.PutParameter(ctx, &ssm.PutParameterInput{
+			Name:  aws.String(p.name),
+			Value: aws.String(p.value),
+			Type:  types.ParameterTypeString,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Cleanup(func() {
+		names := make([]string, len(params))
+		for i, p := range params {
+			names[i] = p.name
+		}
+
+		_, _ = client.DeleteParameters(context.Background(), &ssm.DeleteParametersInput{
+			Names: names,
+		})
+	})
+
+	// Filter by exact name.
+	descOutput, err := client.DescribeParameters(ctx, &ssm.DescribeParametersInput{
+		ParameterFilters: []types.ParameterStringFilter{
+			{
+				Key:    aws.String("Name"),
+				Values: []string{"/test/filter/alpha"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_exact", descOutput)
+
+	// Filter by prefix.
+	descOutput2, err := client.DescribeParameters(ctx, &ssm.DescribeParametersInput{
+		ParameterFilters: []types.ParameterStringFilter{
+			{
+				Key:    aws.String("Name"),
+				Option: aws.String("BeginsWith"),
+				Values: []string{"/test/filter/"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_prefix", descOutput2)
+}
+
 func TestSSM_GetParameter_NotFound(t *testing.T) {
 	client := newSSMClient(t)
 	ctx := t.Context()
