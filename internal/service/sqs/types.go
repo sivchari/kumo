@@ -252,6 +252,37 @@ type SetQueueAttributesRequest struct {
 	Attributes map[string]string `json:"Attributes"`
 }
 
+// ChangeMessageVisibilityRequest is the request for ChangeMessageVisibility.
+type ChangeMessageVisibilityRequest struct {
+	QueueURL          string `json:"QueueUrl"`
+	ReceiptHandle     string `json:"ReceiptHandle"`
+	VisibilityTimeout int    `json:"VisibilityTimeout"`
+}
+
+// ChangeMessageVisibilityBatchRequest is the request for ChangeMessageVisibilityBatch.
+type ChangeMessageVisibilityBatchRequest struct {
+	QueueURL string                                     `json:"QueueUrl"`
+	Entries  []ChangeMessageVisibilityBatchRequestEntry `json:"Entries"`
+}
+
+// ChangeMessageVisibilityBatchRequestEntry is an individual entry.
+type ChangeMessageVisibilityBatchRequestEntry struct {
+	ID                string `json:"Id"`
+	ReceiptHandle     string `json:"ReceiptHandle"`
+	VisibilityTimeout int    `json:"VisibilityTimeout"`
+}
+
+// ChangeMessageVisibilityBatchResponse is the response for ChangeMessageVisibilityBatch.
+type ChangeMessageVisibilityBatchResponse struct {
+	Successful []ChangeMessageVisibilityBatchResultEntry `json:"Successful,omitempty"`
+	Failed     []BatchResultErrorEntry                   `json:"Failed,omitempty"`
+}
+
+// ChangeMessageVisibilityBatchResultEntry is a successful entry.
+type ChangeMessageVisibilityBatchResultEntry struct {
+	ID string `json:"Id"`
+}
+
 // ErrorResponse represents an SQS error response in JSON format.
 type ErrorResponse struct {
 	Type    string `json:"__type"`

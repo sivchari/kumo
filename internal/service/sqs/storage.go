@@ -38,6 +38,7 @@ type Storage interface {
 	SendMessage(ctx context.Context, queueURL, body string, delaySeconds int, messageAttributes map[string]MessageAttributeValue, messageGroupID, messageDeduplicationID string) (*Message, error)
 	ReceiveMessage(ctx context.Context, queueURL string, maxMessages, visibilityTimeout, waitTimeSeconds int) ([]*Message, error)
 	DeleteMessage(ctx context.Context, queueURL, receiptHandle string) error
+	ChangeMessageVisibility(ctx context.Context, queueURL, receiptHandle string, visibilityTimeout int) error
 	PurgeQueue(ctx context.Context, queueURL string) error
 	GetQueueAttributes(ctx context.Context, queueURL string, attributeNames []string) (map[string]string, error)
 	SetQueueAttributes(ctx context.Context, queueURL string, attributes map[string]string) error
@@ -648,6 +649,26 @@ func (s *MemoryStorage) deliverMessage(qd *QueueData, msg *Message, now time.Tim
 	qd.Inflight[msg.ReceiptHandle] = msg
 
 	return true
+}
+
+// ChangeMessageVisibility changes the visibility timeout of an inflight message.
+func (s *MemoryStorage) ChangeMessageVisibility(_ context.Context, queueURL, receiptHandle string, visibilityTimeout int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, qd, err := s.resolveQueueData(queueURL)
+	if err != nil {
+		return err
+	}
+
+	msg, exists := qd.Inflight[receiptHandle]
+	if !exists {
+		return ErrReceiptHandleInvalid
+	}
+
+	msg.VisibleAt = time.Now().Add(time.Duration(visibilityTimeout) * time.Second)
+
+	return nil
 }
 
 // DeleteMessage deletes a message from a queue.

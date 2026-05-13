@@ -541,6 +541,81 @@ func (s *Service) processDeleteBatchEntries(ctx context.Context, queueURL string
 	return resp
 }
 
+// ChangeMessageVisibility handles the ChangeMessageVisibility action.
+func (s *Service) ChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
+	var req ChangeMessageVisibilityRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.QueueURL == "" {
+		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ReceiptHandle == "" {
+		writeSQSError(w, "MissingParameter", "ReceiptHandle is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.ChangeMessageVisibility(r.Context(), req.QueueURL, req.ReceiptHandle, req.VisibilityTimeout); err != nil {
+		var qErr *QueueError
+		if errors.As(err, &qErr) {
+			writeSQSError(w, qErr.Code, qErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeSQSError(w, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// ChangeMessageVisibilityBatch handles the ChangeMessageVisibilityBatch action.
+func (s *Service) ChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
+	var req ChangeMessageVisibilityBatchRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.QueueURL == "" {
+		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.Entries) == 0 {
+		writeSQSError(w, "EmptyBatchRequest", "There should be at least one entry in the request", http.StatusBadRequest)
+
+		return
+	}
+
+	var resp ChangeMessageVisibilityBatchResponse
+
+	for _, entry := range req.Entries {
+		if err := s.storage.ChangeMessageVisibility(r.Context(), req.QueueURL, entry.ReceiptHandle, entry.VisibilityTimeout); err != nil {
+			resp.Failed = append(resp.Failed, s.batchEntryError(entry.ID, err))
+
+			continue
+		}
+
+		resp.Successful = append(resp.Successful, ChangeMessageVisibilityBatchResultEntry{
+			ID: entry.ID,
+		})
+	}
+
+	writeJSONResponse(w, resp)
+}
+
 // PurgeQueue handles the PurgeQueue action.
 func (s *Service) PurgeQueue(w http.ResponseWriter, r *http.Request) {
 	var req PurgeQueueRequest
@@ -713,6 +788,10 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.GetQueueAttributes(w, r)
 	case "SetQueueAttributes":
 		s.SetQueueAttributes(w, r)
+	case "ChangeMessageVisibility":
+		s.ChangeMessageVisibility(w, r)
+	case "ChangeMessageVisibilityBatch":
+		s.ChangeMessageVisibilityBatch(w, r)
 	default:
 		writeSQSError(w, "InvalidAction", "The action "+action+" is not valid", http.StatusBadRequest)
 	}

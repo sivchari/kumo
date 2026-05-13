@@ -696,3 +696,60 @@ func TestSQS_QueuePolicy(t *testing.T) {
 		"QueueArn", "CreatedTimestamp", "LastModifiedTimestamp", "ResultMetadata",
 	)).Assert(t.Name(), getOutput)
 }
+
+func TestSQS_ChangeMessageVisibilityBatch(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-cmv-batch"
+
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	// Send a message.
+	_, err = client.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    createOutput.QueueUrl,
+		MessageBody: aws.String("cmv-batch-test"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Receive message to get receipt handle.
+	recvOutput, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput.Messages) == 0 {
+		t.Fatal("expected at least 1 message")
+	}
+
+	// ChangeMessageVisibilityBatch.
+	batchOutput, err := client.ChangeMessageVisibilityBatch(ctx, &sqs.ChangeMessageVisibilityBatchInput{
+		QueueUrl: createOutput.QueueUrl,
+		Entries: []types.ChangeMessageVisibilityBatchRequestEntry{
+			{
+				Id:                aws.String("entry-1"),
+				ReceiptHandle:     recvOutput.Messages[0].ReceiptHandle,
+				VisibilityTimeout: 0,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), batchOutput)
+}
