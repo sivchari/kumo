@@ -31,16 +31,18 @@ type LoggingEnabledStatus struct {
 
 // Object represents an S3 object.
 type Object struct {
-	Key            string
-	Body           []byte
-	ETag           string
-	Size           int64
-	LastModified   time.Time
-	ContentType    string
-	Metadata       map[string]string
-	Tags           map[string]string
-	VersionID      string
-	IsDeleteMarker bool
+	Key                  string
+	Body                 []byte
+	ETag                 string
+	Size                 int64
+	LastModified         time.Time
+	ContentType          string
+	Metadata             map[string]string
+	Tags                 map[string]string
+	VersionID            string
+	IsDeleteMarker       bool
+	ServerSideEncryption string
+	SSEKMSKeyID          string
 }
 
 // Tagging represents the XML structure for S3 object tagging.

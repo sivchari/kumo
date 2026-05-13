@@ -332,6 +332,8 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 		if ct, ok := metadata["Content-Type"]; ok {
 			obj.ContentType = ct
 		}
+
+		applySSEMetadata(obj, metadata)
 	}
 
 	if obj.ContentType == "" {
@@ -368,6 +370,15 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 	b.Objects[key] = obj
 
 	return obj, nil
+}
+
+// applySSEMetadata extracts SSE headers from metadata and sets them on the object.
+func applySSEMetadata(obj *Object, metadata map[string]string) {
+	obj.ServerSideEncryption = metadata["x-amz-server-side-encryption"]
+	delete(metadata, "x-amz-server-side-encryption")
+
+	obj.SSEKMSKeyID = metadata["x-amz-server-side-encryption-aws-kms-key-id"]
+	delete(metadata, "x-amz-server-side-encryption-aws-kms-key-id")
 }
 
 // GetObject retrieves an object.
@@ -577,12 +588,15 @@ func (s *MemoryStorage) HeadObject(_ context.Context, bucket, key string) (*Obje
 
 	// Return metadata only (no body)
 	return &Object{
-		Key:          obj.Key,
-		ContentType:  obj.ContentType,
-		ETag:         obj.ETag,
-		Size:         obj.Size,
-		LastModified: obj.LastModified,
-		Metadata:     obj.Metadata,
+		Key:                  obj.Key,
+		ContentType:          obj.ContentType,
+		ETag:                 obj.ETag,
+		Size:                 obj.Size,
+		LastModified:         obj.LastModified,
+		Metadata:             obj.Metadata,
+		VersionID:            obj.VersionID,
+		ServerSideEncryption: obj.ServerSideEncryption,
+		SSEKMSKeyID:          obj.SSEKMSKeyID,
 	}, nil
 }
 

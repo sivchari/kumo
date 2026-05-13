@@ -1769,3 +1769,87 @@ func TestS3_BucketCors(t *testing.T) {
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), getOutput)
 }
+
+func TestS3_PutObjectWithTagging(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-tagging"
+	key := "tagged-object.txt"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:  aws.String(bucket),
+		Key:     aws.String(key),
+		Body:    strings.NewReader("hello"),
+		Tagging: aws.String("env=test&team=infra"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tagOutput, err := client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), tagOutput)
+}
+
+func TestS3_PutObjectWithSSEKMS(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-sse"
+	key := "encrypted.txt"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 strings.NewReader("secret"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String("arn:aws:kms:us-east-1:000000000000:key/test-key"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	headOutput, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if headOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Errorf("expected SSE algorithm aws:kms, got %s", headOutput.ServerSideEncryption)
+	}
+
+	if aws.ToString(headOutput.SSEKMSKeyId) == "" {
+		t.Error("expected SSEKMSKeyId to be set")
+	}
+}

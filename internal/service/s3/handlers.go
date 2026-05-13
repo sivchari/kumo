@@ -725,17 +725,7 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metadata := make(map[string]string)
-	if ct := r.Header.Get("Content-Type"); ct != "" {
-		metadata["Content-Type"] = ct
-	}
-
-	// Extract x-amz-meta-* headers
-	for name, values := range r.Header {
-		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
-			metadata[metaKey] = values[0]
-		}
-	}
+	metadata := extractObjectMetadata(r)
 
 	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, metadata)
 	if err != nil {
@@ -749,6 +739,14 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 
 		return
+	}
+
+	// Store tags from x-amz-tagging header (URL-encoded query string format).
+	if taggingHeader := r.Header.Get("X-Amz-Tagging"); taggingHeader != "" {
+		tags := parseTaggingHeader(taggingHeader)
+		if len(tags) > 0 {
+			_ = s.storage.PutObjectTagging(r.Context(), bucket, key, tags)
+		}
 	}
 
 	w.Header().Set("ETag", obj.ETag)
@@ -1036,6 +1034,14 @@ func writeObjectResponse(w http.ResponseWriter, obj *Object) {
 		}
 	}
 
+	if obj.ServerSideEncryption != "" {
+		w.Header().Set("x-amz-server-side-encryption", obj.ServerSideEncryption)
+	}
+
+	if obj.SSEKMSKeyID != "" {
+		w.Header().Set("x-amz-server-side-encryption-aws-kms-key-id", obj.SSEKMSKeyID)
+	}
+
 	w.WriteHeader(http.StatusOK)
 
 	_, _ = w.Write(obj.Body)
@@ -1217,6 +1223,14 @@ func (s *Service) HeadObject(w http.ResponseWriter, r *http.Request) {
 		if k != contentTypeHeader {
 			w.Header().Set("x-amz-meta-"+k, v)
 		}
+	}
+
+	if obj.ServerSideEncryption != "" {
+		w.Header().Set("x-amz-server-side-encryption", obj.ServerSideEncryption)
+	}
+
+	if obj.SSEKMSKeyID != "" {
+		w.Header().Set("x-amz-server-side-encryption-aws-kms-key-id", obj.SSEKMSKeyID)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -2335,6 +2349,48 @@ func handleMultipartError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+}
+
+// extractObjectMetadata builds the metadata map from request headers.
+func extractObjectMetadata(r *http.Request) map[string]string {
+	metadata := make(map[string]string)
+
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		metadata["Content-Type"] = ct
+	}
+
+	for name, values := range r.Header {
+		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
+			metadata[metaKey] = values[0]
+		}
+	}
+
+	if sse := r.Header.Get("X-Amz-Server-Side-Encryption"); sse != "" {
+		metadata["x-amz-server-side-encryption"] = sse
+	}
+
+	if sseKey := r.Header.Get("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"); sseKey != "" {
+		metadata["x-amz-server-side-encryption-aws-kms-key-id"] = sseKey
+	}
+
+	return metadata
+}
+
+// parseTaggingHeader parses the x-amz-tagging header value.
+// Format: URL-encoded query string, e.g. "key1=value1&key2=value2".
+func parseTaggingHeader(header string) map[string]string {
+	tags := make(map[string]string)
+
+	for _, pair := range strings.Split(header, "&") {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok || k == "" {
+			continue
+		}
+
+		tags[k] = v
+	}
+
+	return tags
 }
 
 // PutObjectTagging handles PUT /{bucket}/{key}?tagging.
