@@ -2,6 +2,7 @@ package kinesis
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -76,6 +77,90 @@ func TestPutRecordsRejectsEmptyPartitionKeyEntry(t *testing.T) {
 
 	if results[1].ShardID == "" || results[1].SequenceNumber == "" {
 		t.Fatalf("second result should succeed: %#v", results[1])
+	}
+}
+
+func TestCreateStreamRejectsInvalidStreamNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		streamName string
+	}{
+		{name: "empty", streamName: ""},
+		{name: "too long", streamName: strings.Repeat("a", 129)},
+		{name: "slash delimiter", streamName: "tenant/stream"},
+		{name: "colon delimiter", streamName: "tenant:stream"},
+		{name: "space", streamName: "tenant stream"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := NewMemoryStorage()
+			shards := int32(1)
+
+			err := store.CreateStream(t.Context(), &CreateStreamRequest{
+				StreamName: tt.streamName,
+				ShardCount: &shards,
+			})
+			expectKinesisErrorCode(t, err, errValidation)
+
+			if _, exists := store.Streams[tt.streamName]; exists {
+				t.Fatalf("invalid stream %q was stored", tt.streamName)
+			}
+		})
+	}
+}
+
+func TestCreateStreamRejectsInvalidShardCount(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	shards := int32(0)
+
+	err := store.CreateStream(t.Context(), &CreateStreamRequest{
+		StreamName: "test-stream",
+		ShardCount: &shards,
+	})
+	expectKinesisErrorCode(t, err, errValidation)
+
+	if _, exists := store.Streams["test-stream"]; exists {
+		t.Fatal("stream with invalid shard count was stored")
+	}
+}
+
+func TestCreateStreamRejectsInvalidStreamMode(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	shards := int32(1)
+
+	err := store.CreateStream(t.Context(), &CreateStreamRequest{
+		StreamName:        "test-stream",
+		ShardCount:        &shards,
+		StreamModeDetails: &StreamModeDetails{StreamMode: "BROKEN"},
+	})
+	expectKinesisErrorCode(t, err, errValidation)
+
+	if _, exists := store.Streams["test-stream"]; exists {
+		t.Fatal("stream with invalid stream mode was stored")
+	}
+}
+
+func TestCreateStreamAllowsValidStreamNameCharacters(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	shards := int32(1)
+
+	err := store.CreateStream(t.Context(), &CreateStreamRequest{
+		StreamName: "test.stream_name-1",
+		ShardCount: &shards,
+	})
+	if err != nil {
+		t.Fatalf("CreateStream: %v", err)
 	}
 }
 

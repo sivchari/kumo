@@ -23,6 +23,7 @@ const (
 	errResourceInUse    = "ResourceInUseException"
 	errInvalidArgument  = "InvalidArgumentException"
 	errExpiredIterator  = "ExpiredIteratorException"
+	errValidation       = "ValidationException"
 )
 
 // Default values.
@@ -31,8 +32,14 @@ const (
 	defaultShardCount       = 1
 	defaultRetentionHours   = 24
 	maxRecordsPerGet        = 10000
+	maxStreamNameLength     = 128
 	shardIteratorExpiration = 5 * time.Minute
 	maxHashKeyString        = "340282366920938463463374607431768211455"
+)
+
+const (
+	streamModeOnDemand    = "ON_DEMAND"
+	streamModeProvisioned = "PROVISIONED"
 )
 
 // Storage defines the Kinesis storage interface.
@@ -188,6 +195,18 @@ func (s *MemoryStorage) Close() error {
 
 // CreateStream creates a new stream.
 func (s *MemoryStorage) CreateStream(_ context.Context, req *CreateStreamRequest) error {
+	if !isValidStreamName(req.StreamName) {
+		return &ServiceError{Code: errValidation, Message: "Invalid stream name"}
+	}
+
+	if req.ShardCount != nil && *req.ShardCount < 1 {
+		return &ServiceError{Code: errValidation, Message: "Invalid shard count"}
+	}
+
+	if req.StreamModeDetails != nil && !isValidStreamMode(req.StreamModeDetails.StreamMode) {
+		return &ServiceError{Code: errValidation, Message: "Invalid stream mode"}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -200,6 +219,14 @@ func (s *MemoryStorage) CreateStream(_ context.Context, req *CreateStreamRequest
 		shardCount = *req.ShardCount
 	}
 
+	s.Streams[req.StreamName] = s.newStreamData(req, shardCount)
+
+	s.saveLocked()
+
+	return nil
+}
+
+func (s *MemoryStorage) newStreamData(req *CreateStreamRequest, shardCount int32) *StreamData {
 	now := time.Now()
 	stream := &Stream{
 		StreamName:              req.StreamName,
@@ -214,10 +241,16 @@ func (s *MemoryStorage) CreateStream(_ context.Context, req *CreateStreamRequest
 	}
 
 	if stream.StreamModeDetails == nil {
-		stream.StreamModeDetails = &StreamModeDetails{StreamMode: "PROVISIONED"}
+		stream.StreamModeDetails = &StreamModeDetails{StreamMode: streamModeProvisioned}
 	}
 
-	// Create shards.
+	return &StreamData{
+		Stream: stream,
+		Shards: s.createShards(shardCount),
+	}
+}
+
+func (s *MemoryStorage) createShards(shardCount int32) map[string]*ShardData {
 	shards := make(map[string]*ShardData)
 	hashKeyRange := calculateHashKeyRanges(shardCount)
 
@@ -239,14 +272,31 @@ func (s *MemoryStorage) CreateStream(_ context.Context, req *CreateStreamRequest
 		}
 	}
 
-	s.Streams[req.StreamName] = &StreamData{
-		Stream: stream,
-		Shards: shards,
+	return shards
+}
+
+func isValidStreamName(name string) bool {
+	if name == "" || len(name) > maxStreamNameLength {
+		return false
 	}
 
-	s.saveLocked()
+	for i := range name {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '_' || c == '.' || c == '-' {
+			continue
+		}
 
-	return nil
+		return false
+	}
+
+	return true
+}
+
+func isValidStreamMode(mode string) bool {
+	return mode == streamModeProvisioned || mode == streamModeOnDemand
 }
 
 // DeleteStream deletes a stream.
