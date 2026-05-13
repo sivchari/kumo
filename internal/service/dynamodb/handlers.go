@@ -732,8 +732,9 @@ func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Re
 		"TransactGetItems":   s.TransactGetItems,
 		"BatchWriteItem":     s.BatchWriteItem,
 		"BatchGetItem":       s.BatchGetItem,
-		// Tag and continuous-backup stubs — see tag_backup_stubs.go.
-		// Required for terraform / pulumi / CDK refresh paths after CreateTable.
+		// Stubs — see tag_backup_stubs.go.
+		// Required for terraform / pulumi / CDK refresh and destroy paths.
+		"UpdateTable":               s.UpdateTable,
 		"ListTagsOfResource":        s.ListTagsOfResource,
 		"TagResource":               s.TagResource,
 		"UntagResource":             s.UntagResource,

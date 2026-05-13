@@ -7,6 +7,36 @@ import (
 
 const continuousBackupsDisabled = "DISABLED"
 
+// updateTableRequest is the wire shape of UpdateTable.
+type updateTableRequest struct {
+	TableName string `json:"TableName"` //nolint:tagliatelle // AWS JSON uses PascalCase
+}
+
+// UpdateTable is a no-op stub that returns the current table description.
+//
+// terraform-provider-aws calls UpdateTable during terraform destroy to
+// remove GSIs before deleting the table. Without this stub, kumo returns
+// UnknownOperationException and destroy fails.
+func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
+	var req updateTableRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TableName == "" {
+		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	table, err := s.storage.DescribeTable(r.Context(), req.TableName)
+	if err != nil {
+		writeDynamoDBError(w, "ResourceNotFoundException", "Table not found: "+req.TableName, http.StatusBadRequest)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeTableResponse{
+		Table: tableToDescription(table),
+	})
+}
+
 // ListTagsOfResource returns an empty tag list for any resource.
 //
 // Tags are not modeled in the storage layer yet; this stub exists so reads

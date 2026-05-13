@@ -1373,3 +1373,41 @@ func TestDynamoDB_UpdateItem_AttributeUpdates(t *testing.T) {
 		t.Errorf("expected Name=updated, got %v", getOutput.Item["Name"])
 	}
 }
+
+func TestDynamoDB_UpdateTable(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-update-table"
+
+	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName:   aws.String(tableName),
+		BillingMode: types.BillingModePayPerRequest,
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	// UpdateTable should succeed and return the table description.
+	updateOutput, err := client.UpdateTable(ctx, &dynamodb.UpdateTableInput{
+		TableName:   aws.String(tableName),
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields(
+		"TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata",
+	)).Assert(t.Name(), updateOutput)
+}
