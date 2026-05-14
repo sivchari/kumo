@@ -119,6 +119,24 @@ func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, ope
 	}
 }
 
+// Storage returns the CloudWatch storage.
+// This can be used to set up cross-service integration (e.g., CloudWatch alarm actions to SNS).
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
+// SetSNSPublisher installs the SNS publisher used to deliver alarm
+// action notifications. The argument must satisfy the SNSPublisher
+// interface (Publish method). Accepting any here avoids an import
+// cycle between server and cloudwatch.
+func (s *Service) SetSNSPublisher(publisher any) {
+	if p, ok := publisher.(SNSPublisher); ok {
+		if ms, ok := s.storage.(*MemoryStorage); ok {
+			ms.SetSNSPublisher(p)
+		}
+	}
+}
+
 // Close saves the storage state if persistence is enabled.
 func (s *Service) Close() error {
 	if c, ok := s.storage.(io.Closer); ok {

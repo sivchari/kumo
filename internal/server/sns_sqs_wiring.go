@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/sivchari/kumo/internal/service"
@@ -9,6 +10,14 @@ import (
 	"github.com/sivchari/kumo/internal/service/sns"
 	"github.com/sivchari/kumo/internal/service/sqs"
 )
+
+// alarmActionWirer is satisfied by cloudwatch.Service. Using a local
+// interface avoids importing the cloudwatch package directly, which
+// would create an import cycle. The SetSNSPublisher method accepts any
+// and internally asserts it to the cloudwatch.SNSPublisher interface.
+type alarmActionWirer interface {
+	SetSNSPublisher(publisher any)
+}
 
 // wireSNStoSQS connects the SNS service to the SQS service so SNS topic
 // subscriptions with protocol=sqs actually deliver messages into the
@@ -178,4 +187,57 @@ func (p *s3ToSQSPublisher) arnToQueueURL(arn string) string {
 	name := parts[5]
 
 	return p.baseURL + "/" + account + "/" + name
+}
+
+// wireCloudWatchToSNS connects the CloudWatch service to the SNS service
+// so that alarm actions (AlarmActions, OKActions) actually deliver
+// notification messages to the configured SNS topics when an alarm state
+// changes via SetAlarmState.
+//
+// Without this wiring, SetAlarmState only updates the alarm state in
+// memory and silently ignores the action target ARNs.
+//
+// We use a local interface (alarmActionWirer) rather than importing the
+// cloudwatch package directly, because cloudwatch already imports server
+// for CBOR helpers and a direct import would create a cycle.
+func wireCloudWatchToSNS(registry *service.Registry) {
+	cwSvc, ok := registry.Get("monitoring")
+	if !ok {
+		return
+	}
+
+	snsSvc, ok := registry.Get("sns")
+	if !ok {
+		return
+	}
+
+	cwWirer, ok := cwSvc.(alarmActionWirer)
+	if !ok {
+		return
+	}
+
+	snsTyped, ok := snsSvc.(*sns.Service)
+	if !ok {
+		return
+	}
+
+	cwWirer.SetSNSPublisher(&cloudWatchToSNSPublisher{
+		snsStorage: snsTyped.Storage(),
+	})
+}
+
+// cloudWatchToSNSPublisher adapts the SNS storage Publish method to the
+// CloudWatch SNSPublisher interface.
+type cloudWatchToSNSPublisher struct {
+	snsStorage sns.Storage
+}
+
+// Publish sends a CloudWatch alarm notification to an SNS topic.
+func (p *cloudWatchToSNSPublisher) Publish(ctx context.Context, topicARN, message, subject string) error {
+	_, err := p.snsStorage.Publish(ctx, topicARN, message, subject, "", "", nil)
+	if err != nil {
+		return fmt.Errorf("cloudwatch alarm action publish failed: %w", err)
+	}
+
+	return nil
 }

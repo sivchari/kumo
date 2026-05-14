@@ -242,6 +242,30 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SetAlarmState handles the SetAlarmState action via JSON protocol.
+func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
+	var req SetAlarmStateRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.AlarmName == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter AlarmName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SetAlarmState(r.Context(), req.AlarmName, req.StateValue, req.StateReason); err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
@@ -262,6 +286,8 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.DeleteAlarms(w, r)
 	case "DescribeAlarms":
 		s.DescribeAlarms(w, r)
+	case "SetAlarmState":
+		s.SetAlarmState(w, r)
 	case "ListTagsForResource":
 		s.ListTagsForResource(w, r)
 	case "TagResource":

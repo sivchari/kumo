@@ -16,6 +16,14 @@ import (
 // defaultAccountID is the default AWS account ID used in the emulator.
 const defaultAccountID = "000000000000"
 
+// defaultRegion is the default AWS region used in the emulator.
+const defaultRegion = "us-east-1"
+
+// SNSPublisher is an interface for publishing alarm action notifications to SNS topics.
+type SNSPublisher interface {
+	Publish(ctx context.Context, topicARN, message, subject string) error
+}
+
 // Storage defines the CloudWatch storage interface.
 type Storage interface {
 	PutMetricData(ctx context.Context, namespace string, metricData []MetricDatum) error
@@ -61,11 +69,12 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu      sync.RWMutex                `json:"-"`
-	Metrics map[MetricKey]*StoredMetric `json:"metrics"`
-	Alarms  map[string]*Alarm           `json:"alarms"`
-	baseURL string
-	dataDir string
+	mu           sync.RWMutex                `json:"-"`
+	Metrics      map[MetricKey]*StoredMetric `json:"metrics"`
+	Alarms       map[string]*Alarm           `json:"alarms"`
+	baseURL      string
+	dataDir      string
+	snsPublisher SNSPublisher `json:"-"`
 }
 
 // NewMemoryStorage creates a new in-memory CloudWatch storage.
@@ -170,6 +179,11 @@ func (s *MemoryStorage) Close() error {
 	}
 
 	return nil
+}
+
+// SetSNSPublisher sets the SNS publisher for alarm action notifications.
+func (s *MemoryStorage) SetSNSPublisher(publisher SNSPublisher) {
+	s.snsPublisher = publisher
 }
 
 // PutMetricData stores metric data.
@@ -440,24 +454,120 @@ func (s *MemoryStorage) DeleteAlarms(_ context.Context, alarmNames []string) err
 	return nil
 }
 
-// SetAlarmState sets the state of an alarm.
-func (s *MemoryStorage) SetAlarmState(_ context.Context, alarmName, stateValue, stateReason string) error {
+// SetAlarmState sets the state of an alarm and fires the corresponding
+// alarm actions (AlarmActions for ALARM, OKActions for OK) by publishing
+// a notification message to each SNS topic ARN listed in the action list.
+func (s *MemoryStorage) SetAlarmState(ctx context.Context, alarmName, stateValue, stateReason string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	alarm, exists := s.Alarms[alarmName]
 	if !exists {
+		s.mu.Unlock()
+
 		return &Error{
 			Code:    "ResourceNotFound",
 			Message: fmt.Sprintf("Alarm %s does not exist", alarmName),
 		}
 	}
 
+	previousState := alarm.StateValue
 	alarm.StateValue = stateValue
 	alarm.StateReason = stateReason
 	alarm.StateUpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
+	// Determine which actions to fire based on the new state.
+	var actionARNs []string
+
+	if alarm.ActionsEnabled {
+		switch stateValue {
+		case "ALARM":
+			actionARNs = append(actionARNs, alarm.AlarmActions...)
+		case "OK":
+			actionARNs = append(actionARNs, alarm.OKActions...)
+		}
+	}
+
+	// Copy alarm fields needed for the notification while still holding
+	// the lock, then release before performing I/O.
+	notification := s.buildAlarmNotification(alarm, previousState)
+	s.mu.Unlock()
+
+	// Publish to each action target (SNS topic ARNs).
+	if s.snsPublisher != nil && len(actionARNs) > 0 {
+		body, err := json.Marshal(notification)
+		if err != nil {
+			return fmt.Errorf("SetAlarmState failed: %w", err)
+		}
+
+		subject := fmt.Sprintf("ALARM: %q in %s", alarmName, defaultRegion)
+
+		for _, arn := range actionARNs {
+			// Best-effort delivery: log but do not fail the SetAlarmState
+			// call if a publish fails (matches AWS behaviour where action
+			// delivery is asynchronous).
+			_ = s.snsPublisher.Publish(ctx, arn, string(body), subject)
+		}
+	}
+
 	return nil
+}
+
+// alarmNotification mirrors the JSON structure AWS CloudWatch sends to
+// SNS action targets when an alarm state changes.
+//
+//nolint:tagliatelle // AWS notification uses PascalCase JSON fields.
+type alarmNotification struct {
+	AlarmName        string                   `json:"AlarmName"`
+	AlarmDescription string                   `json:"AlarmDescription,omitempty"`
+	AWSAccountID     string                   `json:"AWSAccountId"`
+	NewStateValue    string                   `json:"NewStateValue"`
+	NewStateReason   string                   `json:"NewStateReason"`
+	OldStateValue    string                   `json:"OldStateValue"`
+	StateChangeTime  string                   `json:"StateChangeTime"`
+	Region           string                   `json:"Region"`
+	AlarmARN         string                   `json:"AlarmArn"`
+	Trigger          alarmNotificationTrigger `json:"Trigger"`
+}
+
+// alarmNotificationTrigger contains the metric details that triggered the
+// alarm.
+//
+//nolint:tagliatelle // AWS notification uses PascalCase JSON fields.
+type alarmNotificationTrigger struct {
+	MetricName         string      `json:"MetricName"`
+	Namespace          string      `json:"Namespace"`
+	Statistic          string      `json:"Statistic,omitempty"`
+	Dimensions         []Dimension `json:"Dimensions,omitempty"`
+	Period             int32       `json:"Period"`
+	EvaluationPeriods  int32       `json:"EvaluationPeriods"`
+	Threshold          float64     `json:"Threshold"`
+	ComparisonOperator string      `json:"ComparisonOperator"`
+}
+
+// buildAlarmNotification creates an alarm notification message from alarm
+// state. The caller must hold at least a read lock on s.mu.
+func (s *MemoryStorage) buildAlarmNotification(alarm *Alarm, previousState string) *alarmNotification {
+	return &alarmNotification{
+		AlarmName:        alarm.AlarmName,
+		AlarmDescription: alarm.AlarmDescription,
+		AWSAccountID:     defaultAccountID,
+		NewStateValue:    alarm.StateValue,
+		NewStateReason:   alarm.StateReason,
+		OldStateValue:    previousState,
+		StateChangeTime:  alarm.StateUpdatedAt,
+		Region:           defaultRegion,
+		AlarmARN:         alarm.AlarmARN,
+		Trigger: alarmNotificationTrigger{
+			MetricName:         alarm.MetricName,
+			Namespace:          alarm.Namespace,
+			Statistic:          alarm.Statistic,
+			Dimensions:         alarm.Dimensions,
+			Period:             alarm.Period,
+			EvaluationPeriods:  alarm.EvaluationPeriods,
+			Threshold:          alarm.Threshold,
+			ComparisonOperator: alarm.ComparisonOperator,
+		},
+	}
 }
 
 // DescribeAlarms returns information about alarms.
