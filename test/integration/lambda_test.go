@@ -195,10 +195,9 @@ func TestLambda_Invoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Without an InvokeEndpoint configured, Invoke now returns an empty
-	// stub success instead of erroring (200 + "{}" for RequestResponse).
-	// This matches what terraform-provider-aws and other clients expect
-	// when they invoke functions for which kumo has no real handler.
+	// Without an InvokeEndpoint configured, Invoke echoes the input
+	// payload back as the function response. This lets SDK callers
+	// exercise functions without setting up a separate HTTP listener.
 	out, err := client.Invoke(ctx, &lambda.InvokeInput{
 		FunctionName: aws.String(functionName),
 		Payload:      []byte(`{"key": "value"}`),
@@ -211,8 +210,8 @@ func TestLambda_Invoke(t *testing.T) {
 		t.Errorf("expected status 200, got %d", out.StatusCode)
 	}
 
-	if got := string(out.Payload); got != "{}" {
-		t.Errorf("expected empty stub payload \"{}\", got %q", got)
+	if got := string(out.Payload); got != `{"key": "value"}` {
+		t.Errorf("expected echoed payload, got %q", got)
 	}
 }
 

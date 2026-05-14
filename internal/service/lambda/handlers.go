@@ -263,6 +263,8 @@ func (s *Service) UpdateFunctionConfiguration(w http.ResponseWriter, r *http.Req
 }
 
 // Invoke handles the Invoke API.
+//
+//nolint:funlen // Invoke handles multiple code paths (sync, async, stub).
 func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 	functionName := extractFunctionNameFromInvokePath(r.URL.Path)
 	if functionName == "" {
@@ -290,14 +292,12 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 		invocationType = "RequestResponse"
 	}
 
-	// When no InvokeEndpoint is configured the function is treated as a
-	// stub: the invocation is accepted but no real code runs. This is the
-	// common shape for terraform integration tests — provider-aws creates
-	// the function via CreateFunction, which has no invoke_endpoint
-	// argument, then never calls Invoke. Returning a benign empty success
-	// here (rather than InvalidParameterValueException) lets ad-hoc CLI /
-	// SDK callers exercise the function without setting up a separate
-	// HTTP listener.
+	// When no InvokeEndpoint is configured the function is treated as an
+	// echo stub: the invocation is accepted and the input payload is
+	// returned as-is. This lets SDK callers exercise functions created
+	// without kumo's InvokeEndpoint extension and still receive a
+	// meaningful response payload, which matches the expectation of
+	// tests that invoke Lambda functions via the standard AWS SDK.
 	if fn.InvokeEndpoint == "" {
 		switch invocationType {
 		case "DryRun":
@@ -310,7 +310,12 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeInvokeHeaders(w)
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("{}"))
+
+			if len(payload) == 0 {
+				_, _ = w.Write([]byte("null"))
+			} else {
+				_, _ = w.Write(payload)
+			}
 		}
 
 		return
@@ -689,11 +694,19 @@ func handleFunctionError(w http.ResponseWriter, err error) {
 	writeFunctionError(w, ErrServiceException, "Internal server error", http.StatusInternalServerError)
 }
 
-// extractEventSourceMappingUUID extracts UUID from path like /lambda/2015-03-31/event-source-mappings/{UUID}.
+// extractEventSourceMappingUUID extracts UUID from paths like:
+//
+//   - /lambda/2015-03-31/event-source-mappings/{UUID}  (SDK BaseEndpoint = .../lambda)
+//   - /2015-03-31/event-source-mappings/{UUID}          (terraform-provider-aws, single endpoint)
+//
+// Routes are registered under both prefixes, so the helper finds the
+// "event-source-mappings" segment regardless of where it appears in the path.
 func extractEventSourceMappingUUID(path string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 4 && parts[2] == "event-source-mappings" {
-		return parts[3]
+	for i, p := range parts {
+		if p == "event-source-mappings" && i+1 < len(parts) {
+			return parts[i+1]
+		}
 	}
 
 	return ""
