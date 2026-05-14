@@ -80,6 +80,7 @@ import (
 	_ "github.com/sivchari/kumo/internal/service/secretsmanager"
 	_ "github.com/sivchari/kumo/internal/service/securitylake"
 	_ "github.com/sivchari/kumo/internal/service/servicequotas"
+	_ "github.com/sivchari/kumo/internal/service/ses"
 	_ "github.com/sivchari/kumo/internal/service/sesv2"
 	_ "github.com/sivchari/kumo/internal/service/sfn"
 	_ "github.com/sivchari/kumo/internal/service/sns"
