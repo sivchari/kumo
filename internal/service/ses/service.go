@@ -42,7 +42,7 @@ func (s *Service) Name() string {
 // The mailbox endpoint is registered here as a kumo-specific REST endpoint.
 func (s *Service) RegisterRoutes(r service.Router) {
 	// kumo-specific endpoint for local mailbox testing.
-	r.HandleFunc("GET", "/kumo/ses/mailbox", s.GetMailbox)
+	r.HandleFunc("GET", "/_aws/ses", s.GetMailbox)
 }
 
 // TargetPrefix returns the target prefix for SES v1.

@@ -238,7 +238,7 @@ func (s *Service) GetIdentityVerificationAttributes(w http.ResponseWriter, r *ht
 }
 
 // GetMailbox handles the kumo-specific mailbox endpoint.
-// This returns all sent emails for a given sender, exposed at /kumo/ses/mailbox?email=...
+// This returns all sent emails for a given sender, exposed at /_aws/ses?email=...
 func (s *Service) GetMailbox(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 	if email == "" {

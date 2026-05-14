@@ -289,7 +289,7 @@ func TestSES_Mailbox(t *testing.T) {
 	}
 
 	// Check mailbox via kumo-specific endpoint.
-	resp, err := http.Get("http://localhost:4566/kumo/ses/mailbox?email=" + source)
+	resp, err := http.Get("http://localhost:4566/_aws/ses?email=" + source)
 	if err != nil {
 		t.Fatal(err)
 	}
