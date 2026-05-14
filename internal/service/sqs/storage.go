@@ -584,6 +584,10 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 	}
 
 	now := time.Now()
+
+	// Re-enqueue inflight messages whose visibility timeout has expired.
+	s.requeueExpiredMessages(qd, now)
+
 	result := make([]*Message, 0, maxMessages)
 	remaining := make([]*Message, 0, len(qd.Messages))
 
@@ -795,6 +799,31 @@ func applyQueueAttributes(q *Queue, attrs map[string]string) {
 type redrivePolicy struct {
 	DeadLetterTargetArn string `json:"deadLetterTargetArn"`
 	MaxReceiveCount     string `json:"maxReceiveCount"`
+}
+
+// requeueExpiredMessages moves inflight messages whose visibility timeout has
+// expired back to the message queue. If the queue has a DLQ configured and the
+// message's ReceiveCount has reached MaxReceiveCount, the message is moved to the
+// DLQ instead. Must be called under lock.
+func (s *MemoryStorage) requeueExpiredMessages(qd *QueueData, now time.Time) {
+	for handle, msg := range qd.Inflight {
+		if !msg.VisibleAt.Before(now) {
+			continue
+		}
+
+		delete(qd.Inflight, handle)
+
+		// Check DLQ redrive policy: if the message has already been received
+		// MaxReceiveCount times, move it to the DLQ.
+		if qd.Queue.MaxReceiveCount > 0 && msg.ReceiveCount >= qd.Queue.MaxReceiveCount {
+			s.moveToDeadLetterQueue(qd.Queue.DeadLetterTargetArn, msg)
+
+			continue
+		}
+
+		// Prepend the message so it is delivered first.
+		qd.Messages = append([]*Message{msg}, qd.Messages...)
+	}
 }
 
 // moveToDeadLetterQueue moves a message to the dead letter queue. Must be called under lock.
