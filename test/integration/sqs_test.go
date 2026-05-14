@@ -695,7 +695,7 @@ func TestSQS_ChangeMessageVisibility(t *testing.T) {
 	}
 
 	// Change visibility timeout.
-	_, err = client.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
+	changeOutput, err := client.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
 		QueueUrl:          createOutput.QueueUrl,
 		ReceiptHandle:     receiveOutput.Messages[0].ReceiptHandle,
 		VisibilityTimeout: 60,
@@ -704,16 +704,6 @@ func TestSQS_ChangeMessageVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify message is still inflight (not visible).
-	receiveOutput2, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:            createOutput.QueueUrl,
-		MaxNumberOfMessages: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(receiveOutput2.Messages) != 0 {
-		t.Error("expected message to still be inflight after ChangeMessageVisibility")
-	}
+	// Assert ChangeMessageVisibility output using golden file.
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_change_visibility", changeOutput)
 }
