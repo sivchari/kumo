@@ -9,6 +9,8 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+const defaultBaseURL = "http://localhost:4566"
+
 // Service is the Step Functions service.
 type Service struct {
 	storage Storage
@@ -48,6 +50,8 @@ func init() {
 	if dir := os.Getenv("KUMO_DATA_DIR"); dir != "" {
 		opts = append(opts, WithDataDir(dir))
 	}
+
+	opts = append(opts, WithBaseURL(defaultBaseURL))
 
 	service.Register(New(NewMemoryStorage(opts...)))
 }

@@ -54,6 +54,13 @@ func WithDataDir(dir string) Option {
 	}
 }
 
+// WithBaseURL sets the base URL for cross-service HTTP calls (SQS, Lambda).
+func WithBaseURL(url string) Option {
+	return func(s *MemoryStorage) {
+		s.baseURL = url
+	}
+}
+
 // Compile-time interface checks.
 var (
 	_ json.Marshaler   = (*MemoryStorage)(nil)
@@ -69,6 +76,8 @@ type MemoryStorage struct {
 	accountID     string
 	EventCounter  int64 `json:"eventCounter"`
 	dataDir       string
+	baseURL       string
+	engine        *executionEngine
 }
 
 // ExecutionData holds execution information and its history.
@@ -89,10 +98,13 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		Executions:    make(map[string]*ExecutionData),
 		region:        region,
 		accountID:     "000000000000",
+		baseURL:       defaultBaseURL,
 	}
 	for _, o := range opts {
 		o(s)
 	}
+
+	s.engine = newExecutionEngine(s.baseURL)
 
 	if s.dataDir != "" {
 		_ = storage.Load(s.dataDir, "states", s)
@@ -264,16 +276,88 @@ func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name,
 
 	now := time.Now()
 	exec := s.createExecution(executionArn, stateMachineArn, execName, input, traceHeader, now)
-	history := s.createExecutionHistory(sm.RoleArn, input, now)
 
-	exec.Status = ExecutionStatusSucceeded
-	exec.StopDate = &now
-	exec.Output = input
-	exec.OutputDetails = &CloudWatchEventsExecutionDataDetails{Included: true}
+	startID := atomic.AddInt64(&s.EventCounter, 1)
+	history := []*HistoryEvent{
+		{
+			Timestamp: now, Type: HistoryEventTypeExecutionStarted, ID: startID, PreviousEventID: 0,
+			ExecutionStartedEventDetails: &ExecutionStartedEventDetails{
+				Input: input, InputDetails: &CloudWatchEventsExecutionDataDetails{Included: true}, RoleArn: sm.RoleArn,
+			},
+		},
+	}
 
-	s.Executions[executionArn] = &ExecutionData{Execution: exec, History: history}
+	ed := &ExecutionData{Execution: exec, History: history}
+	s.Executions[executionArn] = ed
+
+	// Parse the definition and run the state machine asynchronously.
+	definition := sm.Definition
+
+	go s.runExecution(ed, definition, input, startID)
 
 	return exec, nil
+}
+
+// runExecution executes the state machine in a background goroutine.
+func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string, lastEventID int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	def, err := parseDefinition(definition)
+	if err != nil {
+		s.failExecution(ed, lastEventID, "States.Runtime", fmt.Sprintf("Failed to parse definition: %v", err))
+
+		return
+	}
+
+	output, err := s.engine.execute(ctx, def, input)
+	if err != nil {
+		s.failExecution(ed, lastEventID, "States.TaskFailed", err.Error())
+
+		return
+	}
+
+	s.succeedExecution(ed, lastEventID, output)
+}
+
+// succeedExecution marks an execution as SUCCEEDED.
+func (s *MemoryStorage) succeedExecution(ed *ExecutionData, lastEventID int64, output string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	ed.Execution.Status = ExecutionStatusSucceeded
+	ed.Execution.StopDate = &now
+	ed.Execution.Output = output
+	ed.Execution.OutputDetails = &CloudWatchEventsExecutionDataDetails{Included: true}
+
+	eventID := atomic.AddInt64(&s.EventCounter, 1)
+	ed.History = append(ed.History, &HistoryEvent{
+		Timestamp: now, Type: HistoryEventTypeExecutionSucceeded, ID: eventID, PreviousEventID: lastEventID,
+		ExecutionSucceededEventDetails: &ExecutionSucceededEventDetails{
+			Output: output, OutputDetails: &CloudWatchEventsExecutionDataDetails{Included: true},
+		},
+	})
+}
+
+// failExecution marks an execution as FAILED.
+func (s *MemoryStorage) failExecution(ed *ExecutionData, lastEventID int64, errorCode, cause string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	ed.Execution.Status = ExecutionStatusFailed
+	ed.Execution.StopDate = &now
+	ed.Execution.Error = errorCode
+	ed.Execution.Cause = cause
+
+	eventID := atomic.AddInt64(&s.EventCounter, 1)
+	ed.History = append(ed.History, &HistoryEvent{
+		Timestamp: now, Type: HistoryEventTypeExecutionFailed, ID: eventID, PreviousEventID: lastEventID,
+		ExecutionFailedEventDetails: &ExecutionFailedEventDetails{
+			Error: errorCode, Cause: cause,
+		},
+	})
 }
 
 // createExecution creates a new execution object.
@@ -287,27 +371,6 @@ func (s *MemoryStorage) createExecution(arn, smArn, name, input, traceHeader str
 		Input:           input,
 		InputDetails:    &CloudWatchEventsExecutionDataDetails{Included: true},
 		TraceHeader:     traceHeader,
-	}
-}
-
-// createExecutionHistory creates execution history events for a pass-through execution.
-func (s *MemoryStorage) createExecutionHistory(roleArn, input string, now time.Time) []*HistoryEvent {
-	startID := atomic.AddInt64(&s.EventCounter, 1)
-	endID := atomic.AddInt64(&s.EventCounter, 1)
-
-	return []*HistoryEvent{
-		{
-			Timestamp: now, Type: HistoryEventTypeExecutionStarted, ID: startID, PreviousEventID: 0,
-			ExecutionStartedEventDetails: &ExecutionStartedEventDetails{
-				Input: input, InputDetails: &CloudWatchEventsExecutionDataDetails{Included: true}, RoleArn: roleArn,
-			},
-		},
-		{
-			Timestamp: now, Type: HistoryEventTypeExecutionSucceeded, ID: endID, PreviousEventID: startID,
-			ExecutionSucceededEventDetails: &ExecutionSucceededEventDetails{
-				Output: input, OutputDetails: &CloudWatchEventsExecutionDataDetails{Included: true},
-			},
-		},
 	}
 }
 
