@@ -67,8 +67,11 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/versions", s.ListVersionsByFunction)
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/aliases", s.ListAliases)
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/policy", s.GetPolicy)
+		r.Handle("POST", prefix+"/2015-03-31/functions/{functionName}/policy", s.AddPermission)
+		r.Handle("DELETE", prefix+"/2015-03-31/functions/{functionName}/policy/{statementId}", s.RemovePermission)
 		r.Handle("GET", prefix+"/2020-06-30/functions/{functionName}/code-signing-config", s.GetFunctionCodeSigningConfig)
 		r.Handle("GET", prefix+"/2019-09-25/functions/{functionName}/event-invoke-config/list", s.ListFunctionEventInvokeConfigs)
+		r.Handle("GET", prefix+"/2017-03-31/tags/{arn...}", s.ListTags)
 	}
 }
 

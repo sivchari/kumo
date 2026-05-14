@@ -26,7 +26,26 @@ type Function struct {
 	Architectures   []string
 	Environment     *Environment
 	Code            *FunctionCode
+	Tags            map[string]string
+	Policy          *ResourcePolicy
 	InvokeEndpoint  string // kumo extension: HTTP endpoint to proxy invocations
+}
+
+// ResourcePolicy represents a Lambda function resource policy.
+type ResourcePolicy struct {
+	Version    string             `json:"Version"`
+	ID         string             `json:"Id"`
+	Statements []*PolicyStatement `json:"Statement"`
+}
+
+// PolicyStatement represents a single statement in a resource policy.
+type PolicyStatement struct {
+	Sid       string            `json:"Sid"`
+	Effect    string            `json:"Effect"`
+	Principal map[string]string `json:"Principal"`
+	Action    string            `json:"Action"`
+	Resource  string            `json:"Resource"`
+	Condition map[string]any    `json:"Condition,omitempty"`
 }
 
 // Environment represents the function's environment variables.
@@ -261,4 +280,34 @@ type getFunctionCodeSigningConfigResponse struct {
 // listFunctionEventInvokeConfigsResponse mirrors AWS's response.
 type listFunctionEventInvokeConfigsResponse struct {
 	FunctionEventInvokeConfigs []map[string]any `json:"FunctionEventInvokeConfigs"`
+}
+
+// addPermissionRequest is the request body for AddPermission.
+type addPermissionRequest struct {
+	Action              string `json:"Action"`
+	FunctionName        string `json:"FunctionName,omitempty"`
+	Principal           string `json:"Principal"`
+	SourceArn           string `json:"SourceArn,omitempty"`
+	SourceAccount       string `json:"SourceAccount,omitempty"`
+	StatementID         string `json:"StatementId"`
+	EventSourceToken    string `json:"EventSourceToken,omitempty"`
+	RevisionID          string `json:"RevisionId,omitempty"`
+	PrincipalOrgID      string `json:"PrincipalOrgID,omitempty"`
+	FunctionURLAuthType string `json:"FunctionUrlAuthType,omitempty"`
+}
+
+// addPermissionResponse is the response for AddPermission.
+type addPermissionResponse struct {
+	Statement string `json:"Statement"`
+}
+
+// getPolicyResponse is the response for GetPolicy when a policy exists.
+type getPolicyResponse struct {
+	Policy     string `json:"Policy"`
+	RevisionID string `json:"RevisionId"`
+}
+
+// listTagsResponse is the response for ListTags.
+type listTagsResponse struct {
+	Tags map[string]string `json:"Tags"`
 }
