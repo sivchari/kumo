@@ -49,14 +49,21 @@ type Rule struct {
 	LastModified       time.Time `json:"lastModified"`
 }
 
+// InputTransformer represents an input transformer for a target.
+type InputTransformer struct {
+	InputPathsMap map[string]string `json:"inputPathsMap,omitempty"`
+	InputTemplate string            `json:"inputTemplate"`
+}
+
 // Target represents a rule target.
 type Target struct {
-	ID             string          `json:"id"`
-	Arn            string          `json:"arn"`
-	RoleArn        string          `json:"roleArn,omitempty"`
-	Input          string          `json:"input,omitempty"`
-	InputPath      string          `json:"inputPath,omitempty"`
-	HTTPParameters *HTTPParameters `json:"httpParameters,omitempty"`
+	ID               string            `json:"id"`
+	Arn              string            `json:"arn"`
+	RoleArn          string            `json:"roleArn,omitempty"`
+	Input            string            `json:"input,omitempty"`
+	InputPath        string            `json:"inputPath,omitempty"`
+	InputTransformer *InputTransformer `json:"inputTransformer,omitempty"`
+	HTTPParameters   *HTTPParameters   `json:"httpParameters,omitempty"`
 }
 
 // EpochTime wraps time.Time to support JSON unmarshalling from both
@@ -237,14 +244,21 @@ type ListRulesResponse struct {
 	NextToken string       `json:"NextToken,omitempty"`
 }
 
+// InputTransformerInput represents an input transformer in API requests.
+type InputTransformerInput struct {
+	InputPathsMap map[string]string `json:"InputPathsMap,omitempty"`
+	InputTemplate string            `json:"InputTemplate"`
+}
+
 // TargetInput represents a target in API requests.
 type TargetInput struct {
-	ID             string          `json:"Id"`
-	Arn            string          `json:"Arn"`
-	RoleArn        string          `json:"RoleArn,omitempty"`
-	Input          string          `json:"Input,omitempty"`
-	InputPath      string          `json:"InputPath,omitempty"`
-	HTTPParameters *HTTPParameters `json:"HttpParameters,omitempty"`
+	ID               string                 `json:"Id"`
+	Arn              string                 `json:"Arn"`
+	RoleArn          string                 `json:"RoleArn,omitempty"`
+	Input            string                 `json:"Input,omitempty"`
+	InputPath        string                 `json:"InputPath,omitempty"`
+	InputTransformer *InputTransformerInput `json:"InputTransformer,omitempty"`
+	HTTPParameters   *HTTPParameters        `json:"HttpParameters,omitempty"`
 }
 
 // PutTargetsRequest is the request for PutTargets.
@@ -307,14 +321,21 @@ type ListTargetsByRuleRequest struct {
 	NextToken    string `json:"NextToken,omitempty"`
 }
 
+// InputTransformerOutput represents an input transformer in API responses.
+type InputTransformerOutput struct {
+	InputPathsMap map[string]string `json:"InputPathsMap,omitempty"`
+	InputTemplate string            `json:"InputTemplate,omitempty"`
+}
+
 // TargetOutput represents a target in API responses.
 type TargetOutput struct {
-	ID             string          `json:"Id,omitempty"`
-	Arn            string          `json:"Arn,omitempty"`
-	RoleArn        string          `json:"RoleArn,omitempty"`
-	Input          string          `json:"Input,omitempty"`
-	InputPath      string          `json:"InputPath,omitempty"`
-	HTTPParameters *HTTPParameters `json:"HttpParameters,omitempty"`
+	ID               string                  `json:"Id,omitempty"`
+	Arn              string                  `json:"Arn,omitempty"`
+	RoleArn          string                  `json:"RoleArn,omitempty"`
+	Input            string                  `json:"Input,omitempty"`
+	InputPath        string                  `json:"InputPath,omitempty"`
+	InputTransformer *InputTransformerOutput `json:"InputTransformer,omitempty"`
+	HTTPParameters   *HTTPParameters         `json:"HttpParameters,omitempty"`
 }
 
 // ListTargetsByRuleResponse is the response for ListTargetsByRule.

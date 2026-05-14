@@ -465,6 +465,13 @@ func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName str
 			HTTPParameters: t.HTTPParameters,
 		}
 
+		if t.InputTransformer != nil {
+			target.InputTransformer = &InputTransformer{
+				InputPathsMap: t.InputTransformer.InputPathsMap,
+				InputTemplate: t.InputTransformer.InputTemplate,
+			}
+		}
+
 		// Find and update existing target or add new one.
 		found := false
 		existingTargets := s.Targets[targetKey][ruleName]
@@ -654,6 +661,13 @@ func (s *MemoryStorage) buildEventPayload(eventID, eventBusName string, target *
 		return nil
 	}
 
+	// Apply InputTransformer if set on the target.
+	if target.InputTransformer != nil {
+		if transformed := applyInputTransformer(body, target.InputTransformer); transformed != nil {
+			return transformed
+		}
+	}
+
 	// Apply InputPath if set on the target.
 	if target.InputPath != "" {
 		if resolved := resolveInputPath(body, target.InputPath); resolved != nil {
@@ -697,6 +711,75 @@ func resolveInputPath(payload []byte, inputPath string) []byte {
 	}
 
 	return result
+}
+
+// applyInputTransformer applies an InputTransformer to an event payload.
+// It extracts values from the event JSON using InputPathsMap (simple JSONPath expressions),
+// then replaces <key> placeholders in InputTemplate with the extracted values.
+func applyInputTransformer(payload []byte, transformer *InputTransformer) []byte {
+	var event map[string]any
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return nil
+	}
+
+	// Extract values using InputPathsMap.
+	values := make(map[string]any, len(transformer.InputPathsMap))
+	for key, path := range transformer.InputPathsMap {
+		values[key] = extractJSONPath(event, path)
+	}
+
+	// Replace <key> placeholders in the template.
+	result := transformer.InputTemplate
+
+	for key, val := range values {
+		placeholder := "<" + key + ">"
+
+		var replacement string
+
+		switch v := val.(type) {
+		case nil:
+			replacement = "null"
+		case string:
+			// Strings are quoted in the output.
+			quoted, _ := json.Marshal(v)
+			replacement = string(quoted)
+		default:
+			// Objects, arrays, numbers, booleans are serialized as raw JSON.
+			raw, _ := json.Marshal(v)
+			replacement = string(raw)
+		}
+
+		result = strings.ReplaceAll(result, placeholder, replacement)
+	}
+
+	return []byte(result)
+}
+
+// extractJSONPath extracts a value from a nested map using a simple JSONPath expression.
+// Supports paths like "$.detail.marker", "$.source".
+func extractJSONPath(obj map[string]any, path string) any {
+	path = strings.TrimPrefix(path, "$.")
+	if path == "" || path == "$" {
+		return obj
+	}
+
+	parts := strings.Split(path, ".")
+
+	var current any = obj
+
+	for _, part := range parts {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		current, ok = m[part]
+		if !ok {
+			return nil
+		}
+	}
+
+	return current
 }
 
 // deliverToHTTP sends an event to an API Destination's HTTP endpoint.

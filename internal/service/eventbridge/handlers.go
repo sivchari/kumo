@@ -342,6 +342,13 @@ func (s *Service) ListTargetsByRule(w http.ResponseWriter, r *http.Request) {
 			InputPath:      target.InputPath,
 			HTTPParameters: target.HTTPParameters,
 		}
+
+		if target.InputTransformer != nil {
+			outputs[i].InputTransformer = &InputTransformerOutput{
+				InputPathsMap: target.InputTransformer.InputPathsMap,
+				InputTemplate: target.InputTransformer.InputTemplate,
+			}
+		}
 	}
 
 	resp := &ListTargetsByRuleResponse{

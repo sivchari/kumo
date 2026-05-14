@@ -619,6 +619,142 @@ func TestEventBridge_PutEvents_InputPath(t *testing.T) {
 	}
 }
 
+func TestEventBridge_PutEvents_InputTransformer(t *testing.T) {
+	ebClient := newEventBridgeClient(t)
+	sqsClient := newSQSClient(t)
+	ctx := t.Context()
+
+	queueName := "eb-inputtransformer-test"
+
+	// Create SQS queue.
+	_, err := sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	busName := "transform-bus"
+
+	// Create custom event bus.
+	_, err = ebClient.CreateEventBus(ctx, &eventbridge.CreateEventBusInput{
+		Name: aws.String(busName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create rule on custom bus.
+	_, err = ebClient.PutRule(ctx, &eventbridge.PutRuleInput{
+		Name:         aws.String("transform-rule"),
+		EventBusName: aws.String(busName),
+		EventPattern: aws.String(`{"source": ["transform.service"], "detail-type": ["TransformEvent"]}`),
+		State:        types.RuleStateEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add SQS target with InputTransformer.
+	_, err = ebClient.PutTargets(ctx, &eventbridge.PutTargetsInput{
+		Rule:         aws.String("transform-rule"),
+		EventBusName: aws.String(busName),
+		Targets: []types.Target{
+			{
+				Id:  aws.String("transform-target"),
+				Arn: aws.String("arn:aws:sqs:us-east-1:000000000000:" + queueName),
+				InputTransformer: &types.InputTransformer{
+					InputPathsMap: map[string]string{
+						"marker": "$.detail.marker",
+					},
+					InputTemplate: aws.String(`{"transformedMarker": <marker>, "source": "custom-bus"}`),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = ebClient.RemoveTargets(cleanupCtx, &eventbridge.RemoveTargetsInput{
+			EventBusName: aws.String(busName),
+			Ids:          []string{"transform-target"},
+			Rule:         aws.String("transform-rule"),
+		})
+		_, _ = ebClient.DeleteRule(cleanupCtx, &eventbridge.DeleteRuleInput{
+			EventBusName: aws.String(busName),
+			Name:         aws.String("transform-rule"),
+		})
+		_, _ = ebClient.DeleteEventBus(cleanupCtx, &eventbridge.DeleteEventBusInput{
+			Name: aws.String(busName),
+		})
+		_, _ = sqsClient.DeleteQueue(cleanupCtx, &sqs.DeleteQueueInput{
+			QueueUrl: aws.String("http://localhost:4566/000000000000/" + queueName),
+		})
+	})
+
+	// Put matching event.
+	marker := "test-marker-" + t.Name()
+
+	_, err = ebClient.PutEvents(ctx, &eventbridge.PutEventsInput{
+		Entries: []types.PutEventsRequestEntry{
+			{
+				EventBusName: aws.String(busName),
+				Source:       aws.String("transform.service"),
+				DetailType:   aws.String("TransformEvent"),
+				Detail:       aws.String(`{"marker":"` + marker + `"}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Receive message from SQS and verify transformation was applied.
+	var recvOutput *sqs.ReceiveMessageOutput
+
+	for range 10 {
+		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:        aws.String("http://localhost:4566/000000000000/" + queueName),
+			WaitTimeSeconds: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(recvOutput.Messages) > 0 {
+			break
+		}
+	}
+
+	if len(recvOutput.Messages) == 0 {
+		t.Fatal("expected transformed event to be delivered to SQS queue, but no message received")
+	}
+
+	body := *recvOutput.Messages[0].Body
+
+	// Verify the message contains the transformed content.
+	var transformed map[string]any
+	if err := json.Unmarshal([]byte(body), &transformed); err != nil {
+		t.Fatalf("failed to parse SQS message body as JSON: %v (body: %s)", err, body)
+	}
+
+	if transformed["transformedMarker"] != marker {
+		t.Errorf("expected transformedMarker=%s, got %v", marker, transformed["transformedMarker"])
+	}
+
+	if transformed["source"] != "custom-bus" {
+		t.Errorf("expected source=custom-bus, got %v", transformed["source"])
+	}
+
+	// Verify envelope fields are NOT present (InputTransformer produces custom output).
+	if _, hasVersion := transformed["version"]; hasVersion {
+		t.Errorf("expected InputTransformer to replace envelope, but found 'version' in: %s", body)
+	}
+}
+
 func TestEventBridge_EventBusNotFound(t *testing.T) {
 	client := newEventBridgeClient(t)
 	ctx := t.Context()
