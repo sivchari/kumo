@@ -575,6 +575,12 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 	switch sub.Protocol {
 	case "sqs":
 		if m.SqsPublisher != nil {
+			// Build the message body based on RawMessageDelivery setting.
+			body := message
+			if !isRawMessageDelivery(sub) {
+				body = buildSNSNotificationEnvelope(sub.TopicARN, message, subject, messageID, attributes)
+			}
+
 			attrs := map[string]string{
 				"MessageId": messageID,
 			}
@@ -582,7 +588,7 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 				attrs["Subject"] = subject
 			}
 
-			if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, message, messageGroupID, messageDeduplicationID, attrs); err != nil {
+			if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, body, messageGroupID, messageDeduplicationID, attrs); err != nil {
 				return fmt.Errorf("failed to publish to SQS: %w", err)
 			}
 
@@ -597,6 +603,55 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 	}
 
 	return nil
+}
+
+// isRawMessageDelivery checks whether the subscription has RawMessageDelivery enabled.
+func isRawMessageDelivery(sub *Subscription) bool {
+	if sub.SubscriptionAttributes == nil {
+		return false
+	}
+
+	return sub.SubscriptionAttributes["RawMessageDelivery"] == "true"
+}
+
+// buildSNSNotificationEnvelope wraps a message in the SNS notification JSON
+// envelope that AWS sends to SQS when RawMessageDelivery is not enabled.
+func buildSNSNotificationEnvelope(topicARN, message, subject, messageID string, attributes map[string]MessageAttribute) string {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	envelope := snsNotificationEnvelope{
+		Type:             "Notification",
+		MessageID:        messageID,
+		TopicArn:         topicARN,
+		Message:          message,
+		Timestamp:        now,
+		SignatureVersion: "1",
+		Signature:        "EXAMPLE",
+		SigningCertURL:   "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem",
+		UnsubscribeURL:   fmt.Sprintf("https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=%s", topicARN),
+	}
+
+	if subject != "" {
+		envelope.Subject = subject
+	}
+
+	if len(attributes) > 0 {
+		envelope.MessageAttributes = make(map[string]snsNotificationAttribute, len(attributes))
+		for k, v := range attributes {
+			envelope.MessageAttributes[k] = snsNotificationAttribute{
+				Type:  v.DataType,
+				Value: v.StringValue,
+			}
+		}
+	}
+
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		// Fallback to raw message if marshaling fails.
+		return message
+	}
+
+	return string(data)
 }
 
 // ListSubscriptions returns all subscriptions.

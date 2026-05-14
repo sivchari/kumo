@@ -240,6 +240,9 @@ func formToJSON(form map[string][]string) []byte {
 	// Handle nested attributes (like Attributes.entry.N.key/value).
 	result = flattenAttributes(result)
 
+	// Handle MessageAttributes.entry.N.Name / Value.DataType / Value.StringValue.
+	result = flattenMessageAttributes(result)
+
 	jsonBytes, _ := json.Marshal(result)
 
 	return jsonBytes
@@ -328,6 +331,95 @@ func buildAttributesMap(attrs map[string]string, result map[string]any) {
 	if len(attrMap) > 0 {
 		result["Attributes"] = attrMap
 	}
+}
+
+// flattenMessageAttributes converts MessageAttributes.entry.N.* form keys
+// into a nested JSON map that matches the SNS PublishRequest wire shape:
+//
+//	MessageAttributes.entry.1.Name          = event_type
+//	MessageAttributes.entry.1.Value.DataType    = String
+//	MessageAttributes.entry.1.Value.StringValue = billing
+//
+// becomes:
+//
+//	{"MessageAttributes": {"event_type": {"DataType":"String","StringValue":"billing"}}}
+//
+//nolint:funlen // AWS Query form attribute parsing.
+func flattenMessageAttributes(data map[string]any) map[string]any {
+	const prefix = "MessageAttributes.entry."
+
+	// Collect per-index fields.
+	type entryFields struct {
+		name        string
+		dataType    string
+		stringValue string
+	}
+
+	entries := make(map[string]*entryFields) // keyed by index (e.g. "1")
+	result := make(map[string]any)
+
+	for key, value := range data {
+		if !strings.HasPrefix(key, prefix) {
+			result[key] = value
+
+			continue
+		}
+
+		rest := key[len(prefix):] // e.g. "1.Name", "1.Value.DataType"
+		dotIdx := strings.Index(rest, ".")
+
+		if dotIdx < 0 {
+			result[key] = value
+
+			continue
+		}
+
+		idx := rest[:dotIdx]
+		field := rest[dotIdx+1:]
+		strValue, _ := value.(string)
+
+		e, ok := entries[idx]
+		if !ok {
+			e = &entryFields{}
+			entries[idx] = e
+		}
+
+		switch field {
+		case "Name":
+			e.name = strValue
+		case "Value.DataType":
+			e.dataType = strValue
+		case "Value.StringValue":
+			e.stringValue = strValue
+		}
+	}
+
+	if len(entries) > 0 {
+		msgAttrs := make(map[string]map[string]string, len(entries))
+
+		for _, e := range entries {
+			if e.name == "" {
+				continue
+			}
+
+			attr := make(map[string]string)
+			if e.dataType != "" {
+				attr["DataType"] = e.dataType
+			}
+
+			if e.stringValue != "" {
+				attr["StringValue"] = e.stringValue
+			}
+
+			msgAttrs[e.name] = attr
+		}
+
+		if len(msgAttrs) > 0 {
+			result["MessageAttributes"] = msgAttrs
+		}
+	}
+
+	return result
 }
 
 // writeQueryError writes an AWS Query protocol error response.

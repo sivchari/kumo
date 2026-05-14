@@ -422,3 +422,26 @@ type setTopicAttributesRequest struct {
 type getTopicAttributesRequest struct {
 	TopicArn string `json:"TopicArn"`
 }
+
+// snsNotificationEnvelope is the JSON envelope AWS wraps around messages
+// delivered to SQS when RawMessageDelivery is not enabled.
+type snsNotificationEnvelope struct {
+	Type              string                              `json:"Type"`
+	MessageID         string                              `json:"MessageId"`
+	TopicArn          string                              `json:"TopicArn"`
+	Subject           string                              `json:"Subject,omitempty"`
+	Message           string                              `json:"Message"`
+	Timestamp         string                              `json:"Timestamp"`
+	SignatureVersion  string                              `json:"SignatureVersion"`
+	Signature         string                              `json:"Signature"`
+	SigningCertURL    string                              `json:"SigningCertURL"`
+	UnsubscribeURL    string                              `json:"UnsubscribeURL"`
+	MessageAttributes map[string]snsNotificationAttribute `json:"MessageAttributes,omitempty"`
+}
+
+// snsNotificationAttribute represents a single message attribute in the
+// SNS notification JSON envelope.
+type snsNotificationAttribute struct {
+	Type  string `json:"Type"`
+	Value string `json:"Value"`
+}
