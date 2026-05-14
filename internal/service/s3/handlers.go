@@ -520,7 +520,10 @@ func (s *Service) HeadBucket(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// ListObjects handles GET /{bucket} - list objects in a bucket.
+// ListObjects handles GET /{bucket}?list-type=2 — the V2 listing API
+// with continuation-token pagination.
+//
+//nolint:funlen // Pagination logic requires sequential query parameter handling.
 func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 	bucket := r.PathValue("bucket")
 	if bucket == "" {
@@ -529,17 +532,22 @@ func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prefix := r.URL.Query().Get("prefix")
-	delimiter := r.URL.Query().Get("delimiter")
+	q := r.URL.Query()
+	prefix := q.Get("prefix")
+	delimiter := q.Get("delimiter")
+	startAfter := q.Get("start-after")
+	continuationToken := q.Get("continuation-token")
 	maxKeys := 1000
 
-	if maxKeysStr := r.URL.Query().Get("max-keys"); maxKeysStr != "" {
+	if maxKeysStr := q.Get("max-keys"); maxKeysStr != "" {
 		if mk, err := strconv.Atoi(maxKeysStr); err == nil && mk > 0 {
 			maxKeys = mk
 		}
 	}
 
-	objects, commonPrefixes, err := s.storage.ListObjects(r.Context(), bucket, prefix, delimiter, maxKeys)
+	const fetchAll = 1 << 30 // sentinel: fetch everything, paginate in the handler
+
+	objects, commonPrefixes, err := s.storage.ListObjects(r.Context(), bucket, prefix, delimiter, fetchAll)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -551,6 +559,21 @@ func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 
 		return
+	}
+
+	// Determine the effective start key. ContinuationToken takes
+	// precedence over StartAfter (it is an opaque token whose value
+	// is the last key from the previous page).
+	startKey := startAfter
+	if continuationToken != "" {
+		startKey = continuationToken
+	}
+
+	objects = sliceObjectsAfterMarker(objects, startKey)
+
+	truncated := len(objects) > maxKeys
+	if truncated {
+		objects = objects[:maxKeys]
 	}
 
 	contents := make([]ObjectInfo, len(objects))
@@ -569,15 +592,23 @@ func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 		prefixes[i] = CommonPrefix{Prefix: p}
 	}
 
+	var nextContinuationToken string
+	if truncated && len(contents) > 0 {
+		nextContinuationToken = contents[len(contents)-1].Key
+	}
+
 	result := ListBucketResult{
-		Xmlns:          s3Namespace,
-		Name:           bucket,
-		Prefix:         prefix,
-		KeyCount:       len(objects),
-		MaxKeys:        maxKeys,
-		IsTruncated:    false,
-		Contents:       contents,
-		CommonPrefixes: prefixes,
+		Xmlns:                 s3Namespace,
+		Name:                  bucket,
+		Prefix:                prefix,
+		KeyCount:              len(contents),
+		MaxKeys:               maxKeys,
+		IsTruncated:           truncated,
+		Contents:              contents,
+		CommonPrefixes:        prefixes,
+		ContinuationToken:     continuationToken,
+		NextContinuationToken: nextContinuationToken,
+		StartAfter:            startAfter,
 	}
 
 	writeXMLResponse(w, result)
