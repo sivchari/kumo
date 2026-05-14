@@ -112,6 +112,7 @@ func New(config Config) *Server {
 
 	// Cross-service wiring (must happen after all services are registered).
 	wireSNStoSQS(registry)
+	wireS3toSQS(registry)
 
 	// Register unified protocol dispatcher for POST /
 	hasJSONServices := len(jsonDispatcher.handlers) > 0

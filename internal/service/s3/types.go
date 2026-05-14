@@ -358,12 +358,60 @@ type CopyRange struct {
 
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
-	XMLName           xml.Name           `xml:"NotificationConfiguration"`
-	EventBridgeConfig *EventBridgeConfig `xml:"EventBridgeConfiguration,omitempty"`
+	XMLName             xml.Name             `xml:"NotificationConfiguration"`
+	EventBridgeConfig   *EventBridgeConfig   `xml:"EventBridgeConfiguration,omitempty"`
+	QueueConfigurations []QueueConfiguration `xml:"QueueConfiguration,omitempty"`
 }
 
 // EventBridgeConfig represents EventBridge notification configuration.
 type EventBridgeConfig struct{}
+
+// QueueConfiguration represents an SQS queue destination in the bucket
+// notification configuration.
+type QueueConfiguration struct {
+	ID       string   `xml:"Id,omitempty"       json:"id,omitempty"`
+	QueueArn string   `xml:"Queue"              json:"queue"`
+	Events   []string `xml:"Event"              json:"events"`
+}
+
+// EventNotification is the top-level wrapper sent to SQS when an S3
+// event fires. AWS calls this the "event message structure".
+type EventNotification struct {
+	Records []EventRecord `json:"Records"` //nolint:tagliatelle // AWS S3 event format
+}
+
+// EventRecord represents a single record inside the Records array of
+// an S3 event notification message delivered to SQS.
+type EventRecord struct {
+	EventVersion string              `json:"eventVersion"`
+	EventSource  string              `json:"eventSource"`
+	AWSRegion    string              `json:"awsRegion"`
+	EventTime    string              `json:"eventTime"`
+	EventName    string              `json:"eventName"`
+	S3           EventRecordS3Detail `json:"s3"`
+	UserIdentity map[string]string   `json:"userIdentity"`
+}
+
+// EventRecordS3Detail holds the s3-specific portion of an event record.
+type EventRecordS3Detail struct {
+	SchemaVersion   string            `json:"s3SchemaVersion"`
+	ConfigurationID string            `json:"configurationId"`
+	Bucket          EventRecordBucket `json:"bucket"`
+	Object          EventRecordObject `json:"object"`
+}
+
+// EventRecordBucket describes the bucket in an S3 event record.
+type EventRecordBucket struct {
+	Name string `json:"name"`
+	Arn  string `json:"arn"`
+}
+
+// EventRecordObject describes the object in an S3 event record.
+type EventRecordObject struct {
+	Key  string `json:"key"`
+	Size int64  `json:"size"`
+	ETag string `json:"eTag"`
+}
 
 // CORSConfiguration represents S3 bucket CORS configuration (XML request body).
 type CORSConfiguration struct {

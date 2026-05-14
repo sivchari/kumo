@@ -759,6 +759,9 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 
 	// Emit EventBridge notification if enabled.
 	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
+
+	// Deliver S3 event notification to configured SQS queues.
+	go s.emitSQSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
 }
 
 // CopyObject handles PUT /{bucket}/{key} with X-Amz-Copy-Source header.
@@ -810,6 +813,7 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	writeXMLResponse(w, result)
 
 	go s.emitObjectCreatedEvent(context.Background(), dstBucket, dstKey, dstObj.Size, dstObj.ETag)
+	go s.emitSQSNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
 }
 
 // parseCopySource parses the X-Amz-Copy-Source header value.
@@ -2284,6 +2288,7 @@ func (s *Service) PutBucketNotificationConfiguration(w http.ResponseWriter, r *h
 
 	enabled := config.EventBridgeConfig != nil
 	s.storage.SetEventBridgeNotification(r.Context(), bucket, enabled)
+	s.storage.SetQueueConfigurations(r.Context(), bucket, config.QueueConfigurations)
 
 	w.WriteHeader(http.StatusOK)
 }

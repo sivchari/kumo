@@ -8,13 +8,24 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/sivchari/kumo/internal/service"
 )
+
+// SQSPublisher is the interface the S3 service uses to deliver event
+// notification messages to SQS queues. The server wiring layer
+// provides a concrete implementation backed by the SQS storage.
+type SQSPublisher interface {
+	// PublishToSQS sends a single message to the SQS queue identified
+	// by queueARN. The body is the full JSON event notification.
+	PublishToSQS(ctx context.Context, queueARN, body string) error
+}
 
 const defaultBaseURL = "http://localhost:4566"
 
@@ -38,9 +49,10 @@ func init() {
 
 // Service implements the S3 service.
 type Service struct {
-	storage Storage
-	baseURL string
-	logger  *slog.Logger
+	storage      Storage
+	baseURL      string
+	logger       *slog.Logger
+	sqsPublisher SQSPublisher
 }
 
 // New creates a new S3 service.
@@ -97,6 +109,89 @@ func (s *Service) Close() error {
 	}
 
 	return nil
+}
+
+// SetSQSPublisher installs the adapter that delivers S3 event
+// notification messages to SQS queues. Called by the server wiring
+// layer after all services have been registered.
+func (s *Service) SetSQSPublisher(p SQSPublisher) {
+	s.sqsPublisher = p
+}
+
+// emitSQSNotifications delivers S3 event notification messages to
+// every SQS queue configured in the bucket's notification configuration
+// whose event filter matches the given eventName.
+func (s *Service) emitSQSNotifications(ctx context.Context, bucket, key, eventName string, size int64, etag string) {
+	if s.sqsPublisher == nil {
+		return
+	}
+
+	configs := s.storage.GetQueueConfigurations(ctx, bucket)
+	if len(configs) == 0 {
+		return
+	}
+
+	for _, cfg := range configs {
+		if !matchesEventFilter(cfg.Events, eventName) {
+			continue
+		}
+
+		record := EventNotification{
+			Records: []EventRecord{{
+				EventVersion: "2.1",
+				EventSource:  "aws:s3",
+				AWSRegion:    "us-east-1",
+				EventTime:    time.Now().UTC().Format(time.RFC3339),
+				EventName:    eventName,
+				UserIdentity: map[string]string{"principalId": "EXAMPLE"},
+				S3: EventRecordS3Detail{
+					SchemaVersion:   "1.0",
+					ConfigurationID: cfg.ID,
+					Bucket: EventRecordBucket{
+						Name: bucket,
+						Arn:  "arn:aws:s3:::" + bucket,
+					},
+					Object: EventRecordObject{
+						Key:  url.QueryEscape(key),
+						Size: size,
+						ETag: strings.Trim(etag, "\""),
+					},
+				},
+			}},
+		}
+
+		body, err := json.Marshal(record)
+		if err != nil {
+			s.logger.Error("failed to marshal S3 event notification", "error", err)
+
+			continue
+		}
+
+		if err := s.sqsPublisher.PublishToSQS(ctx, cfg.QueueArn, string(body)); err != nil {
+			s.logger.Error("failed to deliver S3 notification to SQS",
+				"bucket", bucket, "key", key, "queueArn", cfg.QueueArn, "error", err)
+		}
+	}
+}
+
+// matchesEventFilter checks whether an eventName (e.g. "s3:ObjectCreated:Put")
+// matches any of the configured event filter strings (e.g. "s3:ObjectCreated:*").
+func matchesEventFilter(filters []string, eventName string) bool {
+	for _, f := range filters {
+		if f == eventName {
+			return true
+		}
+
+		// Handle wildcard: "s3:ObjectCreated:*" matches "s3:ObjectCreated:Put"
+		if strings.HasSuffix(f, "*") {
+			prefix := strings.TrimSuffix(f, "*")
+			if strings.HasPrefix(eventName, prefix) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // emitObjectCreatedEvent sends an S3 Object Created event to EventBridge.

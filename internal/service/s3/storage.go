@@ -64,6 +64,8 @@ type Storage interface {
 	// Notification and CORS
 	SetEventBridgeNotification(ctx context.Context, bucket string, enabled bool)
 	IsEventBridgeEnabled(ctx context.Context, bucket string) bool
+	SetQueueConfigurations(ctx context.Context, bucket string, configs []QueueConfiguration)
+	GetQueueConfigurations(ctx context.Context, bucket string) []QueueConfiguration
 	SetCORSConfiguration(ctx context.Context, bucket string, rules []CORSRule)
 	GetCORSRules(ctx context.Context, bucket string) []CORSRule
 
@@ -118,23 +120,24 @@ type MemoryStorage struct {
 
 // MemoryBucket holds the data for a single S3 bucket.
 type MemoryBucket struct {
-	Name               string                      `json:"name"`
-	CreationDate       time.Time                   `json:"creationDate"`
-	Objects            map[string]*Object          `json:"objects"`                     // current/latest version per key
-	Versions           map[string][]*Object        `json:"versions"`                    // all versions per key (newest first)
-	VersioningStatus   string                      `json:"versioningStatus"`            // "", "Enabled", "Suspended"
-	VersionIDCounter   uint64                      `json:"versionIdcounter"`            // counter for generating version IDs
-	MultipartUploads   map[string]*MultipartUpload `json:"-"`                           // uploadID -> MultipartUpload
-	EventBridgeEnabled bool                        `json:"eventBridgeEnabled"`          // EventBridge notification
-	CORSRules          []CORSRule                  `json:"corsRules,omitempty"`         // CORS configuration
-	PublicAccessBlock  *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"` // public access block configuration
-	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
-	Policy             string                      `json:"policy,omitempty"`            // bucket policy JSON document (empty == not configured)
-	Logging            *BucketLoggingConfig        `json:"logging,omitempty"`           // server access logging target (nil == disabled)
-	ObjectACLs         map[string]*ObjectACL       `json:"objectAcls,omitempty"`        // per-object ACL (key -> ACL)
-	Website            *WebsiteConfiguration       `json:"website,omitempty"`           // static-site-hosting configuration
-	Lifecycle          *LifecycleConfiguration     `json:"lifecycle,omitempty"`         // expiration / transition rules
-	ObjectRestores     map[string]*RestoreState    `json:"objectRestores,omitempty"`    // per-object restore state (key -> state)
+	Name                string                      `json:"name"`
+	CreationDate        time.Time                   `json:"creationDate"`
+	Objects             map[string]*Object          `json:"objects"`                       // current/latest version per key
+	Versions            map[string][]*Object        `json:"versions"`                      // all versions per key (newest first)
+	VersioningStatus    string                      `json:"versioningStatus"`              // "", "Enabled", "Suspended"
+	VersionIDCounter    uint64                      `json:"versionIdcounter"`              // counter for generating version IDs
+	MultipartUploads    map[string]*MultipartUpload `json:"-"`                             // uploadID -> MultipartUpload
+	EventBridgeEnabled  bool                        `json:"eventBridgeEnabled"`            // EventBridge notification
+	QueueConfigurations []QueueConfiguration        `json:"queueConfigurations,omitempty"` // SQS queue notification destinations
+	CORSRules           []CORSRule                  `json:"corsRules,omitempty"`           // CORS configuration
+	PublicAccessBlock   *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"`   // public access block configuration
+	Encryption          *ServerSideEncryptionConfig `json:"encryption,omitempty"`          // server-side encryption configuration
+	Policy              string                      `json:"policy,omitempty"`              // bucket policy JSON document (empty == not configured)
+	Logging             *BucketLoggingConfig        `json:"logging,omitempty"`             // server access logging target (nil == disabled)
+	ObjectACLs          map[string]*ObjectACL       `json:"objectAcls,omitempty"`          // per-object ACL (key -> ACL)
+	Website             *WebsiteConfiguration       `json:"website,omitempty"`             // static-site-hosting configuration
+	Lifecycle           *LifecycleConfiguration     `json:"lifecycle,omitempty"`           // expiration / transition rules
+	ObjectRestores      map[string]*RestoreState    `json:"objectRestores,omitempty"`      // per-object restore state (key -> state)
 }
 
 // BucketLoggingConfig stores the destination for server access logs.
@@ -1204,6 +1207,28 @@ func (s *MemoryStorage) IsEventBridgeEnabled(_ context.Context, bucket string) b
 	}
 
 	return false
+}
+
+// SetQueueConfigurations stores the SQS queue notification destinations for a bucket.
+func (s *MemoryStorage) SetQueueConfigurations(_ context.Context, bucket string, configs []QueueConfiguration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		b.QueueConfigurations = configs
+	}
+}
+
+// GetQueueConfigurations returns the SQS queue notification destinations for a bucket.
+func (s *MemoryStorage) GetQueueConfigurations(_ context.Context, bucket string) []QueueConfiguration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		return b.QueueConfigurations
+	}
+
+	return nil
 }
 
 // SetCORSConfiguration sets the CORS configuration for a bucket.

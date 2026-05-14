@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sivchari/kumo/internal/service"
+	"github.com/sivchari/kumo/internal/service/s3"
 	"github.com/sivchari/kumo/internal/service/sns"
 	"github.com/sivchari/kumo/internal/service/sqs"
 )
@@ -94,6 +95,83 @@ func (p *snsToSQSPublisher) endpointToQueueURL(endpoint string) string {
 	parts := strings.Split(endpoint, ":")
 	if len(parts) < 6 {
 		return endpoint
+	}
+
+	account := parts[4]
+	name := parts[5]
+
+	return p.baseURL + "/" + account + "/" + name
+}
+
+// wireS3toSQS connects the S3 service to the SQS service so that
+// S3 bucket notification configurations with QueueConfigurations
+// actually deliver event messages into the target SQS queue.
+//
+// Without this wiring, PutObject silently ignores QueueConfiguration
+// entries because s3.Service.sqsPublisher is nil. The pattern mirrors
+// wireSNStoSQS.
+func wireS3toSQS(registry *service.Registry) {
+	s3Svc, ok := registry.Get("s3")
+	if !ok {
+		return
+	}
+
+	sqsSvc, ok := registry.Get("sqs")
+	if !ok {
+		return
+	}
+
+	s3Typed, ok := s3Svc.(*s3.Service)
+	if !ok {
+		return
+	}
+
+	sqsTyped, ok := sqsSvc.(*sqs.Service)
+	if !ok {
+		return
+	}
+
+	s3Typed.SetSQSPublisher(&s3ToSQSPublisher{
+		storage: sqsTyped.Storage(),
+		baseURL: sqsTyped.BaseURL(),
+	})
+}
+
+// s3ToSQSPublisher adapts the SQS storage layer to the S3
+// SQSPublisher interface. It accepts an SQS ARN in the queueARN
+// argument, translates it to the queue URL the SQS storage layer
+// keys queues by, and sends the message.
+type s3ToSQSPublisher struct {
+	storage sqs.Storage
+	baseURL string
+}
+
+// PublishToSQS delivers an S3 event notification message to an SQS
+// queue identified by its ARN. The message body is the full JSON
+// event notification envelope (Records[]).
+func (p *s3ToSQSPublisher) PublishToSQS(ctx context.Context, queueARN, body string) error {
+	queueURL := p.arnToQueueURL(queueARN)
+
+	_, err := p.storage.SendMessage(ctx, queueURL, body, 0, nil, "", "")
+	if err != nil {
+		return err //nolint:wrapcheck // adapter is a thin pass-through
+	}
+
+	return nil
+}
+
+// arnToQueueURL converts an SQS ARN to the queue URL that the storage
+// layer keys queues by. If the input is already a URL it is returned
+// unchanged.
+func (p *s3ToSQSPublisher) arnToQueueURL(arn string) string {
+	if !strings.HasPrefix(arn, "arn:") {
+		return arn
+	}
+
+	// arn:aws:sqs:<region>:<account>:<name> -> <baseURL>/<account>/<name>
+	parts := strings.Split(arn, ":")
+	if len(parts) < 6 {
+		return arn
 	}
 
 	account := parts[4]
