@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sivchari/kumo/internal/storage"
+	"github.com/sivchari/kumo/internal/streams"
 )
 
 const (
@@ -58,11 +59,12 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu      sync.RWMutex          `json:"-"`
-	Tables  map[string]*tableData `json:"tables"`
-	baseURL string
-	dataDir string
-	stopTTL chan struct{}
+	mu          sync.RWMutex          `json:"-"`
+	Tables      map[string]*tableData `json:"tables"`
+	baseURL     string
+	dataDir     string
+	stopTTL     chan struct{}
+	streamStore *streams.Store
 }
 
 type tableData struct {
@@ -73,9 +75,10 @@ type tableData struct {
 // NewMemoryStorage creates a new in-memory DynamoDB storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
-		Tables:  make(map[string]*tableData),
-		baseURL: baseURL,
-		stopTTL: make(chan struct{}),
+		Tables:      make(map[string]*tableData),
+		baseURL:     baseURL,
+		stopTTL:     make(chan struct{}),
+		streamStore: streams.Global,
 	}
 	for _, o := range opts {
 		o(s)
@@ -192,6 +195,8 @@ func (m *MemoryStorage) Close() error {
 }
 
 // CreateTable creates a new table.
+//
+//nolint:funlen // Table creation with stream setup.
 func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) (*Table, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -228,6 +233,25 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		table.StreamEnabled = true
 		table.StreamViewType = req.StreamSpecification.StreamViewType
 		table.LatestStreamArn = fmt.Sprintf("%s/stream/%s", table.TableARN, time.Now().Format("2006-01-02T15:04:05.000"))
+
+		// Register the stream in the shared event store so DynamoDB Streams can read it.
+		keySchema := make([]streams.KeySchemaElement, len(req.KeySchema))
+		for i, ks := range req.KeySchema {
+			keySchema[i] = streams.KeySchemaElement{
+				AttributeName: ks.AttributeName,
+				KeyType:       ks.KeyType,
+			}
+		}
+
+		m.streamStore.RegisterStream(&streams.StreamInfo{
+			StreamARN:      table.LatestStreamArn,
+			TableName:      table.Name,
+			StreamViewType: table.StreamViewType,
+			StreamLabel:    time.Now().Format("2006-01-02T15:04:05.000"),
+			StreamStatus:   "ENABLED",
+			KeySchema:      keySchema,
+			CreationTime:   time.Now(),
+		})
 	}
 
 	m.Tables[req.TableName] = &tableData{
@@ -364,6 +388,16 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 
 	td.Items[key] = m.copyItem(item)
 
+	// Emit stream event if streams are enabled for this table.
+	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+		eventName := streams.OperationTypeInsert
+		if existingItem != nil {
+			eventName = streams.OperationTypeModify
+		}
+
+		m.emitStreamEvent(td.Table, eventName, m.extractKey(td.Table, item), existingItem, item)
+	}
+
 	return oldItem, nil
 }
 
@@ -430,12 +464,19 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 		}
 
 		delete(td.Items, keyStr)
+
+		// Emit stream event if streams are enabled for this table.
+		if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+			m.emitStreamEvent(td.Table, streams.OperationTypeRemove, key, existingItem, nil)
+		}
 	}
 
 	return oldItem, nil
 }
 
 // UpdateItem updates an item in a table.
+//
+//nolint:funlen // Item update with expression evaluation.
 func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, returnValues string, cond ConditionInput) (Item, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -483,6 +524,16 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 	}
 
 	td.Items[keyStr] = item
+
+	// Emit stream event if streams are enabled for this table.
+	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+		eventName := streams.OperationTypeInsert
+		if itemExists {
+			eventName = streams.OperationTypeModify
+		}
+
+		m.emitStreamEvent(td.Table, eventName, key, oldItem, item)
+	}
 
 	// Return based on returnValues.
 	switch returnValues {
@@ -1677,4 +1728,130 @@ func (m *MemoryStorage) compareForSort(a, b *AttributeValue) bool {
 	}
 
 	return false
+}
+
+// emitStreamEvent publishes a stream record to the shared event store.
+// Must be called under m.mu lock since it reads table metadata.
+func (m *MemoryStorage) emitStreamEvent(table *Table, eventName streams.OperationType, keyItem, oldItem, newItem Item) {
+	record := &streams.StreamRecord{
+		EventID:        uuid.New().String(),
+		EventName:      eventName,
+		AwsRegion:      defaultRegion,
+		StreamViewType: table.StreamViewType,
+		TableName:      table.Name,
+		StreamARN:      table.LatestStreamArn,
+		Keys:           convertItemToStreamAttrs(keyItem),
+		SizeBytes:      100, // Approximate size.
+	}
+
+	// Include old/new images based on stream view type.
+	switch table.StreamViewType {
+	case "NEW_AND_OLD_IMAGES":
+		record.OldImage = convertItemToStreamAttrs(oldItem)
+		record.NewImage = convertItemToStreamAttrs(newItem)
+	case "NEW_IMAGE":
+		record.NewImage = convertItemToStreamAttrs(newItem)
+	case "OLD_IMAGE":
+		record.OldImage = convertItemToStreamAttrs(oldItem)
+	case "KEYS_ONLY":
+		// Only keys are included; already set above.
+	} //nolint:wsl // Intentional empty case with comment.
+
+	m.streamStore.PutRecord(record)
+}
+
+// convertItemToStreamAttrs converts DynamoDB Item to streams.AttributeValue map.
+//
+//nolint:gocritic // rangeValCopy: copy needed for value conversion.
+func convertItemToStreamAttrs(item Item) map[string]streams.AttributeValue {
+	if item == nil {
+		return nil
+	}
+
+	result := make(map[string]streams.AttributeValue, len(item))
+
+	for k, v := range item {
+		result[k] = convertAttrToStreamAttr(v)
+	}
+
+	return result
+}
+
+// convertAttrToStreamAttr converts a single DynamoDB AttributeValue to streams.AttributeValue.
+//
+//nolint:funlen,gocritic // hugeParam + exhaustive type switch for all DynamoDB attribute types.
+func convertAttrToStreamAttr(av AttributeValue) streams.AttributeValue {
+	result := streams.AttributeValue{}
+
+	if av.S != nil {
+		s := *av.S
+		result.S = &s
+	}
+
+	if av.N != nil {
+		n := *av.N
+		result.N = &n
+	}
+
+	if av.B != nil {
+		b := make([]byte, len(av.B))
+		copy(b, av.B)
+		result.B = b
+	}
+
+	if av.SS != nil {
+		ss := make([]string, len(av.SS))
+		copy(ss, av.SS)
+		result.SS = ss
+	}
+
+	if av.NS != nil {
+		ns := make([]string, len(av.NS))
+		copy(ns, av.NS)
+		result.NS = ns
+	}
+
+	if av.BS != nil {
+		bs := make([][]byte, len(av.BS))
+		for i, b := range av.BS {
+			bs[i] = make([]byte, len(b))
+			copy(bs[i], b)
+		}
+
+		result.BS = bs
+	}
+
+	if av.M != nil {
+		m := make(map[string]*streams.AttributeValue, len(av.M))
+
+		for k, v := range av.M {
+			converted := convertAttrToStreamAttr(*v)
+			m[k] = &converted
+		}
+
+		result.M = m
+	}
+
+	if av.L != nil {
+		l := make([]*streams.AttributeValue, len(av.L))
+
+		for i, v := range av.L {
+			converted := convertAttrToStreamAttr(*v)
+			l[i] = &converted
+		}
+
+		result.L = l
+	}
+
+	if av.NULL != nil {
+		n := *av.NULL
+		result.NULL = &n
+	}
+
+	if av.BOOL != nil {
+		b := *av.BOOL
+		result.BOOL = &b
+	}
+
+	return result
 }

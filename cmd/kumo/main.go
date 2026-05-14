@@ -35,6 +35,7 @@ import (
 	_ "github.com/sivchari/kumo/internal/service/documentdb"
 	_ "github.com/sivchari/kumo/internal/service/ds"
 	_ "github.com/sivchari/kumo/internal/service/dynamodb"
+	_ "github.com/sivchari/kumo/internal/service/dynamodbstreams"
 	_ "github.com/sivchari/kumo/internal/service/ebs"
 	_ "github.com/sivchari/kumo/internal/service/ec2"
 	_ "github.com/sivchari/kumo/internal/service/ecr"
