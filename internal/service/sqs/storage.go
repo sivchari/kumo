@@ -797,8 +797,8 @@ func applyQueueAttributes(q *Queue, attrs map[string]string) {
 
 // redrivePolicy is used for JSON unmarshaling of RedrivePolicy attribute.
 type redrivePolicy struct {
-	DeadLetterTargetArn string `json:"deadLetterTargetArn"`
-	MaxReceiveCount     string `json:"maxReceiveCount"`
+	DeadLetterTargetArn string      `json:"deadLetterTargetArn"`
+	MaxReceiveCount     json.Number `json:"maxReceiveCount"`
 }
 
 // requeueExpiredMessages moves inflight messages whose visibility timeout has
@@ -849,6 +849,12 @@ func (s *MemoryStorage) moveToDeadLetterQueue(dlqArn string, msg *Message) {
 
 			qd.Messages = append(qd.Messages, dlqMsg)
 
+			// Notify long-polling receivers on the DLQ.
+			select {
+			case qd.notify <- struct{}{}:
+			default:
+			}
+
 			return
 		}
 	}
@@ -861,5 +867,13 @@ func parseRedrivePolicy(q *Queue, val string) {
 	}
 
 	q.DeadLetterTargetArn = rp.DeadLetterTargetArn
-	_, _ = fmt.Sscanf(rp.MaxReceiveCount, "%d", &q.MaxReceiveCount)
+
+	if rp.MaxReceiveCount != "" {
+		n, err := rp.MaxReceiveCount.Int64()
+		if err != nil {
+			return
+		}
+
+		q.MaxReceiveCount = int(n)
+	}
 }
