@@ -423,8 +423,155 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject,
 	return messageID, nil
 }
 
+// matchesFilterPolicy checks whether the given message attributes satisfy the
+// subscription's FilterPolicy.  A FilterPolicy is a JSON object whose keys
+// are attribute names and whose values are arrays of allowed values.
+//
+// AWS supports several filter policy operators (exact match, prefix,
+// anything-but, numeric, exists, etc.).  This implementation covers:
+//   - exact string match  (e.g. ["billing"])
+//   - "exists": true/false
+//   - "prefix"
+//   - "anything-but"  (string list)
+//
+// If the subscription has no FilterPolicy, all messages match.
+func matchesFilterPolicy(filterPolicyJSON string, attributes map[string]MessageAttribute) bool {
+	if filterPolicyJSON == "" {
+		return true
+	}
+
+	// Parse the filter policy.
+	var policy map[string][]json.RawMessage
+	if err := json.Unmarshal([]byte(filterPolicyJSON), &policy); err != nil {
+		// Malformed policy -- deliver to be safe (same as AWS fallback).
+		return true
+	}
+
+	// Every key in the policy must match at least one condition in its array.
+	for key, conditions := range policy {
+		attr, exists := attributes[key]
+
+		if !matchesConditions(conditions, attr.StringValue, exists) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// matchesConditions evaluates a single filter-policy key's condition array.
+// The attribute must satisfy at least one condition in the array.
+func matchesConditions(conditions []json.RawMessage, value string, exists bool) bool {
+	for _, raw := range conditions {
+		if matchesSingleCondition(raw, value, exists) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// matchesSingleCondition checks one condition entry.  It can be a plain
+// string (exact match) or an object with an operator key.
+func matchesSingleCondition(raw json.RawMessage, value string, exists bool) bool {
+	// Try plain string (exact match).
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return exists && value == s
+	}
+
+	// Try number (exact numeric match against StringValue).
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return exists && value == n.String()
+	}
+
+	// Try boolean -- the only useful boolean in a condition array is
+	// a bare true/false which AWS does not actually support at the
+	// top level (it needs {"exists": true/false}), but handle it
+	// gracefully.
+	var b bool
+	if err := json.Unmarshal(raw, &b); err == nil {
+		if b {
+			return exists
+		}
+
+		return !exists
+	}
+
+	// Try object (operator form).
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return false
+	}
+
+	return matchesOperator(obj, value, exists)
+}
+
+// matchesOperator handles object-form conditions like {"exists": true},
+// {"prefix": "pay"}, {"anything-but": ["x"]}.
+//
+//nolint:nestif // Multiple operator branches each need their own type assertion.
+func matchesOperator(obj map[string]json.RawMessage, value string, exists bool) bool {
+	// {"exists": true/false}
+	if raw, ok := obj["exists"]; ok {
+		var want bool
+		if err := json.Unmarshal(raw, &want); err == nil {
+			if want {
+				return exists
+			}
+
+			return !exists
+		}
+	}
+
+	// {"prefix": "val"}
+	if raw, ok := obj["prefix"]; ok {
+		var prefix string
+		if err := json.Unmarshal(raw, &prefix); err == nil {
+			return exists && strings.HasPrefix(value, prefix)
+		}
+	}
+
+	// {"anything-but": ["v1","v2",...]}  or  {"anything-but": "v1"}
+	if raw, ok := obj["anything-but"]; ok {
+		if !exists {
+			return false
+		}
+
+		// Try array.
+		var arr []string
+		if err := json.Unmarshal(raw, &arr); err == nil {
+			for _, deny := range arr {
+				if value == deny {
+					return false
+				}
+			}
+
+			return true
+		}
+
+		// Try single string.
+		var single string
+		if err := json.Unmarshal(raw, &single); err == nil {
+			return value != single
+		}
+	}
+
+	return false
+}
+
 // deliverMessage delivers a message to a subscription.
-func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, _ map[string]MessageAttribute) error {
+func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
+	// Check FilterPolicy before delivering.
+	if sub.SubscriptionAttributes != nil {
+		if fp, ok := sub.SubscriptionAttributes["FilterPolicy"]; ok {
+			if !matchesFilterPolicy(fp, attributes) {
+				return nil
+			}
+		}
+	}
+
 	switch sub.Protocol {
 	case "sqs":
 		if m.SqsPublisher != nil {
