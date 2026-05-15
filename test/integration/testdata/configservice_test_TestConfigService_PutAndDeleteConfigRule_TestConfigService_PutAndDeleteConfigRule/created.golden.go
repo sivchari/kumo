@@ -7,8 +7,8 @@
         "SourceDetails": null,
         "SourceIdentifier": "S3_BUCKET_VERSIONING_ENABLED"
       },
-      "ConfigRuleArn": "arn:aws:config:us-east-1:123456789012:config-rule/config-rule-61deabc4",
-      "ConfigRuleId": "config-rule-61deabc4",
+      "ConfigRuleArn": "arn:aws:config:us-east-1:000000000000:config-rule/config-rule-mavnik",
+      "ConfigRuleId": "config-rule-mavnik",
       "ConfigRuleName": "test-rule-create-delete",
       "ConfigRuleState": "ACTIVE",
       "CreatedBy": null,

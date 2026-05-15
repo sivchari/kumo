@@ -1,5 +1,5 @@
 {
-  "Capabilities": [],
+  "Capabilities": null,
   "CapabilitiesReason": null,
   "DeclaredTransforms": null,
   "Description": "Test template with parameters",

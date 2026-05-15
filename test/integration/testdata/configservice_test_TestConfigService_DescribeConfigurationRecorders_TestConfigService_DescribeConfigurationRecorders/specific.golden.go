@@ -5,10 +5,14 @@
       "Name": "test-recorder-describe",
       "RecordingGroup": {
         "AllSupported": true,
-        "ExclusionByResourceTypes": null,
+        "ExclusionByResourceTypes": {
+          "ResourceTypes": []
+        },
         "IncludeGlobalResourceTypes": false,
-        "RecordingStrategy": null,
-        "ResourceTypes": null
+        "RecordingStrategy": {
+          "UseOnly": "ALL_SUPPORTED_RESOURCE_TYPES"
+        },
+        "ResourceTypes": []
       },
       "RecordingMode": null,
       "RecordingScope": "",

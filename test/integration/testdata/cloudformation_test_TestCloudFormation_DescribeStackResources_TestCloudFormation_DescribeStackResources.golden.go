@@ -2,15 +2,18 @@
   "StackResources": [
     {
       "LogicalResourceId": "TestBucket",
-      "ResourceStatus": "CREATE_COMPLETE",
+      "ResourceStatus": "UPDATE_IN_PROGRESS",
       "ResourceType": "AWS::S3::Bucket",
-      "Timestamp": "2026-03-23T07:45:25.025Z",
+      "Timestamp": "2026-05-15T04:59:00.213Z",
       "Description": null,
-      "DriftInformation": null,
+      "DriftInformation": {
+        "StackResourceDriftStatus": "NOT_CHECKED",
+        "LastCheckTimestamp": null
+      },
       "ModuleInfo": null,
-      "PhysicalResourceId": "TestBucket-7f35e360",
+      "PhysicalResourceId": null,
       "ResourceStatusReason": null,
-      "StackId": "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack-resources/d89a673d-ee58-4569-964c-c4b217e4ba5c",
+      "StackId": "arn:aws:cloudformation:us-east-1:000000000000:stack/test-stack-resources/2a1a894d",
       "StackName": "test-stack-resources"
     }
   ],

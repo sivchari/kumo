@@ -7,8 +7,8 @@
         "SourceDetails": null,
         "SourceIdentifier": "S3_BUCKET_VERSIONING_ENABLED"
       },
-      "ConfigRuleArn": "arn:aws:config:us-east-1:123456789012:config-rule/config-rule-f956a7bf",
-      "ConfigRuleId": "config-rule-f956a7bf",
+      "ConfigRuleArn": "arn:aws:config:us-east-1:000000000000:config-rule/config-rule-magdiw",
+      "ConfigRuleId": "config-rule-magdiw",
       "ConfigRuleName": "test-rule-describe",
       "ConfigRuleState": "ACTIVE",
       "CreatedBy": null,

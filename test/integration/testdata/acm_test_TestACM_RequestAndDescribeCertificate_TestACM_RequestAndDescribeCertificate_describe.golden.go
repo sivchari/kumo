@@ -1,19 +1,19 @@
 {
   "Certificate": {
-    "CertificateArn": "arn:aws:acm:us-east-1:000000000000:certificate/83cdbf97-467c-47bc-9090-534509209c6e",
+    "CertificateArn": "arn:aws:acm:us-east-1:000000000000:certificate/6421d74b-5678-4057-bb4d-1c820f57397d",
     "CertificateAuthorityArn": null,
-    "CreatedAt": "2026-03-23T07:45:24.794Z",
+    "CreatedAt": "2026-05-15T04:58:29.748Z",
     "DomainName": "example.com",
     "DomainValidationOptions": [
       {
-        "DomainName": "example.com",
+        "DomainName": "api.example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.example.com",
+          "Name": "_d930b28be6c5927595552b219965053e.api.example.com.",
           "Type": "CNAME",
-          "Value": "_83cdbf97.acm-validations.aws."
+          "Value": "_c9edd76ee4a0e2a74388032f3861cc50.ykybfrwcxw.acm-validations.aws."
         },
-        "ValidationDomain": "example.com",
+        "ValidationDomain": "api.example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
         "ValidationStatus": "PENDING_VALIDATION"
@@ -22,9 +22,9 @@
         "DomainName": "www.example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.www.example.com",
+          "Name": "_d930b28be6c5927595552b219965053e.www.example.com.",
           "Type": "CNAME",
-          "Value": "_83cdbf97.acm-validations.aws."
+          "Value": "_c9edd76ee4a0e2a74388032f3861cc50.ykybfrwcxw.acm-validations.aws."
         },
         "ValidationDomain": "www.example.com",
         "ValidationEmails": null,
@@ -32,42 +32,46 @@
         "ValidationStatus": "PENDING_VALIDATION"
       },
       {
-        "DomainName": "api.example.com",
+        "DomainName": "example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.api.example.com",
+          "Name": "_d930b28be6c5927595552b219965053e.example.com.",
           "Type": "CNAME",
-          "Value": "_83cdbf97.acm-validations.aws."
+          "Value": "_c9edd76ee4a0e2a74388032f3861cc50.ykybfrwcxw.acm-validations.aws."
         },
-        "ValidationDomain": "api.example.com",
+        "ValidationDomain": "example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
         "ValidationStatus": "PENDING_VALIDATION"
       }
     ],
-    "ExtendedKeyUsages": null,
+    "ExtendedKeyUsages": [],
     "FailureReason": "",
     "ImportedAt": null,
-    "InUseBy": null,
+    "InUseBy": [],
     "IssuedAt": null,
-    "Issuer": null,
-    "KeyAlgorithm": "RSA_2048",
-    "KeyUsages": null,
+    "Issuer": "Amazon",
+    "KeyAlgorithm": "RSA-2048",
+    "KeyUsages": [],
     "ManagedBy": "",
     "NotAfter": null,
     "NotBefore": null,
-    "Options": null,
+    "Options": {
+      "CertificateTransparencyLoggingPreference": "ENABLED",
+      "Export": ""
+    },
     "RenewalEligibility": "INELIGIBLE",
     "RenewalSummary": null,
     "RevocationReason": "",
     "RevokedAt": null,
-    "Serial": "20a3ff8d59956a02d70df89a6509c41c",
-    "SignatureAlgorithm": null,
+    "Serial": null,
+    "SignatureAlgorithm": "SHA512WITHRSA",
     "Status": "PENDING_VALIDATION",
     "Subject": "CN=example.com",
     "SubjectAlternativeNames": [
+      "api.example.com",
       "www.example.com",
-      "api.example.com"
+      "example.com"
     ],
     "Type": "AMAZON_ISSUED"
   },
