@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -297,7 +298,7 @@ func parseAttributeEntry(key string, value any, attrs map[string]string) {
 
 	strValue, ok := value.(string)
 	if !ok {
-		return
+		strValue = fmt.Sprint(value)
 	}
 
 	switch field {
