@@ -36,7 +36,7 @@ func FuzzParseCopySourceAndRangeNoPanic(f *testing.F) {
 	f.Add("single-segment", "items=0-99")
 
 	f.Fuzz(func(t *testing.T, source, copyRange string) {
-		_, _ = parseCopySource(source)
+		_, _, _ = parseCopySource(source)
 
 		rng, err := parseCopySourceRange(copyRange)
 		if err != nil || rng == nil {
