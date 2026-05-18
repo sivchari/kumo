@@ -283,6 +283,61 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// ListTagsForResource handles the ListTagsForResource API.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeSSMError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceType, req.ResourceID)
+	if err != nil {
+		handleSSMError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, &ListTagsForResourceResponse{TagList: tags})
+}
+
+// AddTagsToResource handles the AddTagsToResource API.
+func (s *Service) AddTagsToResource(w http.ResponseWriter, r *http.Request) {
+	var req AddTagsToResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeSSMError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AddTagsToResource(r.Context(), req.ResourceType, req.ResourceID, req.Tags); err != nil {
+		handleSSMError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// RemoveTagsFromResource handles the RemoveTagsFromResource API.
+func (s *Service) RemoveTagsFromResource(w http.ResponseWriter, r *http.Request) {
+	var req RemoveTagsFromResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeSSMError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.RemoveTagsFromResource(r.Context(), req.ResourceType, req.ResourceID, req.TagKeys); err != nil {
+		handleSSMError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
 // writeSSMError writes an SSM error response.
 func writeSSMError(w http.ResponseWriter, errType, message string, status int) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.1")

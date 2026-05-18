@@ -21,6 +21,9 @@ type Storage interface {
 	DeleteParameter(ctx context.Context, name string) error
 	DeleteParameters(ctx context.Context, names []string) ([]string, []string, error)
 	DescribeParameters(ctx context.Context, filters []ParameterFilter, maxResults int, nextToken string) ([]*Parameter, string, error)
+	ListTagsForResource(ctx context.Context, resourceType, resourceID string) ([]Tag, error)
+	AddTagsToResource(ctx context.Context, resourceType, resourceID string, tags []Tag) error
+	RemoveTagsFromResource(ctx context.Context, resourceType, resourceID string, tagKeys []string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -43,6 +46,7 @@ var (
 type MemoryStorage struct {
 	mu         sync.RWMutex          `json:"-"`
 	Parameters map[string]*Parameter `json:"parameters"`
+	Tags       map[string][]Tag      `json:"tags"`
 	region     string
 	accountID  string
 	dataDir    string
@@ -52,6 +56,7 @@ type MemoryStorage struct {
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Parameters: make(map[string]*Parameter),
+		Tags:       make(map[string][]Tag),
 		region:     "us-east-1",
 		accountID:  "000000000000",
 	}
@@ -96,6 +101,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.Parameters == nil {
 		s.Parameters = make(map[string]*Parameter)
+	}
+
+	if s.Tags == nil {
+		s.Tags = make(map[string][]Tag)
 	}
 
 	return nil
@@ -420,4 +429,85 @@ func matchNameFilter(name string, values []string, option string) bool {
 	}
 
 	return false
+}
+
+// tagKey builds the map key for the Tags store.
+func tagKey(resourceType, resourceID string) string {
+	return resourceType + ":" + resourceID
+}
+
+// ListTagsForResource returns the tags for a resource.
+func (s *MemoryStorage) ListTagsForResource(_ context.Context, resourceType, resourceID string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tags := s.Tags[tagKey(resourceType, resourceID)]
+	if tags == nil {
+		return []Tag{}, nil
+	}
+
+	out := make([]Tag, len(tags))
+	copy(out, tags)
+
+	return out, nil
+}
+
+// AddTagsToResource adds or overwrites tags on a resource.
+func (s *MemoryStorage) AddTagsToResource(_ context.Context, resourceType, resourceID string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := tagKey(resourceType, resourceID)
+	existing := s.Tags[key]
+
+	tagMap := make(map[string]string, len(existing)+len(tags))
+
+	for _, t := range existing {
+		tagMap[t.Key] = t.Value
+	}
+
+	for _, t := range tags {
+		tagMap[t.Key] = t.Value
+	}
+
+	merged := make([]Tag, 0, len(tagMap))
+
+	for k, v := range tagMap {
+		merged = append(merged, Tag{Key: k, Value: v})
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Key < merged[j].Key
+	})
+
+	s.Tags[key] = merged
+
+	return nil
+}
+
+// RemoveTagsFromResource removes tags by key from a resource.
+func (s *MemoryStorage) RemoveTagsFromResource(_ context.Context, resourceType, resourceID string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := tagKey(resourceType, resourceID)
+	existing := s.Tags[key]
+
+	keySet := make(map[string]struct{}, len(tagKeys))
+
+	for _, k := range tagKeys {
+		keySet[k] = struct{}{}
+	}
+
+	filtered := make([]Tag, 0, len(existing))
+
+	for _, t := range existing {
+		if _, remove := keySet[t.Key]; !remove {
+			filtered = append(filtered, t)
+		}
+	}
+
+	s.Tags[key] = filtered
+
+	return nil
 }

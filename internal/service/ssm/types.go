@@ -163,3 +163,34 @@ const (
 	ErrInvalidParameterValue  = "ValidationException"
 	ErrServiceException       = "InternalServerError"
 )
+
+// Tag represents an SSM resource tag.
+type Tag struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
+}
+
+// ListTagsForResourceRequest is the request for ListTagsForResource.
+type ListTagsForResourceRequest struct {
+	ResourceType string `json:"ResourceType"`
+	ResourceID   string `json:"ResourceId"`
+}
+
+// ListTagsForResourceResponse is the response for ListTagsForResource.
+type ListTagsForResourceResponse struct {
+	TagList []Tag `json:"TagList"`
+}
+
+// AddTagsToResourceRequest is the request for AddTagsToResource.
+type AddTagsToResourceRequest struct {
+	ResourceType string `json:"ResourceType"`
+	ResourceID   string `json:"ResourceId"`
+	Tags         []Tag  `json:"Tags"`
+}
+
+// RemoveTagsFromResourceRequest is the request for RemoveTagsFromResource.
+type RemoveTagsFromResourceRequest struct {
+	ResourceType string   `json:"ResourceType"`
+	ResourceID   string   `json:"ResourceId"`
+	TagKeys      []string `json:"TagKeys"`
+}
