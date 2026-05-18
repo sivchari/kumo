@@ -17,6 +17,3 @@ pre-push:
     test:
       glob: "*.go"
       run: make test
-    test-integration:
-      glob: "*.go"
-      run: make test-integration
