@@ -763,6 +763,81 @@ func (s *Service) SetAlarmStateCBOR(w http.ResponseWriter, r *http.Request) {
 	server.WriteCBORResponse(w, struct{}{})
 }
 
+// ListTagsForResourceCBOR handles the ListTagsForResource action with CBOR protocol.
+func (s *Service) ListTagsForResourceCBOR(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, ListTagsForResourceCBORResponse{
+		Tags: tags,
+	})
+}
+
+// TagResourceCBOR handles the TagResource action with CBOR protocol.
+func (s *Service) TagResourceCBOR(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, struct{}{})
+}
+
+// UntagResourceCBOR handles the UntagResource action with CBOR protocol.
+func (s *Service) UntagResourceCBOR(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, struct{}{})
+}
+
 // handleCloudWatchCBORError handles CloudWatch errors for CBOR protocol.
 func handleCloudWatchCBORError(w http.ResponseWriter, err error) {
 	var cwErr *Error

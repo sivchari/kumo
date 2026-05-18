@@ -113,6 +113,12 @@ func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, ope
 		s.DescribeAlarmsCBOR(w, r)
 	case "SetAlarmState":
 		s.SetAlarmStateCBOR(w, r)
+	case "ListTagsForResource":
+		s.ListTagsForResourceCBOR(w, r)
+	case "TagResource":
+		s.TagResourceCBOR(w, r)
+	case "UntagResource":
+		s.UntagResourceCBOR(w, r)
 	default:
 		server.WriteCBORError(w, "InvalidAction", "The action "+operation+" is not valid", http.StatusBadRequest)
 	}

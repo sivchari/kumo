@@ -359,6 +359,11 @@ type MetricAlarmCBOR struct {
 	AlarmConfigurationUpdatedTimestamp time.Time   `cbor:"AlarmConfigurationUpdatedTimestamp"`
 }
 
+// ListTagsForResourceCBORResponse is the CBOR response for ListTagsForResource.
+type ListTagsForResourceCBORResponse struct {
+	Tags []Tag `cbor:"Tags"`
+}
+
 // GetMetricDataResult is the result for GetMetricData storage operation.
 type GetMetricDataResult struct {
 	MetricDataResults []MetricDataResult
