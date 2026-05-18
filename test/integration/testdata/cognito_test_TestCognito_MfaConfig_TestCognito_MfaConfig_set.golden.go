@@ -1,8 +1,10 @@
 {
   "EmailMfaConfiguration": null,
-  "MfaConfiguration": "OFF",
+  "MfaConfiguration": "OPTIONAL",
   "SmsMfaConfiguration": null,
-  "SoftwareTokenMfaConfiguration": null,
+  "SoftwareTokenMfaConfiguration": {
+    "Enabled": true
+  },
   "WebAuthnConfiguration": null,
   "ResultMetadata": {}
 }
