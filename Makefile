@@ -1,4 +1,4 @@
-.PHONY: build run test test-integration test-helm-e2e clean docker lint lint-fix fmt fmt-diff
+.PHONY: build run test test-fuzz test-integration test-helm-e2e clean docker lint lint-fix fmt fmt-diff
 
 BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
@@ -24,6 +24,12 @@ test-cover:
 
 test-integration:
 	go test -C test -v -tags=integration ./integration/...
+
+test-fuzz:
+	go test -fuzz=FuzzParseByteRangeInvariants -fuzztime=60s ./internal/service/s3/...
+	go test -fuzz=FuzzParseCopySourceAndRangeNoPanic -fuzztime=60s ./internal/service/s3/...
+	go test -fuzz=FuzzConditionExpressionNoPanic -fuzztime=60s ./internal/service/dynamodb/...
+	go test -fuzz=FuzzAttributeValueJSONRoundTrip -fuzztime=60s ./internal/service/dynamodb/...
 
 test-helm-e2e:
 	bash test/e2e/helm-e2e.sh
