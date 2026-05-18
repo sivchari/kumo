@@ -33,11 +33,9 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"CreateApiDestination":   s.CreateAPIDestination,
 		"DescribeApiDestination": s.DescribeAPIDestination,
 		"DeleteApiDestination":   s.DeleteAPIDestination,
-		// Tag stubs — see tag_stubs.go.
-		// Required by terraform-provider-aws after CreateEventBus.
-		"ListTagsForResource": s.ListTagsForResource,
-		"TagResource":         s.TagResource,
-		"UntagResource":       s.UntagResource,
+		"ListTagsForResource":    s.ListTagsForResource,
+		"TagResource":            s.TagResource,
+		"UntagResource":          s.UntagResource,
 	}
 }
 
@@ -533,6 +531,61 @@ func (s *Service) DeleteAPIDestination(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, &DeleteAPIDestinationResponse{})
+}
+
+// ListTagsForResource handles the ListTagsForResource API.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &ListTagsForResourceResponse{Tags: tags})
+}
+
+// TagResource handles the TagResource API.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &TagResourceResponse{})
+}
+
+// UntagResource handles the UntagResource API.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &UntagResourceResponse{})
 }
 
 // GetDeliveredEvents returns events that were matched against rules and delivered to targets.

@@ -61,6 +61,11 @@ type Storage interface {
 	DescribeAPIDestination(ctx context.Context, name string) (*APIDestination, error)
 	DeleteAPIDestination(ctx context.Context, name string) error
 
+	// Tag operations.
+	ListTagsForResource(ctx context.Context, arn string) ([]Tag, error)
+	TagResource(ctx context.Context, arn string, tags []Tag) error
+	UntagResource(ctx context.Context, arn string, tagKeys []string) error
+
 	// DispatchAction dispatches the request to the appropriate handler.
 	DispatchAction(action string) bool
 }
@@ -96,6 +101,7 @@ type MemoryStorage struct {
 	Targets         map[string]map[string][]*Target `json:"targets"`
 	Connections     map[string]*Connection          `json:"connections"`
 	APIDestinations map[string]*APIDestination      `json:"apiDestinations"`
+	Tags            map[string][]Tag                `json:"tags"`
 	DeliveredEvents []DeliveredEvent                `json:"deliveredEvents"`
 	region          string
 	accountID       string
@@ -127,6 +133,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		Targets:         make(map[string]map[string][]*Target),
 		Connections:     make(map[string]*Connection),
 		APIDestinations: make(map[string]*APIDestination),
+		Tags:            make(map[string][]Tag),
 		region:          region,
 		accountID:       "000000000000",
 		baseURL:         "http://localhost:4566",
@@ -196,6 +203,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.Targets == nil {
 		s.Targets = make(map[string]map[string][]*Target)
+	}
+
+	if s.Tags == nil {
+		s.Tags = make(map[string][]Tag)
 	}
 
 	return nil
@@ -1089,6 +1100,83 @@ func (s *MemoryStorage) resolveAPIDestination(targetArn string) *APIDestination 
 
 	if dest, ok := s.APIDestinations[name]; ok {
 		return dest
+	}
+
+	return nil
+}
+
+// ListTagsForResource returns the tags for a resource.
+func (s *MemoryStorage) ListTagsForResource(_ context.Context, arn string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tags, exists := s.Tags[arn]
+	if !exists {
+		return []Tag{}, nil
+	}
+
+	result := make([]Tag, len(tags))
+	copy(result, tags)
+
+	return result, nil
+}
+
+// TagResource adds or updates tags on a resource.
+func (s *MemoryStorage) TagResource(_ context.Context, arn string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing := s.Tags[arn]
+
+	for _, newTag := range tags {
+		found := false
+
+		for i, existingTag := range existing {
+			if existingTag.Key == newTag.Key {
+				existing[i].Value = newTag.Value
+				found = true
+
+				break
+			}
+		}
+
+		if !found {
+			existing = append(existing, newTag)
+		}
+	}
+
+	s.Tags[arn] = existing
+
+	return nil
+}
+
+// UntagResource removes tags from a resource.
+func (s *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing, exists := s.Tags[arn]
+	if !exists {
+		return nil
+	}
+
+	keysToRemove := make(map[string]bool, len(tagKeys))
+	for _, key := range tagKeys {
+		keysToRemove[key] = true
+	}
+
+	var remaining []Tag
+
+	for _, tag := range existing {
+		if !keysToRemove[tag.Key] {
+			remaining = append(remaining, tag)
+		}
+	}
+
+	if len(remaining) == 0 {
+		delete(s.Tags, arn)
+	} else {
+		s.Tags[arn] = remaining
 	}
 
 	return nil

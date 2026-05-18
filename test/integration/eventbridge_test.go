@@ -755,6 +755,79 @@ func TestEventBridge_PutEvents_InputTransformer(t *testing.T) {
 	}
 }
 
+func TestEventBridge_TagOperations(t *testing.T) {
+	client := newEventBridgeClient(t)
+	ctx := t.Context()
+	busName := "test-tag-bus"
+
+	// Create event bus.
+	createOut, err := client.CreateEventBus(ctx, &eventbridge.CreateEventBusInput{
+		Name: aws.String(busName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteEventBus(context.Background(), &eventbridge.DeleteEventBusInput{
+			Name: aws.String(busName),
+		})
+	})
+
+	busARN := aws.ToString(createOut.EventBusArn)
+
+	// ListTagsForResource should return empty initially.
+	listOut, err := client.ListTagsForResource(ctx, &eventbridge.ListTagsForResourceInput{
+		ResourceARN: aws.String(busARN),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_empty", listOut)
+
+	// TagResource.
+	_, err = client.TagResource(ctx, &eventbridge.TagResourceInput{
+		ResourceARN: aws.String(busARN),
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("test")},
+			{Key: aws.String("team"), Value: aws.String("platform")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsForResource should return the added tags.
+	listOut, err = client.ListTagsForResource(ctx, &eventbridge.ListTagsForResourceInput{
+		ResourceARN: aws.String(busARN),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_tag", listOut)
+
+	// UntagResource.
+	_, err = client.UntagResource(ctx, &eventbridge.UntagResourceInput{
+		ResourceARN: aws.String(busARN),
+		TagKeys:     []string{"env"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsForResource should return only remaining tags.
+	listOut, err = client.ListTagsForResource(ctx, &eventbridge.ListTagsForResourceInput{
+		ResourceARN: aws.String(busARN),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_untag", listOut)
+}
+
 func TestEventBridge_EventBusNotFound(t *testing.T) {
 	client := newEventBridgeClient(t)
 	ctx := t.Context()
