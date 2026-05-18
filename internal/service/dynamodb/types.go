@@ -611,31 +611,61 @@ func (e *TableError) Error() string {
 	return e.Message
 }
 
-// listTagsOfResourceResponse is the wire shape for ListTagsOfResource.
+// Tag represents a key-value tag for a DynamoDB resource.
+type Tag struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
+}
+
+// UpdateTableRequest is the request for UpdateTable.
+type UpdateTableRequest struct {
+	TableName string `json:"TableName"`
+}
+
+// ListTagsOfResourceRequest is the request for ListTagsOfResource.
+type ListTagsOfResourceRequest struct {
+	ResourceArn string `json:"ResourceArn"`
+	NextToken   string `json:"NextToken,omitempty"`
+}
+
+// ListTagsOfResourceResponse is the response for ListTagsOfResource.
 //
 // AWS returns at minimum an empty array; clients (notably terraform-provider-aws)
 // require the field to be present even when no tags exist.
-type listTagsOfResourceResponse struct {
-	Tags      []map[string]string `json:"Tags"`
-	NextToken string              `json:"NextToken,omitempty"`
+type ListTagsOfResourceResponse struct {
+	Tags      []Tag  `json:"Tags"`
+	NextToken string `json:"NextToken,omitempty"`
 }
 
-// describeContinuousBackupsResponse mirrors the AWS shape required by clients
-// reading point-in-time-recovery state after CreateTable.
-type describeContinuousBackupsResponse struct {
-	ContinuousBackupsDescription continuousBackupsDescription `json:"ContinuousBackupsDescription"`
+// TagResourceRequest is the request for TagResource.
+type TagResourceRequest struct {
+	ResourceArn string `json:"ResourceArn"`
+	Tags        []Tag  `json:"Tags"`
 }
 
-type continuousBackupsDescription struct {
-	ContinuousBackupsStatus        string                         `json:"ContinuousBackupsStatus"`
-	PointInTimeRecoveryDescription pointInTimeRecoveryDescription `json:"PointInTimeRecoveryDescription"`
+// UntagResourceRequest is the request for UntagResource.
+type UntagResourceRequest struct {
+	ResourceArn string   `json:"ResourceArn"`
+	TagKeys     []string `json:"TagKeys"`
 }
 
-type pointInTimeRecoveryDescription struct {
-	PointInTimeRecoveryStatus string `json:"PointInTimeRecoveryStatus"`
-}
-
-// describeContinuousBackupsRequest decodes the TableName the request targets.
-type describeContinuousBackupsRequest struct {
+// DescribeContinuousBackupsRequest is the request for DescribeContinuousBackups.
+type DescribeContinuousBackupsRequest struct {
 	TableName string `json:"TableName"`
+}
+
+// DescribeContinuousBackupsResponse is the response for DescribeContinuousBackups.
+type DescribeContinuousBackupsResponse struct {
+	ContinuousBackupsDescription ContinuousBackupsDescription `json:"ContinuousBackupsDescription"`
+}
+
+// ContinuousBackupsDescription describes the continuous backups status.
+type ContinuousBackupsDescription struct {
+	ContinuousBackupsStatus        string                         `json:"ContinuousBackupsStatus"`
+	PointInTimeRecoveryDescription PointInTimeRecoveryDescription `json:"PointInTimeRecoveryDescription"`
+}
+
+// PointInTimeRecoveryDescription describes the PITR status.
+type PointInTimeRecoveryDescription struct {
+	PointInTimeRecoveryStatus string `json:"PointInTimeRecoveryStatus"`
 }

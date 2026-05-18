@@ -1462,3 +1462,116 @@ func TestDynamoDB_StreamSpecification(t *testing.T) {
 		t.Error("expected StreamSpecification.StreamEnabled to be true")
 	}
 }
+
+func TestDynamoDB_TagOperations(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-tag-ops"
+
+	// Create table.
+	createOutput, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tableArn := *createOutput.TableDescription.TableArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	// ListTagsOfResource -- initially empty.
+	listOutput1, err := client.ListTagsOfResource(ctx, &dynamodb.ListTagsOfResourceInput{
+		ResourceArn: aws.String(tableArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_empty", listOutput1)
+
+	// TagResource -- add two tags.
+	_, err = client.TagResource(ctx, &dynamodb.TagResourceInput{
+		ResourceArn: aws.String(tableArn),
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("dev")},
+			{Key: aws.String("team"), Value: aws.String("platform")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsOfResource -- should have two tags.
+	listOutput2, err := client.ListTagsOfResource(ctx, &dynamodb.ListTagsOfResourceInput{
+		ResourceArn: aws.String(tableArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_after_tag", listOutput2)
+
+	// UntagResource -- remove "env" tag.
+	_, err = client.UntagResource(ctx, &dynamodb.UntagResourceInput{
+		ResourceArn: aws.String(tableArn),
+		TagKeys:     []string{"env"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsOfResource -- should have one tag.
+	listOutput3, err := client.ListTagsOfResource(ctx, &dynamodb.ListTagsOfResourceInput{
+		ResourceArn: aws.String(tableArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_after_untag", listOutput3)
+}
+
+func TestDynamoDB_DescribeContinuousBackups(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-backups"
+
+	// Create table.
+	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	// DescribeContinuousBackups.
+	backupsOutput, err := client.DescribeContinuousBackups(ctx, &dynamodb.DescribeContinuousBackupsInput{
+		TableName: aws.String(tableName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), backupsOutput)
+}

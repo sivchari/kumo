@@ -40,6 +40,10 @@ type Storage interface {
 	BatchGetItem(ctx context.Context, requestItems map[string]KeysAndAttributes) (map[string][]Item, error)
 	UpdateTimeToLive(ctx context.Context, tableName, attributeName string, enabled bool) error
 	DescribeTimeToLive(ctx context.Context, tableName string) (string, bool, error)
+	ListTagsOfResource(ctx context.Context, resourceArn string) ([]Tag, error)
+	TagResource(ctx context.Context, resourceArn string, tags []Tag) error
+	UntagResource(ctx context.Context, resourceArn string, tagKeys []string) error
+	DescribeContinuousBackups(ctx context.Context, tableName string) (*ContinuousBackupsDescription, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -62,6 +66,7 @@ var (
 type MemoryStorage struct {
 	mu          sync.RWMutex          `json:"-"`
 	Tables      map[string]*tableData `json:"tables"`
+	Tags        map[string][]Tag      `json:"tags,omitempty"`
 	baseURL     string
 	dataDir     string
 	stopTTL     chan struct{}
@@ -77,6 +82,7 @@ type tableData struct {
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Tables:      make(map[string]*tableData),
+		Tags:        make(map[string][]Tag),
 		baseURL:     baseURL,
 		stopTTL:     make(chan struct{}),
 		streamStore: streams.Global,
@@ -177,6 +183,10 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if m.Tables == nil {
 		m.Tables = make(map[string]*tableData)
+	}
+
+	if m.Tags == nil {
+		m.Tags = make(map[string][]Tag)
 	}
 
 	return nil
@@ -1916,4 +1926,102 @@ func convertAttrToStreamAttr(av AttributeValue) streams.AttributeValue {
 	}
 
 	return result
+}
+
+const continuousBackupsDisabled = "DISABLED"
+
+// ListTagsOfResource returns the tags for a given resource ARN.
+func (m *MemoryStorage) ListTagsOfResource(_ context.Context, resourceArn string) ([]Tag, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	tags, ok := m.Tags[resourceArn]
+	if !ok {
+		return []Tag{}, nil
+	}
+
+	// Return a copy to avoid external mutation.
+	result := make([]Tag, len(tags))
+	copy(result, tags)
+
+	return result, nil
+}
+
+// TagResource adds or overwrites tags on a resource ARN.
+func (m *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags []Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing := m.Tags[resourceArn]
+
+	// Build a map of existing tags for efficient lookup.
+	tagMap := make(map[string]int, len(existing))
+	for i, tag := range existing {
+		tagMap[tag.Key] = i
+	}
+
+	for _, newTag := range tags {
+		if idx, ok := tagMap[newTag.Key]; ok {
+			existing[idx].Value = newTag.Value
+		} else {
+			existing = append(existing, newTag)
+			tagMap[newTag.Key] = len(existing) - 1
+		}
+	}
+
+	m.Tags[resourceArn] = existing
+
+	return nil
+}
+
+// UntagResource removes tags by key from a resource ARN.
+func (m *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tagKeys []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing := m.Tags[resourceArn]
+	if len(existing) == 0 {
+		return nil
+	}
+
+	removeSet := make(map[string]struct{}, len(tagKeys))
+	for _, key := range tagKeys {
+		removeSet[key] = struct{}{}
+	}
+
+	var remaining []Tag
+
+	for _, tag := range existing {
+		if _, ok := removeSet[tag.Key]; !ok {
+			remaining = append(remaining, tag)
+		}
+	}
+
+	if len(remaining) == 0 {
+		delete(m.Tags, resourceArn)
+	} else {
+		m.Tags[resourceArn] = remaining
+	}
+
+	return nil
+}
+
+// DescribeContinuousBackups returns the continuous backups status for a table.
+func (m *MemoryStorage) DescribeContinuousBackups(_ context.Context, tableName string) (*ContinuousBackupsDescription, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if _, exists := m.Tables[tableName]; !exists {
+		return nil, &TableError{
+			Code:    "TableNotFoundException",
+			Message: "Table not found: " + tableName,
+		}
+	}
+
+	return &ContinuousBackupsDescription{
+		ContinuousBackupsStatus: continuousBackupsDisabled,
+		PointInTimeRecoveryDescription: PointInTimeRecoveryDescription{
+			PointInTimeRecoveryStatus: continuousBackupsDisabled,
+		},
+	}, nil
 }

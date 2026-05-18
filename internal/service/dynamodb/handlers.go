@@ -741,24 +741,22 @@ func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 // actionHandlers returns a map of action names to handler functions.
 func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
 	return map[string]func(http.ResponseWriter, *http.Request){
-		"CreateTable":        s.CreateTable,
-		"DeleteTable":        s.DeleteTable,
-		"ListTables":         s.ListTables,
-		"DescribeTable":      s.DescribeTable,
-		"PutItem":            s.PutItem,
-		"GetItem":            s.GetItem,
-		"DeleteItem":         s.DeleteItem,
-		"UpdateItem":         s.UpdateItem,
-		"Query":              s.Query,
-		"Scan":               s.Scan,
-		"UpdateTimeToLive":   s.UpdateTimeToLive,
-		"DescribeTimeToLive": s.DescribeTimeToLive,
-		"TransactWriteItems": s.TransactWriteItems,
-		"TransactGetItems":   s.TransactGetItems,
-		"BatchWriteItem":     s.BatchWriteItem,
-		"BatchGetItem":       s.BatchGetItem,
-		// Stubs — see tag_backup_stubs.go.
-		// Required for terraform / pulumi / CDK refresh and destroy paths.
+		"CreateTable":               s.CreateTable,
+		"DeleteTable":               s.DeleteTable,
+		"ListTables":                s.ListTables,
+		"DescribeTable":             s.DescribeTable,
+		"PutItem":                   s.PutItem,
+		"GetItem":                   s.GetItem,
+		"DeleteItem":                s.DeleteItem,
+		"UpdateItem":                s.UpdateItem,
+		"Query":                     s.Query,
+		"Scan":                      s.Scan,
+		"UpdateTimeToLive":          s.UpdateTimeToLive,
+		"DescribeTimeToLive":        s.DescribeTimeToLive,
+		"TransactWriteItems":        s.TransactWriteItems,
+		"TransactGetItems":          s.TransactGetItems,
+		"BatchWriteItem":            s.BatchWriteItem,
+		"BatchGetItem":              s.BatchGetItem,
 		"UpdateTable":               s.UpdateTable,
 		"ListTagsOfResource":        s.ListTagsOfResource,
 		"TagResource":               s.TagResource,
@@ -930,4 +928,114 @@ func convertAttributeUpdates(req *UpdateItemRequest) {
 	}
 
 	req.UpdateExpression = strings.Join(parts, " ")
+}
+
+// UpdateTable is a no-op that returns the current table description.
+//
+// terraform-provider-aws calls UpdateTable during terraform destroy to
+// remove GSIs before deleting the table. Without this handler, kumo returns
+// UnknownOperationException and destroy fails.
+func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
+	var req UpdateTableRequest
+	if err := readJSONRequest(r, &req); err != nil || req.TableName == "" {
+		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	table, err := s.storage.DescribeTable(r.Context(), req.TableName)
+	if err != nil {
+		writeDynamoDBError(w, "ResourceNotFoundException", "Table not found: "+req.TableName, http.StatusBadRequest)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeTableResponse{
+		Table: tableToDescription(table),
+	})
+}
+
+// ListTagsOfResource returns the tags for a DynamoDB resource.
+func (s *Service) ListTagsOfResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsOfResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsOfResource(r.Context(), req.ResourceArn)
+	if err != nil {
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, ListTagsOfResourceResponse{Tags: tags})
+}
+
+// TagResource adds tags to a DynamoDB resource.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceArn, req.Tags); err != nil {
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// UntagResource removes tags from a DynamoDB resource.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceArn, req.TagKeys); err != nil {
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// DescribeContinuousBackups reports continuous backups as DISABLED for any
+// existing table, returning TableNotFoundException for missing tables to
+// match AWS semantics that terraform refresh paths depend on.
+func (s *Service) DescribeContinuousBackups(w http.ResponseWriter, r *http.Request) {
+	var req DescribeContinuousBackupsRequest
+	if err := readJSONRequest(r, &req); err != nil || req.TableName == "" {
+		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	desc, err := s.storage.DescribeContinuousBackups(r.Context(), req.TableName)
+	if err != nil {
+		var tErr *TableError
+		if errors.As(err, &tErr) {
+			writeDynamoDBError(w, tErr.Code, tErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeContinuousBackupsResponse{
+		ContinuousBackupsDescription: *desc,
+	})
 }
