@@ -54,11 +54,9 @@ func (s *Service) actionHandlers() map[string]http.HandlerFunc {
 		"CreateJob":      s.CreateJob,
 		"DeleteJob":      s.DeleteJob,
 		"StartJobRun":    s.StartJobRun,
-		// Tag stubs — see tag_stubs.go.
-		// Required by terraform-provider-aws after CreateDatabase / CreateTable.
-		"GetTags":       s.GetTags,
-		"TagResource":   s.TagResource,
-		"UntagResource": s.UntagResource,
+		"GetTags":        s.GetTags,
+		"TagResource":    s.TagResource,
+		"UntagResource":  s.UntagResource,
 	}
 }
 
@@ -471,4 +469,59 @@ func handleStorageError(w http.ResponseWriter, err error) {
 	}
 
 	writeError(w, "InternalServiceError", "Internal server error", http.StatusInternalServerError)
+}
+
+// GetTags handles the GetTags operation.
+func (s *Service) GetTags(w http.ResponseWriter, r *http.Request) {
+	var req GetTagsInput
+	if err := readJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.GetTags(r.Context(), req.ResourceArn)
+	if err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, GetTagsOutput{Tags: tags})
+}
+
+// TagResource handles the TagResource operation.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceInput
+	if err := readJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceArn, req.TagsToAdd); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// UntagResource handles the UntagResource operation.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceInput
+	if err := readJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceArn, req.TagsToRemove); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
 }

@@ -377,9 +377,24 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
-// getTagsResponse is the wire shape of GetTags. Glue uses a Tags map (not
-// the array-of-{Key,Value} shape AWS uses elsewhere), and the field must
-// be present even when empty for terraform-provider-aws to parse it.
-type getTagsResponse struct {
+// GetTagsInput is the request for GetTags.
+type GetTagsInput struct {
+	ResourceArn string `json:"ResourceArn"`
+}
+
+// GetTagsOutput is the response for GetTags.
+type GetTagsOutput struct {
 	Tags map[string]string `json:"Tags"`
+}
+
+// TagResourceInput is the request for TagResource.
+type TagResourceInput struct {
+	ResourceArn string            `json:"ResourceArn"`
+	TagsToAdd   map[string]string `json:"TagsToAdd"`
+}
+
+// UntagResourceInput is the request for UntagResource.
+type UntagResourceInput struct {
+	ResourceArn  string   `json:"ResourceArn"`
+	TagsToRemove []string `json:"TagsToRemove"`
 }

@@ -359,6 +359,82 @@ func TestGlue_StartJobRun(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("JobRunId", "ResultMetadata")).Assert(t.Name(), runOutput)
 }
 
+func TestGlue_TagOperations(t *testing.T) {
+	client := newGlueClient(t)
+	ctx := t.Context()
+
+	dbName := "tag_test_database"
+
+	// Create a database to tag.
+	_, err := client.CreateDatabase(ctx, &glue.CreateDatabaseInput{
+		DatabaseInput: &types.DatabaseInput{
+			Name: aws.String(dbName),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteDatabase(ctx, &glue.DeleteDatabaseInput{
+			Name: aws.String(dbName),
+		})
+	})
+
+	resourceArn := "arn:aws:glue:us-east-1:000000000000:database/" + dbName
+
+	// TagResource — add tags.
+	_, err = client.TagResource(ctx, &glue.TagResourceInput{
+		ResourceArn: aws.String(resourceArn),
+		TagsToAdd: map[string]string{
+			"env":     "test",
+			"project": "kumo",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GetTags — verify tags were added.
+	getOutput, err := client.GetTags(ctx, &glue.GetTagsInput{
+		ResourceArn: aws.String(resourceArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_tag", getOutput)
+
+	// UntagResource — remove one tag.
+	_, err = client.UntagResource(ctx, &glue.UntagResourceInput{
+		ResourceArn:  aws.String(resourceArn),
+		TagsToRemove: []string{"project"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GetTags — verify tag was removed.
+	getOutput2, err := client.GetTags(ctx, &glue.GetTagsInput{
+		ResourceArn: aws.String(resourceArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_untag", getOutput2)
+
+	// GetTags — verify empty resource returns empty tags.
+	getOutput3, err := client.GetTags(ctx, &glue.GetTagsInput{
+		ResourceArn: aws.String("arn:aws:glue:us-east-1:000000000000:database/nonexistent"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_empty", getOutput3)
+}
+
 func TestGlue_GetNonExistentDatabase(t *testing.T) {
 	client := newGlueClient(t)
 	ctx := t.Context()

@@ -36,6 +36,10 @@ type Storage interface {
 	CreateJob(ctx context.Context, input *CreateJobInput) (*Job, error)
 	DeleteJob(ctx context.Context, jobName string) error
 	StartJobRun(ctx context.Context, input *StartJobRunInput) (*JobRun, error)
+
+	GetTags(ctx context.Context, resourceArn string) (map[string]string, error)
+	TagResource(ctx context.Context, resourceArn string, tagsToAdd map[string]string) error
+	UntagResource(ctx context.Context, resourceArn string, tagsToRemove []string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -56,11 +60,12 @@ var (
 
 // MemoryStorage implements Storage with in-memory data structures.
 type MemoryStorage struct {
-	mu        sync.RWMutex         `json:"-"`
-	Databases map[string]*Database `json:"databases"` // key: catalogID/databaseName
-	Tables    map[string]*Table    `json:"tables"`    // key: catalogID/databaseName/tableName
-	Jobs      map[string]*Job      `json:"jobs"`      // key: jobName
-	JobRuns   map[string]*JobRun   `json:"jobRuns"`   // key: jobRunID
+	mu        sync.RWMutex                 `json:"-"`
+	Databases map[string]*Database         `json:"databases"` // key: catalogID/databaseName
+	Tables    map[string]*Table            `json:"tables"`    // key: catalogID/databaseName/tableName
+	Jobs      map[string]*Job              `json:"jobs"`      // key: jobName
+	JobRuns   map[string]*JobRun           `json:"jobRuns"`   // key: jobRunID
+	Tags      map[string]map[string]string `json:"tags"`      // key: resourceArn -> tags
 	dataDir   string
 }
 
@@ -71,6 +76,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		Tables:    make(map[string]*Table),
 		Jobs:      make(map[string]*Job),
 		JobRuns:   make(map[string]*JobRun),
+		Tags:      make(map[string]map[string]string),
 	}
 	for _, o := range opts {
 		o(s)
@@ -125,6 +131,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.JobRuns == nil {
 		s.JobRuns = make(map[string]*JobRun)
+	}
+
+	if s.Tags == nil {
+		s.Tags = make(map[string]map[string]string)
 	}
 
 	return nil
@@ -486,4 +496,56 @@ func (s *MemoryStorage) StartJobRun(_ context.Context, input *StartJobRunInput) 
 	s.JobRuns[runID] = jobRun
 
 	return jobRun, nil
+}
+
+// GetTags returns the tags for a resource.
+func (s *MemoryStorage) GetTags(_ context.Context, resourceArn string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tags, exists := s.Tags[resourceArn]
+	if !exists {
+		return map[string]string{}, nil
+	}
+
+	// Return a copy to avoid mutation.
+	result := make(map[string]string, len(tags))
+	for k, v := range tags {
+		result[k] = v
+	}
+
+	return result, nil
+}
+
+// TagResource adds or overwrites tags on a resource.
+func (s *MemoryStorage) TagResource(_ context.Context, resourceArn string, tagsToAdd map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.Tags[resourceArn] == nil {
+		s.Tags[resourceArn] = make(map[string]string)
+	}
+
+	for k, v := range tagsToAdd {
+		s.Tags[resourceArn][k] = v
+	}
+
+	return nil
+}
+
+// UntagResource removes tags from a resource.
+func (s *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tagsToRemove []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tags, exists := s.Tags[resourceArn]
+	if !exists {
+		return nil
+	}
+
+	for _, key := range tagsToRemove {
+		delete(tags, key)
+	}
+
+	return nil
 }
