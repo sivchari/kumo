@@ -800,25 +800,14 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	dstBucket := r.PathValue("bucket")
 	dstKey := r.PathValue("key")
 
-	copySource := r.Header.Get("X-Amz-Copy-Source")
-	srcBucket, srcKey, srcVersionID := parseCopySource(copySource)
-
+	srcBucket, srcKey, srcVersionID := parseCopySource(r.Header.Get("X-Amz-Copy-Source"))
 	if srcBucket == "" || srcKey == "" {
 		writeS3Error(w, r, "InvalidArgument", "Invalid copy source", http.StatusBadRequest)
 
 		return
 	}
 
-	var srcObj *Object
-
-	var err error
-
-	if srcVersionID != "" {
-		srcObj, err = s.storage.GetObjectVersion(r.Context(), srcBucket, srcKey, srcVersionID)
-	} else {
-		srcObj, err = s.storage.GetObject(r.Context(), srcBucket, srcKey)
-	}
-
+	srcObj, err := s.getCopySource(r.Context(), srcBucket, srcKey, srcVersionID)
 	if err != nil {
 		handleGetObjectError(w, r, err)
 
@@ -858,6 +847,26 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 	go s.emitObjectCreatedEvent(context.Background(), dstBucket, dstKey, dstObj.Size, dstObj.ETag)
 	go s.emitSQSNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
+}
+
+// getCopySource retrieves the source object for a copy operation,
+// handling version-specific requests when srcVersionID is non-empty.
+func (s *Service) getCopySource(ctx context.Context, bucket, key, versionID string) (*Object, error) {
+	if versionID != "" {
+		obj, err := s.storage.GetObjectVersion(ctx, bucket, key, versionID)
+		if err != nil {
+			return nil, fmt.Errorf("get object version failed: %w", err)
+		}
+
+		return obj, nil
+	}
+
+	obj, err := s.storage.GetObject(ctx, bucket, key)
+	if err != nil {
+		return nil, fmt.Errorf("get object failed: %w", err)
+	}
+
+	return obj, nil
 }
 
 // parseCopySource parses the X-Amz-Copy-Source header value.
