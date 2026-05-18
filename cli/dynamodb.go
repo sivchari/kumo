@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -67,11 +68,21 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 			}
 
 			if gsiJSON != "" {
-				input.GlobalSecondaryIndexes = parseGSI(gsiJSON)
+				gsis, err := parseGSI(gsiJSON)
+				if err != nil {
+					return err
+				}
+
+				input.GlobalSecondaryIndexes = gsis
 			}
 
 			if lsiJSON != "" {
-				input.LocalSecondaryIndexes = parseLSI(lsiJSON)
+				lsis, err := parseLSI(lsiJSON)
+				if err != nil {
+					return err
+				}
+
+				input.LocalSecondaryIndexes = lsis
 			}
 
 			out, err := client.CreateTable(cmd.Context(), input)
@@ -189,7 +200,18 @@ func parseProvisionedThroughput(s string) *ddbTypes.ProvisionedThroughput {
 	}
 }
 
-func parseGSI(s string) []ddbTypes.GlobalSecondaryIndex {
+// normalizeIndexJSON accepts either a JSON array (`[{...}]`) or a single JSON
+// object (`{...}`) and returns the array form. aws CLI normalizes object input
+// the same way before sending the DynamoDB request.
+func normalizeIndexJSON(s string) string {
+	if strings.HasPrefix(strings.TrimLeftFunc(s, unicode.IsSpace), "{") {
+		return "[" + s + "]"
+	}
+
+	return s
+}
+
+func parseGSI(s string) ([]ddbTypes.GlobalSecondaryIndex, error) {
 	//nolint:tagliatelle // AWS CLI JSON format uses PascalCase.
 	var raw []struct {
 		IndexName string `json:"IndexName"`
@@ -206,7 +228,10 @@ func parseGSI(s string) []ddbTypes.GlobalSecondaryIndex {
 		} `json:"ProvisionedThroughput,omitempty"`
 	}
 
-	_ = json.Unmarshal([]byte(s), &raw)
+	normalized := normalizeIndexJSON(s)
+	if err := json.Unmarshal([]byte(normalized), &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse --global-secondary-indexes: invalid json: %w received: %s", err, s)
+	}
 
 	gsis := make([]ddbTypes.GlobalSecondaryIndex, 0, len(raw))
 
@@ -233,10 +258,10 @@ func parseGSI(s string) []ddbTypes.GlobalSecondaryIndex {
 		gsis = append(gsis, gsi)
 	}
 
-	return gsis
+	return gsis, nil
 }
 
-func parseLSI(s string) []ddbTypes.LocalSecondaryIndex {
+func parseLSI(s string) ([]ddbTypes.LocalSecondaryIndex, error) {
 	//nolint:tagliatelle // AWS CLI JSON format uses PascalCase.
 	var raw []struct {
 		IndexName string `json:"IndexName"`
@@ -249,7 +274,10 @@ func parseLSI(s string) []ddbTypes.LocalSecondaryIndex {
 		} `json:"Projection"`
 	}
 
-	_ = json.Unmarshal([]byte(s), &raw)
+	normalized := normalizeIndexJSON(s)
+	if err := json.Unmarshal([]byte(normalized), &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse --local-secondary-indexes: invalid json: %w received: %s", err, s)
+	}
 
 	lsis := make([]ddbTypes.LocalSecondaryIndex, 0, len(raw))
 
@@ -269,7 +297,7 @@ func parseLSI(s string) []ddbTypes.LocalSecondaryIndex {
 		lsis = append(lsis, lsi)
 	}
 
-	return lsis
+	return lsis, nil
 }
 
 func parseKV(s string) map[string]string {

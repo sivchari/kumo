@@ -125,10 +125,18 @@ type DeleteParametersResponse struct {
 	InvalidParameters []string `json:"InvalidParameters,omitempty"`
 }
 
+// ParameterFilter is a filter for DescribeParameters.
+type ParameterFilter struct {
+	Key    string   `json:"Key"`
+	Values []string `json:"Values,omitempty"`
+	Option string   `json:"Option,omitempty"`
+}
+
 // DescribeParametersRequest is the request for DescribeParameters.
 type DescribeParametersRequest struct {
-	MaxResults int    `json:"MaxResults,omitempty"`
-	NextToken  string `json:"NextToken,omitempty"`
+	ParameterFilters []ParameterFilter `json:"ParameterFilters,omitempty"`
+	MaxResults       int               `json:"MaxResults,omitempty"`
+	NextToken        string            `json:"NextToken,omitempty"`
 }
 
 // DescribeParametersResponse is the response for DescribeParameters.

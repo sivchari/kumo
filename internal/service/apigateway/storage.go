@@ -35,6 +35,7 @@ type Storage interface {
 	DeleteResource(ctx context.Context, restAPIID, resourceID string) error
 
 	PutMethod(ctx context.Context, restAPIID, resourceID, httpMethod string, req *PutMethodRequest) (*Method, error)
+	DeleteMethod(ctx context.Context, restAPIID, resourceID, httpMethod string) error
 	GetMethod(ctx context.Context, restAPIID, resourceID, httpMethod string) (*Method, error)
 
 	PutIntegration(ctx context.Context, restAPIID, resourceID, httpMethod string, req *PutIntegrationRequest) (*Integration, error)
@@ -383,6 +384,30 @@ func (s *MemoryStorage) GetMethod(_ context.Context, restAPIID, resourceID, http
 	}
 
 	return &method, nil
+}
+
+// DeleteMethod removes a method from a resource.
+func (s *MemoryStorage) DeleteMethod(_ context.Context, restAPIID, resourceID, httpMethod string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.RestAPIs[restAPIID]
+	if !exists {
+		return &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+	}
+
+	resource, exists := data.Resources[resourceID]
+	if !exists {
+		return &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+	}
+
+	if _, exists := resource.ResourceMethods[httpMethod]; !exists {
+		return &ServiceError{Code: errMethodNotFound, Message: "Invalid method identifier specified"}
+	}
+
+	delete(resource.ResourceMethods, httpMethod)
+
+	return nil
 }
 
 // PutIntegration creates or updates an integration.

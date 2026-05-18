@@ -51,6 +51,12 @@ func (s *Service) RegisterRoutes(r service.Router) {
 
 	// Changes
 	r.Handle("GET", "/2013-04-01/change/{id}", s.GetChange)
+
+	// Tags — see tag_stubs.go.
+	// terraform-provider-aws calls these on every refresh of aws_route53_zone;
+	// without them the apply errors on a 404 immediately after CreateHostedZone.
+	r.Handle("GET", "/2013-04-01/tags/{type}/{id}", s.ListTagsForResource)
+	r.Handle("POST", "/2013-04-01/tags/{type}/{id}", s.ChangeTagsForResource)
 }
 
 // Close saves the storage state if persistence is enabled.

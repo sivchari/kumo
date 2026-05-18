@@ -201,6 +201,11 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 		tags[tag.TagKey] = tag.TagValue
 	}
 
+	policy := req.Policy
+	if policy == "" {
+		policy = defaultKeyPolicy
+	}
+
 	key := &Key{
 		KeyID:        keyID,
 		Arn:          arn,
@@ -214,6 +219,7 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 		Origin:       origin,
 		MultiRegion:  req.MultiRegion,
 		Tags:         tags,
+		Policy:       policy,
 		KeyMaterial:  keyMaterial,
 	}
 

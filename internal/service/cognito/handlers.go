@@ -31,6 +31,10 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"SignUp":                 s.SignUp,
 		"ConfirmSignUp":          s.ConfirmSignUp,
 		"InitiateAuth":           s.InitiateAuth,
+		// Refresh stubs — see refresh_stubs.go.
+		// Required by terraform-provider-aws after CreateUserPool.
+		"GetUserPoolMfaConfig": s.GetUserPoolMfaConfig,
+		"SetUserPoolMfaConfig": s.SetUserPoolMfaConfig,
 	}
 }
 
@@ -418,18 +422,44 @@ func (s *Service) InitiateAuth(w http.ResponseWriter, r *http.Request) {
 }
 
 // userPoolToOutput converts a UserPool to UserPoolOutput.
+//
+// Always-populated nested defaults (LambdaConfig, AdminCreateUserConfig,
+// AccountRecoverySetting, VerificationMessageTemplate, SchemaAttributes,
+// UserPoolTags) match the shape AWS returns for an empty user pool, so
+// terraform-provider-aws's resourceUserPoolRead doesn't nil-pointer-panic
+// on flatten helpers that assume those nested structs are present.
 func userPoolToOutput(pool *UserPool) *UserPoolOutput {
-	output := &UserPoolOutput{
-		ID:                     pool.ID,
-		Name:                   pool.Name,
-		Status:                 string(pool.Status),
-		CreationDate:           float64(pool.CreationDate.Unix()),
-		LastModifiedDate:       float64(pool.LastModifiedDate.Unix()),
-		AutoVerifiedAttributes: pool.AutoVerifiedAttrs,
-		UsernameAttributes:     pool.UsernameAttributes,
-		MfaConfiguration:       pool.MFAConfiguration,
+	mfa := pool.MFAConfiguration
+	if mfa == "" {
+		mfa = "OFF"
 	}
 
+	output := &UserPoolOutput{
+		ID:                          pool.ID,
+		Arn:                         buildUserPoolARN(pool),
+		Name:                        pool.Name,
+		Status:                      string(pool.Status),
+		CreationDate:                float64(pool.CreationDate.Unix()),
+		LastModifiedDate:            float64(pool.LastModifiedDate.Unix()),
+		AutoVerifiedAttributes:      ifNilEmpty(pool.AutoVerifiedAttrs),
+		UsernameAttributes:          ifNilEmpty(pool.UsernameAttributes),
+		AliasAttributes:             []string{},
+		MfaConfiguration:            mfa,
+		LambdaConfig:                lambdaConfigToOutputOrEmpty(pool.LambdaConfig),
+		AdminCreateUserConfig:       defaultAdminCreateUserConfig(),
+		AccountRecoverySetting:      defaultAccountRecoverySetting(),
+		VerificationMessageTemplate: defaultVerificationMessageTemplate(),
+		SchemaAttributes:            defaultSchemaAttributes(),
+		UserPoolTags:                map[string]string{},
+		EstimatedNumberOfUsers:      0,
+		DeletionProtection:          "INACTIVE",
+		UserPoolTier:                "ESSENTIALS",
+	}
+
+	// Always emit Policies.PasswordPolicy. terraform-provider-aws's
+	// resourceUserPoolRead does `userPool.Policies.PasswordPolicy`
+	// without a nil-check on Policies, so the field must be present
+	// even when no policy was set on the pool.
 	if pool.Policies != nil && pool.Policies.PasswordPolicy != nil {
 		output.Policies = &UserPoolPoliciesOutput{
 			PasswordPolicy: &PasswordPolicyOutput{
@@ -441,10 +471,8 @@ func userPoolToOutput(pool *UserPool) *UserPoolOutput {
 				TemporaryPasswordValidityDays: pool.Policies.PasswordPolicy.TemporaryPasswordValidityDays,
 			},
 		}
-	}
-
-	if pool.LambdaConfig != nil {
-		output.LambdaConfig = convertLambdaConfigToOutput(pool.LambdaConfig)
+	} else {
+		output.Policies = defaultUserPoolPolicies()
 	}
 
 	if pool.EmailConfiguration != nil {
@@ -456,6 +484,91 @@ func userPoolToOutput(pool *UserPool) *UserPoolOutput {
 	}
 
 	return output
+}
+
+// ifNilEmpty returns an empty slice when s is nil so the JSON encoder
+// emits `[]` instead of `null` (terraform's flatten helpers iterate
+// without checking for nil and crash on null).
+func ifNilEmpty(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+
+	return s
+}
+
+// buildUserPoolARN builds the AWS ARN for the user pool. The region is
+// extracted from the pool ID prefix (e.g. "us-east-1_AbcdefGhi"); fall
+// back to "us-east-1" if the prefix is missing.
+func buildUserPoolARN(pool *UserPool) string {
+	region := "us-east-1"
+	if i := strings.Index(pool.ID, "_"); i > 0 {
+		region = pool.ID[:i]
+	}
+
+	return "arn:aws:cognito-idp:" + region + ":000000000000:userpool/" + pool.ID
+}
+
+// lambdaConfigToOutputOrEmpty wraps convertLambdaConfigToOutput, returning
+// an empty struct when the input is nil so the field is always present.
+func lambdaConfigToOutputOrEmpty(config *LambdaConfig) *LambdaConfigOutput {
+	if config == nil {
+		return &LambdaConfigOutput{}
+	}
+
+	return convertLambdaConfigToOutput(config)
+}
+
+// defaultAdminCreateUserConfig returns the AWS-default admin-create-user
+// config (allow-only false, no template).
+func defaultAdminCreateUserConfig() *AdminCreateUserConfigOutput {
+	return &AdminCreateUserConfigOutput{AllowAdminCreateUserOnly: false}
+}
+
+// defaultAccountRecoverySetting returns the AWS-default recovery setting
+// (verified_email priority 1).
+func defaultAccountRecoverySetting() *AccountRecoverySettingOutput {
+	return &AccountRecoverySettingOutput{
+		RecoveryMechanisms: []RecoveryMechanismOutput{
+			{Priority: 1, Name: "verified_email"},
+		},
+	}
+}
+
+// defaultVerificationMessageTemplate returns the AWS-default verification
+// message template (CONFIRM_WITH_CODE, no overrides).
+func defaultVerificationMessageTemplate() *VerificationMessageTemplateOutput {
+	return &VerificationMessageTemplateOutput{
+		DefaultEmailOption: "CONFIRM_WITH_CODE",
+	}
+}
+
+// defaultUserPoolPolicies returns the AWS-default password policy
+// (8-char minimum, all character classes required, 7-day temp validity).
+func defaultUserPoolPolicies() *UserPoolPoliciesOutput {
+	return &UserPoolPoliciesOutput{
+		PasswordPolicy: &PasswordPolicyOutput{
+			MinimumLength:                 8,
+			RequireUppercase:              true,
+			RequireLowercase:              true,
+			RequireNumbers:                true,
+			RequireSymbols:                true,
+			TemporaryPasswordValidityDays: 7,
+		},
+	}
+}
+
+// defaultSchemaAttributes returns AWS's default user pool schema (the
+// built-in Cognito attributes that exist on every pool).
+func defaultSchemaAttributes() []SchemaAttributeOutput {
+	return []SchemaAttributeOutput{
+		{Name: "sub", AttributeDataType: "String", Mutable: false, Required: true,
+			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "1", MaxLength: "2048"}},
+		{Name: "name", AttributeDataType: "String", Mutable: true, Required: false,
+			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "0", MaxLength: "2048"}},
+		{Name: "email", AttributeDataType: "String", Mutable: true, Required: false,
+			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "0", MaxLength: "2048"}},
+	}
 }
 
 // convertLambdaConfigToOutput converts LambdaConfig to LambdaConfigOutput.

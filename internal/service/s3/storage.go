@@ -51,14 +51,21 @@ type Storage interface {
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
 	ListMultipartUploads(ctx context.Context, bucket, prefix string, maxUploads int) ([]*MultipartUpload, error)
 	ListParts(ctx context.Context, bucket, key, uploadID string, maxParts int) ([]*Part, error)
+	UploadPartCopy(ctx context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey, srcVersionID string, copyRange *CopyRange) (*Part, error)
 
 	// Object tagging
 	PutObjectTagging(ctx context.Context, bucket, key string, tags map[string]string) error
 	GetObjectTagging(ctx context.Context, bucket, key string) (map[string]string, error)
 
+	// Object ACL
+	PutObjectACL(ctx context.Context, bucket, key string, acl *ObjectACL) error
+	GetObjectACL(ctx context.Context, bucket, key string) (*ObjectACL, error)
+
 	// Notification and CORS
 	SetEventBridgeNotification(ctx context.Context, bucket string, enabled bool)
 	IsEventBridgeEnabled(ctx context.Context, bucket string) bool
+	SetQueueConfigurations(ctx context.Context, bucket string, configs []QueueConfiguration)
+	GetQueueConfigurations(ctx context.Context, bucket string) []QueueConfiguration
 	SetCORSConfiguration(ctx context.Context, bucket string, rules []CORSRule)
 	GetCORSRules(ctx context.Context, bucket string) []CORSRule
 
@@ -68,7 +75,24 @@ type Storage interface {
 
 	PutBucketEncryption(ctx context.Context, bucket string, cfg ServerSideEncryptionConfig) error
 	GetBucketEncryption(ctx context.Context, bucket string) (*ServerSideEncryptionConfig, error)
+	PutBucketPolicy(ctx context.Context, bucket, document string) error
+	GetBucketPolicy(ctx context.Context, bucket string) (string, error)
+	DeleteBucketPolicy(ctx context.Context, bucket string) error
 	DeleteBucketEncryption(ctx context.Context, bucket string) error
+
+	PutBucketLogging(ctx context.Context, bucket string, cfg BucketLoggingConfig) error
+	GetBucketLogging(ctx context.Context, bucket string) (*BucketLoggingConfig, error)
+
+	// Bucket website / lifecycle / object restore.
+	PutBucketWebsite(ctx context.Context, bucket string, cfg *WebsiteConfiguration) error
+	GetBucketWebsite(ctx context.Context, bucket string) (*WebsiteConfiguration, error)
+	DeleteBucketWebsite(ctx context.Context, bucket string) error
+
+	PutBucketLifecycle(ctx context.Context, bucket string, cfg *LifecycleConfiguration) error
+	GetBucketLifecycle(ctx context.Context, bucket string) (*LifecycleConfiguration, error)
+	DeleteBucketLifecycle(ctx context.Context, bucket string) error
+
+	PutObjectRestore(ctx context.Context, bucket, key string, state *RestoreState) (bool, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -96,17 +120,34 @@ type MemoryStorage struct {
 
 // MemoryBucket holds the data for a single S3 bucket.
 type MemoryBucket struct {
-	Name               string                      `json:"name"`
-	CreationDate       time.Time                   `json:"creationDate"`
-	Objects            map[string]*Object          `json:"objects"`                     // current/latest version per key
-	Versions           map[string][]*Object        `json:"versions"`                    // all versions per key (newest first)
-	VersioningStatus   string                      `json:"versioningStatus"`            // "", "Enabled", "Suspended"
-	VersionIDCounter   uint64                      `json:"versionIdcounter"`            // counter for generating version IDs
-	MultipartUploads   map[string]*MultipartUpload `json:"-"`                           // uploadID -> MultipartUpload
-	EventBridgeEnabled bool                        `json:"eventBridgeEnabled"`          // EventBridge notification
-	CORSRules          []CORSRule                  `json:"corsRules,omitempty"`         // CORS configuration
-	PublicAccessBlock  *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"` // public access block configuration
-	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
+	Name                string                      `json:"name"`
+	CreationDate        time.Time                   `json:"creationDate"`
+	Objects             map[string]*Object          `json:"objects"`                       // current/latest version per key
+	Versions            map[string][]*Object        `json:"versions"`                      // all versions per key (newest first)
+	VersioningStatus    string                      `json:"versioningStatus"`              // "", "Enabled", "Suspended"
+	VersionIDCounter    uint64                      `json:"versionIdcounter"`              // counter for generating version IDs
+	MultipartUploads    map[string]*MultipartUpload `json:"-"`                             // uploadID -> MultipartUpload
+	EventBridgeEnabled  bool                        `json:"eventBridgeEnabled"`            // EventBridge notification
+	QueueConfigurations []QueueConfiguration        `json:"queueConfigurations,omitempty"` // SQS queue notification destinations
+	CORSRules           []CORSRule                  `json:"corsRules,omitempty"`           // CORS configuration
+	PublicAccessBlock   *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"`   // public access block configuration
+	Encryption          *ServerSideEncryptionConfig `json:"encryption,omitempty"`          // server-side encryption configuration
+	Policy              string                      `json:"policy,omitempty"`              // bucket policy JSON document (empty == not configured)
+	Logging             *BucketLoggingConfig        `json:"logging,omitempty"`             // server access logging target (nil == disabled)
+	ObjectACLs          map[string]*ObjectACL       `json:"objectAcls,omitempty"`          // per-object ACL (key -> ACL)
+	Website             *WebsiteConfiguration       `json:"website,omitempty"`             // static-site-hosting configuration
+	Lifecycle           *LifecycleConfiguration     `json:"lifecycle,omitempty"`           // expiration / transition rules
+	ObjectRestores      map[string]*RestoreState    `json:"objectRestores,omitempty"`      // per-object restore state (key -> state)
+}
+
+// BucketLoggingConfig stores the destination for server access logs.
+// AWS lets logging be opted out by sending an empty BucketLoggingStatus
+// (no LoggingEnabled element); we represent that as a nil pointer on
+// the bucket. TargetBucket == "" never lands in storage — the handler
+// only persists configs with a target.
+type BucketLoggingConfig struct {
+	TargetBucket string `json:"targetBucket"`
+	TargetPrefix string `json:"targetPrefix,omitempty"`
 }
 
 // PublicAccessBlockConfig stores the four PAB flags.
@@ -294,6 +335,8 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 		if ct, ok := metadata["Content-Type"]; ok {
 			obj.ContentType = ct
 		}
+
+		applySSEMetadata(obj, metadata)
 	}
 
 	if obj.ContentType == "" {
@@ -330,6 +373,15 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 	b.Objects[key] = obj
 
 	return obj, nil
+}
+
+// applySSEMetadata extracts SSE headers from metadata and sets them on the object.
+func applySSEMetadata(obj *Object, metadata map[string]string) {
+	obj.ServerSideEncryption = metadata["x-amz-server-side-encryption"]
+	delete(metadata, "x-amz-server-side-encryption")
+
+	obj.SSEKMSKeyID = metadata["x-amz-server-side-encryption-aws-kms-key-id"]
+	delete(metadata, "x-amz-server-side-encryption-aws-kms-key-id")
 }
 
 // GetObject retrieves an object.
@@ -539,12 +591,15 @@ func (s *MemoryStorage) HeadObject(_ context.Context, bucket, key string) (*Obje
 
 	// Return metadata only (no body)
 	return &Object{
-		Key:          obj.Key,
-		ContentType:  obj.ContentType,
-		ETag:         obj.ETag,
-		Size:         obj.Size,
-		LastModified: obj.LastModified,
-		Metadata:     obj.Metadata,
+		Key:                  obj.Key,
+		ContentType:          obj.ContentType,
+		ETag:                 obj.ETag,
+		Size:                 obj.Size,
+		LastModified:         obj.LastModified,
+		Metadata:             obj.Metadata,
+		VersionID:            obj.VersionID,
+		ServerSideEncryption: obj.ServerSideEncryption,
+		SSEKMSKeyID:          obj.SSEKMSKeyID,
 	}, nil
 }
 
@@ -882,6 +937,84 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 	return part, nil
 }
 
+// UploadPartCopy copies bytes from an existing object into a part of an
+// in-progress multipart upload. RFC-equivalent: AWS S3 UploadPartCopy.
+// `copyRange` may be nil to copy the entire source object.
+func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey, srcVersionID string, copyRange *CopyRange) (*Part, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	srcObj, err := s.objectForCopySourceLocked(srcBucket, srcKey, srcVersionID)
+	if err != nil {
+		return nil, err
+	}
+
+	dstB, exists := s.Buckets[dstBucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: dstBucket}
+	}
+
+	upload, exists := dstB.MultipartUploads[uploadID]
+	if !exists || upload.Key != dstKey {
+		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+	}
+
+	data := srcObj.Body
+	if copyRange != nil {
+		size := int64(len(data))
+		if copyRange.Start < 0 || copyRange.End >= size || copyRange.Start > copyRange.End {
+			return nil, &MultipartError{Code: "InvalidArgument", Message: "Range out of source object bounds", UploadID: uploadID}
+		}
+
+		data = data[copyRange.Start : copyRange.End+1]
+	}
+
+	hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
+	etag := hex.EncodeToString(hash[:])
+
+	part := &Part{
+		PartNumber:   partNumber,
+		ETag:         fmt.Sprintf("%q", etag),
+		Size:         int64(len(data)),
+		LastModified: time.Now(),
+		Body:         append([]byte(nil), data...),
+	}
+
+	upload.Parts[partNumber] = part
+
+	return part, nil
+}
+
+func (s *MemoryStorage) objectForCopySourceLocked(bucket, key, versionID string) (*Object, error) {
+	srcB, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if versionID == "" {
+		srcObj, exists := srcB.Objects[key]
+		if !exists || srcObj.IsDeleteMarker {
+			return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		}
+
+		return srcObj, nil
+	}
+
+	for _, obj := range srcB.Versions[key] {
+		if obj.VersionID != versionID {
+			continue
+		}
+
+		if obj.IsDeleteMarker {
+			return nil, &ObjectError{Code: "MethodNotAllowed", Message: "The specified method is not allowed against this resource.", Key: key}
+		}
+
+		return obj, nil
+	}
+
+	return nil, &ObjectError{Code: "NoSuchVersion", Message: "The specified version does not exist.", Key: key}
+}
+
 // CompleteMultipartUpload completes a multipart upload by assembling parts.
 func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, uploadID string, parts []PartRequest) (*Object, error) {
 	s.mu.Lock()
@@ -904,7 +1037,15 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 	// Validate and assemble parts
 	var combinedBody []byte
 
+	previousPartNumber := 0
+
 	for _, pr := range parts {
+		if pr.PartNumber <= previousPartNumber {
+			return nil, &MultipartError{Code: "InvalidPartOrder", Message: "The list of parts was not in ascending order. Parts must be ordered by part number.", UploadID: uploadID}
+		}
+
+		previousPartNumber = pr.PartNumber
+
 		part, ok := upload.Parts[pr.PartNumber]
 		if !ok {
 			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
@@ -1101,6 +1242,28 @@ func (s *MemoryStorage) IsEventBridgeEnabled(_ context.Context, bucket string) b
 	return false
 }
 
+// SetQueueConfigurations stores the SQS queue notification destinations for a bucket.
+func (s *MemoryStorage) SetQueueConfigurations(_ context.Context, bucket string, configs []QueueConfiguration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		b.QueueConfigurations = configs
+	}
+}
+
+// GetQueueConfigurations returns the SQS queue notification destinations for a bucket.
+func (s *MemoryStorage) GetQueueConfigurations(_ context.Context, bucket string) []QueueConfiguration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		return b.QueueConfigurations
+	}
+
+	return nil
+}
+
 // SetCORSConfiguration sets the CORS configuration for a bucket.
 func (s *MemoryStorage) SetCORSConfiguration(_ context.Context, bucket string, rules []CORSRule) {
 	s.mu.Lock()
@@ -1229,4 +1392,107 @@ func (s *MemoryStorage) DeleteBucketEncryption(_ context.Context, bucket string)
 	b.Encryption = nil
 
 	return nil
+}
+
+// PutBucketPolicy stores a bucket's policy document. AWS treats the
+// document as opaque JSON for the purposes of Put/Get, so we just
+// persist the bytes — IAM-layer evaluation is out of scope.
+func (s *MemoryStorage) PutBucketPolicy(_ context.Context, bucket, document string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	b.Policy = document
+
+	return nil
+}
+
+// GetBucketPolicy returns the configured policy document. Returns
+// NoSuchBucketPolicy when the bucket exists but has no policy set.
+func (s *MemoryStorage) GetBucketPolicy(_ context.Context, bucket string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return "", &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if b.Policy == "" {
+		return "", &BucketError{
+			Code:       "NoSuchBucketPolicy",
+			Message:    "The bucket policy does not exist",
+			BucketName: bucket,
+		}
+	}
+
+	return b.Policy, nil
+}
+
+// DeleteBucketPolicy clears the bucket's policy. AWS allows this on a
+// bucket without a policy (returns 204), so a missing policy is not
+// an error here either.
+func (s *MemoryStorage) DeleteBucketPolicy(_ context.Context, bucket string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	b.Policy = ""
+
+	return nil
+}
+
+// PutBucketLogging stores the server-access-log destination for a
+// bucket. An empty TargetBucket means the caller is opting out, so we
+// clear the config (matches AWS semantics where an empty
+// BucketLoggingStatus body disables logging).
+func (s *MemoryStorage) PutBucketLogging(_ context.Context, bucket string, cfg BucketLoggingConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if cfg.TargetBucket == "" {
+		b.Logging = nil
+
+		return nil
+	}
+
+	c := cfg
+	b.Logging = &c
+
+	return nil
+}
+
+// GetBucketLogging returns the configured destination, or nil when
+// logging is disabled. Real AWS GET on an unconfigured bucket returns
+// an empty <BucketLoggingStatus/> rather than NoSuch*; the handler
+// renders that case from a nil result.
+func (s *MemoryStorage) GetBucketLogging(_ context.Context, bucket string) (*BucketLoggingConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if b.Logging == nil {
+		return nil, nil //nolint:nilnil // documented contract: nil cfg + nil err == disabled
+	}
+
+	c := *b.Logging
+
+	return &c, nil
 }

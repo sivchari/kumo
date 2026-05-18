@@ -195,15 +195,23 @@ func TestLambda_Invoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Note: Since AWS SDK doesn't support custom InvokeEndpoint field,
-	// we need to test with a raw HTTP request or skip this test.
-	// For now, we verify that invoke without InvokeEndpoint returns an error.
-	_, err = client.Invoke(ctx, &lambda.InvokeInput{
+	// Without an InvokeEndpoint configured, Invoke echoes the input
+	// payload back as the function response. This lets SDK callers
+	// exercise functions without setting up a separate HTTP listener.
+	out, err := client.Invoke(ctx, &lambda.InvokeInput{
 		FunctionName: aws.String(functionName),
 		Payload:      []byte(`{"key": "value"}`),
 	})
-	if err == nil {
-		t.Error("expected error when invoking function without InvokeEndpoint")
+	if err != nil {
+		t.Fatalf("stub-mode invoke should succeed, got error: %v", err)
+	}
+
+	if out.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", out.StatusCode)
+	}
+
+	if got := string(out.Payload); got != `{"key": "value"}` {
+		t.Errorf("expected echoed payload, got %q", got)
 	}
 }
 
@@ -599,4 +607,37 @@ func TestLambda_EventSourceMapping_FunctionNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when creating event source mapping for non-existent function")
 	}
+}
+
+func TestLambda_GetFunctionConfiguration(t *testing.T) {
+	client := newLambdaClient(t)
+	ctx := t.Context()
+	functionName := "test-function-get-config"
+
+	_, err := client.CreateFunction(ctx, &lambda.CreateFunctionInput{
+		FunctionName: aws.String(functionName),
+		Runtime:      types.RuntimePython312,
+		Role:         aws.String("arn:aws:iam::000000000000:role/test-role"),
+		Handler:      aws.String("index.handler"),
+		Code: &types.FunctionCode{
+			ZipFile: []byte("fake-zip-content"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	getOutput, err := client.GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{
+		FunctionName: aws.String(functionName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "FunctionArn", "CodeSha256", "LastModified")).Assert(t.Name(), getOutput)
 }

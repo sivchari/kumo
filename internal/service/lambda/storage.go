@@ -16,10 +16,15 @@ import (
 type Storage interface {
 	CreateFunction(ctx context.Context, req *CreateFunctionRequest) (*Function, error)
 	GetFunction(ctx context.Context, name string) (*Function, error)
+	GetFunctionByARN(ctx context.Context, arn string) (*Function, error)
 	DeleteFunction(ctx context.Context, name string) error
 	ListFunctions(ctx context.Context, marker string, maxItems int) ([]*Function, string, error)
 	UpdateFunctionCode(ctx context.Context, name string, req *UpdateFunctionCodeRequest) (*Function, error)
 	UpdateFunctionConfiguration(ctx context.Context, name string, req *UpdateFunctionConfigurationRequest) (*Function, error)
+
+	// Permission operations
+	AddPermission(ctx context.Context, functionName string, stmt *PolicyStatement) error
+	RemovePermission(ctx context.Context, functionName, statementID string) error
 
 	// EventSourceMapping operations
 	CreateEventSourceMapping(ctx context.Context, req *CreateEventSourceMappingRequest) (*EventSourceMapping, error)
@@ -188,6 +193,7 @@ func (s *MemoryStorage) buildFunction(req *CreateFunctionRequest) *Function {
 		PackageType:    packageType,
 		Architectures:  architectures,
 		Environment:    req.Environment,
+		Tags:           req.Tags,
 		InvokeEndpoint: req.InvokeEndpoint,
 		Code: &FunctionCode{
 			ZipFile:         req.Code.ZipFile,
@@ -368,6 +374,92 @@ func (s *MemoryStorage) UpdateFunctionConfiguration(_ context.Context, name stri
 	fn.LastModified = time.Now().UTC()
 
 	return fn, nil
+}
+
+// GetFunctionByARN retrieves a Lambda function by its ARN.
+func (s *MemoryStorage) GetFunctionByARN(_ context.Context, arn string) (*Function, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			return fn, nil
+		}
+	}
+
+	return nil, &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// AddPermission adds a statement to a function's resource policy.
+func (s *MemoryStorage) AddPermission(_ context.Context, functionName string, stmt *PolicyStatement) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	if fn.Policy == nil {
+		fn.Policy = &ResourcePolicy{
+			Version: "2012-10-17",
+			ID:      policyID(functionName),
+		}
+	}
+
+	// Check for duplicate statement ID.
+	for _, existing := range fn.Policy.Statements {
+		if existing.Sid == stmt.Sid {
+			return &FunctionError{
+				Type:    ErrResourceConflict,
+				Message: fmt.Sprintf("The statement id (%s) provided already exists. Please provide a new statement id, or remove the existing statement.", stmt.Sid),
+			}
+		}
+	}
+
+	fn.Policy.Statements = append(fn.Policy.Statements, stmt)
+
+	return nil
+}
+
+// RemovePermission removes a statement from a function's resource policy.
+func (s *MemoryStorage) RemovePermission(_ context.Context, functionName, statementID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	if fn.Policy == nil {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: "No policy is associated with the given resource.",
+		}
+	}
+
+	for i, stmt := range fn.Policy.Statements {
+		if stmt.Sid == statementID {
+			fn.Policy.Statements = append(fn.Policy.Statements[:i], fn.Policy.Statements[i+1:]...)
+
+			return nil
+		}
+	}
+
+	return &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Statement %s is not found in resource policy.", statementID),
+	}
 }
 
 // CreateEventSourceMapping creates a new event source mapping.

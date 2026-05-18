@@ -245,6 +245,10 @@ func evalContains(av AttributeValue, operand AttributeValue) bool {
 	// List contains value.
 	if av.L != nil {
 		for _, elem := range av.L {
+			if elem == nil {
+				continue
+			}
+
 			if attributeValuesEqualStatic(*elem, operand) {
 				return true
 			}

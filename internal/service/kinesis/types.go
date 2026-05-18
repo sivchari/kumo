@@ -115,6 +115,32 @@ type DescribeStreamResponse struct {
 	StreamDescription StreamDescription `json:"StreamDescription"`
 }
 
+// DescribeStreamSummaryRequest is the request for DescribeStreamSummary.
+type DescribeStreamSummaryRequest struct {
+	StreamName string `json:"StreamName,omitempty"`
+	StreamARN  string `json:"StreamARN,omitempty"`
+}
+
+// DescribeStreamSummaryResponse is the response for DescribeStreamSummary.
+type DescribeStreamSummaryResponse struct {
+	StreamDescriptionSummary StreamDescriptionSummary `json:"StreamDescriptionSummary"`
+}
+
+// StreamDescriptionSummary is the summary description of a stream.
+type StreamDescriptionSummary struct {
+	StreamName              string             `json:"StreamName"`
+	StreamARN               string             `json:"StreamARN"`
+	StreamStatus            string             `json:"StreamStatus"`
+	StreamModeDetails       *StreamModeDetails `json:"StreamModeDetails,omitempty"`
+	RetentionPeriodHours    int32              `json:"RetentionPeriodHours"`
+	StreamCreationTimestamp float64            `json:"StreamCreationTimestamp"`
+	EnhancedMonitoring      []EnhancedMetrics  `json:"EnhancedMonitoring"`
+	EncryptionType          string             `json:"EncryptionType,omitempty"`
+	KeyID                   string             `json:"KeyId,omitempty"`
+	OpenShardCount          int32              `json:"OpenShardCount"`
+	ConsumerCount           int32              `json:"ConsumerCount"`
+}
+
 // StreamDescription contains stream details.
 type StreamDescription struct {
 	StreamName              string             `json:"StreamName"`

@@ -41,6 +41,9 @@ type Storage interface {
 	DeleteRole(ctx context.Context, roleName string) error
 	GetRole(ctx context.Context, roleName string) (*Role, error)
 	ListRoles(ctx context.Context, pathPrefix string, maxItems int) ([]Role, error)
+	UpdateRole(ctx context.Context, roleName string, description *string, maxSessionDuration *int) error
+	UpdateAssumeRolePolicy(ctx context.Context, roleName, policyDocument string) error
+	TagRole(ctx context.Context, roleName string, tags []Tag) error
 
 	CreatePolicy(ctx context.Context, req *CreatePolicyRequest) (*Policy, error)
 	DeletePolicy(ctx context.Context, policyArn string) error
@@ -384,6 +387,87 @@ func (s *MemoryStorage) GetRole(_ context.Context, roleName string) (*Role, erro
 	}
 
 	return role, nil
+}
+
+// UpdateRole updates the Description / MaxSessionDuration of an
+// existing role. Both arguments are optional pointers — nil means
+// "leave unchanged" (matches the AWS UpdateRole behaviour where
+// omitted parameters preserve current state).
+func (s *MemoryStorage) UpdateRole(_ context.Context, roleName string, description *string, maxSessionDuration *int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	role, exists := s.Roles[roleName]
+	if !exists {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	if description != nil {
+		role.Description = *description
+	}
+
+	if maxSessionDuration != nil {
+		role.MaxSessionDuration = *maxSessionDuration
+	}
+
+	return nil
+}
+
+// TagRole upserts the given tags on a role. AWS-style "merge by key"
+// semantics: existing tags whose Key matches are overwritten, others
+// are appended unchanged.
+func (s *MemoryStorage) TagRole(_ context.Context, roleName string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	role, exists := s.Roles[roleName]
+	if !exists {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	byKey := make(map[string]int, len(role.Tags))
+	for i, t := range role.Tags {
+		byKey[t.Key] = i
+	}
+
+	for _, t := range tags {
+		if i, ok := byKey[t.Key]; ok {
+			role.Tags[i].Value = t.Value
+
+			continue
+		}
+
+		role.Tags = append(role.Tags, t)
+		byKey[t.Key] = len(role.Tags) - 1
+	}
+
+	return nil
+}
+
+// UpdateAssumeRolePolicy replaces the trust policy on an existing
+// role. AWS treats the policy document as opaque JSON for storage
+// purposes; we just persist the bytes.
+func (s *MemoryStorage) UpdateAssumeRolePolicy(_ context.Context, roleName, policyDocument string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	role, exists := s.Roles[roleName]
+	if !exists {
+		return &Error{
+			Code:    errNoSuchEntity,
+			Message: fmt.Sprintf("The role with name %s cannot be found.", roleName),
+		}
+	}
+
+	role.AssumeRolePolicyDocument = policyDocument
+
+	return nil
 }
 
 // ListRoles lists IAM roles.

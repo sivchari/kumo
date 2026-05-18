@@ -38,6 +38,7 @@ type Storage interface {
 	SendMessage(ctx context.Context, queueURL, body string, delaySeconds int, messageAttributes map[string]MessageAttributeValue, messageGroupID, messageDeduplicationID string) (*Message, error)
 	ReceiveMessage(ctx context.Context, queueURL string, maxMessages, visibilityTimeout, waitTimeSeconds int) ([]*Message, error)
 	DeleteMessage(ctx context.Context, queueURL, receiptHandle string) error
+	ChangeMessageVisibility(ctx context.Context, queueURL, receiptHandle string, visibilityTimeout int) error
 	PurgeQueue(ctx context.Context, queueURL string) error
 	GetQueueAttributes(ctx context.Context, queueURL string, attributeNames []string) (map[string]string, error)
 	SetQueueAttributes(ctx context.Context, queueURL string, attributes map[string]string) error
@@ -145,6 +146,26 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.Queues == nil {
 		s.Queues = make(map[string]*QueueData)
+	}
+
+	// Non-persisted fields (json:"-" / unexported) are zero after unmarshal;
+	// re-init so ReceiveMessage doesn't panic on a nil map.
+	for _, qd := range s.Queues {
+		if qd == nil {
+			continue
+		}
+
+		if qd.Inflight == nil {
+			qd.Inflight = make(map[string]*Message)
+		}
+
+		if qd.notify == nil {
+			qd.notify = make(chan struct{}, 1)
+		}
+
+		if qd.Queue != nil && qd.Queue.FifoQueue && qd.DeduplicationCache == nil {
+			qd.DeduplicationCache = make(map[string]DeduplicationEntry)
+		}
 	}
 
 	return nil
@@ -419,6 +440,24 @@ func (qd *QueueData) validateFIFO(body, messageGroupID, messageDeduplicationID s
 	}, nil
 }
 
+// lockedMessageGroups returns the set of MessageGroupIDs that have in-flight
+// messages. Returns nil for non-FIFO queues.
+func (qd *QueueData) lockedMessageGroups() map[string]struct{} {
+	if !qd.Queue.FifoQueue {
+		return nil
+	}
+
+	locked := make(map[string]struct{})
+
+	for _, msg := range qd.Inflight {
+		if msg.MessageGroupID != "" {
+			locked[msg.MessageGroupID] = struct{}{}
+		}
+	}
+
+	return locked
+}
+
 // updateFIFOCache updates the deduplication cache with the message ID.
 func (qd *QueueData) updateFIFOCache(dedupID, messageID string) {
 	entry := qd.DeduplicationCache[dedupID]
@@ -545,8 +584,15 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 	}
 
 	now := time.Now()
+
+	// Re-enqueue inflight messages whose visibility timeout has expired.
+	s.requeueExpiredMessages(qd, now)
+
 	result := make([]*Message, 0, maxMessages)
 	remaining := make([]*Message, 0, len(qd.Messages))
+
+	// For FIFO queues, track which message groups are locked (have in-flight messages).
+	lockedGroups := qd.lockedMessageGroups()
 
 	for _, msg := range qd.Messages {
 		if len(result) >= maxMessages {
@@ -561,30 +607,67 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 			continue
 		}
 
-		// Make message invisible and add to inflight.
-		msg.ReceiptHandle = uuid.New().String()
-		msg.VisibleAt = now.Add(time.Duration(visibilityTimeout) * time.Second)
-		msg.ReceiveCount++
-		msg.Attributes["ApproximateReceiveCount"] = fmt.Sprintf("%d", msg.ReceiveCount)
+		// FIFO: skip messages from groups that are locked (have in-flight messages).
+		if lockedGroups != nil && msg.MessageGroupID != "" {
+			if _, locked := lockedGroups[msg.MessageGroupID]; locked {
+				remaining = append(remaining, msg)
 
-		if msg.Attributes["ApproximateFirstReceiveTimestamp"] == "" {
-			msg.Attributes["ApproximateFirstReceiveTimestamp"] = fmt.Sprintf("%d", now.UnixMilli())
+				continue
+			}
 		}
 
-		// Check if message should be moved to DLQ.
-		if qd.Queue.MaxReceiveCount > 0 && msg.ReceiveCount > qd.Queue.MaxReceiveCount {
-			s.moveToDeadLetterQueue(qd.Queue.DeadLetterTargetArn, msg)
-
-			continue
+		// Deliver the message: make invisible and add to inflight.
+		if s.deliverMessage(qd, msg, now, visibilityTimeout) {
+			result = append(result, msg)
 		}
-
-		qd.Inflight[msg.ReceiptHandle] = msg
-		result = append(result, msg)
 	}
 
 	qd.Messages = remaining
 
 	return result, qd.notify, nil
+}
+
+// deliverMessage makes a message invisible and adds it to inflight.
+// Returns true if delivered, false if moved to DLQ. Must be called under lock.
+func (s *MemoryStorage) deliverMessage(qd *QueueData, msg *Message, now time.Time, visibilityTimeout int) bool {
+	msg.ReceiptHandle = uuid.New().String()
+	msg.VisibleAt = now.Add(time.Duration(visibilityTimeout) * time.Second)
+	msg.ReceiveCount++
+	msg.Attributes["ApproximateReceiveCount"] = fmt.Sprintf("%d", msg.ReceiveCount)
+
+	if msg.Attributes["ApproximateFirstReceiveTimestamp"] == "" {
+		msg.Attributes["ApproximateFirstReceiveTimestamp"] = fmt.Sprintf("%d", now.UnixMilli())
+	}
+
+	if qd.Queue.MaxReceiveCount > 0 && msg.ReceiveCount > qd.Queue.MaxReceiveCount {
+		s.moveToDeadLetterQueue(qd.Queue.DeadLetterTargetArn, msg)
+
+		return false
+	}
+
+	qd.Inflight[msg.ReceiptHandle] = msg
+
+	return true
+}
+
+// ChangeMessageVisibility changes the visibility timeout of an inflight message.
+func (s *MemoryStorage) ChangeMessageVisibility(_ context.Context, queueURL, receiptHandle string, visibilityTimeout int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, qd, err := s.resolveQueueData(queueURL)
+	if err != nil {
+		return err
+	}
+
+	msg, exists := qd.Inflight[receiptHandle]
+	if !exists {
+		return ErrReceiptHandleInvalid
+	}
+
+	msg.VisibleAt = time.Now().Add(time.Duration(visibilityTimeout) * time.Second)
+
+	return nil
 }
 
 // DeleteMessage deletes a message from a queue.
@@ -648,6 +731,10 @@ func (s *MemoryStorage) GetQueueAttributes(_ context.Context, queueURL string, a
 		"ContentBasedDeduplication":             fmt.Sprintf("%t", q.ContentBasedDeduplication),
 	}
 
+	if q.Policy != "" {
+		allAttrs["Policy"] = q.Policy
+	}
+
 	if q.RedrivePolicy != "" {
 		allAttrs["RedrivePolicy"] = q.RedrivePolicy
 	}
@@ -699,6 +786,8 @@ func applyQueueAttributes(q *Queue, attrs map[string]string) {
 			_, _ = fmt.Sscanf(val, "%d", &q.ReceiveWaitTimeSeconds)
 		case "ContentBasedDeduplication":
 			q.ContentBasedDeduplication = val == "true"
+		case "Policy":
+			q.Policy = val
 		case "RedrivePolicy":
 			q.RedrivePolicy = val
 			parseRedrivePolicy(q, val)
@@ -708,8 +797,33 @@ func applyQueueAttributes(q *Queue, attrs map[string]string) {
 
 // redrivePolicy is used for JSON unmarshaling of RedrivePolicy attribute.
 type redrivePolicy struct {
-	DeadLetterTargetArn string `json:"deadLetterTargetArn"`
-	MaxReceiveCount     string `json:"maxReceiveCount"`
+	DeadLetterTargetArn string      `json:"deadLetterTargetArn"`
+	MaxReceiveCount     json.Number `json:"maxReceiveCount"`
+}
+
+// requeueExpiredMessages moves inflight messages whose visibility timeout has
+// expired back to the message queue. If the queue has a DLQ configured and the
+// message's ReceiveCount has reached MaxReceiveCount, the message is moved to the
+// DLQ instead. Must be called under lock.
+func (s *MemoryStorage) requeueExpiredMessages(qd *QueueData, now time.Time) {
+	for handle, msg := range qd.Inflight {
+		if !msg.VisibleAt.Before(now) {
+			continue
+		}
+
+		delete(qd.Inflight, handle)
+
+		// Check DLQ redrive policy: if the message has already been received
+		// MaxReceiveCount times, move it to the DLQ.
+		if qd.Queue.MaxReceiveCount > 0 && msg.ReceiveCount >= qd.Queue.MaxReceiveCount {
+			s.moveToDeadLetterQueue(qd.Queue.DeadLetterTargetArn, msg)
+
+			continue
+		}
+
+		// Prepend the message so it is delivered first.
+		qd.Messages = append([]*Message{msg}, qd.Messages...)
+	}
 }
 
 // moveToDeadLetterQueue moves a message to the dead letter queue. Must be called under lock.
@@ -735,6 +849,12 @@ func (s *MemoryStorage) moveToDeadLetterQueue(dlqArn string, msg *Message) {
 
 			qd.Messages = append(qd.Messages, dlqMsg)
 
+			// Notify long-polling receivers on the DLQ.
+			select {
+			case qd.notify <- struct{}{}:
+			default:
+			}
+
 			return
 		}
 	}
@@ -747,5 +867,13 @@ func parseRedrivePolicy(q *Queue, val string) {
 	}
 
 	q.DeadLetterTargetArn = rp.DeadLetterTargetArn
-	_, _ = fmt.Sscanf(rp.MaxReceiveCount, "%d", &q.MaxReceiveCount)
+
+	if rp.MaxReceiveCount != "" {
+		n, err := rp.MaxReceiveCount.Int64()
+		if err != nil {
+			return
+		}
+
+		q.MaxReceiveCount = int(n)
+	}
 }

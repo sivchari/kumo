@@ -12,18 +12,37 @@ type Bucket struct {
 	CreationDate time.Time
 }
 
+// BucketLoggingStatus is the wire shape of {Put,Get}BucketLogging.
+// LoggingEnabled is omitted (nil pointer) when logging is disabled —
+// AWS sends `<BucketLoggingStatus/>` in that case.
+type BucketLoggingStatus struct {
+	XMLName        xml.Name              `xml:"BucketLoggingStatus"`
+	Xmlns          string                `xml:"xmlns,attr,omitempty"`
+	LoggingEnabled *LoggingEnabledStatus `xml:"LoggingEnabled,omitempty"`
+}
+
+// LoggingEnabledStatus is the body of LoggingEnabled. TargetGrants
+// isn't modelled; terraform's aws_s3_bucket_logging only sets target
+// + prefix.
+type LoggingEnabledStatus struct {
+	TargetBucket string `xml:"TargetBucket"`
+	TargetPrefix string `xml:"TargetPrefix,omitempty"`
+}
+
 // Object represents an S3 object.
 type Object struct {
-	Key            string
-	Body           []byte
-	ETag           string
-	Size           int64
-	LastModified   time.Time
-	ContentType    string
-	Metadata       map[string]string
-	Tags           map[string]string
-	VersionID      string
-	IsDeleteMarker bool
+	Key                  string
+	Body                 []byte
+	ETag                 string
+	Size                 int64
+	LastModified         time.Time
+	ContentType          string
+	Metadata             map[string]string
+	Tags                 map[string]string
+	VersionID            string
+	IsDeleteMarker       bool
+	ServerSideEncryption string
+	SSEKMSKeyID          string
 }
 
 // Tagging represents the XML structure for S3 object tagging.
@@ -98,6 +117,29 @@ type ObjectInfo struct {
 // CommonPrefix represents a common prefix in ListObjects response.
 type CommonPrefix struct {
 	Prefix string `xml:"Prefix"`
+}
+
+// ListBucketResultV1 is the response for the legacy ListObjects (V1)
+// API. Same XML root name as V2, but the pagination fields are
+// `Marker` / `NextMarker` instead of `ContinuationToken` /
+// `NextContinuationToken`, and there is no `KeyCount`.
+//
+// The V1 API is still emitted by awscli's `aws s3 ls` (in some
+// configurations), older AWS SDKs, and a handful of non-AWS S3
+// clients (Go AWS SDK v1, some Java tooling), so it cannot be
+// retired purely by emulating V2.
+type ListBucketResultV1 struct {
+	XMLName        xml.Name       `xml:"ListBucketResult"`
+	Xmlns          string         `xml:"xmlns,attr"`
+	Name           string         `xml:"Name"`
+	Prefix         string         `xml:"Prefix"`
+	Marker         string         `xml:"Marker"`
+	NextMarker     string         `xml:"NextMarker,omitempty"`
+	MaxKeys        int            `xml:"MaxKeys"`
+	Delimiter      string         `xml:"Delimiter,omitempty"`
+	IsTruncated    bool           `xml:"IsTruncated"`
+	Contents       []ObjectInfo   `xml:"Contents"`
+	CommonPrefixes []CommonPrefix `xml:"CommonPrefixes,omitempty"`
 }
 
 // ErrorResponse represents an S3 error response.
@@ -307,14 +349,69 @@ type CopyPartResult struct {
 	ETag         string   `xml:"ETag"`
 }
 
+// CopyRange is the resolved x-amz-copy-source-range — START..END inclusive.
+// nil means "copy the whole source object".
+type CopyRange struct {
+	Start int64
+	End   int64
+}
+
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
-	XMLName           xml.Name           `xml:"NotificationConfiguration"`
-	EventBridgeConfig *EventBridgeConfig `xml:"EventBridgeConfiguration,omitempty"`
+	XMLName             xml.Name             `xml:"NotificationConfiguration"`
+	EventBridgeConfig   *EventBridgeConfig   `xml:"EventBridgeConfiguration,omitempty"`
+	QueueConfigurations []QueueConfiguration `xml:"QueueConfiguration,omitempty"`
 }
 
 // EventBridgeConfig represents EventBridge notification configuration.
 type EventBridgeConfig struct{}
+
+// QueueConfiguration represents an SQS queue destination in the bucket
+// notification configuration.
+type QueueConfiguration struct {
+	ID       string   `xml:"Id,omitempty"       json:"id,omitempty"`
+	QueueArn string   `xml:"Queue"              json:"queue"`
+	Events   []string `xml:"Event"              json:"events"`
+}
+
+// EventNotification is the top-level wrapper sent to SQS when an S3
+// event fires. AWS calls this the "event message structure".
+type EventNotification struct {
+	Records []EventRecord `json:"Records"` //nolint:tagliatelle // AWS S3 event format
+}
+
+// EventRecord represents a single record inside the Records array of
+// an S3 event notification message delivered to SQS.
+type EventRecord struct {
+	EventVersion string              `json:"eventVersion"`
+	EventSource  string              `json:"eventSource"`
+	AWSRegion    string              `json:"awsRegion"`
+	EventTime    string              `json:"eventTime"`
+	EventName    string              `json:"eventName"`
+	S3           EventRecordS3Detail `json:"s3"`
+	UserIdentity map[string]string   `json:"userIdentity"`
+}
+
+// EventRecordS3Detail holds the s3-specific portion of an event record.
+type EventRecordS3Detail struct {
+	SchemaVersion   string            `json:"s3SchemaVersion"`
+	ConfigurationID string            `json:"configurationId"`
+	Bucket          EventRecordBucket `json:"bucket"`
+	Object          EventRecordObject `json:"object"`
+}
+
+// EventRecordBucket describes the bucket in an S3 event record.
+type EventRecordBucket struct {
+	Name string `json:"name"`
+	Arn  string `json:"arn"`
+}
+
+// EventRecordObject describes the object in an S3 event record.
+type EventRecordObject struct {
+	Key  string `json:"key"`
+	Size int64  `json:"size"`
+	ETag string `json:"eTag"`
+}
 
 // CORSConfiguration represents S3 bucket CORS configuration (XML request body).
 type CORSConfiguration struct {

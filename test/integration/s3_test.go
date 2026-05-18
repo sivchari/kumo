@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -1338,6 +1339,63 @@ func TestS3_CopyObject(t *testing.T) {
 	)).Assert(t.Name(), copyOutput)
 }
 
+// TestS3_CopyObject_URLEncodedSource verifies that the URL-encoded
+// form of x-amz-copy-source is accepted, matching AWS S3 behavior.
+// Some AWS Go SDK callers escape the entire "bucket/key" string with
+// url.PathEscape to be safe with keys containing '/', '+', or spaces.
+func TestS3_CopyObject_URLEncodedSource(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucketName := "test-copy-encoded-source-bucket"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("dir/source.txt"),
+		Body:   bytes.NewReader([]byte("encoded copy")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// url.PathEscape encodes '/' as %2F so the entire path becomes
+	// percent-encoded — this is the form that previously failed.
+	encoded := url.PathEscape(bucketName + "/dir/source.txt")
+
+	_, err = client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(bucketName),
+		Key:        aws.String("dir/dest.txt"),
+		CopySource: aws.String(encoded),
+	})
+	if err != nil {
+		t.Fatalf("CopyObject with URL-encoded source should succeed: %v", err)
+	}
+
+	got, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("dir/dest.txt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+
+	body, err := io.ReadAll(got.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(body) != "encoded copy" {
+		t.Errorf("unexpected body: got=%q want=%q", string(body), "encoded copy")
+	}
+}
+
 func TestS3_PutAndGetObjectTagging(t *testing.T) {
 	client := newS3Client(t)
 	ctx := t.Context()
@@ -1653,5 +1711,145 @@ func TestS3_BucketSubresourceStubs_NoSuchErrors(t *testing.T) {
 				t.Fatalf("%s: expected NoSuch* error, got nil", tc.name)
 			}
 		})
+	}
+}
+
+func TestS3_BucketCors(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-bucket-cors"
+
+	// Create bucket.
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+	})
+
+	// GetBucketCors before setting should return error.
+	_, err = client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+		Bucket: aws.String(bucket),
+	})
+	if err == nil {
+		t.Fatal("expected NoSuchCORSConfiguration error")
+	}
+
+	// PutBucketCors.
+	_, err = client.PutBucketCors(ctx, &s3.PutBucketCorsInput{
+		Bucket: aws.String(bucket),
+		CORSConfiguration: &types.CORSConfiguration{
+			CORSRules: []types.CORSRule{
+				{
+					AllowedHeaders: []string{"*"},
+					AllowedMethods: []string{"GET", "PUT"},
+					AllowedOrigins: []string{"https://example.com"},
+					ExposeHeaders:  []string{"ETag"},
+					MaxAgeSeconds:  aws.Int32(300),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GetBucketCors after setting should return the CORS rules.
+	getOutput, err := client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), getOutput)
+}
+
+func TestS3_PutObjectWithTagging(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-tagging"
+	key := "tagged-object.txt"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:  aws.String(bucket),
+		Key:     aws.String(key),
+		Body:    strings.NewReader("hello"),
+		Tagging: aws.String("env=test&team=infra"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tagOutput, err := client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), tagOutput)
+}
+
+func TestS3_PutObjectWithSSEKMS(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-sse"
+	key := "encrypted.txt"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 strings.NewReader("secret"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String("arn:aws:kms:us-east-1:000000000000:key/test-key"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	headOutput, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if headOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Errorf("expected SSE algorithm aws:kms, got %s", headOutput.ServerSideEncryption)
+	}
+
+	if aws.ToString(headOutput.SSEKMSKeyId) == "" {
+		t.Error("expected SSEKMSKeyId to be set")
 	}
 }

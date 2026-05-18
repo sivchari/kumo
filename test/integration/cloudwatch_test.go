@@ -368,3 +368,51 @@ func TestCloudWatch_PutMetricDataWithDimensions(t *testing.T) {
 		t.Fatal("expected at least one metric with matching dimensions, got none")
 	}
 }
+
+func TestCloudWatch_SetAlarmState(t *testing.T) {
+	client := newCloudWatchClient(t)
+	ctx := t.Context()
+	alarmName := "test-set-alarm-state"
+
+	// Create alarm.
+	_, err := client.PutMetricAlarm(ctx, &cloudwatch.PutMetricAlarmInput{
+		AlarmName:          aws.String(alarmName),
+		MetricName:         aws.String("TestMetric"),
+		Namespace:          aws.String("TestNamespace"),
+		Statistic:          types.StatisticAverage,
+		Period:             aws.Int32(60),
+		EvaluationPeriods:  aws.Int32(1),
+		Threshold:          aws.Float64(50.0),
+		ComparisonOperator: types.ComparisonOperatorGreaterThanThreshold,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteAlarms(context.Background(), &cloudwatch.DeleteAlarmsInput{
+			AlarmNames: []string{alarmName},
+		})
+	})
+
+	// SetAlarmState.
+	_, err = client.SetAlarmState(ctx, &cloudwatch.SetAlarmStateInput{
+		AlarmName:   aws.String(alarmName),
+		StateValue:  types.StateValueAlarm,
+		StateReason: aws.String("Test alarm"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// DescribeAlarms should reflect the new state.
+	descOutput, err := client.DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{
+		AlarmNames: []string{alarmName},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields(
+		"AlarmArn", "StateUpdatedTimestamp", "AlarmConfigurationUpdatedTimestamp", "ResultMetadata",
+	)).Assert(t.Name(), descOutput)
+}

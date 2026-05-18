@@ -353,6 +353,70 @@ func TestSSM_DescribeParameters(t *testing.T) {
 	}
 }
 
+func TestSSM_DescribeParametersWithFilter(t *testing.T) {
+	client := newSSMClient(t)
+	ctx := t.Context()
+
+	params := []struct {
+		name  string
+		value string
+	}{
+		{"/test/filter/alpha", "a"},
+		{"/test/filter/beta", "b"},
+	}
+
+	for _, p := range params {
+		_, err := client.PutParameter(ctx, &ssm.PutParameterInput{
+			Name:  aws.String(p.name),
+			Value: aws.String(p.value),
+			Type:  types.ParameterTypeString,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Cleanup(func() {
+		names := make([]string, len(params))
+		for i, p := range params {
+			names[i] = p.name
+		}
+
+		_, _ = client.DeleteParameters(context.Background(), &ssm.DeleteParametersInput{
+			Names: names,
+		})
+	})
+
+	// Filter by exact name.
+	descOutput, err := client.DescribeParameters(ctx, &ssm.DescribeParametersInput{
+		ParameterFilters: []types.ParameterStringFilter{
+			{
+				Key:    aws.String("Name"),
+				Values: []string{"/test/filter/alpha"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_exact", descOutput)
+
+	// Filter by prefix.
+	descOutput2, err := client.DescribeParameters(ctx, &ssm.DescribeParametersInput{
+		ParameterFilters: []types.ParameterStringFilter{
+			{
+				Key:    aws.String("Name"),
+				Option: aws.String("BeginsWith"),
+				Values: []string{"/test/filter/"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_prefix", descOutput2)
+}
+
 func TestSSM_GetParameter_NotFound(t *testing.T) {
 	client := newSSMClient(t)
 	ctx := t.Context()
@@ -413,4 +477,60 @@ func TestSSM_SecureString_WithDecryptionFalse(t *testing.T) {
 		t.Errorf("expected actual value %q when WithDecryption=true, got %q",
 			paramValue, aws.ToString(getOutputDecrypted.Parameter.Value))
 	}
+}
+
+func TestSSM_ListTagsForResource(t *testing.T) {
+	client := newSSMClient(t)
+	ctx := t.Context()
+	paramName := "/test/tag-param"
+
+	// Put a parameter to tag.
+	_, err := client.PutParameter(ctx, &ssm.PutParameterInput{
+		Name:  aws.String(paramName),
+		Value: aws.String("tag-test-value"),
+		Type:  types.ParameterTypeString,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteParameter(context.Background(), &ssm.DeleteParameterInput{
+			Name: aws.String(paramName),
+		})
+	})
+
+	// ListTagsForResource should succeed with empty tag list.
+	listOutput, err := client.ListTagsForResource(ctx, &ssm.ListTagsForResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), listOutput)
+
+	// AddTagsToResource should succeed (no-op stub).
+	addOutput, err := client.AddTagsToResource(ctx, &ssm.AddTagsToResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("test")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_add", addOutput)
+
+	// RemoveTagsFromResource should succeed (no-op stub).
+	removeOutput, err := client.RemoveTagsFromResource(ctx, &ssm.RemoveTagsFromResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+		TagKeys:      []string{"env"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_remove", removeOutput)
 }

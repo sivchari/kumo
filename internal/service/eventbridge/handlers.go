@@ -33,6 +33,11 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"CreateApiDestination":   s.CreateAPIDestination,
 		"DescribeApiDestination": s.DescribeAPIDestination,
 		"DeleteApiDestination":   s.DeleteAPIDestination,
+		// Tag stubs — see tag_stubs.go.
+		// Required by terraform-provider-aws after CreateEventBus.
+		"ListTagsForResource": s.ListTagsForResource,
+		"TagResource":         s.TagResource,
+		"UntagResource":       s.UntagResource,
 	}
 }
 
@@ -336,6 +341,13 @@ func (s *Service) ListTargetsByRule(w http.ResponseWriter, r *http.Request) {
 			Input:          target.Input,
 			InputPath:      target.InputPath,
 			HTTPParameters: target.HTTPParameters,
+		}
+
+		if target.InputTransformer != nil {
+			outputs[i].InputTransformer = &InputTransformerOutput{
+				InputPathsMap: target.InputTransformer.InputPathsMap,
+				InputTemplate: target.InputTransformer.InputTemplate,
+			}
 		}
 	}
 

@@ -20,6 +20,7 @@ type Queue struct {
 	ReceiveWaitTimeSeconds    int
 	FifoQueue                 bool
 	ContentBasedDeduplication bool
+	Policy                    string // JSON string: IAM policy document
 	RedrivePolicy             string // JSON string: {"deadLetterTargetArn":"...","maxReceiveCount":"N"}
 	MaxReceiveCount           int    // Parsed from RedrivePolicy
 	DeadLetterTargetArn       string // Parsed from RedrivePolicy
@@ -249,6 +250,37 @@ type GetQueueAttributesResponse struct {
 type SetQueueAttributesRequest struct {
 	QueueURL   string            `json:"QueueUrl"`
 	Attributes map[string]string `json:"Attributes"`
+}
+
+// ChangeMessageVisibilityRequest is the request for ChangeMessageVisibility.
+type ChangeMessageVisibilityRequest struct {
+	QueueURL          string `json:"QueueUrl"`
+	ReceiptHandle     string `json:"ReceiptHandle"`
+	VisibilityTimeout int    `json:"VisibilityTimeout"`
+}
+
+// ChangeMessageVisibilityBatchRequest is the request for ChangeMessageVisibilityBatch.
+type ChangeMessageVisibilityBatchRequest struct {
+	QueueURL string                                     `json:"QueueUrl"`
+	Entries  []ChangeMessageVisibilityBatchRequestEntry `json:"Entries"`
+}
+
+// ChangeMessageVisibilityBatchRequestEntry is an individual entry.
+type ChangeMessageVisibilityBatchRequestEntry struct {
+	ID                string `json:"Id"`
+	ReceiptHandle     string `json:"ReceiptHandle"`
+	VisibilityTimeout int    `json:"VisibilityTimeout"`
+}
+
+// ChangeMessageVisibilityBatchResponse is the response for ChangeMessageVisibilityBatch.
+type ChangeMessageVisibilityBatchResponse struct {
+	Successful []ChangeMessageVisibilityBatchResultEntry `json:"Successful,omitempty"`
+	Failed     []BatchResultErrorEntry                   `json:"Failed,omitempty"`
+}
+
+// ChangeMessageVisibilityBatchResultEntry is a successful entry.
+type ChangeMessageVisibilityBatchResultEntry struct {
+	ID string `json:"Id"`
 }
 
 // ErrorResponse represents an SQS error response in JSON format.

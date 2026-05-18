@@ -210,6 +210,15 @@ type Table struct {
 	DeletionProtection     bool
 	TTLAttributeName       string
 	TTLEnabled             bool
+	StreamEnabled          bool
+	StreamViewType         string
+	LatestStreamArn        string
+}
+
+// StreamSpecification represents DynamoDB stream settings.
+type StreamSpecification struct {
+	StreamEnabled  bool   `json:"StreamEnabled"`
+	StreamViewType string `json:"StreamViewType,omitempty"`
 }
 
 // TableDescription represents a table description in responses.
@@ -227,6 +236,8 @@ type TableDescription struct {
 	ItemCount                 int64                             `json:"ItemCount"`
 	TableSizeBytes            int64                             `json:"TableSizeBytes"`
 	BillingModeSummary        *BillingModeSummary               `json:"BillingModeSummary,omitempty"`
+	StreamSpecification       *StreamSpecification              `json:"StreamSpecification,omitempty"`
+	LatestStreamArn           string                            `json:"LatestStreamArn,omitempty"`
 	DeletionProtectionEnabled bool                              `json:"DeletionProtectionEnabled"`
 }
 
@@ -251,6 +262,7 @@ type CreateTableRequest struct {
 	LocalSecondaryIndexes     []LocalSecondaryIndex  `json:"LocalSecondaryIndexes,omitempty"`
 	BillingMode               string                 `json:"BillingMode,omitempty"`
 	DeletionProtectionEnabled bool                   `json:"DeletionProtectionEnabled,omitempty"`
+	StreamSpecification       *StreamSpecification   `json:"StreamSpecification,omitempty"`
 }
 
 // CreateTableResponse is the response for CreateTable.
@@ -597,4 +609,33 @@ type TableError struct {
 // Error implements the error interface.
 func (e *TableError) Error() string {
 	return e.Message
+}
+
+// listTagsOfResourceResponse is the wire shape for ListTagsOfResource.
+//
+// AWS returns at minimum an empty array; clients (notably terraform-provider-aws)
+// require the field to be present even when no tags exist.
+type listTagsOfResourceResponse struct {
+	Tags      []map[string]string `json:"Tags"`
+	NextToken string              `json:"NextToken,omitempty"`
+}
+
+// describeContinuousBackupsResponse mirrors the AWS shape required by clients
+// reading point-in-time-recovery state after CreateTable.
+type describeContinuousBackupsResponse struct {
+	ContinuousBackupsDescription continuousBackupsDescription `json:"ContinuousBackupsDescription"`
+}
+
+type continuousBackupsDescription struct {
+	ContinuousBackupsStatus        string                         `json:"ContinuousBackupsStatus"`
+	PointInTimeRecoveryDescription pointInTimeRecoveryDescription `json:"PointInTimeRecoveryDescription"`
+}
+
+type pointInTimeRecoveryDescription struct {
+	PointInTimeRecoveryStatus string `json:"PointInTimeRecoveryStatus"`
+}
+
+// describeContinuousBackupsRequest decodes the TableName the request targets.
+type describeContinuousBackupsRequest struct {
+	TableName string `json:"TableName"`
 }

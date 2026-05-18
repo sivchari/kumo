@@ -308,3 +308,36 @@ func TestKinesis_GetShardIteratorTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestKinesis_DescribeStreamSummary(t *testing.T) {
+	client := newKinesisClient(t)
+	ctx := t.Context()
+	streamName := "test-stream-summary"
+
+	_, err := client.CreateStream(ctx, &kinesis.CreateStreamInput{
+		StreamName: aws.String(streamName),
+		ShardCount: aws.Int32(1),
+		StreamModeDetails: &types.StreamModeDetails{
+			StreamMode: types.StreamModeProvisioned,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteStream(t.Context(), &kinesis.DeleteStreamInput{
+			StreamName: aws.String(streamName),
+		})
+	})
+
+	output, err := client.DescribeStreamSummary(ctx, &kinesis.DescribeStreamSummaryInput{
+		StreamName: aws.String(streamName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields(
+		"ResultMetadata", "StreamARN", "StreamCreationTimestamp",
+	)).Assert(t.Name(), output)
+}

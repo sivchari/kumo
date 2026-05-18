@@ -158,6 +158,20 @@ type PutMetricAlarmRequest struct {
 	OKActions          []string    `json:"OKActions,omitempty"`
 }
 
+// SetAlarmStateRequest is the request for SetAlarmState.
+type SetAlarmStateRequest struct {
+	AlarmName   string `json:"AlarmName"`
+	StateValue  string `json:"StateValue"`
+	StateReason string `json:"StateReason"`
+}
+
+// SetAlarmStateCBORRequest is the CBOR request for SetAlarmState.
+type SetAlarmStateCBORRequest struct {
+	AlarmName   string `cbor:"AlarmName"`
+	StateValue  string `cbor:"StateValue"`
+	StateReason string `cbor:"StateReason"`
+}
+
 // DeleteAlarmsRequest is the request for DeleteAlarms.
 type DeleteAlarmsRequest struct {
 	AlarmNames []string `json:"AlarmNames"`

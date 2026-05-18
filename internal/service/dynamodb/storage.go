@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sivchari/kumo/internal/storage"
+	"github.com/sivchari/kumo/internal/streams"
 )
 
 const (
@@ -31,7 +33,7 @@ type Storage interface {
 	DeleteItem(ctx context.Context, tableName string, key Item, returnOld bool, cond ConditionInput) (Item, error)
 	UpdateItem(ctx context.Context, tableName string, key Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, returnValues string, cond ConditionInput) (Item, error)
 	Query(ctx context.Context, tableName, indexName string, keyCondExpr string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, scanForward bool) ([]Item, Item, int, error)
-	Scan(ctx context.Context, tableName string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item) ([]Item, Item, int, error)
+	Scan(ctx context.Context, tableName string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, segment, totalSegments *int) ([]Item, Item, int, error)
 	TransactWriteItems(ctx context.Context, items []TransactWriteItem) ([]CancellationReason, error)
 	TransactGetItems(ctx context.Context, items []TransactGetItem) ([]Item, error)
 	BatchWriteItem(ctx context.Context, requestItems map[string][]WriteRequest) (map[string][]WriteRequest, error)
@@ -58,11 +60,12 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu      sync.RWMutex          `json:"-"`
-	Tables  map[string]*tableData `json:"tables"`
-	baseURL string
-	dataDir string
-	stopTTL chan struct{}
+	mu          sync.RWMutex          `json:"-"`
+	Tables      map[string]*tableData `json:"tables"`
+	baseURL     string
+	dataDir     string
+	stopTTL     chan struct{}
+	streamStore *streams.Store
 }
 
 type tableData struct {
@@ -73,9 +76,10 @@ type tableData struct {
 // NewMemoryStorage creates a new in-memory DynamoDB storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
-		Tables:  make(map[string]*tableData),
-		baseURL: baseURL,
-		stopTTL: make(chan struct{}),
+		Tables:      make(map[string]*tableData),
+		baseURL:     baseURL,
+		stopTTL:     make(chan struct{}),
+		streamStore: streams.Global,
 	}
 	for _, o := range opts {
 		o(s)
@@ -192,6 +196,8 @@ func (m *MemoryStorage) Close() error {
 }
 
 // CreateTable creates a new table.
+//
+//nolint:funlen // Table creation with stream setup.
 func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) (*Table, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -222,6 +228,31 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		TableARN:               fmt.Sprintf("arn:aws:dynamodb:%s:%s:table/%s", defaultRegion, defaultAccountID, req.TableName),
 		BillingMode:            billingMode,
 		DeletionProtection:     req.DeletionProtectionEnabled,
+	}
+
+	if req.StreamSpecification != nil && req.StreamSpecification.StreamEnabled {
+		table.StreamEnabled = true
+		table.StreamViewType = req.StreamSpecification.StreamViewType
+		table.LatestStreamArn = fmt.Sprintf("%s/stream/%s", table.TableARN, time.Now().Format("2006-01-02T15:04:05.000"))
+
+		// Register the stream in the shared event store so DynamoDB Streams can read it.
+		keySchema := make([]streams.KeySchemaElement, len(req.KeySchema))
+		for i, ks := range req.KeySchema {
+			keySchema[i] = streams.KeySchemaElement{
+				AttributeName: ks.AttributeName,
+				KeyType:       ks.KeyType,
+			}
+		}
+
+		m.streamStore.RegisterStream(&streams.StreamInfo{
+			StreamARN:      table.LatestStreamArn,
+			TableName:      table.Name,
+			StreamViewType: table.StreamViewType,
+			StreamLabel:    time.Now().Format("2006-01-02T15:04:05.000"),
+			StreamStatus:   "ENABLED",
+			KeySchema:      keySchema,
+			CreationTime:   time.Now(),
+		})
 	}
 
 	m.Tables[req.TableName] = &tableData{
@@ -358,6 +389,16 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 
 	td.Items[key] = m.copyItem(item)
 
+	// Emit stream event if streams are enabled for this table.
+	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+		eventName := streams.OperationTypeInsert
+		if existingItem != nil {
+			eventName = streams.OperationTypeModify
+		}
+
+		m.emitStreamEvent(td.Table, eventName, m.extractKey(td.Table, item), existingItem, item)
+	}
+
 	return oldItem, nil
 }
 
@@ -424,12 +465,19 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 		}
 
 		delete(td.Items, keyStr)
+
+		// Emit stream event if streams are enabled for this table.
+		if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+			m.emitStreamEvent(td.Table, streams.OperationTypeRemove, key, existingItem, nil)
+		}
 	}
 
 	return oldItem, nil
 }
 
 // UpdateItem updates an item in a table.
+//
+//nolint:funlen // Item update with expression evaluation.
 func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, returnValues string, cond ConditionInput) (Item, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -477,6 +525,16 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 	}
 
 	td.Items[keyStr] = item
+
+	// Emit stream event if streams are enabled for this table.
+	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+		eventName := streams.OperationTypeInsert
+		if itemExists {
+			eventName = streams.OperationTypeModify
+		}
+
+		m.emitStreamEvent(td.Table, eventName, key, oldItem, item)
+	}
 
 	// Return based on returnValues.
 	switch returnValues {
@@ -665,7 +723,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 // Scan scans items from a table.
 //
 //nolint:funlen // Scan requires pagination logic that exceeds line limit.
-func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item) ([]Item, Item, int, error) {
+func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, segment, totalSegments *int) ([]Item, Item, int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -677,12 +735,21 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		}
 	}
 
+	if err := validateScanSegment(segment, totalSegments); err != nil {
+		return nil, nil, 0, err
+	}
+
 	// Collect all items.
 	var results []Item
 
 	scannedCount := 0
 
 	for _, item := range td.Items {
+		key := m.serializeKey(td.Table, item)
+		if !scanSegmentMatches(key, segment, totalSegments) {
+			continue
+		}
+
 		scannedCount++
 
 		// Apply filter expression.
@@ -693,28 +760,39 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		results = append(results, m.copyItem(item))
 	}
 
-	// Sort by key for consistent pagination.
-	sort.Slice(results, func(i, j int) bool {
-		keyI := m.serializeKey(td.Table, results[i])
-		keyJ := m.serializeKey(td.Table, results[j])
+	// Sort by key for consistent pagination. Pre-compute keys once so the
+	// sort comparator and the pagination lookup don't re-serialize each item
+	// on every comparison (was N log N serializeKey calls; now N).
+	type keyedItem struct {
+		key  string
+		item Item
+	}
 
-		return keyI < keyJ
-	})
+	pairs := make([]keyedItem, len(results))
+
+	for i, it := range results {
+		pairs[i] = keyedItem{key: m.serializeKey(td.Table, it), item: it}
+	}
+
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].key < pairs[j].key })
 
 	// Apply pagination.
 	startIdx := 0
 
 	if exclusiveStartKey != nil {
 		startKeyStr := m.serializeKey(td.Table, exclusiveStartKey)
-
-		for i, item := range results {
-			itemKeyStr := m.serializeKey(td.Table, item)
-			if itemKeyStr == startKeyStr {
+		for i, p := range pairs {
+			if p.key == startKeyStr {
 				startIdx = i + 1
 
 				break
 			}
 		}
+	}
+
+	results = results[:0:len(pairs)]
+	for _, p := range pairs {
+		results = append(results, p.item)
 	}
 
 	if startIdx >= len(results) {
@@ -731,6 +809,47 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 	}
 
 	return results, lastEvaluatedKey, scannedCount, nil
+}
+
+func validateScanSegment(segment, totalSegments *int) error {
+	if segment == nil && totalSegments == nil {
+		return nil
+	}
+
+	if segment == nil || totalSegments == nil {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "Segment and TotalSegments must be specified together",
+		}
+	}
+
+	if *totalSegments <= 0 {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "TotalSegments must be greater than zero",
+		}
+	}
+
+	if *segment < 0 || *segment >= *totalSegments {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "Segment must be greater than or equal to zero and less than TotalSegments",
+		}
+	}
+
+	return nil
+}
+
+func scanSegmentMatches(key string, segment, totalSegments *int) bool {
+	if segment == nil || totalSegments == nil {
+		return true
+	}
+
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(key))
+
+	//nolint:gosec // totalSegments is validated to be positive before this helper is called.
+	return int(h.Sum64()%uint64(*totalSegments)) == *segment
 }
 
 // serializeKey creates a string key from the primary key attributes.
@@ -981,7 +1100,7 @@ type updateClause struct {
 // parseUpdateClauses splits an update expression into individual clauses.
 func parseUpdateClauses(expr string) []updateClause {
 	keywords := []string{"SET", "ADD", "DELETE", "REMOVE"}
-	upper := strings.ToUpper(expr)
+	upper := asciiUpper(expr)
 
 	type pos struct {
 		idx    int
@@ -1034,6 +1153,17 @@ func parseUpdateClauses(expr string) []updateClause {
 	}
 
 	return clauses
+}
+
+func asciiUpper(s string) string {
+	out := []byte(s)
+	for i, b := range out {
+		if b >= 'a' && b <= 'z' {
+			out[i] = b - ('a' - 'A')
+		}
+	}
+
+	return string(out)
 }
 
 // applySetClause handles SET attr = :val, SET attr = if_not_exists(attr, :val).
@@ -1660,4 +1790,130 @@ func (m *MemoryStorage) compareForSort(a, b *AttributeValue) bool {
 	}
 
 	return false
+}
+
+// emitStreamEvent publishes a stream record to the shared event store.
+// Must be called under m.mu lock since it reads table metadata.
+func (m *MemoryStorage) emitStreamEvent(table *Table, eventName streams.OperationType, keyItem, oldItem, newItem Item) {
+	record := &streams.StreamRecord{
+		EventID:        uuid.New().String(),
+		EventName:      eventName,
+		AwsRegion:      defaultRegion,
+		StreamViewType: table.StreamViewType,
+		TableName:      table.Name,
+		StreamARN:      table.LatestStreamArn,
+		Keys:           convertItemToStreamAttrs(keyItem),
+		SizeBytes:      100, // Approximate size.
+	}
+
+	// Include old/new images based on stream view type.
+	switch table.StreamViewType {
+	case "NEW_AND_OLD_IMAGES":
+		record.OldImage = convertItemToStreamAttrs(oldItem)
+		record.NewImage = convertItemToStreamAttrs(newItem)
+	case "NEW_IMAGE":
+		record.NewImage = convertItemToStreamAttrs(newItem)
+	case "OLD_IMAGE":
+		record.OldImage = convertItemToStreamAttrs(oldItem)
+	case "KEYS_ONLY":
+		// Only keys are included; already set above.
+	} //nolint:wsl // Intentional empty case with comment.
+
+	m.streamStore.PutRecord(record)
+}
+
+// convertItemToStreamAttrs converts DynamoDB Item to streams.AttributeValue map.
+//
+//nolint:gocritic // rangeValCopy: copy needed for value conversion.
+func convertItemToStreamAttrs(item Item) map[string]streams.AttributeValue {
+	if item == nil {
+		return nil
+	}
+
+	result := make(map[string]streams.AttributeValue, len(item))
+
+	for k, v := range item {
+		result[k] = convertAttrToStreamAttr(v)
+	}
+
+	return result
+}
+
+// convertAttrToStreamAttr converts a single DynamoDB AttributeValue to streams.AttributeValue.
+//
+//nolint:funlen,gocritic // hugeParam + exhaustive type switch for all DynamoDB attribute types.
+func convertAttrToStreamAttr(av AttributeValue) streams.AttributeValue {
+	result := streams.AttributeValue{}
+
+	if av.S != nil {
+		s := *av.S
+		result.S = &s
+	}
+
+	if av.N != nil {
+		n := *av.N
+		result.N = &n
+	}
+
+	if av.B != nil {
+		b := make([]byte, len(av.B))
+		copy(b, av.B)
+		result.B = b
+	}
+
+	if av.SS != nil {
+		ss := make([]string, len(av.SS))
+		copy(ss, av.SS)
+		result.SS = ss
+	}
+
+	if av.NS != nil {
+		ns := make([]string, len(av.NS))
+		copy(ns, av.NS)
+		result.NS = ns
+	}
+
+	if av.BS != nil {
+		bs := make([][]byte, len(av.BS))
+		for i, b := range av.BS {
+			bs[i] = make([]byte, len(b))
+			copy(bs[i], b)
+		}
+
+		result.BS = bs
+	}
+
+	if av.M != nil {
+		m := make(map[string]*streams.AttributeValue, len(av.M))
+
+		for k, v := range av.M {
+			converted := convertAttrToStreamAttr(*v)
+			m[k] = &converted
+		}
+
+		result.M = m
+	}
+
+	if av.L != nil {
+		l := make([]*streams.AttributeValue, len(av.L))
+
+		for i, v := range av.L {
+			converted := convertAttrToStreamAttr(*v)
+			l[i] = &converted
+		}
+
+		result.L = l
+	}
+
+	if av.NULL != nil {
+		n := *av.NULL
+		result.NULL = &n
+	}
+
+	if av.BOOL != nil {
+		b := *av.BOOL
+		result.BOOL = &b
+	}
+
+	return result
 }

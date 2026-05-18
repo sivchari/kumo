@@ -60,6 +60,13 @@ func (s *Service) Actions() []string {
 		"Publish",
 		"ListSubscriptions",
 		"ListSubscriptionsByTopic",
+		"GetSubscriptionAttributes",
+		"SetSubscriptionAttributes",
+		"GetTopicAttributes",
+		"SetTopicAttributes",
+		"ListTagsForResource",
+		"TagResource",
+		"UntagResource",
 	}
 }
 

@@ -22,13 +22,15 @@ func init() {
 
 // Service implements the CloudFront service.
 type Service struct {
-	storage Storage
+	storage   Storage
+	edgeCache *edgeCache
 }
 
 // New creates a new CloudFront service.
 func New(storage Storage) *Service {
 	return &Service{
-		storage: storage,
+		storage:   storage,
+		edgeCache: newEdgeCache(),
 	}
 }
 
@@ -62,6 +64,15 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("POST", "/2020-05-31/function/{Name}/publish", s.PublishFunction)
 	r.Handle("POST", "/2020-05-31/function/{Name}/test", s.TestFunction)
 	r.Handle("DELETE", "/2020-05-31/function/{Name}", s.DeleteFunction)
+
+	// Edge — proxies real requests through the cache layer. Lives
+	// under /kumo (the existing admin prefix) so it doesn't collide
+	// with the S3 wildcard /{bucket}/{key...}. Non-cacheable methods
+	// (PUT/POST/DELETE/PATCH) bypass the cache and pass through to
+	// the origin.
+	for _, method := range []string{"GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"} {
+		r.Handle(method, "/kumo/cdn/{distributionId}/{path...}", s.Edge)
+	}
 }
 
 // Close saves the storage state if persistence is enabled.

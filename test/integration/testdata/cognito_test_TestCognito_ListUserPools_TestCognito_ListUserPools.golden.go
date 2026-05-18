@@ -2,18 +2,50 @@
   "NextToken": null,
   "UserPools": [
     {
-      "CreationDate": "2026-03-23T07:45:25Z",
-      "Id": "us-east-1_91e35edc-",
-      "LambdaConfig": null,
-      "LastModifiedDate": "2026-03-23T07:45:25Z",
+      "CreationDate": "2026-05-10T10:20:27Z",
+      "Id": "us-east-1_76b41abe0",
+      "LambdaConfig": {
+        "CreateAuthChallenge": null,
+        "CustomEmailSender": null,
+        "CustomMessage": null,
+        "CustomSMSSender": null,
+        "DefineAuthChallenge": null,
+        "InboundFederation": null,
+        "KMSKeyID": null,
+        "PostAuthentication": null,
+        "PostConfirmation": null,
+        "PreAuthentication": null,
+        "PreSignUp": null,
+        "PreTokenGeneration": null,
+        "PreTokenGenerationConfig": null,
+        "UserMigration": null,
+        "VerifyAuthChallengeResponse": null
+      },
+      "LastModifiedDate": "2026-05-10T10:20:27Z",
       "Name": "test-user-pool",
       "Status": "Enabled"
     },
     {
-      "CreationDate": "2026-03-23T07:45:25Z",
-      "Id": "us-east-1_9d78a2b0-",
-      "LambdaConfig": null,
-      "LastModifiedDate": "2026-03-23T07:45:25Z",
+      "CreationDate": "2026-05-10T10:20:27Z",
+      "Id": "us-east-1_ea2d3e5e8",
+      "LambdaConfig": {
+        "CreateAuthChallenge": null,
+        "CustomEmailSender": null,
+        "CustomMessage": null,
+        "CustomSMSSender": null,
+        "DefineAuthChallenge": null,
+        "InboundFederation": null,
+        "KMSKeyID": null,
+        "PostAuthentication": null,
+        "PostConfirmation": null,
+        "PreAuthentication": null,
+        "PreSignUp": null,
+        "PreTokenGeneration": null,
+        "PreTokenGenerationConfig": null,
+        "UserMigration": null,
+        "VerifyAuthChallengeResponse": null
+      },
+      "LastModifiedDate": "2026-05-10T10:20:27Z",
       "Name": "test-list-user-pool",
       "Status": "Enabled"
     }

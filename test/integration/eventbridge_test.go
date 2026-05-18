@@ -3,10 +3,15 @@
 package integration
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -614,6 +619,142 @@ func TestEventBridge_PutEvents_InputPath(t *testing.T) {
 	}
 }
 
+func TestEventBridge_PutEvents_InputTransformer(t *testing.T) {
+	ebClient := newEventBridgeClient(t)
+	sqsClient := newSQSClient(t)
+	ctx := t.Context()
+
+	queueName := "eb-inputtransformer-test"
+
+	// Create SQS queue.
+	_, err := sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	busName := "transform-bus"
+
+	// Create custom event bus.
+	_, err = ebClient.CreateEventBus(ctx, &eventbridge.CreateEventBusInput{
+		Name: aws.String(busName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create rule on custom bus.
+	_, err = ebClient.PutRule(ctx, &eventbridge.PutRuleInput{
+		Name:         aws.String("transform-rule"),
+		EventBusName: aws.String(busName),
+		EventPattern: aws.String(`{"source": ["transform.service"], "detail-type": ["TransformEvent"]}`),
+		State:        types.RuleStateEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add SQS target with InputTransformer.
+	_, err = ebClient.PutTargets(ctx, &eventbridge.PutTargetsInput{
+		Rule:         aws.String("transform-rule"),
+		EventBusName: aws.String(busName),
+		Targets: []types.Target{
+			{
+				Id:  aws.String("transform-target"),
+				Arn: aws.String("arn:aws:sqs:us-east-1:000000000000:" + queueName),
+				InputTransformer: &types.InputTransformer{
+					InputPathsMap: map[string]string{
+						"marker": "$.detail.marker",
+					},
+					InputTemplate: aws.String(`{"transformedMarker": <marker>, "source": "custom-bus"}`),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = ebClient.RemoveTargets(cleanupCtx, &eventbridge.RemoveTargetsInput{
+			EventBusName: aws.String(busName),
+			Ids:          []string{"transform-target"},
+			Rule:         aws.String("transform-rule"),
+		})
+		_, _ = ebClient.DeleteRule(cleanupCtx, &eventbridge.DeleteRuleInput{
+			EventBusName: aws.String(busName),
+			Name:         aws.String("transform-rule"),
+		})
+		_, _ = ebClient.DeleteEventBus(cleanupCtx, &eventbridge.DeleteEventBusInput{
+			Name: aws.String(busName),
+		})
+		_, _ = sqsClient.DeleteQueue(cleanupCtx, &sqs.DeleteQueueInput{
+			QueueUrl: aws.String("http://localhost:4566/000000000000/" + queueName),
+		})
+	})
+
+	// Put matching event.
+	marker := "test-marker-" + t.Name()
+
+	_, err = ebClient.PutEvents(ctx, &eventbridge.PutEventsInput{
+		Entries: []types.PutEventsRequestEntry{
+			{
+				EventBusName: aws.String(busName),
+				Source:       aws.String("transform.service"),
+				DetailType:   aws.String("TransformEvent"),
+				Detail:       aws.String(`{"marker":"` + marker + `"}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Receive message from SQS and verify transformation was applied.
+	var recvOutput *sqs.ReceiveMessageOutput
+
+	for range 10 {
+		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:        aws.String("http://localhost:4566/000000000000/" + queueName),
+			WaitTimeSeconds: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(recvOutput.Messages) > 0 {
+			break
+		}
+	}
+
+	if len(recvOutput.Messages) == 0 {
+		t.Fatal("expected transformed event to be delivered to SQS queue, but no message received")
+	}
+
+	body := *recvOutput.Messages[0].Body
+
+	// Verify the message contains the transformed content.
+	var transformed map[string]any
+	if err := json.Unmarshal([]byte(body), &transformed); err != nil {
+		t.Fatalf("failed to parse SQS message body as JSON: %v (body: %s)", err, body)
+	}
+
+	if transformed["transformedMarker"] != marker {
+		t.Errorf("expected transformedMarker=%s, got %v", marker, transformed["transformedMarker"])
+	}
+
+	if transformed["source"] != "custom-bus" {
+		t.Errorf("expected source=custom-bus, got %v", transformed["source"])
+	}
+
+	// Verify envelope fields are NOT present (InputTransformer produces custom output).
+	if _, hasVersion := transformed["version"]; hasVersion {
+		t.Errorf("expected InputTransformer to replace envelope, but found 'version' in: %s", body)
+	}
+}
+
 func TestEventBridge_EventBusNotFound(t *testing.T) {
 	client := newEventBridgeClient(t)
 	ctx := t.Context()
@@ -624,5 +765,150 @@ func TestEventBridge_EventBusNotFound(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for non-existent event bus")
+	}
+}
+
+func TestEventBridge_PutEvents_LambdaDelivery(t *testing.T) {
+	ebClient := newEventBridgeClient(t)
+	ctx := t.Context()
+
+	// Mock Lambda backend that records invocations.
+	var (
+		mu       sync.Mutex
+		received [][]byte
+	)
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		received = append(received, body)
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(mockServer.Close)
+
+	functionName := "eb-lambda-delivery-fn"
+
+	// Register Lambda function with InvokeEndpoint so that the kumo Lambda emulator
+	// forwards invocations to our mock server.
+	createReq, _ := json.Marshal(map[string]any{
+		"FunctionName":   functionName,
+		"Runtime":        "python3.12",
+		"Role":           "arn:aws:iam::000000000000:role/test-role",
+		"Handler":        "index.handler",
+		"InvokeEndpoint": mockServer.URL,
+		"Code":           map[string]any{"ZipFile": []byte("fake-zip")},
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
+		"http://localhost:4566/lambda/2015-03-31/functions", bytes.NewReader(createReq))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create function: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create function status: %d", resp.StatusCode)
+	}
+
+	t.Cleanup(func() {
+		delReq, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
+			"http://localhost:4566/lambda/2015-03-31/functions/"+functionName, nil)
+
+		delResp, _ := http.DefaultClient.Do(delReq)
+		if delResp != nil {
+			delResp.Body.Close()
+		}
+	})
+
+	// Create rule using advanced pattern matchers (prefix + numeric).
+	_, err = ebClient.PutRule(ctx, &eventbridge.PutRuleInput{
+		Name:         aws.String("eb-lambda-rule"),
+		EventPattern: aws.String(`{"source": [{"prefix": "order."}], "detail": {"amount": [{"numeric": [">", 0]}]}}`),
+		State:        types.RuleStateEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add Lambda target.
+	_, err = ebClient.PutTargets(ctx, &eventbridge.PutTargetsInput{
+		Rule: aws.String("eb-lambda-rule"),
+		Targets: []types.Target{
+			{
+				Id:  aws.String("lambda-target"),
+				Arn: aws.String("arn:aws:lambda:us-east-1:000000000000:function:" + functionName),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Put matching event.
+	_, err = ebClient.PutEvents(ctx, &eventbridge.PutEventsInput{
+		Entries: []types.PutEventsRequestEntry{
+			{
+				Source:     aws.String("order.service"),
+				DetailType: aws.String("OrderCreated"),
+				Detail:     aws.String(`{"orderId": "o-1", "amount": 42}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Put non-matching event (amount <= 0 should be filtered out).
+	_, err = ebClient.PutEvents(ctx, &eventbridge.PutEventsInput{
+		Entries: []types.PutEventsRequestEntry{
+			{
+				Source:     aws.String("order.service"),
+				DetailType: aws.String("OrderCreated"),
+				Detail:     aws.String(`{"orderId": "o-2", "amount": 0}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the asynchronous delivery to complete.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		count := len(received)
+		mu.Unlock()
+
+		if count >= 1 {
+			break
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(received) != 1 {
+		t.Fatalf("expected exactly 1 Lambda invocation, got %d", len(received))
+	}
+
+	// Verify payload is the EventBridge event envelope.
+	var envelope map[string]any
+	if err := json.Unmarshal(received[0], &envelope); err != nil {
+		t.Fatalf("invalid envelope JSON: %v (body=%s)", err, string(received[0]))
+	}
+
+	if envelope["source"] != "order.service" {
+		t.Errorf("source=%v, want order.service", envelope["source"])
+	}
+
+	detail, _ := envelope["detail"].(map[string]any)
+	if detail["orderId"] != "o-1" {
+		t.Errorf("orderId=%v, want o-1", detail["orderId"])
 	}
 }

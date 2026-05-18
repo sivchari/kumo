@@ -1,0 +1,2625 @@
+terraform -chdir=terraform init
+[0m[1mInitializing provider plugins found in the configuration...[0m
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Using previously-installed hashicorp/aws v5.100.0
+
+[0m[1mInitializing the backend...[0m
+
+[0m[1mInitializing provider plugins found in the state...[0m
+- Reusing previous version of hashicorp/aws
+- Using previously-installed hashicorp/aws v5.100.0
+
+
+[0m[1m[32mTerraform has been successfully initialized![0m[32m[0m
+[0m[32m
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.[0m
+terraform -chdir=terraform workspace select "default" >/dev/null 2>&1 || terraform -chdir=terraform workspace new "default"
+TF_VAR_aws_region="us-east-1" \
+TF_VAR_aws_endpoint_url="http://localhost:4566" \
+TF_VAR_aws_endpoint_url_apigateway="" \
+TF_VAR_aws_endpoint_url_cloudwatch="" \
+TF_VAR_aws_endpoint_url_s3="" \
+TF_VAR_aws_endpoint_url_dynamodb="" \
+TF_VAR_aws_endpoint_url_dynamodbstreams="" \
+TF_VAR_aws_endpoint_url_sqs="" \
+TF_VAR_aws_endpoint_url_sns="" \
+TF_VAR_aws_endpoint_url_iam="" \
+TF_VAR_aws_endpoint_url_kinesis="" \
+TF_VAR_aws_endpoint_url_sts="" \
+TF_VAR_aws_endpoint_url_eventbridge="" \
+TF_VAR_aws_endpoint_url_cloudwatchlogs="" \
+TF_VAR_aws_endpoint_url_ssm="" \
+TF_VAR_aws_endpoint_url_secretsmanager="" \
+TF_VAR_aws_endpoint_url_kms="" \
+TF_VAR_aws_endpoint_url_lambda="" \
+TF_VAR_aws_endpoint_url_rds="" \
+TF_VAR_aws_endpoint_url_rdsdata="" \
+TF_VAR_aws_endpoint_url_ses="" \
+TF_VAR_aws_endpoint_url_stepfunctions="" \
+TF_VAR_aws_access_key_id="test" \
+TF_VAR_aws_secret_access_key="test" \
+TF_VAR_aws_session_token="" \
+terraform -chdir=terraform apply -auto-approve
+[0m[1mdata.aws_iam_policy_document.stepfunctions_execution: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.lambda_assume_role: Reading...[0m[0m
+[0m[1maws_secretsmanager_secret.seed: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-32b2bf][0m
+[0m[1maws_sns_topic.events: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events][0m
+[0m[1maws_sqs_queue.sns_filtered_audit: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit][0m
+[0m[1maws_sqs_queue.direct: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-direct][0m
+[0m[1maws_sqs_queue.github_actions_ci_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver][0m
+[0m[1maws_sqs_queue.lambda_events: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events][0m
+[0m[1maws_sqs_queue.sns_fifo_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo][0m
+[0m[1maws_sqs_queue.s3_events: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events][0m
+[0m[1mdata.aws_iam_policy_document.stepfunctions_execution: Read complete after 0s [id=598259064][0m
+[0m[1mdata.aws_iam_policy_document.lambda_assume_role: Read complete after 0s [id=2690255455][0m
+[0m[1maws_sqs_queue.github_actions_ci: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci][0m
+[0m[1maws_sns_topic.fifo: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo][0m
+[0m[1maws_cloudwatch_event_rule.harness_events: Refreshing state... [id=local-aws-emulator-poc-harness-events][0m
+[0m[1maws_sqs_queue.sns_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver][0m
+[0m[1maws_sqs_queue.redrive_dlq: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-dlq][0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_target: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_target: Read complete after 0s [id=2100153926][0m
+[0m[1mdata.aws_iam_policy_document.stepfunctions_assume_role: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.stepfunctions_assume_role: Read complete after 0s [id=4022981484][0m
+[0m[1maws_sqs_queue.eventbridge_target: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge][0m
+[0m[1maws_ssm_parameter.seed: Refreshing state... [id=/local-aws-emulator-poc/seed][0m
+[0m[1maws_sns_topic.github_actions_ci: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci][0m
+[0m[1maws_s3_bucket.objects: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_kms_key.harness: Refreshing state... [id=26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe][0m
+[0m[1maws_sqs_queue.sns_filtered_billing: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing][0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_assume_role: Reading...[0m[0m
+[0m[1maws_dynamodb_table.items: Refreshing state... [id=local-aws-emulator-poc-items][0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_assume_role: Read complete after 0s [id=3959961479][0m
+[0m[1mdata.aws_iam_policy_document.assume_role: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.assume_role: Read complete after 0s [id=729565498][0m
+[0m[1maws_sqs_queue.fifo: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo][0m
+[0m[1maws_iam_role.lambda_execution: Refreshing state... [id=local-aws-emulator-poc-lambda-exec][0m
+[0m[1maws_secretsmanager_secret_version.seed: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-32b2bf|terraform-20260515073854150000000002][0m
+[0m[1maws_iam_role.stepfunctions_execution: Refreshing state... [id=local-aws-emulator-poc-sfn-exec][0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_audit: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit][0m
+[0m[1maws_sqs_queue_policy.allow_sns_fifo_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo][0m
+[0m[1maws_iam_role.eventbridge_stepfunctions_target: Refreshing state... [id=local-aws-emulator-poc-eb-sfn-target][0m
+[0m[1maws_iam_role.denied_access: Refreshing state... [id=local-aws-emulator-poc-denied-role][0m
+[0m[1maws_iam_role.scoped_access: Refreshing state... [id=local-aws-emulator-poc-scoped-role][0m
+[0m[1maws_iam_role.core_access: Refreshing state... [id=local-aws-emulator-poc-core-role][0m
+[0m[1maws_iam_role.missing_allow: Refreshing state... [id=local-aws-emulator-poc-missing-allow-role][0m
+[0m[1maws_sqs_queue_policy.allow_github_actions_ci_sns: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver][0m
+[0m[1maws_ssm_parameter.secure: Refreshing state... [id=/local-aws-emulator-poc/secure][0m
+[0m[1maws_sqs_queue_policy.allow_sns_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver][0m
+[0m[1maws_secretsmanager_secret.encrypted: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-b8b07d][0m
+[0m[1maws_sqs_queue.redrive_source: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-redrive][0m
+[0m[1maws_iam_role_policy.lambda_execution: Refreshing state... [id=local-aws-emulator-poc-lambda-exec:local-aws-emulator-poc-lambda-execution][0m
+[0m[1maws_s3_bucket_versioning.objects: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_s3_bucket_cors_configuration.objects: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_sqs_queue_policy.allow_s3_events: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events][0m
+[0m[1maws_iam_role_policy.stepfunctions_execution: Refreshing state... [id=local-aws-emulator-poc-sfn-exec:local-aws-emulator-poc-sfn-execution][0m
+[0m[1maws_sqs_queue_policy.allow_eventbridge: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge][0m
+[0m[1maws_iam_role_policy.eventbridge_stepfunctions_target: Refreshing state... [id=local-aws-emulator-poc-eb-sfn-target:local-aws-emulator-poc-eb-sfn-target][0m
+[0m[1maws_secretsmanager_secret_version.encrypted: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-b8b07d|terraform-20260515073855413400000004][0m
+[0m[1maws_iam_role_policy.denied_access: Refreshing state... [id=local-aws-emulator-poc-denied-role:local-aws-emulator-poc-denied-access][0m
+[0m[1maws_iam_role_policy.core_access: Refreshing state... [id=local-aws-emulator-poc-core-role:local-aws-emulator-poc-core-access][0m
+[0m[1maws_iam_role_policy.scoped_access: Refreshing state... [id=local-aws-emulator-poc-scoped-role:local-aws-emulator-poc-scoped-access][0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_billing: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing][0m
+[0m[1maws_sns_topic_subscription.events_to_audit_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:fd93b951-7a7e-48cf-8f05-a102d234f17b][0m
+[0m[1maws_sns_topic_subscription.fifo_events_to_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo:fa7099eb-d825-44ad-9188-b0a58f8bb291][0m
+[0m[1maws_sns_topic_subscription.github_actions_ci_to_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci:81a2062b-35af-4622-baa4-776e594764ed][0m
+[0m[1maws_sns_topic_subscription.events_to_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:4e1c2213-dd19-43cc-b7b9-bc7132022f5a][0m
+[0m[1maws_s3_bucket_notification.objects_to_queue: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_cloudwatch_event_target.harness_events_to_queue: Refreshing state... [id=local-aws-emulator-poc-harness-events-terraform-20260515073919314100000005][0m
+[0m[1maws_sns_topic_subscription.events_to_billing_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:e32804e0-bcba-4f80-91ff-3fdaa13ce38e][0m
+
+[1m[36mNote:[0m[1m Objects have changed outside of Terraform
+[0m
+Terraform detected the following changes made outside of Terraform since the
+last "terraform apply" which may have affected this plan:
+
+[1m  # aws_cloudwatch_event_rule.harness_events[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_cloudwatch_event_rule" "harness_events" {
+      [31m-[0m[0m arn                 = "arn:aws:events:us-east-1:000000000000:rule/default/local-aws-emulator-poc-harness-events" [90m-> null[0m[0m
+        id                  = "local-aws-emulator-poc-harness-events"
+      [31m-[0m[0m name                = "local-aws-emulator-poc-harness-events" [90m-> null[0m[0m
+        [90m# (10 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_dynamodb_table.items[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_dynamodb_table" "items" {
+      [31m-[0m[0m arn                         = "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items" [90m-> null[0m[0m
+        id                          = "local-aws-emulator-poc-items"
+      [31m-[0m[0m name                        = "local-aws-emulator-poc-items" [90m-> null[0m[0m
+      [31m-[0m[0m stream_arn                  = "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items/stream/2026-05-15T16:38:29.127" [90m-> null[0m[0m
+        [90m# (8 unchanged attributes hidden)[0m[0m
+
+        [90m# (6 unchanged blocks hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.core_access[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_iam_role" "core_access" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-core-role" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "local-aws-emulator-poc-core-role" [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "local-aws-emulator-poc-core-role" [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.denied_access[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_iam_role" "denied_access" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-denied-role" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "local-aws-emulator-poc-denied-role" [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "local-aws-emulator-poc-denied-role" [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.eventbridge_stepfunctions_target[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_iam_role" "eventbridge_stepfunctions_target" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-eb-sfn-target" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "local-aws-emulator-poc-eb-sfn-target" [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "local-aws-emulator-poc-eb-sfn-target" [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.lambda_execution[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_iam_role" "lambda_execution" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-lambda-exec" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "local-aws-emulator-poc-lambda-exec" [90m-> null[0m[0m
+        name                  = "local-aws-emulator-poc-lambda-exec"
+        [90m# (11 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.missing_allow[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_iam_role" "missing_allow" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-missing-allow-role" [90m-> null[0m[0m
+        id                    = "local-aws-emulator-poc-missing-allow-role"
+      [31m-[0m[0m name                  = "local-aws-emulator-poc-missing-allow-role" [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.scoped_access[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_iam_role" "scoped_access" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-scoped-role" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "local-aws-emulator-poc-scoped-role" [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "local-aws-emulator-poc-scoped-role" [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.stepfunctions_execution[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_iam_role" "stepfunctions_execution" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-sfn-exec" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "local-aws-emulator-poc-sfn-exec" [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "local-aws-emulator-poc-sfn-exec" [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_kms_key.harness[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_kms_key" "harness" {
+      [31m-[0m[0m arn                                = "arn:aws:kms:us-east-1:000000000000:key/26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe" [90m-> null[0m[0m
+        id                                 = "26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe"
+      [31m-[0m[0m key_id                             = "26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe" [90m-> null[0m[0m
+        [90m# (13 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_s3_bucket.objects[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_s3_bucket" "objects" {
+      [31m-[0m[0m arn                         = "arn:aws:s3:::local-aws-emulator-poc-bucket" [90m-> null[0m[0m
+      [31m-[0m[0m bucket                      = "local-aws-emulator-poc-bucket" [90m-> null[0m[0m
+      [31m-[0m[0m id                          = "local-aws-emulator-poc-bucket" [90m-> null[0m[0m
+        [90m# (10 unchanged attributes hidden)[0m[0m
+
+        [90m# (2 unchanged blocks hidden)[0m[0m
+    }
+
+[1m  # aws_secretsmanager_secret.encrypted[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret" "encrypted" {
+      [31m-[0m[0m arn                            = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-b8b07d" [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-b8b07d" [90m-> null[0m[0m
+        name                           = "local-aws-emulator-poc-encrypted-secret"
+        [90m# (7 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_secretsmanager_secret.seed[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret" "seed" {
+      [31m-[0m[0m arn                            = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-32b2bf" [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-32b2bf" [90m-> null[0m[0m
+        name                           = "local-aws-emulator-poc/seed"
+        [90m# (7 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic.events[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sns_topic" "events" {
+      [31m-[0m[0m arn                                      = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events" [90m-> null[0m[0m
+        id                                       = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events"
+        name                                     = "local-aws-emulator-poc-events"
+        [90m# (29 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic.fifo[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sns_topic" "fifo" {
+      [31m-[0m[0m arn                                      = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" [90m-> null[0m[0m
+        id                                       = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo"
+        name                                     = "local-aws-emulator-poc-fifo.fifo"
+        [90m# (29 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic.github_actions_ci[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sns_topic" "github_actions_ci" {
+      [31m-[0m[0m arn                                      = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci" [90m-> null[0m[0m
+        id                                       = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci"
+        name                                     = "local-aws-emulator-poc-gha-ci"
+        [90m# (29 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.direct[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "direct" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-direct" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-direct"
+        name                              = "local-aws-emulator-poc-direct"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-direct" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.eventbridge_target[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "eventbridge_target" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-eventbridge" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge"
+        name                              = "local-aws-emulator-poc-eventbridge"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.fifo[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "fifo" {
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo"
+        name                              = "local-aws-emulator-poc-fifo.fifo"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo" [90m-> null[0m[0m
+        [90m# (18 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.github_actions_ci[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "github_actions_ci" {
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci"
+        name                              = "local-aws-emulator-poc-gha-ci"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci" [90m-> null[0m[0m
+        [90m# (18 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.github_actions_ci_receiver[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "github_actions_ci_receiver" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-gha-ci-receiver" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver"
+        name                              = "local-aws-emulator-poc-gha-ci-receiver"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.lambda_events[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "lambda_events" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-lambda-events" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events"
+        name                              = "local-aws-emulator-poc-lambda-events"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.redrive_dlq[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "redrive_dlq" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-dlq" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-dlq"
+        name                              = "local-aws-emulator-poc-dlq"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-dlq" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.redrive_source[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "redrive_source" {
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-redrive"
+        name                              = "local-aws-emulator-poc-redrive"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-redrive" [90m-> null[0m[0m
+        [90m# (18 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.s3_events[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "s3_events" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-s3-events" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events"
+        name                              = "local-aws-emulator-poc-s3-events"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.sns_fifo_receiver[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "sns_fifo_receiver" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-sns-fifo.fifo" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo"
+        name                              = "local-aws-emulator-poc-sns-fifo.fifo"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.sns_filtered_audit[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "sns_filtered_audit" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-sns-audit" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit"
+        name                              = "local-aws-emulator-poc-sns-audit"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.sns_filtered_billing[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "sns_filtered_billing" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-sns-billing" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing"
+        name                              = "local-aws-emulator-poc-sns-billing"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue.sns_receiver[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_sqs_queue" "sns_receiver" {
+      [31m-[0m[0m arn                               = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-sns-receiver" [90m-> null[0m[0m
+        id                                = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver"
+        name                              = "local-aws-emulator-poc-sns-receiver"
+      [31m-[0m[0m url                               = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver" [90m-> null[0m[0m
+        [90m# (17 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_ssm_parameter.secure[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_ssm_parameter" "secure" {
+        id              = "/local-aws-emulator-poc/secure"
+      [31m-[0m[0m name            = "/local-aws-emulator-poc/secure" [90m-> null[0m[0m
+      [31m-[0m[0m value_wo        = (write-only attribute) [90m-> null[0m[0m
+        [90m# (10 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_ssm_parameter.seed[0m has been deleted
+[0m  [31m-[0m[0m resource "aws_ssm_parameter" "seed" {
+        id              = "/local-aws-emulator-poc/seed"
+      [31m-[0m[0m name            = "/local-aws-emulator-poc/seed" [90m-> null[0m[0m
+      [31m-[0m[0m value_wo        = (write-only attribute) [90m-> null[0m[0m
+        [90m# (10 unchanged attributes hidden)[0m[0m
+    }
+
+
+Unless you have made equivalent changes to your configuration, or ignored the
+relevant attributes using ignore_changes, the following plan may include
+actions to undo or respond to these changes.
+[90m
+─────────────────────────────────────────────────────────────────────────────[0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [32m+[0m create[0m
+ [36m<=[0m read (data resources)[0m
+
+Terraform will perform the following actions:
+
+[1m  # data.aws_iam_policy_document.core_access[0m will be read during apply
+  # (config refers to values not yet known)
+[0m [36m<=[0m[0m data "aws_iam_policy_document" "core_access" {
+      [32m+[0m[0m id            = (known after apply)
+      [32m+[0m[0m json          = (known after apply)
+      [32m+[0m[0m minified_json = (known after apply)
+
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:DeleteObject",
+              [32m+[0m[0m "s3:GetObject",
+              [32m+[0m[0m "s3:PutObject",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:ListBucket",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "dynamodb:DeleteItem",
+              [32m+[0m[0m "dynamodb:GetItem",
+              [32m+[0m[0m "dynamodb:PutItem",
+              [32m+[0m[0m "dynamodb:Query",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "sqs:DeleteMessage",
+              [32m+[0m[0m "sqs:GetQueueAttributes",
+              [32m+[0m[0m "sqs:ReceiveMessage",
+              [32m+[0m[0m "sqs:SendMessage",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "sns:Publish",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+    }
+
+[1m  # data.aws_iam_policy_document.denied_access[0m will be read during apply
+  # (config refers to values not yet known)
+[0m [36m<=[0m[0m data "aws_iam_policy_document" "denied_access" {
+      [32m+[0m[0m id            = (known after apply)
+      [32m+[0m[0m json          = (known after apply)
+      [32m+[0m[0m minified_json = (known after apply)
+
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:PutObject",
+            ]
+          [32m+[0m[0m effect    = "Deny"
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:GetObject",
+              [32m+[0m[0m "s3:ListBucket",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+    }
+
+[1m  # data.aws_iam_policy_document.lambda_execution[0m will be read during apply
+  # (config refers to values not yet known)
+[0m [36m<=[0m[0m data "aws_iam_policy_document" "lambda_execution" {
+      [32m+[0m[0m id            = (known after apply)
+      [32m+[0m[0m json          = (known after apply)
+      [32m+[0m[0m minified_json = (known after apply)
+
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "logs:CreateLogGroup",
+              [32m+[0m[0m "logs:CreateLogStream",
+              [32m+[0m[0m "logs:PutLogEvents",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m "*",
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "sqs:DeleteMessage",
+              [32m+[0m[0m "sqs:GetQueueAttributes",
+              [32m+[0m[0m "sqs:ReceiveMessage",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+    }
+
+[1m  # data.aws_iam_policy_document.scoped_access[0m will be read during apply
+  # (config refers to values not yet known)
+[0m [36m<=[0m[0m data "aws_iam_policy_document" "scoped_access" {
+      [32m+[0m[0m id            = (known after apply)
+      [32m+[0m[0m json          = (known after apply)
+      [32m+[0m[0m minified_json = (known after apply)
+
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:GetObject",
+              [32m+[0m[0m "s3:PutObject",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:ListBucket",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m (known after apply),
+            ]
+
+          [32m+[0m[0m condition {
+              [32m+[0m[0m test     = "StringLike"
+              [32m+[0m[0m values   = [
+                  [32m+[0m[0m "iam-scoped/allowed/*",
+                ]
+              [32m+[0m[0m variable = "s3:prefix"
+            }
+        }
+    }
+
+[1m  # aws_cloudwatch_event_rule.harness_events[0m will be created
+[0m  [32m+[0m[0m resource "aws_cloudwatch_event_rule" "harness_events" {
+      [32m+[0m[0m arn            = (known after apply)
+      [32m+[0m[0m event_bus_name = "default"
+      [32m+[0m[0m event_pattern  = jsonencode(
+            {
+              [32m+[0m[0m detail-type = [
+                  [32m+[0m[0m "HarnessEvent",
+                ]
+              [32m+[0m[0m source      = [
+                  [32m+[0m[0m "emulator.harness",
+                ]
+            }
+        )
+      [32m+[0m[0m force_destroy  = false
+      [32m+[0m[0m id             = (known after apply)
+      [32m+[0m[0m name           = "local-aws-emulator-poc-harness-events"
+      [32m+[0m[0m name_prefix    = (known after apply)
+      [32m+[0m[0m tags_all       = (known after apply)
+    }
+
+[1m  # aws_cloudwatch_event_target.harness_events_to_queue[0m will be created
+[0m  [32m+[0m[0m resource "aws_cloudwatch_event_target" "harness_events_to_queue" {
+      [32m+[0m[0m arn            = (known after apply)
+      [32m+[0m[0m event_bus_name = "default"
+      [32m+[0m[0m force_destroy  = false
+      [32m+[0m[0m id             = (known after apply)
+      [32m+[0m[0m rule           = "local-aws-emulator-poc-harness-events"
+      [32m+[0m[0m target_id      = (known after apply)
+    }
+
+[1m  # aws_dynamodb_table.items[0m will be created
+[0m  [32m+[0m[0m resource "aws_dynamodb_table" "items" {
+      [32m+[0m[0m arn              = (known after apply)
+      [32m+[0m[0m billing_mode     = "PAY_PER_REQUEST"
+      [32m+[0m[0m hash_key         = "pk"
+      [32m+[0m[0m id               = (known after apply)
+      [32m+[0m[0m name             = "local-aws-emulator-poc-items"
+      [32m+[0m[0m read_capacity    = (known after apply)
+      [32m+[0m[0m stream_arn       = (known after apply)
+      [32m+[0m[0m stream_enabled   = true
+      [32m+[0m[0m stream_label     = (known after apply)
+      [32m+[0m[0m stream_view_type = "NEW_AND_OLD_IMAGES"
+      [32m+[0m[0m tags_all         = (known after apply)
+      [32m+[0m[0m write_capacity   = (known after apply)
+
+      [32m+[0m[0m attribute {
+          [32m+[0m[0m name = "gsi_pk"
+          [32m+[0m[0m type = "S"
+        }
+      [32m+[0m[0m attribute {
+          [32m+[0m[0m name = "gsi_sk"
+          [32m+[0m[0m type = "S"
+        }
+      [32m+[0m[0m attribute {
+          [32m+[0m[0m name = "pk"
+          [32m+[0m[0m type = "S"
+        }
+
+      [32m+[0m[0m global_secondary_index {
+          [32m+[0m[0m hash_key           = "gsi_pk"
+          [32m+[0m[0m name               = "gsi1"
+          [32m+[0m[0m non_key_attributes = []
+          [32m+[0m[0m projection_type    = "ALL"
+          [32m+[0m[0m range_key          = "gsi_sk"
+          [32m+[0m[0m read_capacity      = (known after apply)
+          [32m+[0m[0m write_capacity     = (known after apply)
+        }
+
+      [32m+[0m[0m point_in_time_recovery (known after apply)
+
+      [32m+[0m[0m server_side_encryption (known after apply)
+
+      [32m+[0m[0m ttl {
+          [32m+[0m[0m attribute_name = "expires_at"
+          [32m+[0m[0m enabled        = true
+        }
+    }
+
+[1m  # aws_iam_role.core_access[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "core_access" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m AWS = "*"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "local-aws-emulator-poc-core-role"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = (known after apply)
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role.denied_access[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "denied_access" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m AWS = "*"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "local-aws-emulator-poc-denied-role"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = (known after apply)
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role.eventbridge_stepfunctions_target[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "eventbridge_stepfunctions_target" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m Service = "events.amazonaws.com"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "local-aws-emulator-poc-eb-sfn-target"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = (known after apply)
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role.lambda_execution[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "lambda_execution" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m Service = "lambda.amazonaws.com"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "local-aws-emulator-poc-lambda-exec"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = (known after apply)
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role.missing_allow[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "missing_allow" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m AWS = "*"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "local-aws-emulator-poc-missing-allow-role"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = (known after apply)
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role.scoped_access[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "scoped_access" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m AWS = "*"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "local-aws-emulator-poc-scoped-role"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = (known after apply)
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role.stepfunctions_execution[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "stepfunctions_execution" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m Service = "states.amazonaws.com"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "local-aws-emulator-poc-sfn-exec"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = (known after apply)
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role_policy.core_access[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy" "core_access" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "local-aws-emulator-poc-core-access"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m policy      = (known after apply)
+      [32m+[0m[0m role        = (known after apply)
+    }
+
+[1m  # aws_iam_role_policy.denied_access[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy" "denied_access" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "local-aws-emulator-poc-denied-access"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m policy      = (known after apply)
+      [32m+[0m[0m role        = (known after apply)
+    }
+
+[1m  # aws_iam_role_policy.eventbridge_stepfunctions_target[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy" "eventbridge_stepfunctions_target" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "local-aws-emulator-poc-eb-sfn-target"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m policy      = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action   = "states:StartExecution"
+                      [32m+[0m[0m Effect   = "Allow"
+                      [32m+[0m[0m Resource = "*"
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m role        = (known after apply)
+    }
+
+[1m  # aws_iam_role_policy.lambda_execution[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy" "lambda_execution" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "local-aws-emulator-poc-lambda-execution"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m policy      = (known after apply)
+      [32m+[0m[0m role        = (known after apply)
+    }
+
+[1m  # aws_iam_role_policy.scoped_access[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy" "scoped_access" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "local-aws-emulator-poc-scoped-access"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m policy      = (known after apply)
+      [32m+[0m[0m role        = (known after apply)
+    }
+
+[1m  # aws_iam_role_policy.stepfunctions_execution[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy" "stepfunctions_execution" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "local-aws-emulator-poc-sfn-execution"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m policy      = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action   = [
+                          [32m+[0m[0m "states:StartExecution",
+                          [32m+[0m[0m "sqs:SendMessage",
+                          [32m+[0m[0m "sns:Publish",
+                          [32m+[0m[0m "lambda:InvokeFunction",
+                          [32m+[0m[0m "events:PutEvents",
+                        ]
+                      [32m+[0m[0m Effect   = "Allow"
+                      [32m+[0m[0m Resource = "*"
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m role        = (known after apply)
+    }
+
+[1m  # aws_kms_key.harness[0m will be created
+[0m  [32m+[0m[0m resource "aws_kms_key" "harness" {
+      [32m+[0m[0m arn                                = (known after apply)
+      [32m+[0m[0m bypass_policy_lockout_safety_check = false
+      [32m+[0m[0m customer_master_key_spec           = "SYMMETRIC_DEFAULT"
+      [32m+[0m[0m deletion_window_in_days            = 7
+      [32m+[0m[0m description                        = "local-aws-emulator-poc harness key"
+      [32m+[0m[0m enable_key_rotation                = false
+      [32m+[0m[0m id                                 = (known after apply)
+      [32m+[0m[0m is_enabled                         = true
+      [32m+[0m[0m key_id                             = (known after apply)
+      [32m+[0m[0m key_usage                          = "ENCRYPT_DECRYPT"
+      [32m+[0m[0m multi_region                       = (known after apply)
+      [32m+[0m[0m policy                             = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "kms:*"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m AWS = "*"
+                        }
+                      [32m+[0m[0m Resource  = "*"
+                      [32m+[0m[0m Sid       = "AllowHarnessUse"
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m rotation_period_in_days            = (known after apply)
+      [32m+[0m[0m tags_all                           = (known after apply)
+    }
+
+[1m  # aws_s3_bucket.objects[0m will be created
+[0m  [32m+[0m[0m resource "aws_s3_bucket" "objects" {
+      [32m+[0m[0m acceleration_status         = (known after apply)
+      [32m+[0m[0m acl                         = (known after apply)
+      [32m+[0m[0m arn                         = (known after apply)
+      [32m+[0m[0m bucket                      = "local-aws-emulator-poc-bucket"
+      [32m+[0m[0m bucket_domain_name          = (known after apply)
+      [32m+[0m[0m bucket_prefix               = (known after apply)
+      [32m+[0m[0m bucket_regional_domain_name = (known after apply)
+      [32m+[0m[0m force_destroy               = true
+      [32m+[0m[0m hosted_zone_id              = (known after apply)
+      [32m+[0m[0m id                          = (known after apply)
+      [32m+[0m[0m object_lock_enabled         = (known after apply)
+      [32m+[0m[0m policy                      = (known after apply)
+      [32m+[0m[0m region                      = (known after apply)
+      [32m+[0m[0m request_payer               = (known after apply)
+      [32m+[0m[0m tags_all                    = (known after apply)
+      [32m+[0m[0m website_domain              = (known after apply)
+      [32m+[0m[0m website_endpoint            = (known after apply)
+
+      [32m+[0m[0m cors_rule (known after apply)
+
+      [32m+[0m[0m grant (known after apply)
+
+      [32m+[0m[0m lifecycle_rule (known after apply)
+
+      [32m+[0m[0m logging (known after apply)
+
+      [32m+[0m[0m object_lock_configuration (known after apply)
+
+      [32m+[0m[0m replication_configuration (known after apply)
+
+      [32m+[0m[0m server_side_encryption_configuration (known after apply)
+
+      [32m+[0m[0m versioning (known after apply)
+
+      [32m+[0m[0m website (known after apply)
+    }
+
+[1m  # aws_s3_bucket_cors_configuration.objects[0m will be created
+[0m  [32m+[0m[0m resource "aws_s3_bucket_cors_configuration" "objects" {
+      [32m+[0m[0m bucket = (known after apply)
+      [32m+[0m[0m id     = (known after apply)
+
+      [32m+[0m[0m cors_rule {
+          [32m+[0m[0m allowed_headers = [
+              [32m+[0m[0m "*",
+            ]
+          [32m+[0m[0m allowed_methods = [
+              [32m+[0m[0m "GET",
+              [32m+[0m[0m "PUT",
+            ]
+          [32m+[0m[0m allowed_origins = [
+              [32m+[0m[0m "https://example.com",
+            ]
+          [32m+[0m[0m expose_headers  = [
+              [32m+[0m[0m "ETag",
+            ]
+            id              = [90mnull[0m[0m
+          [32m+[0m[0m max_age_seconds = 300
+        }
+    }
+
+[1m  # aws_s3_bucket_notification.objects_to_queue[0m will be created
+[0m  [32m+[0m[0m resource "aws_s3_bucket_notification" "objects_to_queue" {
+      [32m+[0m[0m bucket      = (known after apply)
+      [32m+[0m[0m eventbridge = false
+      [32m+[0m[0m id          = (known after apply)
+
+      [32m+[0m[0m queue {
+          [32m+[0m[0m events    = [
+              [32m+[0m[0m "s3:ObjectCreated:*",
+            ]
+          [32m+[0m[0m id        = (known after apply)
+          [32m+[0m[0m queue_arn = (known after apply)
+        }
+    }
+
+[1m  # aws_s3_bucket_versioning.objects[0m will be created
+[0m  [32m+[0m[0m resource "aws_s3_bucket_versioning" "objects" {
+      [32m+[0m[0m bucket = (known after apply)
+      [32m+[0m[0m id     = (known after apply)
+
+      [32m+[0m[0m versioning_configuration {
+          [32m+[0m[0m mfa_delete = (known after apply)
+          [32m+[0m[0m status     = "Enabled"
+        }
+    }
+
+[1m  # aws_secretsmanager_secret.encrypted[0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret" "encrypted" {
+      [32m+[0m[0m arn                            = (known after apply)
+      [32m+[0m[0m force_overwrite_replica_secret = false
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m kms_key_id                     = (known after apply)
+      [32m+[0m[0m name                           = "local-aws-emulator-poc-encrypted-secret"
+      [32m+[0m[0m name_prefix                    = (known after apply)
+      [32m+[0m[0m policy                         = (known after apply)
+      [32m+[0m[0m recovery_window_in_days        = 30
+      [32m+[0m[0m tags_all                       = (known after apply)
+
+      [32m+[0m[0m replica (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret.seed[0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret" "seed" {
+      [32m+[0m[0m arn                            = (known after apply)
+      [32m+[0m[0m force_overwrite_replica_secret = false
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m name                           = "local-aws-emulator-poc/seed"
+      [32m+[0m[0m name_prefix                    = (known after apply)
+      [32m+[0m[0m policy                         = (known after apply)
+      [32m+[0m[0m recovery_window_in_days        = 0
+      [32m+[0m[0m tags_all                       = (known after apply)
+
+      [32m+[0m[0m replica (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret_version.encrypted[0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret_version" "encrypted" {
+      [32m+[0m[0m arn                  = (known after apply)
+      [32m+[0m[0m has_secret_string_wo = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+      [32m+[0m[0m secret_id            = (known after apply)
+      [32m+[0m[0m secret_string        = (sensitive value)
+      [32m+[0m[0m secret_string_wo     = (write-only attribute)
+      [32m+[0m[0m version_id           = (known after apply)
+      [32m+[0m[0m version_stages       = (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret_version.seed[0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret_version" "seed" {
+      [32m+[0m[0m arn                  = (known after apply)
+      [32m+[0m[0m has_secret_string_wo = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+      [32m+[0m[0m secret_id            = (known after apply)
+      [32m+[0m[0m secret_string        = (sensitive value)
+      [32m+[0m[0m secret_string_wo     = (write-only attribute)
+      [32m+[0m[0m version_id           = (known after apply)
+      [32m+[0m[0m version_stages       = (known after apply)
+    }
+
+[1m  # aws_sns_topic.events[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic" "events" {
+      [32m+[0m[0m arn                         = (known after apply)
+      [32m+[0m[0m beginning_archive_time      = (known after apply)
+      [32m+[0m[0m content_based_deduplication = false
+      [32m+[0m[0m fifo_throughput_scope       = (known after apply)
+      [32m+[0m[0m fifo_topic                  = false
+      [32m+[0m[0m id                          = (known after apply)
+      [32m+[0m[0m name                        = "local-aws-emulator-poc-events"
+      [32m+[0m[0m name_prefix                 = (known after apply)
+      [32m+[0m[0m owner                       = (known after apply)
+      [32m+[0m[0m policy                      = (known after apply)
+      [32m+[0m[0m signature_version           = (known after apply)
+      [32m+[0m[0m tags_all                    = (known after apply)
+      [32m+[0m[0m tracing_config              = (known after apply)
+    }
+
+[1m  # aws_sns_topic.fifo[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic" "fifo" {
+      [32m+[0m[0m arn                         = (known after apply)
+      [32m+[0m[0m beginning_archive_time      = (known after apply)
+      [32m+[0m[0m content_based_deduplication = true
+      [32m+[0m[0m fifo_throughput_scope       = (known after apply)
+      [32m+[0m[0m fifo_topic                  = true
+      [32m+[0m[0m id                          = (known after apply)
+      [32m+[0m[0m name                        = "local-aws-emulator-poc-fifo.fifo"
+      [32m+[0m[0m name_prefix                 = (known after apply)
+      [32m+[0m[0m owner                       = (known after apply)
+      [32m+[0m[0m policy                      = (known after apply)
+      [32m+[0m[0m signature_version           = (known after apply)
+      [32m+[0m[0m tags_all                    = (known after apply)
+      [32m+[0m[0m tracing_config              = (known after apply)
+    }
+
+[1m  # aws_sns_topic.github_actions_ci[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic" "github_actions_ci" {
+      [32m+[0m[0m arn                         = (known after apply)
+      [32m+[0m[0m beginning_archive_time      = (known after apply)
+      [32m+[0m[0m content_based_deduplication = false
+      [32m+[0m[0m fifo_throughput_scope       = (known after apply)
+      [32m+[0m[0m fifo_topic                  = false
+      [32m+[0m[0m id                          = (known after apply)
+      [32m+[0m[0m name                        = "local-aws-emulator-poc-gha-ci"
+      [32m+[0m[0m name_prefix                 = (known after apply)
+      [32m+[0m[0m owner                       = (known after apply)
+      [32m+[0m[0m policy                      = (known after apply)
+      [32m+[0m[0m signature_version           = (known after apply)
+      [32m+[0m[0m tags_all                    = (known after apply)
+      [32m+[0m[0m tracing_config              = (known after apply)
+    }
+
+[1m  # aws_sns_topic_subscription.events_to_audit_queue[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic_subscription" "events_to_audit_queue" {
+      [32m+[0m[0m arn                             = (known after apply)
+      [32m+[0m[0m confirmation_timeout_in_minutes = 1
+      [32m+[0m[0m confirmation_was_authenticated  = (known after apply)
+      [32m+[0m[0m endpoint                        = (known after apply)
+      [32m+[0m[0m endpoint_auto_confirms          = false
+      [32m+[0m[0m filter_policy                   = jsonencode(
+            {
+              [32m+[0m[0m event_type = [
+                  [32m+[0m[0m "audit",
+                ]
+            }
+        )
+      [32m+[0m[0m filter_policy_scope             = (known after apply)
+      [32m+[0m[0m id                              = (known after apply)
+      [32m+[0m[0m owner_id                        = (known after apply)
+      [32m+[0m[0m pending_confirmation            = (known after apply)
+      [32m+[0m[0m protocol                        = "sqs"
+      [32m+[0m[0m raw_message_delivery            = true
+      [32m+[0m[0m topic_arn                       = (known after apply)
+    }
+
+[1m  # aws_sns_topic_subscription.events_to_billing_queue[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic_subscription" "events_to_billing_queue" {
+      [32m+[0m[0m arn                             = (known after apply)
+      [32m+[0m[0m confirmation_timeout_in_minutes = 1
+      [32m+[0m[0m confirmation_was_authenticated  = (known after apply)
+      [32m+[0m[0m endpoint                        = (known after apply)
+      [32m+[0m[0m endpoint_auto_confirms          = false
+      [32m+[0m[0m filter_policy                   = jsonencode(
+            {
+              [32m+[0m[0m event_type = [
+                  [32m+[0m[0m "billing",
+                ]
+            }
+        )
+      [32m+[0m[0m filter_policy_scope             = (known after apply)
+      [32m+[0m[0m id                              = (known after apply)
+      [32m+[0m[0m owner_id                        = (known after apply)
+      [32m+[0m[0m pending_confirmation            = (known after apply)
+      [32m+[0m[0m protocol                        = "sqs"
+      [32m+[0m[0m raw_message_delivery            = true
+      [32m+[0m[0m topic_arn                       = (known after apply)
+    }
+
+[1m  # aws_sns_topic_subscription.events_to_queue[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic_subscription" "events_to_queue" {
+      [32m+[0m[0m arn                             = (known after apply)
+      [32m+[0m[0m confirmation_timeout_in_minutes = 1
+      [32m+[0m[0m confirmation_was_authenticated  = (known after apply)
+      [32m+[0m[0m endpoint                        = (known after apply)
+      [32m+[0m[0m endpoint_auto_confirms          = false
+      [32m+[0m[0m filter_policy_scope             = (known after apply)
+      [32m+[0m[0m id                              = (known after apply)
+      [32m+[0m[0m owner_id                        = (known after apply)
+      [32m+[0m[0m pending_confirmation            = (known after apply)
+      [32m+[0m[0m protocol                        = "sqs"
+      [32m+[0m[0m raw_message_delivery            = true
+      [32m+[0m[0m topic_arn                       = (known after apply)
+    }
+
+[1m  # aws_sns_topic_subscription.fifo_events_to_queue[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic_subscription" "fifo_events_to_queue" {
+      [32m+[0m[0m arn                             = (known after apply)
+      [32m+[0m[0m confirmation_timeout_in_minutes = 1
+      [32m+[0m[0m confirmation_was_authenticated  = (known after apply)
+      [32m+[0m[0m endpoint                        = (known after apply)
+      [32m+[0m[0m endpoint_auto_confirms          = false
+      [32m+[0m[0m filter_policy_scope             = (known after apply)
+      [32m+[0m[0m id                              = (known after apply)
+      [32m+[0m[0m owner_id                        = (known after apply)
+      [32m+[0m[0m pending_confirmation            = (known after apply)
+      [32m+[0m[0m protocol                        = "sqs"
+      [32m+[0m[0m raw_message_delivery            = true
+      [32m+[0m[0m topic_arn                       = (known after apply)
+    }
+
+[1m  # aws_sns_topic_subscription.github_actions_ci_to_queue[0m will be created
+[0m  [32m+[0m[0m resource "aws_sns_topic_subscription" "github_actions_ci_to_queue" {
+      [32m+[0m[0m arn                             = (known after apply)
+      [32m+[0m[0m confirmation_timeout_in_minutes = 1
+      [32m+[0m[0m confirmation_was_authenticated  = (known after apply)
+      [32m+[0m[0m endpoint                        = (known after apply)
+      [32m+[0m[0m endpoint_auto_confirms          = false
+      [32m+[0m[0m filter_policy_scope             = (known after apply)
+      [32m+[0m[0m id                              = (known after apply)
+      [32m+[0m[0m owner_id                        = (known after apply)
+      [32m+[0m[0m pending_confirmation            = (known after apply)
+      [32m+[0m[0m protocol                        = "sqs"
+      [32m+[0m[0m raw_message_delivery            = true
+      [32m+[0m[0m topic_arn                       = (known after apply)
+    }
+
+[1m  # aws_sqs_queue.direct[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "direct" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-direct"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.eventbridge_target[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "eventbridge_target" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-eventbridge"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.fifo[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "fifo" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = true
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = true
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-fifo.fifo"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.github_actions_ci[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "github_actions_ci" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-gha-ci"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.github_actions_ci_receiver[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "github_actions_ci_receiver" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-gha-ci-receiver"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.lambda_events[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "lambda_events" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-lambda-events"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.redrive_dlq[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "redrive_dlq" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-dlq"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 0
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 30
+    }
+
+[1m  # aws_sqs_queue.redrive_source[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "redrive_source" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-redrive"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 1
+    }
+
+[1m  # aws_sqs_queue.s3_events[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "s3_events" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-s3-events"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.sns_fifo_receiver[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "sns_fifo_receiver" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = true
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = true
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-sns-fifo.fifo"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.sns_filtered_audit[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "sns_filtered_audit" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-sns-audit"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.sns_filtered_billing[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "sns_filtered_billing" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-sns-billing"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue.sns_receiver[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue" "sns_receiver" {
+      [32m+[0m[0m arn                               = (known after apply)
+      [32m+[0m[0m content_based_deduplication       = false
+      [32m+[0m[0m deduplication_scope               = (known after apply)
+      [32m+[0m[0m delay_seconds                     = 0
+      [32m+[0m[0m fifo_queue                        = false
+      [32m+[0m[0m fifo_throughput_limit             = (known after apply)
+      [32m+[0m[0m id                                = (known after apply)
+      [32m+[0m[0m kms_data_key_reuse_period_seconds = (known after apply)
+      [32m+[0m[0m max_message_size                  = 262144
+      [32m+[0m[0m message_retention_seconds         = 120
+      [32m+[0m[0m name                              = "local-aws-emulator-poc-sns-receiver"
+      [32m+[0m[0m name_prefix                       = (known after apply)
+      [32m+[0m[0m policy                            = (known after apply)
+      [32m+[0m[0m receive_wait_time_seconds         = 1
+      [32m+[0m[0m redrive_allow_policy              = (known after apply)
+      [32m+[0m[0m redrive_policy                    = (known after apply)
+      [32m+[0m[0m sqs_managed_sse_enabled           = (known after apply)
+      [32m+[0m[0m tags_all                          = (known after apply)
+      [32m+[0m[0m url                               = (known after apply)
+      [32m+[0m[0m visibility_timeout_seconds        = 5
+    }
+
+[1m  # aws_sqs_queue_policy.allow_eventbridge[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue_policy" "allow_eventbridge" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m policy    = (known after apply)
+      [32m+[0m[0m queue_url = (known after apply)
+    }
+
+[1m  # aws_sqs_queue_policy.allow_github_actions_ci_sns[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue_policy" "allow_github_actions_ci_sns" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m policy    = (known after apply)
+      [32m+[0m[0m queue_url = (known after apply)
+    }
+
+[1m  # aws_sqs_queue_policy.allow_s3_events[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue_policy" "allow_s3_events" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m policy    = (known after apply)
+      [32m+[0m[0m queue_url = (known after apply)
+    }
+
+[1m  # aws_sqs_queue_policy.allow_sns_fifo_receiver[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue_policy" "allow_sns_fifo_receiver" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m policy    = (known after apply)
+      [32m+[0m[0m queue_url = (known after apply)
+    }
+
+[1m  # aws_sqs_queue_policy.allow_sns_filtered_audit[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue_policy" "allow_sns_filtered_audit" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m policy    = (known after apply)
+      [32m+[0m[0m queue_url = (known after apply)
+    }
+
+[1m  # aws_sqs_queue_policy.allow_sns_filtered_billing[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue_policy" "allow_sns_filtered_billing" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m policy    = (known after apply)
+      [32m+[0m[0m queue_url = (known after apply)
+    }
+
+[1m  # aws_sqs_queue_policy.allow_sns_receiver[0m will be created
+[0m  [32m+[0m[0m resource "aws_sqs_queue_policy" "allow_sns_receiver" {
+      [32m+[0m[0m id        = (known after apply)
+      [32m+[0m[0m policy    = (known after apply)
+      [32m+[0m[0m queue_url = (known after apply)
+    }
+
+[1m  # aws_ssm_parameter.secure[0m will be created
+[0m  [32m+[0m[0m resource "aws_ssm_parameter" "secure" {
+      [32m+[0m[0m arn            = (known after apply)
+      [32m+[0m[0m data_type      = (known after apply)
+      [32m+[0m[0m has_value_wo   = (known after apply)
+      [32m+[0m[0m id             = (known after apply)
+      [32m+[0m[0m insecure_value = (known after apply)
+      [32m+[0m[0m key_id         = (known after apply)
+      [32m+[0m[0m name           = "/local-aws-emulator-poc/secure"
+      [32m+[0m[0m tags_all       = (known after apply)
+      [32m+[0m[0m tier           = (known after apply)
+      [32m+[0m[0m type           = "SecureString"
+      [32m+[0m[0m value          = (sensitive value)
+      [32m+[0m[0m value_wo       = (write-only attribute)
+      [32m+[0m[0m version        = (known after apply)
+    }
+
+[1m  # aws_ssm_parameter.seed[0m will be created
+[0m  [32m+[0m[0m resource "aws_ssm_parameter" "seed" {
+      [32m+[0m[0m arn            = (known after apply)
+      [32m+[0m[0m data_type      = (known after apply)
+      [32m+[0m[0m has_value_wo   = (known after apply)
+      [32m+[0m[0m id             = (known after apply)
+      [32m+[0m[0m insecure_value = (known after apply)
+      [32m+[0m[0m key_id         = (known after apply)
+      [32m+[0m[0m name           = "/local-aws-emulator-poc/seed"
+      [32m+[0m[0m tags_all       = (known after apply)
+      [32m+[0m[0m tier           = (known after apply)
+      [32m+[0m[0m type           = "String"
+      [32m+[0m[0m value          = (sensitive value)
+      [32m+[0m[0m value_wo       = (write-only attribute)
+      [32m+[0m[0m version        = (known after apply)
+    }
+
+[1mPlan:[0m [0m55 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  [33m~[0m[0m dynamodb_stream_arn                  = "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items/stream/2026-05-15T16:38:29.127" -> (known after apply)
+  [33m~[0m[0m encrypted_secret_arn                 = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-b8b07d" -> (known after apply)
+  [33m~[0m[0m eventbridge_queue_url                = "http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge" -> (known after apply)
+  [33m~[0m[0m eventbridge_stepfunctions_role_arn   = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-eb-sfn-target" -> (known after apply)
+  [33m~[0m[0m github_actions_ci_queue_url          = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci" -> (known after apply)
+  [33m~[0m[0m github_actions_ci_receiver_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver" -> (known after apply)
+  [33m~[0m[0m github_actions_ci_topic_arn          = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci" -> (known after apply)
+  [33m~[0m[0m iam_denied_role_arn                  = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-denied-role" -> (known after apply)
+  [33m~[0m[0m iam_missing_allow_role_arn           = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-missing-allow-role" -> (known after apply)
+  [33m~[0m[0m iam_role_arn                         = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-core-role" -> (known after apply)
+  [33m~[0m[0m iam_scoped_role_arn                  = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-scoped-role" -> (known after apply)
+  [33m~[0m[0m kms_key_arn                          = "arn:aws:kms:us-east-1:000000000000:key/26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe" -> (known after apply)
+  [33m~[0m[0m kms_key_id                           = "26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe" -> (known after apply)
+  [33m~[0m[0m lambda_event_queue_url               = "http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events" -> (known after apply)
+  [33m~[0m[0m lambda_execution_role_arn            = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-lambda-exec" -> (known after apply)
+  [33m~[0m[0m s3_event_queue_url                   = "http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events" -> (known after apply)
+  [33m~[0m[0m secretsmanager_secret_arn            = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-32b2bf" -> (known after apply)
+  [33m~[0m[0m sns_fifo_queue_url                   = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo" -> (known after apply)
+  [33m~[0m[0m sns_fifo_topic_arn                   = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+  [33m~[0m[0m sns_filtered_audit_queue_url         = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit" -> (known after apply)
+  [33m~[0m[0m sns_filtered_billing_queue_url       = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing" -> (known after apply)
+  [33m~[0m[0m sns_receiver_queue_url               = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver" -> (known after apply)
+  [33m~[0m[0m sns_topic_arn                        = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events" -> (known after apply)
+  [33m~[0m[0m sqs_dlq_queue_url                    = "http://localhost:4566/000000000000/local-aws-emulator-poc-dlq" -> (known after apply)
+  [33m~[0m[0m sqs_fifo_queue_url                   = "http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+  [33m~[0m[0m sqs_queue_url                        = "http://localhost:4566/000000000000/local-aws-emulator-poc-direct" -> (known after apply)
+  [33m~[0m[0m sqs_redrive_queue_url                = "http://localhost:4566/000000000000/local-aws-emulator-poc-redrive" -> (known after apply)
+  [33m~[0m[0m stepfunctions_role_arn               = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-sfn-exec" -> (known after apply)
+  [33m~[0m[0m test_env                             = {
+      [33m~[0m[0m AWS_TEST_DYNAMODB_STREAM_ARN                 = "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items/stream/2026-05-15T16:38:29.127" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_ENCRYPTED_SECRET_ARN                = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-b8b07d" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_EVENTBRIDGE_QUEUE_URL               = "http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_EVENTBRIDGE_STEPFUNCTIONS_ROLE_ARN  = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-eb-sfn-target" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_GITHUB_ACTIONS_CI_QUEUE_URL         = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_GITHUB_ACTIONS_CI_RECEIVER_URL      = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_GITHUB_ACTIONS_CI_TOPIC_ARN         = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_IAM_DENIED_ROLE_ARN                 = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-denied-role" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_IAM_MISSING_ALLOW_ROLE_ARN          = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-missing-allow-role" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_IAM_ROLE_ARN                        = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-core-role" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_IAM_SCOPED_ROLE_ARN                 = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-scoped-role" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_KMS_KEY_ARN                         = "arn:aws:kms:us-east-1:000000000000:key/26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_KMS_KEY_ID                          = "26bb1b2c-e9cd-48bb-bf4c-2c7197d9fffe" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_LAMBDA_EVENT_QUEUE_URL              = "http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_LAMBDA_EXECUTION_ROLE_ARN           = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-lambda-exec" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_S3_EVENT_QUEUE_URL                  = "http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SECRETS_MANAGER_SECRET_ARN          = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-32b2bf" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SNS_FIFO_QUEUE_URL                  = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SNS_FIFO_TOPIC_ARN                  = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SNS_FILTERED_AUDIT_QUEUE_URL        = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SNS_FILTERED_BILLING_QUEUE_URL      = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SNS_RECEIVER_QUEUE_URL              = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SNS_TOPIC_ARN                       = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SQS_DLQ_QUEUE_URL                   = "http://localhost:4566/000000000000/local-aws-emulator-poc-dlq" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SQS_FIFO_QUEUE_URL                  = "http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SQS_QUEUE_URL                       = "http://localhost:4566/000000000000/local-aws-emulator-poc-direct" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SQS_REDRIVE_QUEUE_URL               = "http://localhost:4566/000000000000/local-aws-emulator-poc-redrive" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_STEPFUNCTIONS_ROLE_ARN              = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-sfn-exec" -> (known after apply)
+        [90m# (33 unchanged attributes hidden)[0m[0m
+    }
+[0m[1maws_kms_key.harness: Creating...[0m[0m
+[0m[1maws_sqs_queue.github_actions_ci: Creating...[0m[0m
+[0m[1maws_sqs_queue.sns_filtered_audit: Creating...[0m[0m
+[0m[1maws_cloudwatch_event_rule.harness_events: Creating...[0m[0m
+[0m[1maws_sqs_queue.s3_events: Creating...[0m[0m
+[0m[1maws_sns_topic.events: Creating...[0m[0m
+[0m[1maws_ssm_parameter.seed: Creating...[0m[0m
+[0m[1maws_sns_topic.fifo: Creating...[0m[0m
+[0m[1maws_sqs_queue.sns_receiver: Creating...[0m[0m
+[0m[1maws_sqs_queue.eventbridge_target: Creating...[0m[0m
+[0m[1maws_ssm_parameter.seed: Creation complete after 0s [id=/local-aws-emulator-poc/seed][0m
+[0m[1maws_cloudwatch_event_rule.harness_events: Creation complete after 0s [id=local-aws-emulator-poc-harness-events][0m
+[0m[1maws_sqs_queue.github_actions_ci_receiver: Creating...[0m[0m
+[0m[1maws_sns_topic.events: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events][0m
+[0m[1maws_sns_topic.fifo: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo][0m
+[0m[1maws_sqs_queue.sns_filtered_billing: Creating...[0m[0m
+[0m[1maws_iam_role.lambda_execution: Creating...[0m[0m
+[0m[1maws_dynamodb_table.items: Creating...[0m[0m
+[0m[1maws_iam_role.lambda_execution: Creation complete after 0s [id=local-aws-emulator-poc-lambda-exec][0m
+[0m[1maws_sqs_queue.fifo: Creating...[0m[0m
+[0m[1maws_dynamodb_table.items: Creation complete after 0s [id=local-aws-emulator-poc-items][0m
+[0m[1maws_iam_role.denied_access: Creating...[0m[0m
+[0m[1maws_iam_role.denied_access: Creation complete after 0s [id=local-aws-emulator-poc-denied-role][0m
+[0m[1maws_secretsmanager_secret.seed: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret.seed: Creation complete after 0s [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-07b406][0m
+[0m[1maws_sqs_queue.direct: Creating...[0m[0m
+[0m[1maws_kms_key.harness: Creation complete after 4s [id=048defbd-abe2-4f3e-82a8-86060cb9602e][0m
+[0m[1maws_sqs_queue.redrive_dlq: Creating...[0m[0m
+[0m[1maws_sqs_queue.s3_events: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.github_actions_ci: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_filtered_audit: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_receiver: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.eventbridge_target: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.github_actions_ci_receiver: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_filtered_billing: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.fifo: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.direct: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.redrive_dlq: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_filtered_audit: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.s3_events: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_receiver: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.github_actions_ci: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.eventbridge_target: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.github_actions_ci_receiver: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_filtered_billing: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.fifo: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.direct: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.redrive_dlq: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_filtered_audit: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit][0m
+[0m[1maws_sqs_queue.s3_events: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events][0m
+[0m[1maws_sqs_queue.sns_receiver: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver][0m
+[0m[1maws_sqs_queue.github_actions_ci: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci][0m
+[0m[1maws_sqs_queue.eventbridge_target: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge][0m
+[0m[1maws_sqs_queue.lambda_events: Creating...[0m[0m
+[0m[1maws_iam_role.scoped_access: Creating...[0m[0m
+[0m[1maws_sqs_queue.github_actions_ci_receiver: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver][0m
+[0m[1maws_sqs_queue.sns_filtered_billing: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing][0m
+[0m[1maws_iam_role.core_access: Creating...[0m[0m
+[0m[1maws_sqs_queue.sns_fifo_receiver: Creating...[0m[0m
+[0m[1maws_s3_bucket.objects: Creating...[0m[0m
+[0m[1maws_iam_role.scoped_access: Creation complete after 0s [id=local-aws-emulator-poc-scoped-role][0m
+[0m[1maws_sns_topic.github_actions_ci: Creating...[0m[0m
+[0m[1maws_sqs_queue.fifo: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo][0m
+[0m[1maws_iam_role.core_access: Creation complete after 0s [id=local-aws-emulator-poc-core-role][0m
+[0m[1maws_iam_role.missing_allow: Creating...[0m[0m
+[0m[1maws_sns_topic.github_actions_ci: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci][0m
+[0m[1maws_s3_bucket.objects: Creation complete after 0s [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_sqs_queue.direct: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-direct][0m
+[0m[1maws_iam_role.eventbridge_stepfunctions_target: Creating...[0m[0m
+[0m[1maws_iam_role.stepfunctions_execution: Creating...[0m[0m
+[0m[1maws_iam_role.stepfunctions_execution: Creation complete after 0s [id=local-aws-emulator-poc-sfn-exec][0m
+[0m[1maws_iam_role.missing_allow: Creation complete after 0s [id=local-aws-emulator-poc-missing-allow-role][0m
+[0m[1maws_iam_role.eventbridge_stepfunctions_target: Creation complete after 0s [id=local-aws-emulator-poc-eb-sfn-target][0m
+[0m[1maws_secretsmanager_secret_version.seed: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret.encrypted: Creating...[0m[0m
+[0m[1maws_ssm_parameter.secure: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret_version.seed: Creation complete after 0s [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-07b406|terraform-20260515080138866600000002][0m
+[0m[1maws_secretsmanager_secret.encrypted: Creation complete after 0s [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-eeb7af][0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_audit: Creating...[0m[0m
+[0m[1maws_ssm_parameter.secure: Creation complete after 0s [id=/local-aws-emulator-poc/secure][0m
+[0m[1maws_sqs_queue_policy.allow_sns_receiver: Creating...[0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_billing: Creating...[0m[0m
+[0m[1maws_sqs_queue_policy.allow_eventbridge: Creating...[0m[0m
+[0m[1maws_sqs_queue_policy.allow_github_actions_ci_sns: Creating...[0m[0m
+[0m[1maws_s3_bucket_cors_configuration.objects: Creating...[0m[0m
+[0m[1mdata.aws_iam_policy_document.core_access: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.core_access: Read complete after 0s [id=2550707110][0m
+[0m[1maws_s3_bucket_cors_configuration.objects: Creation complete after 0s [id=local-aws-emulator-poc-bucket][0m
+[0m[1mdata.aws_iam_policy_document.denied_access: Reading...[0m[0m
+[0m[1maws_sqs_queue_policy.allow_s3_events: Creating...[0m[0m
+[0m[1mdata.aws_iam_policy_document.denied_access: Read complete after 0s [id=803433750][0m
+[0m[1mdata.aws_iam_policy_document.scoped_access: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.scoped_access: Read complete after 0s [id=2610159925][0m
+[0m[1maws_s3_bucket_versioning.objects: Creating...[0m[0m
+[0m[1maws_s3_bucket_versioning.objects: Creation complete after 1s [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_iam_role_policy.eventbridge_stepfunctions_target: Creating...[0m[0m
+[0m[1maws_iam_role_policy.eventbridge_stepfunctions_target: Creation complete after 0s [id=local-aws-emulator-poc-eb-sfn-target:local-aws-emulator-poc-eb-sfn-target][0m
+[0m[1maws_iam_role_policy.stepfunctions_execution: Creating...[0m[0m
+[0m[1maws_iam_role_policy.stepfunctions_execution: Creation complete after 0s [id=local-aws-emulator-poc-sfn-exec:local-aws-emulator-poc-sfn-execution][0m
+[0m[1maws_secretsmanager_secret_version.encrypted: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret_version.encrypted: Creation complete after 0s [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-eeb7af|terraform-20260515080140175900000004][0m
+[0m[1maws_iam_role_policy.core_access: Creating...[0m[0m
+[0m[1maws_iam_role_policy.core_access: Creation complete after 0s [id=local-aws-emulator-poc-core-role:local-aws-emulator-poc-core-access][0m
+[0m[1maws_iam_role_policy.denied_access: Creating...[0m[0m
+[0m[1maws_iam_role_policy.denied_access: Creation complete after 0s [id=local-aws-emulator-poc-denied-role:local-aws-emulator-poc-denied-access][0m
+[0m[1maws_iam_role_policy.scoped_access: Creating...[0m[0m
+[0m[1maws_iam_role_policy.scoped_access: Creation complete after 0s [id=local-aws-emulator-poc-scoped-role:local-aws-emulator-poc-scoped-access][0m
+[0m[1maws_sqs_queue.redrive_dlq: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-dlq][0m
+[0m[1maws_sqs_queue.redrive_source: Creating...[0m[0m
+[0m[1maws_sqs_queue.lambda_events: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_fifo_receiver: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_audit: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_receiver: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_github_actions_ci_sns: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_eventbridge: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_billing: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_s3_events: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.redrive_source: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue.lambda_events: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.sns_fifo_receiver: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_audit: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_receiver: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_eventbridge: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_billing: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_github_actions_ci_sns: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_s3_events: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.redrive_source: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue.lambda_events: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events][0m
+[0m[1mdata.aws_iam_policy_document.lambda_execution: Reading...[0m[0m
+[0m[1maws_sqs_queue.sns_fifo_receiver: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo][0m
+[0m[1mdata.aws_iam_policy_document.lambda_execution: Read complete after 0s [id=1861350664][0m
+[0m[1maws_sqs_queue_policy.allow_sns_fifo_receiver: Creating...[0m[0m
+[0m[1maws_iam_role_policy.lambda_execution: Creating...[0m[0m
+[0m[1maws_iam_role_policy.lambda_execution: Creation complete after 0s [id=local-aws-emulator-poc-lambda-exec:local-aws-emulator-poc-lambda-execution][0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_audit: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit][0m
+[0m[1maws_sqs_queue_policy.allow_eventbridge: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge][0m
+[0m[1maws_sqs_queue_policy.allow_sns_receiver: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver][0m
+[0m[1maws_sqs_queue_policy.allow_github_actions_ci_sns: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver][0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_billing: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing][0m
+[0m[1maws_sns_topic_subscription.events_to_audit_queue: Creating...[0m[0m
+[0m[1maws_sqs_queue_policy.allow_s3_events: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events][0m
+[0m[1maws_sns_topic_subscription.events_to_audit_queue: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:29259661-2063-40fe-9a32-79a656a5dcad][0m
+[0m[1maws_sns_topic_subscription.events_to_billing_queue: Creating...[0m[0m
+[0m[1maws_cloudwatch_event_target.harness_events_to_queue: Creating...[0m[0m
+[0m[1maws_s3_bucket_notification.objects_to_queue: Creating...[0m[0m
+[0m[1maws_sns_topic_subscription.github_actions_ci_to_queue: Creating...[0m[0m
+[0m[1maws_sns_topic_subscription.events_to_queue: Creating...[0m[0m
+[0m[1maws_cloudwatch_event_target.harness_events_to_queue: Creation complete after 0s [id=local-aws-emulator-poc-harness-events-terraform-20260515080203972500000005][0m
+[0m[1maws_s3_bucket_notification.objects_to_queue: Creation complete after 0s [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_sns_topic_subscription.github_actions_ci_to_queue: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci:6e0fe76d-bce2-403e-8119-741d3f8bf565][0m
+[0m[1maws_sns_topic_subscription.events_to_billing_queue: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:dcd2833b-caef-4e97-8366-e59a07045fdd][0m
+[0m[1maws_sns_topic_subscription.events_to_queue: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:61ce302e-4f03-4441-9e60-80dfa85cb440][0m
+[0m[1maws_sqs_queue.redrive_source: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-redrive][0m
+[0m[1maws_sqs_queue_policy.allow_sns_fifo_receiver: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_fifo_receiver: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_fifo_receiver: Creation complete after 25s [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo][0m
+[0m[1maws_sns_topic_subscription.fifo_events_to_queue: Creating...[0m[0m
+[0m[1maws_sns_topic_subscription.fifo_events_to_queue: Creation complete after 0s [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo:a7045d5e-85a4-48ca-a934-9d6a174234ca][0m
+[0m[1m[32m
+Apply complete! Resources: 55 added, 0 changed, 0 destroyed.[0m
+[0m[1m[32m
+Outputs:
+
+[0maws_endpoint_url = "http://localhost:4566"
+aws_endpoint_url_apigateway = "http://localhost:4566"
+aws_endpoint_url_cloudwatch = "http://localhost:4566"
+aws_endpoint_url_cloudwatchlogs = "http://localhost:4566"
+aws_endpoint_url_dynamodb = "http://localhost:4566"
+aws_endpoint_url_dynamodbstreams = "http://localhost:4566"
+aws_endpoint_url_eventbridge = "http://localhost:4566"
+aws_endpoint_url_iam = "http://localhost:4566"
+aws_endpoint_url_kinesis = "http://localhost:4566"
+aws_endpoint_url_kms = "http://localhost:4566"
+aws_endpoint_url_lambda = "http://localhost:4566"
+aws_endpoint_url_rds = "http://localhost:4566"
+aws_endpoint_url_rdsdata = "http://localhost:4566"
+aws_endpoint_url_s3 = "http://localhost:4566"
+aws_endpoint_url_secretsmanager = "http://localhost:4566"
+aws_endpoint_url_ses = "http://localhost:4566"
+aws_endpoint_url_sns = "http://localhost:4566"
+aws_endpoint_url_sqs = "http://localhost:4566"
+aws_endpoint_url_ssm = "http://localhost:4566"
+aws_endpoint_url_stepfunctions = "http://localhost:4566"
+aws_endpoint_url_sts = "http://localhost:4566"
+aws_region = "us-east-1"
+dynamodb_gsi_name = "gsi1"
+dynamodb_stream_arn = "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items/stream/2026-05-15T17:01:13.783"
+dynamodb_table_name = "local-aws-emulator-poc-items"
+encrypted_secret_arn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-eeb7af"
+eventbridge_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge"
+eventbridge_stepfunctions_role_arn = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-eb-sfn-target"
+eventbridge_stepfunctions_role_name = "local-aws-emulator-poc-eb-sfn-target"
+github_actions_ci_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci"
+github_actions_ci_receiver_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver"
+github_actions_ci_topic_arn = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci"
+iam_denied_role_arn = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-denied-role"
+iam_denied_role_name = "local-aws-emulator-poc-denied-role"
+iam_missing_allow_role_arn = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-missing-allow-role"
+iam_missing_allow_role_name = "local-aws-emulator-poc-missing-allow-role"
+iam_role_arn = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-core-role"
+iam_role_name = "local-aws-emulator-poc-core-role"
+iam_scoped_role_arn = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-scoped-role"
+iam_scoped_role_name = "local-aws-emulator-poc-scoped-role"
+kms_key_arn = "arn:aws:kms:us-east-1:000000000000:key/048defbd-abe2-4f3e-82a8-86060cb9602e"
+kms_key_id = "048defbd-abe2-4f3e-82a8-86060cb9602e"
+lambda_event_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events"
+lambda_execution_role_arn = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-lambda-exec"
+s3_bucket_name = "local-aws-emulator-poc-bucket"
+s3_event_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events"
+secretsmanager_secret_arn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-07b406"
+sns_fifo_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo"
+sns_fifo_topic_arn = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo"
+sns_filtered_audit_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit"
+sns_filtered_billing_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing"
+sns_receiver_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver"
+sns_topic_arn = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events"
+sqs_dlq_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-dlq"
+sqs_fifo_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo"
+sqs_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-direct"
+sqs_redrive_queue_url = "http://localhost:4566/000000000000/local-aws-emulator-poc-redrive"
+ssm_parameter_name = "/local-aws-emulator-poc/seed"
+ssm_secure_parameter_name = "/local-aws-emulator-poc/secure"
+stepfunctions_role_arn = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-sfn-exec"
+stepfunctions_role_name = "local-aws-emulator-poc-sfn-exec"
+test_env = {
+  "AWS_ENDPOINT_URL" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_APIGATEWAY" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_CLOUDWATCH" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_CLOUDWATCHLOGS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_DYNAMODB" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_DYNAMODBSTREAMS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_EVENTBRIDGE" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_IAM" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_KINESIS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_KMS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_LAMBDA" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_RDS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_RDSDATA" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_S3" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_SECRETSMANAGER" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_SES" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_SNS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_SQS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_SSM" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_STEPFUNCTIONS" = "http://localhost:4566"
+  "AWS_ENDPOINT_URL_STS" = "http://localhost:4566"
+  "AWS_REGION" = "us-east-1"
+  "AWS_TEST_DYNAMODB_GSI" = "gsi1"
+  "AWS_TEST_DYNAMODB_STREAM_ARN" = "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items/stream/2026-05-15T17:01:13.783"
+  "AWS_TEST_DYNAMODB_TABLE" = "local-aws-emulator-poc-items"
+  "AWS_TEST_ENCRYPTED_SECRET_ARN" = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-eeb7af"
+  "AWS_TEST_EVENTBRIDGE_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge"
+  "AWS_TEST_EVENTBRIDGE_STEPFUNCTIONS_ROLE_ARN" = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-eb-sfn-target"
+  "AWS_TEST_EVENTBRIDGE_STEPFUNCTIONS_ROLE_NAME" = "local-aws-emulator-poc-eb-sfn-target"
+  "AWS_TEST_GITHUB_ACTIONS_CI_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci"
+  "AWS_TEST_GITHUB_ACTIONS_CI_RECEIVER_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver"
+  "AWS_TEST_GITHUB_ACTIONS_CI_TOPIC_ARN" = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci"
+  "AWS_TEST_IAM_DENIED_ROLE_ARN" = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-denied-role"
+  "AWS_TEST_IAM_DENIED_ROLE_NAME" = "local-aws-emulator-poc-denied-role"
+  "AWS_TEST_IAM_MISSING_ALLOW_ROLE_ARN" = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-missing-allow-role"
+  "AWS_TEST_IAM_MISSING_ALLOW_ROLE_NAME" = "local-aws-emulator-poc-missing-allow-role"
+  "AWS_TEST_IAM_ROLE_ARN" = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-core-role"
+  "AWS_TEST_IAM_ROLE_NAME" = "local-aws-emulator-poc-core-role"
+  "AWS_TEST_IAM_SCOPED_ROLE_ARN" = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-scoped-role"
+  "AWS_TEST_IAM_SCOPED_ROLE_NAME" = "local-aws-emulator-poc-scoped-role"
+  "AWS_TEST_KMS_KEY_ARN" = "arn:aws:kms:us-east-1:000000000000:key/048defbd-abe2-4f3e-82a8-86060cb9602e"
+  "AWS_TEST_KMS_KEY_ID" = "048defbd-abe2-4f3e-82a8-86060cb9602e"
+  "AWS_TEST_LAMBDA_EVENT_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events"
+  "AWS_TEST_LAMBDA_EXECUTION_ROLE_ARN" = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-lambda-exec"
+  "AWS_TEST_S3_BUCKET" = "local-aws-emulator-poc-bucket"
+  "AWS_TEST_S3_EVENT_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events"
+  "AWS_TEST_SECRETS_MANAGER_SECRET_ARN" = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-07b406"
+  "AWS_TEST_SNS_FIFO_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo"
+  "AWS_TEST_SNS_FIFO_TOPIC_ARN" = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo"
+  "AWS_TEST_SNS_FILTERED_AUDIT_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit"
+  "AWS_TEST_SNS_FILTERED_BILLING_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing"
+  "AWS_TEST_SNS_RECEIVER_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver"
+  "AWS_TEST_SNS_TOPIC_ARN" = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events"
+  "AWS_TEST_SQS_DLQ_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-dlq"
+  "AWS_TEST_SQS_FIFO_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo"
+  "AWS_TEST_SQS_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-direct"
+  "AWS_TEST_SQS_REDRIVE_QUEUE_URL" = "http://localhost:4566/000000000000/local-aws-emulator-poc-redrive"
+  "AWS_TEST_SSM_PARAMETER_NAME" = "/local-aws-emulator-poc/seed"
+  "AWS_TEST_SSM_SECURE_PARAMETER_NAME" = "/local-aws-emulator-poc/secure"
+  "AWS_TEST_STEPFUNCTIONS_ROLE_ARN" = "arn:aws:iam::123456789012:role/local-aws-emulator-poc-sfn-exec"
+  "AWS_TEST_STEPFUNCTIONS_ROLE_NAME" = "local-aws-emulator-poc-sfn-exec"
+}
+./scripts/terraform-plan-check.sh warn
+[0m[1mdata.aws_iam_policy_document.stepfunctions_execution: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.stepfunctions_assume_role: Reading...[0m[0m
+[0m[1maws_sns_topic.fifo: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo][0m
+[0m[1maws_sqs_queue.lambda_events: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-lambda-events][0m
+[0m[1maws_sqs_queue.redrive_dlq: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-dlq][0m
+[0m[1maws_sns_topic.events: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events][0m
+[0m[1maws_dynamodb_table.items: Refreshing state... [id=local-aws-emulator-poc-items][0m
+[0m[1mdata.aws_iam_policy_document.stepfunctions_execution: Read complete after 0s [id=598259064][0m
+[0m[1maws_sqs_queue.fifo: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-fifo.fifo][0m
+[0m[1maws_s3_bucket.objects: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_sqs_queue.direct: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-direct][0m
+[0m[1mdata.aws_iam_policy_document.stepfunctions_assume_role: Read complete after 0s [id=4022981484][0m
+[0m[1maws_secretsmanager_secret.seed: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-07b406][0m
+[0m[1maws_sqs_queue.eventbridge_target: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge][0m
+[0m[1maws_ssm_parameter.seed: Refreshing state... [id=/local-aws-emulator-poc/seed][0m
+[0m[1maws_sqs_queue.github_actions_ci_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver][0m
+[0m[1maws_sns_topic.github_actions_ci: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci][0m
+[0m[1maws_kms_key.harness: Refreshing state... [id=048defbd-abe2-4f3e-82a8-86060cb9602e][0m
+[0m[1maws_sqs_queue.sns_fifo_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo][0m
+[0m[1maws_sqs_queue.github_actions_ci: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci][0m
+[0m[1maws_sqs_queue.s3_events: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events][0m
+[0m[1maws_cloudwatch_event_rule.harness_events: Refreshing state... [id=local-aws-emulator-poc-harness-events][0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_assume_role: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_target: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_assume_role: Read complete after 0s [id=3959961479][0m
+[0m[1mdata.aws_iam_policy_document.assume_role: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.lambda_assume_role: Reading...[0m[0m
+[0m[1maws_sqs_queue.sns_filtered_audit: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit][0m
+[0m[1maws_sqs_queue.sns_filtered_billing: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing][0m
+[0m[1mdata.aws_iam_policy_document.eventbridge_stepfunctions_target: Read complete after 0s [id=2100153926][0m
+[0m[1mdata.aws_iam_policy_document.assume_role: Read complete after 0s [id=729565498][0m
+[0m[1maws_iam_role.stepfunctions_execution: Refreshing state... [id=local-aws-emulator-poc-sfn-exec][0m
+[0m[1maws_secretsmanager_secret_version.seed: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc/seed-07b406|terraform-20260515080138866600000002][0m
+[0m[1mdata.aws_iam_policy_document.lambda_assume_role: Read complete after 0s [id=2690255455][0m
+[0m[1maws_sqs_queue.sns_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver][0m
+[0m[1mdata.aws_iam_policy_document.lambda_execution: Reading...[0m[0m
+[0m[1maws_sqs_queue.redrive_source: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-redrive][0m
+[0m[1mdata.aws_iam_policy_document.lambda_execution: Read complete after 0s [id=1861350664][0m
+[0m[1maws_sqs_queue_policy.allow_sns_fifo_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo][0m
+[0m[1maws_sqs_queue_policy.allow_github_actions_ci_sns: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-gha-ci-receiver][0m
+[0m[1maws_iam_role.eventbridge_stepfunctions_target: Refreshing state... [id=local-aws-emulator-poc-eb-sfn-target][0m
+[0m[1maws_iam_role.scoped_access: Refreshing state... [id=local-aws-emulator-poc-scoped-role][0m
+[0m[1maws_iam_role.missing_allow: Refreshing state... [id=local-aws-emulator-poc-missing-allow-role][0m
+[0m[1maws_iam_role.denied_access: Refreshing state... [id=local-aws-emulator-poc-denied-role][0m
+[0m[1maws_iam_role.core_access: Refreshing state... [id=local-aws-emulator-poc-core-role][0m
+[0m[1maws_secretsmanager_secret.encrypted: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-eeb7af][0m
+[0m[1maws_sqs_queue_policy.allow_eventbridge: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-eventbridge][0m
+[0m[1maws_ssm_parameter.secure: Refreshing state... [id=/local-aws-emulator-poc/secure][0m
+[0m[1maws_iam_role.lambda_execution: Refreshing state... [id=local-aws-emulator-poc-lambda-exec][0m
+[0m[1maws_s3_bucket_cors_configuration.objects: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1mdata.aws_iam_policy_document.denied_access: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.denied_access: Read complete after 0s [id=803433750][0m
+[0m[1maws_sqs_queue_policy.allow_s3_events: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-s3-events][0m
+[0m[1maws_s3_bucket_versioning.objects: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_audit: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-audit][0m
+[0m[1mdata.aws_iam_policy_document.scoped_access: Reading...[0m[0m
+[0m[1maws_sqs_queue_policy.allow_sns_receiver: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-receiver][0m
+[0m[1maws_sqs_queue_policy.allow_sns_filtered_billing: Refreshing state... [id=http://localhost:4566/000000000000/local-aws-emulator-poc-sns-billing][0m
+[0m[1maws_iam_role_policy.stepfunctions_execution: Refreshing state... [id=local-aws-emulator-poc-sfn-exec:local-aws-emulator-poc-sfn-execution][0m
+[0m[1mdata.aws_iam_policy_document.scoped_access: Read complete after 0s [id=2610159925][0m
+[0m[1maws_sns_topic_subscription.github_actions_ci_to_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci:6e0fe76d-bce2-403e-8119-741d3f8bf565][0m
+[0m[1maws_sns_topic_subscription.fifo_events_to_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo:a7045d5e-85a4-48ca-a934-9d6a174234ca][0m
+[0m[1maws_iam_role_policy.eventbridge_stepfunctions_target: Refreshing state... [id=local-aws-emulator-poc-eb-sfn-target:local-aws-emulator-poc-eb-sfn-target][0m
+[0m[1maws_iam_role_policy.denied_access: Refreshing state... [id=local-aws-emulator-poc-denied-role:local-aws-emulator-poc-denied-access][0m
+[0m[1maws_secretsmanager_secret_version.encrypted: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-eeb7af|terraform-20260515080140175900000004][0m
+[0m[1maws_cloudwatch_event_target.harness_events_to_queue: Refreshing state... [id=local-aws-emulator-poc-harness-events-terraform-20260515080203972500000005][0m
+[0m[1maws_s3_bucket_notification.objects_to_queue: Refreshing state... [id=local-aws-emulator-poc-bucket][0m
+[0m[1maws_iam_role_policy.core_access: Refreshing state... [id=local-aws-emulator-poc-core-role:local-aws-emulator-poc-core-access][0m
+[0m[1maws_iam_role_policy.lambda_execution: Refreshing state... [id=local-aws-emulator-poc-lambda-exec:local-aws-emulator-poc-lambda-execution][0m
+[0m[1maws_iam_role_policy.scoped_access: Refreshing state... [id=local-aws-emulator-poc-scoped-role:local-aws-emulator-poc-scoped-access][0m
+[0m[1maws_sns_topic_subscription.events_to_audit_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:29259661-2063-40fe-9a32-79a656a5dcad][0m
+[0m[1maws_sns_topic_subscription.events_to_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:61ce302e-4f03-4441-9e60-80dfa85cb440][0m
+[0m[1maws_sns_topic_subscription.events_to_billing_queue: Refreshing state... [id=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:dcd2833b-caef-4e97-8366-e59a07045fdd][0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [33m~[0m update in-place[0m
+[31m-[0m/[32m+[0m destroy and then create replacement[0m
+ [36m<=[0m read (data resources)[0m
+
+Terraform will perform the following actions:
+
+[1m  # data.aws_iam_policy_document.core_access[0m will be read during apply
+  # (depends on a resource or a module with changes pending)
+[0m [36m<=[0m[0m data "aws_iam_policy_document" "core_access" {
+      [32m+[0m[0m id            = (known after apply)
+      [32m+[0m[0m json          = (known after apply)
+      [32m+[0m[0m minified_json = (known after apply)
+
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:DeleteObject",
+              [32m+[0m[0m "s3:GetObject",
+              [32m+[0m[0m "s3:PutObject",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m "arn:aws:s3:::local-aws-emulator-poc-bucket/*",
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "s3:ListBucket",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m "arn:aws:s3:::local-aws-emulator-poc-bucket",
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "dynamodb:DeleteItem",
+              [32m+[0m[0m "dynamodb:GetItem",
+              [32m+[0m[0m "dynamodb:PutItem",
+              [32m+[0m[0m "dynamodb:Query",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items",
+              [32m+[0m[0m "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items/index/*",
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "sqs:DeleteMessage",
+              [32m+[0m[0m "sqs:GetQueueAttributes",
+              [32m+[0m[0m "sqs:ReceiveMessage",
+              [32m+[0m[0m "sqs:SendMessage",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-direct",
+              [32m+[0m[0m "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-sns-receiver",
+            ]
+        }
+      [32m+[0m[0m statement {
+          [32m+[0m[0m actions   = [
+              [32m+[0m[0m "sns:Publish",
+            ]
+          [32m+[0m[0m resources = [
+              [32m+[0m[0m "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events",
+            ]
+        }
+    }
+
+[1m  # aws_dynamodb_table.items[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_dynamodb_table" "items" {
+        id                          = "local-aws-emulator-poc-items"
+        name                        = "local-aws-emulator-poc-items"
+        tags                        = {}
+        [90m# (10 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m global_secondary_index {
+          [31m-[0m[0m hash_key           = "gsi_pk" [90m-> null[0m[0m
+            name               = [90mnull[0m[0m
+          [31m-[0m[0m non_key_attributes = [] [90m-> null[0m[0m
+          [31m-[0m[0m projection_type    = "ALL" [90m-> null[0m[0m
+          [31m-[0m[0m range_key          = "gsi_sk" [90m-> null[0m[0m
+          [31m-[0m[0m read_capacity      = 0 [90m-> null[0m[0m
+          [31m-[0m[0m write_capacity     = 0 [90m-> null[0m[0m
+        }
+      [32m+[0m[0m global_secondary_index {
+          [32m+[0m[0m hash_key           = "gsi_pk"
+          [32m+[0m[0m name               = "gsi1"
+          [32m+[0m[0m non_key_attributes = []
+          [32m+[0m[0m projection_type    = "ALL"
+          [32m+[0m[0m range_key          = "gsi_sk"
+          [32m+[0m[0m read_capacity      = (known after apply)
+          [32m+[0m[0m write_capacity     = (known after apply)
+        }
+
+        [90m# (5 unchanged blocks hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role_policy.core_access[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_iam_role_policy" "core_access" {
+        id          = "local-aws-emulator-poc-core-role:local-aws-emulator-poc-core-access"
+        name        = "local-aws-emulator-poc-core-access"
+      [33m~[0m[0m policy      = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = [
+                          [31m-[0m[0m "s3:PutObject",
+                          [31m-[0m[0m "s3:GetObject",
+                          [31m-[0m[0m "s3:DeleteObject",
+                        ]
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = "arn:aws:s3:::local-aws-emulator-poc-bucket/*"
+                    },
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = "s3:ListBucket"
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = "arn:aws:s3:::local-aws-emulator-poc-bucket"
+                    },
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = [
+                          [31m-[0m[0m "dynamodb:Query",
+                          [31m-[0m[0m "dynamodb:PutItem",
+                          [31m-[0m[0m "dynamodb:GetItem",
+                          [31m-[0m[0m "dynamodb:DeleteItem",
+                        ]
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = [
+                          [31m-[0m[0m "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items/index/*",
+                          [31m-[0m[0m "arn:aws:dynamodb:us-east-1:000000000000:table/local-aws-emulator-poc-items",
+                        ]
+                    },
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = [
+                          [31m-[0m[0m "sqs:SendMessage",
+                          [31m-[0m[0m "sqs:ReceiveMessage",
+                          [31m-[0m[0m "sqs:GetQueueAttributes",
+                          [31m-[0m[0m "sqs:DeleteMessage",
+                        ]
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = [
+                          [31m-[0m[0m "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-sns-receiver",
+                          [31m-[0m[0m "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-direct",
+                        ]
+                    },
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = "sns:Publish"
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) -> (known after apply)
+        [90m# (2 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_kms_key.harness[0m must be [1m[31mreplaced[0m
+[0m[31m-[0m/[32m+[0m[0m resource "aws_kms_key" "harness" {
+      [33m~[0m[0m arn                                = "arn:aws:kms:us-east-1:000000000000:key/048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+      [32m+[0m[0m customer_master_key_spec           = "SYMMETRIC_DEFAULT" [31m# forces replacement[0m[0m
+      [33m~[0m[0m id                                 = "048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+      [33m~[0m[0m key_id                             = "048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+      [33m~[0m[0m multi_region                       = false -> (known after apply)
+      [33m~[0m[0m rotation_period_in_days            = 0 -> (known after apply)
+      [31m-[0m[0m tags                               = {} [90m-> null[0m[0m
+      [33m~[0m[0m tags_all                           = {} -> (known after apply)
+        [90m# (9 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_s3_bucket_notification.objects_to_queue[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_s3_bucket_notification" "objects_to_queue" {
+        id          = "local-aws-emulator-poc-bucket"
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [32m+[0m[0m queue {
+          [32m+[0m[0m events    = [
+              [32m+[0m[0m "s3:ObjectCreated:*",
+            ]
+          [32m+[0m[0m queue_arn = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-s3-events"
+        }
+    }
+
+[1m  # aws_secretsmanager_secret.encrypted[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_secretsmanager_secret" "encrypted" {
+        id                             = "arn:aws:secretsmanager:us-east-1:000000000000:secret:local-aws-emulator-poc-encrypted-secret-eeb7af"
+      [33m~[0m[0m kms_key_id                     = "048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+        name                           = "local-aws-emulator-poc-encrypted-secret"
+        tags                           = {}
+        [90m# (7 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic.fifo[0m must be [1m[31mreplaced[0m
+[0m[31m-[0m/[32m+[0m[0m resource "aws_sns_topic" "fifo" {
+      [31m-[0m[0m application_success_feedback_sample_rate = 0 [90m-> null[0m[0m
+      [33m~[0m[0m arn                                      = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+      [32m+[0m[0m beginning_archive_time                   = (known after apply)
+      [32m+[0m[0m fifo_throughput_scope                    = (known after apply)
+      [33m~[0m[0m fifo_topic                               = false [33m->[0m[0m true [31m# forces replacement[0m[0m
+      [31m-[0m[0m firehose_success_feedback_sample_rate    = 0 [90m-> null[0m[0m
+      [31m-[0m[0m http_success_feedback_sample_rate        = 0 [90m-> null[0m[0m
+      [33m~[0m[0m id                                       = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+      [31m-[0m[0m lambda_success_feedback_sample_rate      = 0 [90m-> null[0m[0m
+        name                                     = "local-aws-emulator-poc-fifo.fifo"
+      [32m+[0m[0m name_prefix                              = (known after apply)
+      [33m~[0m[0m owner                                    = "000000000000" -> (known after apply)
+      [33m~[0m[0m policy                                   = jsonencode(
+            {
+              [31m-[0m[0m Id        = "__default_policy_ID"
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = [
+                          [31m-[0m[0m "SNS:GetTopicAttributes",
+                          [31m-[0m[0m "SNS:SetTopicAttributes",
+                          [31m-[0m[0m "SNS:AddPermission",
+                          [31m-[0m[0m "SNS:RemovePermission",
+                          [31m-[0m[0m "SNS:DeleteTopic",
+                          [31m-[0m[0m "SNS:Subscribe",
+                          [31m-[0m[0m "SNS:ListSubscriptionsByTopic",
+                          [31m-[0m[0m "SNS:Publish",
+                        ]
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = {
+                          [31m-[0m[0m AWS = "*"
+                        }
+                      [31m-[0m[0m Resource  = "*"
+                      [31m-[0m[0m Sid       = "__default_statement_ID"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) -> (known after apply)
+      [33m~[0m[0m signature_version                        = 0 -> (known after apply)
+      [31m-[0m[0m sqs_success_feedback_sample_rate         = 0 [90m-> null[0m[0m
+      [31m-[0m[0m tags                                     = {} [90m-> null[0m[0m
+      [33m~[0m[0m tags_all                                 = {} -> (known after apply)
+      [32m+[0m[0m tracing_config                           = (known after apply)
+        [90m# (15 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic_subscription.events_to_audit_queue[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_sns_topic_subscription" "events_to_audit_queue" {
+        id                              = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:29259661-2063-40fe-9a32-79a656a5dcad"
+      [33m~[0m[0m raw_message_delivery            = false [33m->[0m[0m true
+        [90m# (15 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic_subscription.events_to_billing_queue[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_sns_topic_subscription" "events_to_billing_queue" {
+        id                              = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:dcd2833b-caef-4e97-8366-e59a07045fdd"
+      [33m~[0m[0m raw_message_delivery            = false [33m->[0m[0m true
+        [90m# (15 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic_subscription.events_to_queue[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_sns_topic_subscription" "events_to_queue" {
+        id                              = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events:61ce302e-4f03-4441-9e60-80dfa85cb440"
+      [33m~[0m[0m raw_message_delivery            = false [33m->[0m[0m true
+        [90m# (15 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic_subscription.fifo_events_to_queue[0m must be [1m[31mreplaced[0m
+[0m[31m-[0m/[32m+[0m[0m resource "aws_sns_topic_subscription" "fifo_events_to_queue" {
+      [33m~[0m[0m arn                             = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo:a7045d5e-85a4-48ca-a934-9d6a174234ca" -> (known after apply)
+      [33m~[0m[0m confirmation_was_authenticated  = true -> (known after apply)
+      [32m+[0m[0m filter_policy_scope             = (known after apply)
+      [33m~[0m[0m id                              = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo:a7045d5e-85a4-48ca-a934-9d6a174234ca" -> (known after apply)
+      [33m~[0m[0m owner_id                        = "000000000000" -> (known after apply)
+      [33m~[0m[0m pending_confirmation            = false -> (known after apply)
+      [33m~[0m[0m raw_message_delivery            = false [33m->[0m[0m true
+      [33m~[0m[0m topic_arn                       = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" -> (known after apply) [31m# forces replacement[0m[0m
+        [90m# (9 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sns_topic_subscription.github_actions_ci_to_queue[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_sns_topic_subscription" "github_actions_ci_to_queue" {
+        id                              = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-gha-ci:6e0fe76d-bce2-403e-8119-741d3f8bf565"
+      [33m~[0m[0m raw_message_delivery            = false [33m->[0m[0m true
+        [90m# (15 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_sqs_queue_policy.allow_sns_fifo_receiver[0m will be updated in-place
+[0m  [33m~[0m[0m resource "aws_sqs_queue_policy" "allow_sns_fifo_receiver" {
+        id        = "http://localhost:4566/000000000000/local-aws-emulator-poc-sns-fifo.fifo"
+      [33m~[0m[0m policy    = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "sqs:SendMessage"
+                      [31m-[0m[0m Condition = {
+                          [31m-[0m[0m ArnEquals = {
+                              [31m-[0m[0m "aws:SourceArn" = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo"
+                            }
+                        }
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = {
+                          [31m-[0m[0m Service = "sns.amazonaws.com"
+                        }
+                      [31m-[0m[0m Resource  = "arn:aws:sqs:us-east-1:000000000000:local-aws-emulator-poc-sns-fifo.fifo"
+                      [31m-[0m[0m Sid       = "AllowSNSFifoToSendMessages"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) -> (known after apply)
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1mPlan:[0m [0m3 to add, 9 to change, 3 to destroy.
+
+Changes to Outputs:
+  [33m~[0m[0m kms_key_arn                          = "arn:aws:kms:us-east-1:000000000000:key/048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+  [33m~[0m[0m kms_key_id                           = "048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+  [33m~[0m[0m sns_fifo_topic_arn                   = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+  [33m~[0m[0m test_env                             = {
+      [33m~[0m[0m AWS_TEST_KMS_KEY_ARN                         = "arn:aws:kms:us-east-1:000000000000:key/048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_KMS_KEY_ID                          = "048defbd-abe2-4f3e-82a8-86060cb9602e" -> (known after apply)
+      [33m~[0m[0m AWS_TEST_SNS_FIFO_TOPIC_ARN                  = "arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo" -> (known after apply)
+        [90m# (58 unchanged attributes hidden)[0m[0m
+    }
+[90m
+─────────────────────────────────────────────────────────────────────────────[0m
+
+Note: You didn't use the -out option to save this plan, so Terraform can't
+guarantee to take exactly these actions if you run "terraform apply" now.
+WARNING: Terraform plan is not clean after apply.
+Treating emulator/provider refresh drift as an idempotency warning for the dev lifecycle.
+Review the plan output above; run `make terraform-plan-clean` when strict drift enforcement is needed.
+metrics_path="${AWS_TEST_PERFORMANCE_METRICS_PATH:-artifacts/performance-metrics/kumo.jsonl}"; \
+case "$metrics_path" in /*) ;; *) metrics_path="$(pwd)/$metrics_path";; esac; \
+mkdir -p "$(dirname "$metrics_path")"; \
+: > "$metrics_path"; \
+. ./scripts/terraform-test-env.sh && RUN_EMULATOR_TESTS=1 AWS_TEST_PERFORMANCE_METRICS_PATH="$metrics_path" go test -p 1 ./... -count=1 -v
+?   	local-aws-emulator-go-poc/internal/harness	[no test files]
+=== RUN   TestGitHubActionsScenarios
+    ci_test.go:14: set GITHUB_ACTIONS=true or AWS_TEST_FORCE_GITHUB_ACTIONS_COMPAT=1 to run CI compatibility tests
+--- SKIP: TestGitHubActionsScenarios (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/ci	0.490s
+=== RUN   TestConcurrencyScenarios
+=== RUN   TestConcurrencyScenarios/Parallel_S3,_SQS,_and_DynamoDB_operations
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:02:58 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:02:58 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:02:58 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:02:58 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:02:58 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+=== RUN   TestConcurrencyScenarios/DynamoDB_conditional_write_contention
+SDK 2026/05/15 17:02:58 WARN failed to close HTTP response body, this may affect connection reuse
+--- PASS: TestConcurrencyScenarios (0.01s)
+    --- PASS: TestConcurrencyScenarios/Parallel_S3,_SQS,_and_DynamoDB_operations (0.01s)
+    --- PASS: TestConcurrencyScenarios/DynamoDB_conditional_write_contention (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/concurrency	0.423s
+=== RUN   TestCoreScenarios
+=== RUN   TestCoreScenarios/SSM_parameter_read
+=== RUN   TestCoreScenarios/Secrets_Manager_secret_read
+=== RUN   TestCoreScenarios/SSM_hierarchy_and_Secrets_Manager_versions
+--- PASS: TestCoreScenarios (0.01s)
+    --- PASS: TestCoreScenarios/SSM_parameter_read (0.00s)
+    --- PASS: TestCoreScenarios/Secrets_Manager_secret_read (0.00s)
+    --- PASS: TestCoreScenarios/SSM_hierarchy_and_Secrets_Manager_versions (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/core	0.416s
+=== RUN   TestDynamoDBScenarios
+=== RUN   TestDynamoDBScenarios/DynamoDB_item_round_trip
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+=== RUN   TestDynamoDBScenarios/DynamoDB_GSI_query_and_conditional_write
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+=== RUN   TestDynamoDBScenarios/DynamoDB_advanced_behavior
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+=== RUN   TestDynamoDBScenarios/DynamoDB_streams_records
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+--- PASS: TestDynamoDBScenarios (0.02s)
+    --- PASS: TestDynamoDBScenarios/DynamoDB_item_round_trip (0.01s)
+    --- PASS: TestDynamoDBScenarios/DynamoDB_GSI_query_and_conditional_write (0.00s)
+    --- PASS: TestDynamoDBScenarios/DynamoDB_advanced_behavior (0.00s)
+    --- PASS: TestDynamoDBScenarios/DynamoDB_streams_records (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/dynamodb	0.437s
+=== RUN   TestIAMScenarios
+=== RUN   TestIAMScenarios/IAM_role,_STS_assume_role,_and_core_access
+SDK 2026/05/15 17:03:00 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:00 WARN failed to close HTTP response body, this may affect connection reuse
+    sns.go:25: receive sns message from sqs subscription: no matching sns sqs subscription message received before timeout; saw unexpected bodies: ["{\"Type\":\"Notification\",\"MessageId\":\"bc2e25ce-d117-483f-aeb5-7696e1c5761e\",\"TopicArn\":\"arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events\",\"Message\":\"iam-sns-message-1778832180780867000\",\"Timestamp\":\"2026-05-15T08:03:00Z\",\"SignatureVersion\":\"1\",\"Signature\":\"EXAMPLE\",\"SigningCertURL\":\"https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem\",\"UnsubscribeURL\":\"https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe\\u0026SubscriptionArn=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events\"}"]
+SDK 2026/05/15 17:03:15 WARN failed to close HTTP response body, this may affect connection reuse
+=== RUN   TestIAMScenarios/IAM_authorization_enforcement_probe
+    scenario_iam_authorization_probe_test.go:38: emulator accepted s3:PutObject for an explicitly denied IAM role; IAM authorization is not enforced
+=== RUN   TestIAMScenarios/IAM_strict_authorization_edges
+    scenario_iam_strict_authorization_test.go:54: scoped role wrote outside allowed S3 prefix; IAM authorization is not enforced
+    scenario_iam_strict_authorization_test.go:63: role with no allow policy wrote to S3; IAM authorization is not enforced
+    scenario_iam_strict_authorization_test.go:79: STS session policy did not restrict s3:PutObject; IAM authorization is not enforced
+=== RUN   TestIAMScenarios/STS_identity_and_account_semantics
+    scenario_iam_strict_authorization_test.go:102: assumed role ARN matched base caller ARN: base="arn:aws:iam::000000000000:root" assumed="arn:aws:iam::000000000000:root"; STS identity semantics are not fully enforced
+--- FAIL: TestIAMScenarios (15.02s)
+    --- FAIL: TestIAMScenarios/IAM_role,_STS_assume_role,_and_core_access (15.01s)
+    --- PASS: TestIAMScenarios/IAM_authorization_enforcement_probe (0.00s)
+    --- PASS: TestIAMScenarios/IAM_strict_authorization_edges (0.01s)
+    --- PASS: TestIAMScenarios/STS_identity_and_account_semantics (0.00s)
+FAIL
+FAIL	local-aws-emulator-go-poc/tests/iam	15.453s
+=== RUN   TestIngressScenarios
+=== RUN   TestIngressScenarios/API_Gateway_Lambda_proxy
+    scenario_apigateway_lambda_proxy_test.go:160: API Gateway status: got 404 body=404 page not found
+--- FAIL: TestIngressScenarios (0.01s)
+    --- FAIL: TestIngressScenarios/API_Gateway_Lambda_proxy (0.01s)
+FAIL
+FAIL	local-aws-emulator-go-poc/tests/ingress	0.430s
+=== RUN   TestKMSScenarios
+=== RUN   TestKMSScenarios/KMS_encrypt_decrypt
+=== RUN   TestKMSScenarios/KMS-backed_S3_object
+SDK 2026/05/15 17:03:17 WARN Response has no supported checksum. Not validating response payload.
+=== RUN   TestKMSScenarios/KMS-backed_SSM_and_Secrets_Manager_reads
+--- PASS: TestKMSScenarios (0.01s)
+    --- PASS: TestKMSScenarios/KMS_encrypt_decrypt (0.00s)
+    --- PASS: TestKMSScenarios/KMS-backed_S3_object (0.00s)
+    --- PASS: TestKMSScenarios/KMS-backed_SSM_and_Secrets_Manager_reads (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/kms	0.433s
+=== RUN   TestLambdaScenarios
+=== RUN   TestLambdaScenarios/Lambda_function_direct_invoke
+    scenario_lambda_function_direct_invoke_test.go:97: unexpected lambda payload: struct { Echo string "json:\"echo\""; OK bool "json:\"ok\"" }{Echo:"", OK:false}
+=== RUN   TestLambdaScenarios/Lambda_event_sources_and_triggers
+    scenario_lambda_event_sources_test.go:77: wait for sqs lambda log: no matching SQS-triggered lambda invocation log before timeout
+--- FAIL: TestLambdaScenarios (35.35s)
+    --- FAIL: TestLambdaScenarios/Lambda_function_direct_invoke (0.01s)
+    --- FAIL: TestLambdaScenarios/Lambda_event_sources_and_triggers (35.34s)
+FAIL
+FAIL	local-aws-emulator-go-poc/tests/lambda	35.776s
+=== RUN   TestLifecycleScenarios
+=== RUN   TestLifecycleScenarios/Persistence_marker_round_trip
+SDK 2026/05/15 17:03:54 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:54 WARN Response has no supported checksum. Not validating response payload.
+SDK 2026/05/15 17:03:54 WARN failed to close HTTP response body, this may affect connection reuse
+SDK 2026/05/15 17:03:54 WARN failed to close HTTP response body, this may affect connection reuse
+=== RUN   TestLifecycleScenarios/Durable_customer_dataset_retention
+    scenario_retention_dataset_test.go:22: set AWS_TEST_RETENTION_MARKER_ID to run durable retention checks
+=== RUN   TestLifecycleScenarios/Reset_state_marker_absent
+    scenario_persistence_reset_test.go:47: set AWS_TEST_RESET_MARKER_ID to verify reset state
+--- PASS: TestLifecycleScenarios (0.01s)
+    --- PASS: TestLifecycleScenarios/Persistence_marker_round_trip (0.01s)
+    --- SKIP: TestLifecycleScenarios/Durable_customer_dataset_retention (0.00s)
+    --- SKIP: TestLifecycleScenarios/Reset_state_marker_absent (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/lifecycle	0.473s
+=== RUN   TestMessagingScenarios
+=== RUN   TestMessagingScenarios/SQS_send_receive
+=== RUN   TestMessagingScenarios/SNS_publish_to_SQS_receiver
+    sns.go:25: receive sns message from sqs subscription: no matching sns sqs subscription message received before timeout; saw unexpected bodies: ["{\"Type\":\"Notification\",\"MessageId\":\"bf29f33d-5d35-4bac-881f-291a1ab9d03a\",\"TopicArn\":\"arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events\",\"Message\":\"sns-basic-message-1778832234835160000\",\"Timestamp\":\"2026-05-15T08:03:54Z\",\"SignatureVersion\":\"1\",\"Signature\":\"EXAMPLE\",\"SigningCertURL\":\"https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem\",\"UnsubscribeURL\":\"https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe\\u0026SubscriptionArn=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events\"}"]
+=== RUN   TestMessagingScenarios/SQS_visibility_timeout_and_DLQ_redrive
+=== RUN   TestMessagingScenarios/SNS_filter_policy_and_raw_delivery
+    scenario_sns_filter_raw_delivery_test.go:17: receive billing filtered sns message: no matching billing filtered sns message received before timeout; saw unexpected bodies: ["{\"Type\":\"Notification\",\"MessageId\":\"b6218ed0-c152-4cb5-9bdb-7ec6e8f98708\",\"TopicArn\":\"arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events\",\"Message\":\"sns-filter-billing-1778832257042430000\",\"Timestamp\":\"2026-05-15T08:04:17Z\",\"SignatureVersion\":\"1\",\"Signature\":\"EXAMPLE\",\"SigningCertURL\":\"https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem\",\"UnsubscribeURL\":\"https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe\\u0026SubscriptionArn=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-events\",\"MessageAttributes\":{\"event_type\":{\"Type\":\"String\",\"Value\":\"billing\"}}}"]
+=== RUN   TestMessagingScenarios/EventBridge_rule_to_SQS
+=== RUN   TestMessagingScenarios/EventBridge_custom_bus_input_transformer_to_SQS
+=== RUN   TestMessagingScenarios/SQS_FIFO_order,_dedupe,_batch,_and_attributes
+=== RUN   TestMessagingScenarios/SNS_FIFO_to_SQS_receiver
+    scenario_fifo_batch_attributes_test.go:138: receive sns fifo message: no matching sns fifo sqs subscription message received before timeout; saw unexpected bodies: ["{\"Type\":\"Notification\",\"MessageId\":\"7b065afd-7e25-41ab-9527-e4eb32177b15\",\"TopicArn\":\"arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo\",\"Message\":\"sns-fifo-1778832275051803000\",\"Timestamp\":\"2026-05-15T08:04:35Z\",\"SignatureVersion\":\"1\",\"Signature\":\"EXAMPLE\",\"SigningCertURL\":\"https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem\",\"UnsubscribeURL\":\"https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe\\u0026SubscriptionArn=arn:aws:sns:us-east-1:000000000000:local-aws-emulator-poc-fifo.fifo\",\"MessageAttributes\":{\"source\":{\"Type\":\"String\",\"Value\":\"fifo-test\"}}}"]
+=== RUN   TestMessagingScenarios/SQS_long_polling
+=== RUN   TestMessagingScenarios/SQS_operational_attributes_and_purge
+--- FAIL: TestMessagingScenarios (60.23s)
+    --- PASS: TestMessagingScenarios/SQS_send_receive (0.01s)
+    --- FAIL: TestMessagingScenarios/SNS_publish_to_SQS_receiver (15.00s)
+    --- PASS: TestMessagingScenarios/SQS_visibility_timeout_and_DLQ_redrive (7.20s)
+    --- FAIL: TestMessagingScenarios/SNS_filter_policy_and_raw_delivery (15.00s)
+    --- PASS: TestMessagingScenarios/EventBridge_rule_to_SQS (0.00s)
+    --- PASS: TestMessagingScenarios/EventBridge_custom_bus_input_transformer_to_SQS (0.00s)
+    --- PASS: TestMessagingScenarios/SQS_FIFO_order,_dedupe,_batch,_and_attributes (3.00s)
+    --- FAIL: TestMessagingScenarios/SNS_FIFO_to_SQS_receiver (15.00s)
+    --- PASS: TestMessagingScenarios/SQS_long_polling (2.00s)
+    --- PASS: TestMessagingScenarios/SQS_operational_attributes_and_purge (3.00s)
+FAIL
+FAIL	local-aws-emulator-go-poc/tests/messaging	60.670s
+=== RUN   TestNotificationsScenarios
+=== RUN   TestNotificationsScenarios/SES_send_and_local_mailbox
+--- PASS: TestNotificationsScenarios (0.01s)
+    --- PASS: TestNotificationsScenarios/SES_send_and_local_mailbox (0.01s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/notifications	0.560s
+=== RUN   TestObservabilityScenarios
+=== RUN   TestObservabilityScenarios/CloudWatch_Logs_stream_retrieval
+=== RUN   TestObservabilityScenarios/CloudWatch_metric_alarm_to_SNS_and_SQS
+--- PASS: TestObservabilityScenarios (0.01s)
+    --- PASS: TestObservabilityScenarios/CloudWatch_Logs_stream_retrieval (0.01s)
+    --- PASS: TestObservabilityScenarios/CloudWatch_metric_alarm_to_SNS_and_SQS (0.01s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/observability	0.452s
+=== RUN   TestRDSScenarios
+=== RUN   TestRDSScenarios/RDS_PostgreSQL_and_Data_API
+    scenario_rds_postgres_test.go:25: set AWS_TEST_INCLUDE_SUPPLEMENTAL_PROBES=1 to run supplemental probe: RDS/PostgreSQL/Data API is outside the LocalStack Community baseline
+--- PASS: TestRDSScenarios (0.00s)
+    --- SKIP: TestRDSScenarios/RDS_PostgreSQL_and_Data_API (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/rds	0.469s
+=== RUN   TestS3Scenarios
+=== RUN   TestS3Scenarios/S3_object_round_trip
+SDK 2026/05/15 17:04:58 WARN Response has no supported checksum. Not validating response payload.
+=== RUN   TestS3Scenarios/S3_multipart_upload_and_presigned_GET
+SDK 2026/05/15 17:04:58 WARN Response has no supported checksum. Not validating response payload.
+=== RUN   TestS3Scenarios/S3_notification_to_SQS
+=== RUN   TestS3Scenarios/S3_API_edges
+SDK 2026/05/15 17:04:58 WARN Response has no supported checksum. Not validating response payload.
+--- PASS: TestS3Scenarios (0.05s)
+    --- PASS: TestS3Scenarios/S3_object_round_trip (0.01s)
+    --- PASS: TestS3Scenarios/S3_multipart_upload_and_presigned_GET (0.03s)
+    --- PASS: TestS3Scenarios/S3_notification_to_SQS (0.01s)
+    --- PASS: TestS3Scenarios/S3_API_edges (0.01s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/s3	0.473s
+=== RUN   TestStepFunctionsScenarios
+=== RUN   TestStepFunctionsScenarios/Step_Functions_SQS_service_integration
+=== RUN   TestStepFunctionsScenarios/Step_Functions_Lambda_task_integration
+=== RUN   TestStepFunctionsScenarios/EventBridge_target_starts_Step_Functions
+    scenario_stepfunctions_test.go:58: set AWS_TEST_INCLUDE_SUPPLEMENTAL_PROBES=1 to run supplemental probe: EventBridge-started Step Functions is outside the scored baseline
+--- PASS: TestStepFunctionsScenarios (0.02s)
+    --- PASS: TestStepFunctionsScenarios/Step_Functions_SQS_service_integration (0.01s)
+    --- PASS: TestStepFunctionsScenarios/Step_Functions_Lambda_task_integration (0.01s)
+    --- SKIP: TestStepFunctionsScenarios/EventBridge_target_starts_Step_Functions (0.00s)
+PASS
+ok  	local-aws-emulator-go-poc/tests/stepfunctions	0.471s
+=== RUN   TestStreamingScenarios
+=== RUN   TestStreamingScenarios/Kinesis_direct_stream_records
+=== RUN   TestStreamingScenarios/Kinesis_Lambda_event_source
+    scenario_kinesis_test.go:126: wait for kinesis lambda log: no matching Kinesis-triggered lambda invocation log before timeout
+--- FAIL: TestStreamingScenarios (45.16s)
+    --- PASS: TestStreamingScenarios/Kinesis_direct_stream_records (0.01s)
+    --- FAIL: TestStreamingScenarios/Kinesis_Lambda_event_source (45.15s)
+FAIL
+FAIL	local-aws-emulator-go-poc/tests/streaming	45.604s
+FAIL
+make: *** [Makefile:38: test-emulator] Error 1

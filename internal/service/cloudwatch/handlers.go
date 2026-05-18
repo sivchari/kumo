@@ -178,8 +178,12 @@ func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// PutMetricAlarm returns an empty response on success.
-	writeJSONResponse(w, struct{}{})
+	// PutMetricAlarm returns an empty response on success — XML for the
+	// Query-protocol path that terraform-provider-aws uses.
+	writeCloudWatchXML(w, xmlPutMetricAlarmResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // DeleteAlarms handles the DeleteAlarms action.
@@ -203,8 +207,12 @@ func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DeleteAlarms returns an empty response on success.
-	writeJSONResponse(w, struct{}{})
+	// DeleteAlarms returns an empty response on success — XML for the
+	// Query-protocol path that terraform-provider-aws uses.
+	writeCloudWatchXML(w, xmlDeleteAlarmsResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // DescribeAlarms handles the DescribeAlarms action.
@@ -223,10 +231,39 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSONResponse(w, DescribeAlarmsResponse{
-		MetricAlarms: result.MetricAlarms,
-		NextToken:    result.NextToken,
+	// XML for the Query-protocol path that terraform-provider-aws uses.
+	writeCloudWatchXML(w, xmlDescribeAlarmsResponse{
+		Xmlns: cloudWatchXMLNS,
+		DescribeAlarmsResult: xmlDescribeAlarmsResult{
+			MetricAlarms: xmlMetricAlarmList{Members: metricAlarmsToXML(result.MetricAlarms)},
+			NextToken:    result.NextToken,
+		},
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
 	})
+}
+
+// SetAlarmState handles the SetAlarmState action via JSON protocol.
+func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
+	var req SetAlarmStateRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.AlarmName == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter AlarmName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SetAlarmState(r.Context(), req.AlarmName, req.StateValue, req.StateReason); err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
 }
 
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
@@ -249,6 +286,14 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.DeleteAlarms(w, r)
 	case "DescribeAlarms":
 		s.DescribeAlarms(w, r)
+	case "SetAlarmState":
+		s.SetAlarmState(w, r)
+	case "ListTagsForResource":
+		s.ListTagsForResource(w, r)
+	case "TagResource":
+		s.TagResource(w, r)
+	case "UntagResource":
+		s.UntagResource(w, r)
 	default:
 		writeCloudWatchError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
 	}
@@ -602,6 +647,30 @@ func (s *Service) DescribeAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 		MetricAlarms: cborAlarms,
 		NextToken:    result.NextToken,
 	})
+}
+
+// SetAlarmStateCBOR handles the SetAlarmState action via CBOR protocol.
+func (s *Service) SetAlarmStateCBOR(w http.ResponseWriter, r *http.Request) {
+	var req SetAlarmStateCBORRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.AlarmName == "" {
+		server.WriteCBORError(w, errInvalidParameter, "AlarmName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SetAlarmState(r.Context(), req.AlarmName, req.StateValue, req.StateReason); err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, struct{}{})
 }
 
 // handleCloudWatchCBORError handles CloudWatch errors for CBOR protocol.

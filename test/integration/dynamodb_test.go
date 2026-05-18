@@ -1373,3 +1373,92 @@ func TestDynamoDB_UpdateItem_AttributeUpdates(t *testing.T) {
 		t.Errorf("expected Name=updated, got %v", getOutput.Item["Name"])
 	}
 }
+
+func TestDynamoDB_UpdateTable(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-update-table"
+
+	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName:   aws.String(tableName),
+		BillingMode: types.BillingModePayPerRequest,
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	// UpdateTable should succeed and return the table description.
+	updateOutput, err := client.UpdateTable(ctx, &dynamodb.UpdateTableInput{
+		TableName:   aws.String(tableName),
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields(
+		"TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata",
+	)).Assert(t.Name(), updateOutput)
+}
+
+func TestDynamoDB_StreamSpecification(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-stream-spec"
+
+	createOutput, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName:   aws.String(tableName),
+		BillingMode: types.BillingModePayPerRequest,
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+		StreamSpecification: &types.StreamSpecification{
+			StreamEnabled:  aws.Bool(true),
+			StreamViewType: types.StreamViewTypeNewAndOldImages,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	golden.New(t, golden.WithIgnoreFields(
+		"TableArn", "TableId", "CreationDateTime", "LatestStreamArn",
+		"TableSizeBytes", "ItemCount", "ResultMetadata",
+	)).Assert(t.Name()+"_create", createOutput)
+
+	// DescribeTable should also include stream info.
+	descOutput, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(tableName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if descOutput.Table.LatestStreamArn == nil || *descOutput.Table.LatestStreamArn == "" {
+		t.Error("expected LatestStreamArn to be set")
+	}
+
+	if descOutput.Table.StreamSpecification == nil || !*descOutput.Table.StreamSpecification.StreamEnabled {
+		t.Error("expected StreamSpecification.StreamEnabled to be true")
+	}
+}

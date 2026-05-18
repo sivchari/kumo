@@ -1,6 +1,9 @@
 package iam
 
-import "time"
+import (
+	"encoding/xml"
+	"time"
+)
 
 // User represents an IAM user.
 type User struct {
@@ -338,6 +341,26 @@ type CreateRoleResult struct {
 
 // DeleteRoleResponse represents a DeleteRole response.
 type DeleteRoleResponse struct {
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// UpdateRoleResponse represents an UpdateRole response. AWS only
+// returns ResponseMetadata — the updated role isn't echoed back.
+type UpdateRoleResponse struct {
+	XMLName          xml.Name         `xml:"UpdateRoleResponse"`
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// UpdateAssumeRolePolicyResponse mirrors UpdateRoleResponse — empty
+// result body, only the request metadata.
+type UpdateAssumeRolePolicyResponse struct {
+	XMLName          xml.Name         `xml:"UpdateAssumeRolePolicyResponse"`
+	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// TagRoleResponse is also empty — only ResponseMetadata.
+type TagRoleResponse struct {
+	XMLName          xml.Name         `xml:"TagRoleResponse"`
 	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
 }
 

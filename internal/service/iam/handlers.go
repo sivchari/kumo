@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -142,6 +143,104 @@ func (s *Service) CreateRole(w http.ResponseWriter, r *http.Request) {
 
 	writeIAMXMLResponse(w, CreateRoleResponse{
 		CreateRoleResult: CreateRoleResult{Role: *role},
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// UpdateRole handles the UpdateRole action. terraform aws_iam_role
+// and alchemy's Role both call this on every apply after GetRole;
+// without it those resources fail on second-and-later runs.
+//
+// AWS treats Description and MaxSessionDuration as optional — present
+// fields update, missing fields preserve current state. We honour
+// that with nil-pointer semantics on the storage layer.
+func (s *Service) UpdateRole(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	if roleName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	var description *string
+
+	if r.PostFormValue("Description") != "" || r.URL.Query().Get("Description") != "" {
+		v := getFormValue(r, "Description")
+		description = &v
+	}
+
+	var maxSession *int
+
+	if raw := getFormValue(r, "MaxSessionDuration"); raw != "" {
+		v := parseIntValue(r, "MaxSessionDuration")
+		maxSession = &v
+	}
+
+	if err := s.storage.UpdateRole(r.Context(), roleName, description, maxSession); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, UpdateRoleResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// TagRole handles the TagRole action. terraform / pulumi /
+// alchemy all use this to add `Name` / `alchemy_stage` /
+// resource tracking tags after role creation.
+func (s *Service) TagRole(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	if roleName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags := parseTags(r)
+	if len(tags) == 0 {
+		writeIAMError(w, errInvalidParameter, "Tags is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagRole(r.Context(), roleName, tags); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, TagRoleResponse{
+		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// UpdateAssumeRolePolicy handles the UpdateAssumeRolePolicy action.
+// PolicyDocument is required and replaces the role's trust policy
+// verbatim — same semantics PutRolePolicy has for inline policies.
+func (s *Service) UpdateAssumeRolePolicy(w http.ResponseWriter, r *http.Request) {
+	roleName := getFormValue(r, "RoleName")
+	if roleName == "" {
+		writeIAMError(w, errInvalidParameter, "RoleName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	policyDocument := getFormValue(r, "PolicyDocument")
+	if policyDocument == "" {
+		writeIAMError(w, errInvalidParameter, "PolicyDocument is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UpdateAssumeRolePolicy(r.Context(), roleName, policyDocument); err != nil {
+		handleIAMError(w, err)
+
+		return
+	}
+
+	writeIAMXMLResponse(w, UpdateAssumeRolePolicyResponse{
 		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
@@ -932,11 +1031,18 @@ func getFormValue(r *http.Request, key string) string {
 }
 
 // getJSONValue extracts a value from JSON request body.
+//
+// IAM handlers call getFormValue many times per request to read individual
+// fields (RoleName, AssumeRolePolicyDocument, Path, Description, ...). When
+// the body is JSON the underlying io.Reader is single-shot, so we restore
+// r.Body after each read so subsequent calls can re-parse the same payload.
 func getJSONValue(r *http.Request, key string) string {
 	body, err := io.ReadAll(r.Body)
 	if err != nil || len(body) == 0 {
 		return ""
 	}
+
+	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {

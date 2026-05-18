@@ -21,17 +21,21 @@ const (
 
 // SQSPublisher is an interface for publishing messages to SQS.
 type SQSPublisher interface {
-	PublishToSQS(ctx context.Context, queueURL, messageBody string, attributes map[string]string) error
+	PublishToSQS(ctx context.Context, queueURL, messageBody, messageGroupID, messageDeduplicationID string, attributes map[string]string) error
 }
 
 // Storage defines the SNS storage interface.
 type Storage interface {
 	CreateTopic(ctx context.Context, name string, attributes map[string]string) (*Topic, error)
+	GetTopic(ctx context.Context, topicARN string) (*Topic, error)
+	SetTopicAttribute(ctx context.Context, topicARN, name, value string) error
 	DeleteTopic(ctx context.Context, topicARN string) error
 	ListTopics(ctx context.Context, nextToken string) ([]*Topic, string, error)
 	Subscribe(ctx context.Context, topicARN, protocol, endpoint string, attributes map[string]string) (*Subscription, error)
+	GetSubscription(ctx context.Context, subscriptionARN string) (*Subscription, error)
+	SetSubscriptionAttribute(ctx context.Context, subscriptionARN, name, value string) error
 	Unsubscribe(ctx context.Context, subscriptionARN string) error
-	Publish(ctx context.Context, topicARN, message, subject string, attributes map[string]MessageAttribute) (string, error)
+	Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error)
 	ListSubscriptions(ctx context.Context, nextToken string) ([]*Subscription, string, error)
 	ListSubscriptionsByTopic(ctx context.Context, topicARN, nextToken string) ([]*Subscription, string, error)
 }
@@ -168,6 +172,49 @@ func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes m
 	return topic, nil
 }
 
+// GetTopic returns the topic with the given ARN, or NotFound.
+func (m *MemoryStorage) GetTopic(_ context.Context, topicARN string) (*Topic, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	topic, exists := m.Topics[topicARN]
+	if !exists {
+		return nil, &TopicError{Code: "NotFound", Message: "Topic does not exist: " + topicARN}
+	}
+
+	return topic, nil
+}
+
+// SetTopicAttribute writes name=value into the topic's attribute map.
+//
+// AWS exposes a small set of mutable topic attributes via SetTopicAttributes
+// (DisplayName, Policy, DeliveryPolicy, plus the *FeedbackRoleArn and
+// *FeedbackSampleRate families). kumo does not enforce or validate any of
+// them; we just persist the write so subsequent GetTopicAttributes reflects
+// it. The DisplayName field on the topic is also updated so existing code
+// paths that read it directly stay consistent.
+func (m *MemoryStorage) SetTopicAttribute(_ context.Context, topicARN, name, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	topic, exists := m.Topics[topicARN]
+	if !exists {
+		return &TopicError{Code: "NotFound", Message: "Topic does not exist: " + topicARN}
+	}
+
+	if topic.Attributes == nil {
+		topic.Attributes = make(map[string]string)
+	}
+
+	topic.Attributes[name] = value
+
+	if name == "DisplayName" {
+		topic.DisplayName = value
+	}
+
+	return nil
+}
+
 // DeleteTopic deletes a topic.
 func (m *MemoryStorage) DeleteTopic(_ context.Context, topicARN string) error {
 	m.mu.Lock()
@@ -281,6 +328,44 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	return subscription, nil
 }
 
+// GetSubscription returns a subscription by ARN.
+func (m *MemoryStorage) GetSubscription(_ context.Context, subscriptionARN string) (*Subscription, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	subscription, exists := m.Subscriptions[subscriptionARN]
+	if !exists {
+		return nil, &TopicError{
+			Code:    "NotFound",
+			Message: fmt.Sprintf("Subscription does not exist: %s", subscriptionARN),
+		}
+	}
+
+	return subscription, nil
+}
+
+// SetSubscriptionAttribute sets a single attribute on a subscription.
+func (m *MemoryStorage) SetSubscriptionAttribute(_ context.Context, subscriptionARN, name, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	subscription, exists := m.Subscriptions[subscriptionARN]
+	if !exists {
+		return &TopicError{
+			Code:    "NotFound",
+			Message: fmt.Sprintf("Subscription does not exist: %s", subscriptionARN),
+		}
+	}
+
+	if subscription.SubscriptionAttributes == nil {
+		subscription.SubscriptionAttributes = make(map[string]string)
+	}
+
+	subscription.SubscriptionAttributes[name] = value
+
+	return nil
+}
+
 // Unsubscribe removes a subscription.
 func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) error {
 	m.mu.Lock()
@@ -305,7 +390,7 @@ func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) e
 }
 
 // Publish publishes a message to a topic.
-func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject string, attributes map[string]MessageAttribute) (string, error) {
+func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error) {
 	m.mu.RLock()
 
 	topic, exists := m.Topics[topicARN]
@@ -329,7 +414,7 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject 
 
 	// Deliver to all subscriptions.
 	for _, sub := range subscriptions {
-		if err := m.deliverMessage(ctx, sub, message, subject, messageID, attributes); err != nil {
+		if err := m.deliverMessage(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
 			// Log error but continue delivering to other subscriptions.
 			continue
 		}
@@ -338,11 +423,164 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject 
 	return messageID, nil
 }
 
+// matchesFilterPolicy checks whether the given message attributes satisfy the
+// subscription's FilterPolicy.  A FilterPolicy is a JSON object whose keys
+// are attribute names and whose values are arrays of allowed values.
+//
+// AWS supports several filter policy operators (exact match, prefix,
+// anything-but, numeric, exists, etc.).  This implementation covers:
+//   - exact string match  (e.g. ["billing"])
+//   - "exists": true/false
+//   - "prefix"
+//   - "anything-but"  (string list)
+//
+// If the subscription has no FilterPolicy, all messages match.
+func matchesFilterPolicy(filterPolicyJSON string, attributes map[string]MessageAttribute) bool {
+	if filterPolicyJSON == "" {
+		return true
+	}
+
+	// Parse the filter policy.
+	var policy map[string][]json.RawMessage
+	if err := json.Unmarshal([]byte(filterPolicyJSON), &policy); err != nil {
+		// Malformed policy -- deliver to be safe (same as AWS fallback).
+		return true
+	}
+
+	// Every key in the policy must match at least one condition in its array.
+	for key, conditions := range policy {
+		attr, exists := attributes[key]
+
+		if !matchesConditions(conditions, attr.StringValue, exists) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// matchesConditions evaluates a single filter-policy key's condition array.
+// The attribute must satisfy at least one condition in the array.
+func matchesConditions(conditions []json.RawMessage, value string, exists bool) bool {
+	for _, raw := range conditions {
+		if matchesSingleCondition(raw, value, exists) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// matchesSingleCondition checks one condition entry.  It can be a plain
+// string (exact match) or an object with an operator key.
+func matchesSingleCondition(raw json.RawMessage, value string, exists bool) bool {
+	// Try plain string (exact match).
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return exists && value == s
+	}
+
+	// Try number (exact numeric match against StringValue).
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return exists && value == n.String()
+	}
+
+	// Try boolean -- the only useful boolean in a condition array is
+	// a bare true/false which AWS does not actually support at the
+	// top level (it needs {"exists": true/false}), but handle it
+	// gracefully.
+	var b bool
+	if err := json.Unmarshal(raw, &b); err == nil {
+		if b {
+			return exists
+		}
+
+		return !exists
+	}
+
+	// Try object (operator form).
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return false
+	}
+
+	return matchesOperator(obj, value, exists)
+}
+
+// matchesOperator handles object-form conditions like {"exists": true},
+// {"prefix": "pay"}, {"anything-but": ["x"]}.
+//
+//nolint:nestif // Multiple operator branches each need their own type assertion.
+func matchesOperator(obj map[string]json.RawMessage, value string, exists bool) bool {
+	// {"exists": true/false}
+	if raw, ok := obj["exists"]; ok {
+		var want bool
+		if err := json.Unmarshal(raw, &want); err == nil {
+			if want {
+				return exists
+			}
+
+			return !exists
+		}
+	}
+
+	// {"prefix": "val"}
+	if raw, ok := obj["prefix"]; ok {
+		var prefix string
+		if err := json.Unmarshal(raw, &prefix); err == nil {
+			return exists && strings.HasPrefix(value, prefix)
+		}
+	}
+
+	// {"anything-but": ["v1","v2",...]}  or  {"anything-but": "v1"}
+	if raw, ok := obj["anything-but"]; ok {
+		if !exists {
+			return false
+		}
+
+		// Try array.
+		var arr []string
+		if err := json.Unmarshal(raw, &arr); err == nil {
+			for _, deny := range arr {
+				if value == deny {
+					return false
+				}
+			}
+
+			return true
+		}
+
+		// Try single string.
+		var single string
+		if err := json.Unmarshal(raw, &single); err == nil {
+			return value != single
+		}
+	}
+
+	return false
+}
+
 // deliverMessage delivers a message to a subscription.
-func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID string, _ map[string]MessageAttribute) error {
+func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
+	// Check FilterPolicy before delivering.
+	if sub.SubscriptionAttributes != nil {
+		if fp, ok := sub.SubscriptionAttributes["FilterPolicy"]; ok {
+			if !matchesFilterPolicy(fp, attributes) {
+				return nil
+			}
+		}
+	}
+
 	switch sub.Protocol {
 	case "sqs":
 		if m.SqsPublisher != nil {
+			// Build the message body based on RawMessageDelivery setting.
+			body := message
+			if !isRawMessageDelivery(sub) {
+				body = buildSNSNotificationEnvelope(sub.TopicARN, message, subject, messageID, attributes)
+			}
+
 			attrs := map[string]string{
 				"MessageId": messageID,
 			}
@@ -350,7 +588,7 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 				attrs["Subject"] = subject
 			}
 
-			if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, message, attrs); err != nil {
+			if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, body, messageGroupID, messageDeduplicationID, attrs); err != nil {
 				return fmt.Errorf("failed to publish to SQS: %w", err)
 			}
 
@@ -365,6 +603,55 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 	}
 
 	return nil
+}
+
+// isRawMessageDelivery checks whether the subscription has RawMessageDelivery enabled.
+func isRawMessageDelivery(sub *Subscription) bool {
+	if sub.SubscriptionAttributes == nil {
+		return false
+	}
+
+	return sub.SubscriptionAttributes["RawMessageDelivery"] == "true"
+}
+
+// buildSNSNotificationEnvelope wraps a message in the SNS notification JSON
+// envelope that AWS sends to SQS when RawMessageDelivery is not enabled.
+func buildSNSNotificationEnvelope(topicARN, message, subject, messageID string, attributes map[string]MessageAttribute) string {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	envelope := snsNotificationEnvelope{
+		Type:             "Notification",
+		MessageID:        messageID,
+		TopicArn:         topicARN,
+		Message:          message,
+		Timestamp:        now,
+		SignatureVersion: "1",
+		Signature:        "EXAMPLE",
+		SigningCertURL:   "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem",
+		UnsubscribeURL:   fmt.Sprintf("https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=%s", topicARN),
+	}
+
+	if subject != "" {
+		envelope.Subject = subject
+	}
+
+	if len(attributes) > 0 {
+		envelope.MessageAttributes = make(map[string]snsNotificationAttribute, len(attributes))
+		for k, v := range attributes {
+			envelope.MessageAttributes[k] = snsNotificationAttribute{
+				Type:  v.DataType,
+				Value: v.StringValue,
+			}
+		}
+	}
+
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		// Fallback to raw message if marshaling fails.
+		return message
+	}
+
+	return string(data)
 }
 
 // ListSubscriptions returns all subscriptions.

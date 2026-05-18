@@ -283,6 +283,64 @@ type XMLAuthorizeSecurityGroupEgressResponse struct {
 	Return    bool     `xml:"return"`
 }
 
+// DescribeSecurityGroupsRequest carries the optional GroupId / GroupName
+// filters; an empty pair returns every SG.
+type DescribeSecurityGroupsRequest struct {
+	GroupIDs   []string `json:"GroupIds,omitempty"`
+	GroupNames []string `json:"GroupNames,omitempty"`
+}
+
+// XMLDescribeSecurityGroupsResponse is the AWS Query wire shape: a
+// securityGroupInfo container of <item> elements.
+type XMLDescribeSecurityGroupsResponse struct {
+	XMLName           xml.Name             `xml:"DescribeSecurityGroupsResponse"`
+	Xmlns             string               `xml:"xmlns,attr"`
+	RequestID         string               `xml:"requestId"`
+	SecurityGroupInfo XMLSecurityGroupInfo `xml:"securityGroupInfo"`
+}
+
+// XMLSecurityGroupInfo wraps the per-SG <item> list.
+type XMLSecurityGroupInfo struct {
+	Items []XMLSecurityGroup `xml:"item"`
+}
+
+// XMLSecurityGroup is one SG on the wire. Field names use the
+// lowercase-camel form AWS publishes for the legacy EC2 XML protocol.
+type XMLSecurityGroup struct {
+	OwnerID             string             `xml:"ownerId"`
+	GroupID             string             `xml:"groupId"`
+	GroupName           string             `xml:"groupName"`
+	GroupDescription    string             `xml:"groupDescription"`
+	VpcID               string             `xml:"vpcId,omitempty"`
+	IPPermissions       XMLIPPermissionSet `xml:"ipPermissions"`
+	IPPermissionsEgress XMLIPPermissionSet `xml:"ipPermissionsEgress"`
+	TagSet              XMLTagSet          `xml:"tagSet"`
+}
+
+// XMLIPPermissionSet is a list of IP permissions.
+type XMLIPPermissionSet struct {
+	Items []XMLIPPermission `xml:"item"`
+}
+
+// XMLIPPermission is one ingress / egress rule on the wire.
+type XMLIPPermission struct {
+	IPProtocol string      `xml:"ipProtocol"`
+	FromPort   int         `xml:"fromPort"`
+	ToPort     int         `xml:"toPort"`
+	IPRanges   XMLIPRanges `xml:"ipRanges"`
+}
+
+// XMLIPRanges wraps the per-CIDR <item> list.
+type XMLIPRanges struct {
+	Items []XMLIPRange `xml:"item"`
+}
+
+// XMLIPRange is one CIDR entry.
+type XMLIPRange struct {
+	CidrIP      string `xml:"cidrIp"`
+	Description string `xml:"description,omitempty"`
+}
+
 // XMLCreateKeyPairResponse is the XML response for CreateKeyPair.
 type XMLCreateKeyPairResponse struct {
 	XMLName        xml.Name `xml:"CreateKeyPairResponse"`
@@ -834,4 +892,46 @@ type XMLTagDescription struct {
 	ResourceType string `xml:"resourceType"`
 	Key          string `xml:"key"`
 	Value        string `xml:"value"`
+}
+
+// DeleteInternetGatewayRequest represents a DeleteInternetGateway request.
+type DeleteInternetGatewayRequest struct {
+	InternetGatewayID string `json:"InternetGatewayId"`
+}
+
+// XMLDetachInternetGatewayResponse is the XML response for DetachInternetGateway.
+type XMLDetachInternetGatewayResponse struct {
+	XMLName   xml.Name `xml:"DetachInternetGatewayResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLDeleteInternetGatewayResponse is the XML response for DeleteInternetGateway.
+type XMLDeleteInternetGatewayResponse struct {
+	XMLName   xml.Name `xml:"DeleteInternetGatewayResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLDescribeNetworkInterfacesResponse is the XML response for DescribeNetworkInterfaces.
+type XMLDescribeNetworkInterfacesResponse struct {
+	XMLName             xml.Name               `xml:"DescribeNetworkInterfacesResponse"`
+	Xmlns               string                 `xml:"xmlns,attr"`
+	RequestID           string                 `xml:"requestId"`
+	NetworkInterfaceSet XMLNetworkInterfaceSet `xml:"networkInterfaceSet"`
+}
+
+// XMLNetworkInterfaceSet wraps the network interface members.
+type XMLNetworkInterfaceSet struct {
+	Items []XMLNetworkInterface `xml:"item"`
+}
+
+// XMLNetworkInterface is a single network interface description.
+type XMLNetworkInterface struct {
+	NetworkInterfaceID string `xml:"networkInterfaceId"`
+	VpcID              string `xml:"vpcId,omitempty"`
+	SubnetID           string `xml:"subnetId,omitempty"`
+	Status             string `xml:"status,omitempty"`
 }

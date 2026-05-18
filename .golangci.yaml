@@ -298,6 +298,15 @@ linters:
       - path: internal/service/redshift/types\.go
         linters:
           - tagliatelle
+      # AWS Cloud Control API + per-resource handlers use PascalCase
+      # JSON field names that match AWS CloudFormation resource type
+      # schemas. wrapcheck is excluded because handlers thinly proxy
+      # cross-package storage interfaces; wrapping every storage error
+      # adds noise without aiding diagnosis.
+      - path: internal/service/cloudcontrol/.*\.go
+        linters:
+          - tagliatelle
+          - wrapcheck
       # kumo.go uses blank imports to register all AWS services via init().
       - path: kumo\.go
         linters:

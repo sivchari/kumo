@@ -102,20 +102,38 @@ type MemoryStorage struct {
 	dataDir         string
 	baseURL         string
 	logger          *slog.Logger
+	// httpClient is shared across delivery goroutines so the underlying
+	// transport can pool connections instead of leaking one per event.
+	httpClient *http.Client
+	// deliveryCtx is cancelled by Close so in-flight async deliveries
+	// (Lambda / SQS / API destination Invokes) abort on shutdown instead
+	// of outliving the server.
+	deliveryCtx    context.Context //nolint:containedctx // intentional: scopes background goroutines to storage lifetime
+	deliveryCancel context.CancelFunc
 }
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+
 	s := &MemoryStorage{
 		EventBuses:      make(map[string]*EventBus),
 		Rules:           make(map[string]map[string]*Rule),
 		Targets:         make(map[string]map[string][]*Target),
 		Connections:     make(map[string]*Connection),
 		APIDestinations: make(map[string]*APIDestination),
-		region:          "us-east-1",
+		region:          region,
 		accountID:       "000000000000",
 		baseURL:         "http://localhost:4566",
 		logger:          slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		httpClient:      &http.Client{Timeout: 5 * time.Second},
+		deliveryCtx:     ctx,
+		deliveryCancel:  cancel,
 	}
 	for _, o := range opts {
 		o(s)
@@ -185,6 +203,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
+	if s.deliveryCancel != nil {
+		s.deliveryCancel()
+	}
+
 	if s.dataDir == "" {
 		return nil
 	}
@@ -448,6 +470,13 @@ func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName str
 			HTTPParameters: t.HTTPParameters,
 		}
 
+		if t.InputTransformer != nil {
+			target.InputTransformer = &InputTransformer{
+				InputPathsMap: t.InputTransformer.InputPathsMap,
+				InputTemplate: t.InputTransformer.InputTemplate,
+			}
+		}
+
 		// Find and update existing target or add new one.
 		found := false
 		existingTargets := s.Targets[targetKey][ruleName]
@@ -604,6 +633,11 @@ func (s *MemoryStorage) matchAndDeliver(eventID, eventBusName string, entry *Put
 			if isSQSArn(target.Arn) {
 				go s.deliverToSQS(target, payload)
 			}
+
+			// Deliver to Lambda if the target ARN is a Lambda function.
+			if isLambdaArn(target.Arn) {
+				go s.deliverToLambda(target, payload)
+			}
 		}
 	}
 }
@@ -630,6 +664,13 @@ func (s *MemoryStorage) buildEventPayload(eventID, eventBusName string, target *
 		s.logger.Error("failed to marshal event payload", "error", err)
 
 		return nil
+	}
+
+	// Apply InputTransformer if set on the target.
+	if target.InputTransformer != nil {
+		if transformed := applyInputTransformer(body, target.InputTransformer); transformed != nil {
+			return transformed
+		}
 	}
 
 	// Apply InputPath if set on the target.
@@ -677,6 +718,75 @@ func resolveInputPath(payload []byte, inputPath string) []byte {
 	return result
 }
 
+// applyInputTransformer applies an InputTransformer to an event payload.
+// It extracts values from the event JSON using InputPathsMap (simple JSONPath expressions),
+// then replaces <key> placeholders in InputTemplate with the extracted values.
+func applyInputTransformer(payload []byte, transformer *InputTransformer) []byte {
+	var event map[string]any
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return nil
+	}
+
+	// Extract values using InputPathsMap.
+	values := make(map[string]any, len(transformer.InputPathsMap))
+	for key, path := range transformer.InputPathsMap {
+		values[key] = extractJSONPath(event, path)
+	}
+
+	// Replace <key> placeholders in the template.
+	result := transformer.InputTemplate
+
+	for key, val := range values {
+		placeholder := "<" + key + ">"
+
+		var replacement string
+
+		switch v := val.(type) {
+		case nil:
+			replacement = "null"
+		case string:
+			// Strings are quoted in the output.
+			quoted, _ := json.Marshal(v)
+			replacement = string(quoted)
+		default:
+			// Objects, arrays, numbers, booleans are serialized as raw JSON.
+			raw, _ := json.Marshal(v)
+			replacement = string(raw)
+		}
+
+		result = strings.ReplaceAll(result, placeholder, replacement)
+	}
+
+	return []byte(result)
+}
+
+// extractJSONPath extracts a value from a nested map using a simple JSONPath expression.
+// Supports paths like "$.detail.marker", "$.source".
+func extractJSONPath(obj map[string]any, path string) any {
+	path = strings.TrimPrefix(path, "$.")
+	if path == "" || path == "$" {
+		return obj
+	}
+
+	parts := strings.Split(path, ".")
+
+	var current any = obj
+
+	for _, part := range parts {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		current, ok = m[part]
+		if !ok {
+			return nil
+		}
+	}
+
+	return current
+}
+
 // deliverToHTTP sends an event to an API Destination's HTTP endpoint.
 func (s *MemoryStorage) deliverToHTTP(dest *APIDestination, target *Target, payload []byte) {
 	if payload == nil {
@@ -690,7 +800,7 @@ func (s *MemoryStorage) deliverToHTTP(dest *APIDestination, target *Target, payl
 		method = http.MethodPost
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(s.deliveryCtx, method, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		s.logger.Error("failed to create HTTP request for API destination", "error", err, "endpoint", endpoint)
 
@@ -701,9 +811,7 @@ func (s *MemoryStorage) deliverToHTTP(dest *APIDestination, target *Target, payl
 	req.Header.Set("User-Agent", "Amazon/EventBridge/ApiDestinations")
 	applyHTTPParameters(req, target.HTTPParameters)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		s.logger.Error("failed to deliver event to API destination", "error", err, "endpoint", endpoint)
 
@@ -752,7 +860,7 @@ func (s *MemoryStorage) deliverToSQS(target *Target, payload []byte) {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.baseURL+"/", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(s.deliveryCtx, http.MethodPost, s.baseURL+"/", bytes.NewReader(body))
 	if err != nil {
 		s.logger.Error("failed to create SQS request", "error", err, "queue", queueName)
 
@@ -762,9 +870,7 @@ func (s *MemoryStorage) deliverToSQS(target *Target, payload []byte) {
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	req.Header.Set("X-Amz-Target", "AmazonSQS.SendMessage")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		s.logger.Error("failed to deliver event to SQS", "error", err, "queue", queueName)
 
@@ -775,6 +881,53 @@ func (s *MemoryStorage) deliverToSQS(target *Target, payload []byte) {
 
 	s.logger.Info("delivered event to SQS",
 		"queue", queueName,
+		"status", resp.StatusCode,
+	)
+}
+
+// isLambdaArn returns true if the ARN is a Lambda function ARN.
+func isLambdaArn(arn string) bool {
+	return strings.Contains(arn, ":lambda:")
+}
+
+// deliverToLambda invokes a Lambda function asynchronously via the local kumo Lambda endpoint.
+func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
+	if payload == nil {
+		return
+	}
+
+	// Lambda ARN: arn:aws:lambda:region:account:function:function-name[:qualifier]
+	parts := strings.Split(target.Arn, ":")
+	if len(parts) < 7 || parts[5] != "function" {
+		s.logger.Error("invalid Lambda ARN", "arn", target.Arn)
+
+		return
+	}
+
+	functionName := parts[6]
+	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", s.baseURL, functionName)
+
+	req, err := http.NewRequestWithContext(s.deliveryCtx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		s.logger.Error("failed to create Lambda invoke request", "error", err, "function", functionName)
+
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Amz-Invocation-Type", "Event")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		s.logger.Error("failed to deliver event to Lambda", "error", err, "function", functionName)
+
+		return
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	s.logger.Info("delivered event to Lambda",
+		"function", functionName,
 		"status", resp.StatusCode,
 	)
 }
@@ -923,12 +1076,19 @@ func (s *MemoryStorage) DeleteAPIDestination(_ context.Context, name string) err
 	return nil
 }
 
-// resolveAPIDestination finds the API destination and its endpoint from a target ARN.
+// resolveAPIDestination finds the API destination for a target ARN.
+// Lookup is by name (the suffix after ":api-destination/") so callers can supply
+// a target ARN whose region/account differs from the storage's own — AWS production
+// callers usually pin their target ARNs to the production region, while kumo emits
+// API destination ARNs under its configured emulator region.
 func (s *MemoryStorage) resolveAPIDestination(targetArn string) *APIDestination {
-	for _, dest := range s.APIDestinations {
-		if dest.Arn == targetArn {
-			return dest
-		}
+	name := targetArn
+	if i := strings.LastIndex(targetArn, ":api-destination/"); i >= 0 {
+		name = targetArn[i+len(":api-destination/"):]
+	}
+
+	if dest, ok := s.APIDestinations[name]; ok {
+		return dest
 	}
 
 	return nil

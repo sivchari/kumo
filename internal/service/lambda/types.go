@@ -26,7 +26,26 @@ type Function struct {
 	Architectures   []string
 	Environment     *Environment
 	Code            *FunctionCode
+	Tags            map[string]string
+	Policy          *ResourcePolicy
 	InvokeEndpoint  string // kumo extension: HTTP endpoint to proxy invocations
+}
+
+// ResourcePolicy represents a Lambda function resource policy.
+type ResourcePolicy struct {
+	Version    string             `json:"Version"`
+	ID         string             `json:"Id"`
+	Statements []*PolicyStatement `json:"Statement"`
+}
+
+// PolicyStatement represents a single statement in a resource policy.
+type PolicyStatement struct {
+	Sid       string            `json:"Sid"`
+	Effect    string            `json:"Effect"`
+	Principal map[string]string `json:"Principal"`
+	Action    string            `json:"Action"`
+	Resource  string            `json:"Resource"`
+	Condition map[string]any    `json:"Condition,omitempty"`
 }
 
 // Environment represents the function's environment variables.
@@ -219,4 +238,76 @@ type UpdateEventSourceMappingRequest struct {
 type ListEventSourceMappingsResponse struct {
 	EventSourceMappings []*EventSourceMapping `json:"EventSourceMappings"`
 	NextMarker          string                `json:"NextMarker,omitempty"`
+}
+
+// listVersionsByFunctionResponse is the wire shape of ListVersionsByFunction.
+type listVersionsByFunctionResponse struct {
+	Versions   []functionConfigurationVersion `json:"Versions"`
+	NextMarker string                         `json:"NextMarker,omitempty"`
+}
+
+// functionConfigurationVersion is the per-version function config block
+// terraform-provider-aws reads on every refresh.
+type functionConfigurationVersion struct {
+	FunctionName string `json:"FunctionName"`
+	FunctionArn  string `json:"FunctionArn"`
+	Runtime      string `json:"Runtime,omitempty"`
+	Role         string `json:"Role,omitempty"`
+	Handler      string `json:"Handler,omitempty"`
+	Version      string `json:"Version"`
+	LastModified string `json:"LastModified,omitempty"`
+}
+
+// listAliasesResponse is the wire shape of ListAliases.
+type listAliasesResponse struct {
+	Aliases []aliasConfiguration `json:"Aliases"`
+}
+
+// aliasConfiguration mirrors AWS's AliasConfiguration; tags omitted because
+// no aliases are ever produced by this stub.
+type aliasConfiguration struct {
+	Name            string `json:"Name"`
+	AliasArn        string `json:"AliasArn"`
+	FunctionVersion string `json:"FunctionVersion"`
+}
+
+// getFunctionCodeSigningConfigResponse mirrors AWS's response.
+type getFunctionCodeSigningConfigResponse struct {
+	FunctionName         string `json:"FunctionName"`
+	CodeSigningConfigArn string `json:"CodeSigningConfigArn,omitempty"`
+}
+
+// listFunctionEventInvokeConfigsResponse mirrors AWS's response.
+type listFunctionEventInvokeConfigsResponse struct {
+	FunctionEventInvokeConfigs []map[string]any `json:"FunctionEventInvokeConfigs"`
+}
+
+// addPermissionRequest is the request body for AddPermission.
+type addPermissionRequest struct {
+	Action              string `json:"Action"`
+	FunctionName        string `json:"FunctionName,omitempty"`
+	Principal           string `json:"Principal"`
+	SourceArn           string `json:"SourceArn,omitempty"`
+	SourceAccount       string `json:"SourceAccount,omitempty"`
+	StatementID         string `json:"StatementId"`
+	EventSourceToken    string `json:"EventSourceToken,omitempty"`
+	RevisionID          string `json:"RevisionId,omitempty"`
+	PrincipalOrgID      string `json:"PrincipalOrgID,omitempty"`
+	FunctionURLAuthType string `json:"FunctionUrlAuthType,omitempty"`
+}
+
+// addPermissionResponse is the response for AddPermission.
+type addPermissionResponse struct {
+	Statement string `json:"Statement"`
+}
+
+// getPolicyResponse is the response for GetPolicy when a policy exists.
+type getPolicyResponse struct {
+	Policy     string `json:"Policy"`
+	RevisionID string `json:"RevisionId"`
+}
+
+// listTagsResponse is the response for ListTags.
+type listTagsResponse struct {
+	Tags map[string]string `json:"Tags"`
 }

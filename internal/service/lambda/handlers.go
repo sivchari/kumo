@@ -100,6 +100,26 @@ func (s *Service) GetFunction(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, http.StatusOK, resp)
 }
 
+// GetFunctionConfiguration handles GET /functions/{name}/configuration.
+// Returns only the configuration portion of GetFunction.
+func (s *Service) GetFunctionConfiguration(w http.ResponseWriter, r *http.Request) {
+	functionName := extractFunctionName(r.URL.Path)
+	if functionName == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	fn, err := s.storage.GetFunction(r.Context(), functionName)
+	if err != nil {
+		handleGetFunctionError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, functionToConfiguration(fn))
+}
+
 // DeleteFunction handles the DeleteFunction API.
 func (s *Service) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 	functionName := extractFunctionName(r.URL.Path)
@@ -243,6 +263,8 @@ func (s *Service) UpdateFunctionConfiguration(w http.ResponseWriter, r *http.Req
 }
 
 // Invoke handles the Invoke API.
+//
+//nolint:funlen // Invoke handles multiple code paths (sync, async, stub).
 func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 	functionName := extractFunctionNameFromInvokePath(r.URL.Path)
 	if functionName == "" {
@@ -258,13 +280,6 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if fn.InvokeEndpoint == "" {
-		writeFunctionError(w, ErrInvalidParameterValue,
-			"InvokeEndpoint is not configured for this function", http.StatusBadRequest)
-
-		return
-	}
-
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeFunctionError(w, ErrInvalidParameterValue, "Failed to read request body", http.StatusBadRequest)
@@ -275,6 +290,35 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 	invocationType := r.Header.Get("X-Amz-Invocation-Type")
 	if invocationType == "" {
 		invocationType = "RequestResponse"
+	}
+
+	// When no InvokeEndpoint is configured the function is treated as an
+	// echo stub: the invocation is accepted and the input payload is
+	// returned as-is. This lets SDK callers exercise functions created
+	// without kumo's InvokeEndpoint extension and still receive a
+	// meaningful response payload, which matches the expectation of
+	// tests that invoke Lambda functions via the standard AWS SDK.
+	if fn.InvokeEndpoint == "" {
+		switch invocationType {
+		case "DryRun":
+			writeInvokeHeaders(w)
+			w.WriteHeader(http.StatusNoContent)
+		case "Event":
+			writeInvokeHeaders(w)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte("{}"))
+		default:
+			writeInvokeHeaders(w)
+			w.WriteHeader(http.StatusOK)
+
+			if len(payload) == 0 {
+				_, _ = w.Write([]byte("null"))
+			} else {
+				_, _ = w.Write(payload)
+			}
+		}
+
+		return
 	}
 
 	switch invocationType {
@@ -386,41 +430,54 @@ func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoin
 	}
 }
 
-// extractFunctionName extracts function name from path like /lambda/2015-03-31/functions/{name}.
+// extractFunctionName extracts function name from URL paths like:
+//
+//   - /lambda/2015-03-31/functions/{name}              (SDK BaseEndpoint = .../lambda)
+//   - /2015-03-31/functions/{name}                     (terraform-provider-aws, single endpoint)
+//   - /lambda/2015-03-31/functions/{name}/code         (sub-resources accepted as well)
+//
+// Routes are registered for both prefixes, so the helper finds the
+// "functions" segment regardless of where it appears in the path. The
+// trailing /code, /configuration, /invocations sub-resources are tolerated
+// — the dedicated FromXPath helpers below assert which sub-resource was
+// matched.
 func extractFunctionName(path string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 4 && parts[2] == pathSegmentFunctions {
-		return parts[3]
+	for i, p := range parts {
+		if p == pathSegmentFunctions && i+1 < len(parts) {
+			return parts[i+1]
+		}
 	}
 
 	return ""
 }
 
-// extractFunctionNameFromCodePath extracts function name from path like /lambda/2015-03-31/functions/{name}/code.
+// extractFunctionNameFromCodePath returns the function name when the path
+// ends in /functions/{name}/code; "" if the shape does not match.
 func extractFunctionNameFromCodePath(path string) string {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 5 && parts[2] == pathSegmentFunctions && parts[4] == "code" {
-		return parts[3]
-	}
-
-	return ""
+	return extractFunctionNameFromSubresource(path, "code")
 }
 
-// extractFunctionNameFromConfigPath extracts function name from path like /lambda/2015-03-31/functions/{name}/configuration.
+// extractFunctionNameFromConfigPath returns the function name when the path
+// ends in /functions/{name}/configuration; "" if the shape does not match.
 func extractFunctionNameFromConfigPath(path string) string {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 5 && parts[2] == pathSegmentFunctions && parts[4] == "configuration" {
-		return parts[3]
-	}
-
-	return ""
+	return extractFunctionNameFromSubresource(path, "configuration")
 }
 
-// extractFunctionNameFromInvokePath extracts function name from path like /lambda/2015-03-31/functions/{name}/invocations.
+// extractFunctionNameFromInvokePath returns the function name when the path
+// ends in /functions/{name}/invocations; "" if the shape does not match.
 func extractFunctionNameFromInvokePath(path string) string {
+	return extractFunctionNameFromSubresource(path, "invocations")
+}
+
+// extractFunctionNameFromSubresource returns the function name when the
+// path matches /functions/{name}/<sub>, accepting any leading prefix.
+func extractFunctionNameFromSubresource(path, sub string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 5 && parts[2] == pathSegmentFunctions && parts[4] == "invocations" {
-		return parts[3]
+	for i, p := range parts {
+		if p == pathSegmentFunctions && i+2 < len(parts) && parts[i+2] == sub {
+			return parts[i+1]
+		}
 	}
 
 	return ""
@@ -637,11 +694,19 @@ func handleFunctionError(w http.ResponseWriter, err error) {
 	writeFunctionError(w, ErrServiceException, "Internal server error", http.StatusInternalServerError)
 }
 
-// extractEventSourceMappingUUID extracts UUID from path like /lambda/2015-03-31/event-source-mappings/{UUID}.
+// extractEventSourceMappingUUID extracts UUID from paths like:
+//
+//   - /lambda/2015-03-31/event-source-mappings/{UUID}  (SDK BaseEndpoint = .../lambda)
+//   - /2015-03-31/event-source-mappings/{UUID}          (terraform-provider-aws, single endpoint)
+//
+// Routes are registered under both prefixes, so the helper finds the
+// "event-source-mappings" segment regardless of where it appears in the path.
 func extractEventSourceMappingUUID(path string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 4 && parts[2] == "event-source-mappings" {
-		return parts[3]
+	for i, p := range parts {
+		if p == "event-source-mappings" && i+1 < len(parts) {
+			return parts[i+1]
+		}
 	}
 
 	return ""

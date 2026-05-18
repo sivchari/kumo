@@ -74,11 +74,44 @@ type Listener struct {
 	Rules           []Rule
 }
 
-// Action represents a listener action.
+// Action represents a listener action. The legacy single-target form
+// (Type=forward + TargetGroupArn) and the weighted form (Type=forward +
+// ForwardConfig with multiple TargetGroupTuples) are both expressible:
+// AWS clients send one or the other, never both, and Describe responses
+// echo back whichever was supplied.
 type Action struct {
 	Type           string
 	TargetGroupArn string
 	Order          int
+	// ForwardConfig is set when the action uses weighted target groups
+	// (the canary / blue-green pattern). nil means "use TargetGroupArn".
+	ForwardConfig *ForwardActionConfig
+}
+
+// ForwardActionConfig groups multiple target groups under one forward
+// action with relative weights. Used by ALB canary / blue-green
+// deployments — the listener splits traffic across TargetGroups by the
+// supplied Weight ratio.
+type ForwardActionConfig struct {
+	TargetGroups     []TargetGroupTuple
+	StickinessConfig *TargetGroupStickinessConfig
+}
+
+// TargetGroupTuple is one (target group, weight) pair inside a
+// ForwardActionConfig. Weight is the relative share of traffic routed
+// to TargetGroupArn; the AWS console expresses the canonical 100-total
+// form but real ALB normalises across whatever weights are supplied.
+type TargetGroupTuple struct {
+	TargetGroupArn string
+	Weight         int
+}
+
+// TargetGroupStickinessConfig controls whether requests for the same
+// client are pinned to the same target group during a weighted forward.
+// Without it, every request is independently weight-sampled.
+type TargetGroupStickinessConfig struct {
+	Enabled         bool
+	DurationSeconds int
 }
 
 // Rule represents a listener rule for path/host-based routing.
@@ -402,11 +435,42 @@ type XMLActions struct {
 	Members []XMLAction `xml:"member"`
 }
 
-// XMLAction represents an action in XML format.
+// XMLAction represents an action in XML format. ForwardConfig is a
+// pointer so it serialises out only when an explicit weighted forward
+// was supplied; clients using the legacy single-target form (just
+// TargetGroupArn) get a response that matches what they sent.
 type XMLAction struct {
-	Type           string `xml:"Type"`
-	TargetGroupArn string `xml:"TargetGroupArn,omitempty"`
-	Order          int    `xml:"Order,omitempty"`
+	Type           string                  `xml:"Type"`
+	TargetGroupArn string                  `xml:"TargetGroupArn,omitempty"`
+	Order          int                     `xml:"Order,omitempty"`
+	ForwardConfig  *XMLForwardActionConfig `xml:"ForwardConfig,omitempty"`
+}
+
+// XMLForwardActionConfig is the XML wire shape for a multi-target-group
+// forward (the canary / blue-green pattern). TargetGroups is required;
+// TargetGroupStickinessConfig is optional.
+type XMLForwardActionConfig struct {
+	TargetGroups                XMLTargetGroupTuples            `xml:"TargetGroups"`
+	TargetGroupStickinessConfig *XMLTargetGroupStickinessConfig `xml:"TargetGroupStickinessConfig,omitempty"`
+}
+
+// XMLTargetGroupTuples wraps the member-list shape AWS uses for arrays.
+type XMLTargetGroupTuples struct {
+	Members []XMLTargetGroupTuple `xml:"member"`
+}
+
+// XMLTargetGroupTuple is one (target group, weight) pair on the wire.
+type XMLTargetGroupTuple struct {
+	TargetGroupArn string `xml:"TargetGroupArn"`
+	Weight         int    `xml:"Weight"`
+}
+
+// XMLTargetGroupStickinessConfig is the wire shape for the sticky-target
+// option on a weighted forward. AWS surfaces DurationSeconds even when
+// Enabled is false, but the value is only meaningful when Enabled=true.
+type XMLTargetGroupStickinessConfig struct {
+	Enabled         bool `xml:"Enabled"`
+	DurationSeconds int  `xml:"DurationSeconds,omitempty"`
 }
 
 // XMLCreateRuleResponse is the XML response for CreateRule.
@@ -696,4 +760,75 @@ type XMLModifyListenerResponse struct {
 // XMLModifyListenerResult contains the modified listener.
 type XMLModifyListenerResult struct {
 	Listeners XMLListeners `xml:"Listeners"`
+}
+
+// XMLDescribeTagsResponse is the XML response for DescribeTags.
+type XMLDescribeTagsResponse struct {
+	XMLName            xml.Name              `xml:"DescribeTagsResponse"`
+	Xmlns              string                `xml:"xmlns,attr"`
+	DescribeTagsResult XMLDescribeTagsResult `xml:"DescribeTagsResult"`
+	ResponseMetadata   XMLResponseMetadata   `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeTagsResult contains tag descriptions.
+type XMLDescribeTagsResult struct {
+	TagDescriptions XMLTagDescriptions `xml:"TagDescriptions"`
+}
+
+// XMLTagDescriptions contains a list of tag descriptions.
+type XMLTagDescriptions struct {
+	Members []XMLTagDescription `xml:"member"`
+}
+
+// XMLTagDescription represents tags attached to a resource.
+type XMLTagDescription struct {
+	ResourceArn string          `xml:"ResourceArn"`
+	Tags        XMLEmptyMembers `xml:"Tags"`
+}
+
+// XMLEmptyMembers represents an empty AWS Query member list.
+type XMLEmptyMembers struct {
+	Members []struct{} `xml:"member"`
+}
+
+// XMLDescribeCapacityReservationResponse is the XML response for DescribeCapacityReservation.
+type XMLDescribeCapacityReservationResponse struct {
+	XMLName                           xml.Name                     `xml:"DescribeCapacityReservationResponse"`
+	Xmlns                             string                       `xml:"xmlns,attr"`
+	DescribeCapacityReservationResult XMLCapacityReservationResult `xml:"DescribeCapacityReservationResult"`
+	ResponseMetadata                  XMLResponseMetadata          `xml:"ResponseMetadata"`
+}
+
+// XMLCapacityReservationResult contains capacity reservation metadata.
+type XMLCapacityReservationResult struct {
+	LastModifiedTime          string          `xml:"LastModifiedTime,omitempty"`
+	DecreaseRequestsRemaining int             `xml:"DecreaseRequestsRemaining"`
+	CapacityReservationState  XMLEmptyMembers `xml:"CapacityReservationState"`
+}
+
+// XMLDescribeListenerAttributesResponse is the XML response for DescribeListenerAttributes.
+type XMLDescribeListenerAttributesResponse struct {
+	XMLName          xml.Name                    `xml:"DescribeListenerAttributesResponse"`
+	Xmlns            string                      `xml:"xmlns,attr"`
+	Result           XMLListenerAttributesResult `xml:"DescribeListenerAttributesResult"`
+	ResponseMetadata XMLResponseMetadata         `xml:"ResponseMetadata"`
+}
+
+// XMLListenerAttributesResult contains listener attributes.
+type XMLListenerAttributesResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
+}
+
+// XMLAddTagsResponse is the XML response for AddTags.
+type XMLAddTagsResponse struct {
+	XMLName          xml.Name            `xml:"AddTagsResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// XMLRemoveTagsResponse is the XML response for RemoveTags.
+type XMLRemoveTagsResponse struct {
+	XMLName          xml.Name            `xml:"RemoveTagsResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
 }

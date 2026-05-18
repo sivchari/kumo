@@ -20,7 +20,7 @@ type Storage interface {
 	GetParametersByPath(ctx context.Context, path string, recursive bool, maxResults int, nextToken string) ([]*Parameter, string, error)
 	DeleteParameter(ctx context.Context, name string) error
 	DeleteParameters(ctx context.Context, names []string) ([]string, []string, error)
-	DescribeParameters(ctx context.Context, maxResults int, nextToken string) ([]*Parameter, string, error)
+	DescribeParameters(ctx context.Context, filters []ParameterFilter, maxResults int, nextToken string) ([]*Parameter, string, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -330,7 +330,7 @@ func (s *MemoryStorage) DeleteParameters(_ context.Context, names []string) ([]s
 }
 
 // DescribeParameters lists all parameters with metadata.
-func (s *MemoryStorage) DescribeParameters(_ context.Context, maxResults int, nextToken string) ([]*Parameter, string, error) {
+func (s *MemoryStorage) DescribeParameters(_ context.Context, filters []ParameterFilter, maxResults int, nextToken string) ([]*Parameter, string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -338,10 +338,13 @@ func (s *MemoryStorage) DescribeParameters(_ context.Context, maxResults int, ne
 		maxResults = 50
 	}
 
-	// Collect all parameters
+	// Collect all parameters, applying filters.
 	params := make([]*Parameter, 0, len(s.Parameters))
+
 	for _, p := range s.Parameters {
-		params = append(params, p)
+		if matchParameterFilters(p, filters) {
+			params = append(params, p)
+		}
 	}
 
 	// Sort by name for consistent pagination
@@ -375,4 +378,46 @@ func (s *MemoryStorage) DescribeParameters(_ context.Context, maxResults int, ne
 	}
 
 	return result, newNextToken, nil
+}
+
+// matchParameterFilters checks if a parameter matches all filters.
+// Supports Key=Name with Option=Equals (default), BeginsWith, and Contains.
+func matchParameterFilters(p *Parameter, filters []ParameterFilter) bool {
+	for _, f := range filters {
+		if f.Key != "Name" || len(f.Values) == 0 {
+			continue
+		}
+
+		option := f.Option
+		if option == "" {
+			option = "Equals"
+		}
+
+		if !matchNameFilter(p.Name, f.Values, option) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func matchNameFilter(name string, values []string, option string) bool {
+	for _, v := range values {
+		switch option {
+		case "Equals":
+			if name == v {
+				return true
+			}
+		case "BeginsWith":
+			if strings.HasPrefix(name, v) {
+				return true
+			}
+		case "Contains":
+			if strings.Contains(name, v) {
+				return true
+			}
+		}
+	}
+
+	return false
 }

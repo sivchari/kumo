@@ -1,13 +1,24 @@
 {
   "UserPool": {
-    "AccountRecoverySetting": null,
-    "AdminCreateUserConfig": null,
-    "AliasAttributes": null,
-    "Arn": null,
-    "AutoVerifiedAttributes": null,
-    "CreationDate": "2026-03-23T07:45:25Z",
+    "AccountRecoverySetting": {
+      "RecoveryMechanisms": [
+        {
+          "Name": "verified_email",
+          "Priority": 1
+        }
+      ]
+    },
+    "AdminCreateUserConfig": {
+      "AllowAdminCreateUserOnly": false,
+      "InviteMessageTemplate": null,
+      "UnusedAccountValidityDays": 0
+    },
+    "AliasAttributes": [],
+    "Arn": "arn:aws:cognito-idp:us-east-1:000000000000:userpool/us-east-1_473315123",
+    "AutoVerifiedAttributes": [],
+    "CreationDate": "2026-05-10T10:13:22Z",
     "CustomDomain": null,
-    "DeletionProtection": "",
+    "DeletionProtection": "INACTIVE",
     "DeviceConfiguration": null,
     "Domain": null,
     "EmailConfiguration": null,
@@ -15,10 +26,26 @@
     "EmailVerificationMessage": null,
     "EmailVerificationSubject": null,
     "EstimatedNumberOfUsers": 0,
-    "Id": "us-east-1_91e35edc-",
-    "LambdaConfig": null,
-    "LastModifiedDate": "2026-03-23T07:45:25Z",
-    "MfaConfiguration": "",
+    "Id": "us-east-1_473315123",
+    "LambdaConfig": {
+      "CreateAuthChallenge": null,
+      "CustomEmailSender": null,
+      "CustomMessage": null,
+      "CustomSMSSender": null,
+      "DefineAuthChallenge": null,
+      "InboundFederation": null,
+      "KMSKeyID": null,
+      "PostAuthentication": null,
+      "PostConfirmation": null,
+      "PreAuthentication": null,
+      "PreSignUp": null,
+      "PreTokenGeneration": null,
+      "PreTokenGenerationConfig": null,
+      "UserMigration": null,
+      "VerifyAuthChallengeResponse": null
+    },
+    "LastModifiedDate": "2026-05-10T10:13:22Z",
+    "MfaConfiguration": "OFF",
     "Name": "test-user-pool",
     "Policies": {
       "PasswordPolicy": {
@@ -32,7 +59,44 @@
       },
       "SignInPolicy": null
     },
-    "SchemaAttributes": null,
+    "SchemaAttributes": [
+      {
+        "AttributeDataType": "String",
+        "DeveloperOnlyAttribute": false,
+        "Mutable": false,
+        "Name": "sub",
+        "NumberAttributeConstraints": null,
+        "Required": true,
+        "StringAttributeConstraints": {
+          "MaxLength": "2048",
+          "MinLength": "1"
+        }
+      },
+      {
+        "AttributeDataType": "String",
+        "DeveloperOnlyAttribute": false,
+        "Mutable": true,
+        "Name": "name",
+        "NumberAttributeConstraints": null,
+        "Required": false,
+        "StringAttributeConstraints": {
+          "MaxLength": "2048",
+          "MinLength": "0"
+        }
+      },
+      {
+        "AttributeDataType": "String",
+        "DeveloperOnlyAttribute": false,
+        "Mutable": true,
+        "Name": "email",
+        "NumberAttributeConstraints": null,
+        "Required": false,
+        "StringAttributeConstraints": {
+          "MaxLength": "2048",
+          "MinLength": "0"
+        }
+      }
+    ],
     "SmsAuthenticationMessage": null,
     "SmsConfiguration": null,
     "SmsConfigurationFailure": null,
@@ -40,11 +104,18 @@
     "Status": "Enabled",
     "UserAttributeUpdateSettings": null,
     "UserPoolAddOns": null,
-    "UserPoolTags": null,
-    "UserPoolTier": "",
-    "UsernameAttributes": null,
+    "UserPoolTags": {},
+    "UserPoolTier": "ESSENTIALS",
+    "UsernameAttributes": [],
     "UsernameConfiguration": null,
-    "VerificationMessageTemplate": null
+    "VerificationMessageTemplate": {
+      "DefaultEmailOption": "CONFIRM_WITH_CODE",
+      "EmailMessage": null,
+      "EmailMessageByLink": null,
+      "EmailSubject": null,
+      "EmailSubjectByLink": null,
+      "SmsMessage": null
+    }
   },
   "ResultMetadata": {}
 }

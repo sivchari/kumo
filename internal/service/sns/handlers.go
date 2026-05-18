@@ -262,7 +262,7 @@ func (s *Service) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messageID, err := s.storage.Publish(r.Context(), topicARN, req.Message, req.Subject, req.MessageAttributes)
+	messageID, err := s.storage.Publish(r.Context(), topicARN, req.Message, req.Subject, req.MessageGroupID, req.MessageDeduplicationID, req.MessageAttributes)
 	if err != nil {
 		var sErr *TopicError
 		if errors.As(err, &sErr) {
@@ -437,30 +437,39 @@ func writeTopicError(w http.ResponseWriter, code, message string, status int) {
 	})
 }
 
+// actionHandlers returns a map of action names to handler functions.
+func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
+	return map[string]func(http.ResponseWriter, *http.Request){
+		"CreateTopic":               s.CreateTopic,
+		"DeleteTopic":               s.DeleteTopic,
+		"ListTopics":                s.ListTopics,
+		"Subscribe":                 s.Subscribe,
+		"Unsubscribe":               s.Unsubscribe,
+		"Publish":                   s.Publish,
+		"ListSubscriptions":         s.ListSubscriptions,
+		"ListSubscriptionsByTopic":  s.ListSubscriptionsByTopic,
+		"GetSubscriptionAttributes": s.GetSubscriptionAttributes,
+		"SetSubscriptionAttributes": s.SetSubscriptionAttributes,
+		"GetTopicAttributes":        s.GetTopicAttributes,
+		"SetTopicAttributes":        s.SetTopicAttributes,
+		"ListTagsForResource":       s.ListTagsForResource,
+		"TagResource":               s.TagResource,
+		"UntagResource":             s.UntagResource,
+	}
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 // This method implements the JSONProtocolService interface.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
 	action := strings.TrimPrefix(target, "AmazonSimpleNotificationService.")
 
-	switch action {
-	case "CreateTopic":
-		s.CreateTopic(w, r)
-	case "DeleteTopic":
-		s.DeleteTopic(w, r)
-	case "ListTopics":
-		s.ListTopics(w, r)
-	case "Subscribe":
-		s.Subscribe(w, r)
-	case "Unsubscribe":
-		s.Unsubscribe(w, r)
-	case "Publish":
-		s.Publish(w, r)
-	case "ListSubscriptions":
-		s.ListSubscriptions(w, r)
-	case "ListSubscriptionsByTopic":
-		s.ListSubscriptionsByTopic(w, r)
-	default:
-		writeTopicError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
+	handlers := s.actionHandlers()
+	if handler, ok := handlers[action]; ok {
+		handler(w, r)
+
+		return
 	}
+
+	writeTopicError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
 }

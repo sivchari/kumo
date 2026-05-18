@@ -206,7 +206,7 @@ func (s *Service) DescribeParameters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, nextToken, err := s.storage.DescribeParameters(r.Context(), req.MaxResults, req.NextToken)
+	params, nextToken, err := s.storage.DescribeParameters(r.Context(), req.ParameterFilters, req.MaxResults, req.NextToken)
 	if err != nil {
 		writeSSMError(w, ErrServiceException, "Internal server error", http.StatusInternalServerError)
 

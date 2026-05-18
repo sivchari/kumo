@@ -37,6 +37,14 @@ func (s *Service) Name() string {
 	return "ec2"
 }
 
+// Storage exposes the underlying storage so other services that need to
+// operate on the same EC2 store (notably the cloudcontrol service, which
+// proxies AWS::EC2::* through the existing EC2 storage) can read and
+// mutate it without going back through HTTP.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
 // Prefix returns the URL prefix for the service.
 
 // RegisterRoutes registers routes with the router.
@@ -65,6 +73,9 @@ func (s *Service) Actions() []string {
 		"DeleteSecurityGroup",
 		"AuthorizeSecurityGroupIngress",
 		"AuthorizeSecurityGroupEgress",
+		"DescribeSecurityGroups",
+		"RevokeSecurityGroupIngress",
+		"RevokeSecurityGroupEgress",
 		// Key Pair operations
 		"CreateKeyPair",
 		"DeleteKeyPair",
@@ -80,7 +91,11 @@ func (s *Service) Actions() []string {
 		// Internet Gateway operations
 		"CreateInternetGateway",
 		"AttachInternetGateway",
+		"DetachInternetGateway",
+		"DeleteInternetGateway",
 		"DescribeInternetGateways",
+		// Network interface — destroy-time stub
+		"DescribeNetworkInterfaces",
 		// Route Table operations
 		"CreateRouteTable",
 		"CreateRoute",

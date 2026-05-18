@@ -226,6 +226,8 @@ func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	item = projectItemForExpression(item, req.ProjectionExpression, req.ExpressionAttributeNames)
+
 	writeJSONResponse(w, GetItemResponse{
 		Item: item,
 	})
@@ -388,6 +390,8 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	items = projectItemsForExpression(items, req.ProjectionExpression, req.ExpressionAttributeNames)
+
 	writeJSONResponse(w, QueryResponse{
 		Items:            items,
 		Count:            len(items),
@@ -419,6 +423,8 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 		req.ExpressionAttributeValues,
 		req.Limit,
 		req.ExclusiveStartKey,
+		req.Segment,
+		req.TotalSegments,
 	)
 	if err != nil {
 		var tErr *TableError
@@ -432,6 +438,8 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	items = projectItemsForExpression(items, req.ProjectionExpression, req.ExpressionAttributeNames)
 
 	writeJSONResponse(w, ScanResponse{
 		Items:            items,
@@ -456,6 +464,14 @@ func tableToDescription(table *Table) TableDescription {
 		ItemCount:                 table.ItemCount,
 		TableSizeBytes:            table.TableSizeBytes,
 		DeletionProtectionEnabled: table.DeletionProtection,
+		LatestStreamArn:           table.LatestStreamArn,
+	}
+
+	if table.StreamEnabled {
+		desc.StreamSpecification = &StreamSpecification{
+			StreamEnabled:  true,
+			StreamViewType: table.StreamViewType,
+		}
 	}
 
 	if table.ProvisionedThroughput != nil {
@@ -706,7 +722,16 @@ func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responses := make([]TransactGetItemResponse, len(items))
+
 	for i, item := range items {
+		if req.TransactItems[i].Get != nil {
+			item = projectItemForExpression(
+				item,
+				req.TransactItems[i].Get.ProjectionExpression,
+				req.TransactItems[i].Get.ExpressionAttributeNames,
+			)
+		}
+
 		responses[i] = TransactGetItemResponse{Item: item}
 	}
 
@@ -732,6 +757,13 @@ func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Re
 		"TransactGetItems":   s.TransactGetItems,
 		"BatchWriteItem":     s.BatchWriteItem,
 		"BatchGetItem":       s.BatchGetItem,
+		// Stubs — see tag_backup_stubs.go.
+		// Required for terraform / pulumi / CDK refresh and destroy paths.
+		"UpdateTable":               s.UpdateTable,
+		"ListTagsOfResource":        s.ListTagsOfResource,
+		"TagResource":               s.TagResource,
+		"UntagResource":             s.UntagResource,
+		"DescribeContinuousBackups": s.DescribeContinuousBackups,
 	}
 }
 
@@ -816,6 +848,16 @@ func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
 
 		return
+	}
+
+	for tableName, keysAndAttributes := range req.RequestItems {
+		if items, ok := responses[tableName]; ok {
+			responses[tableName] = projectItemsForExpression(
+				items,
+				keysAndAttributes.ProjectionExpression,
+				keysAndAttributes.ExpressionAttributeNames,
+			)
+		}
 	}
 
 	writeJSONResponse(w, BatchGetItemResponse{Responses: responses})
