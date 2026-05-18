@@ -50,6 +50,10 @@ type Storage interface {
 	ConfirmSignUp(ctx context.Context, clientID, username, code string) error
 	InitiateAuth(ctx context.Context, req *InitiateAuthRequest) (*InitiateAuthResponse, error)
 
+	// MFA configuration operations.
+	GetUserPoolMfaConfig(ctx context.Context, userPoolID string) (*MfaConfig, error)
+	SetUserPoolMfaConfig(ctx context.Context, userPoolID string, config *MfaConfig) error
+
 	// Helper operations.
 	GetUserPoolByClientID(ctx context.Context, clientID string) (*UserPool, error)
 	GetUserPoolClientByID(ctx context.Context, clientID string) (*UserPoolClient, error)
@@ -78,6 +82,7 @@ type MemoryStorage struct {
 	UserPoolClients   map[string]*UserPoolClient  `json:"userPoolClients"`
 	Users             map[string]map[string]*User `json:"users"`             // userPoolID -> username -> User
 	ConfirmationCodes map[string]string           `json:"confirmationCodes"` // username -> code
+	MfaConfigs        map[string]*MfaConfig       `json:"mfaConfigs"`        // userPoolID -> MfaConfig
 	dataDir           string
 }
 
@@ -88,6 +93,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		UserPoolClients:   make(map[string]*UserPoolClient),
 		Users:             make(map[string]map[string]*User),
 		ConfirmationCodes: make(map[string]string),
+		MfaConfigs:        make(map[string]*MfaConfig),
 	}
 	for _, o := range opts {
 		o(s)
@@ -142,6 +148,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.ConfirmationCodes == nil {
 		s.ConfirmationCodes = make(map[string]string)
+	}
+
+	if s.MfaConfigs == nil {
+		s.MfaConfigs = make(map[string]*MfaConfig)
 	}
 
 	return nil
@@ -668,6 +678,37 @@ func generateToken() string {
 	_, _ = rand.Read(b)
 
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// GetUserPoolMfaConfig retrieves the MFA configuration for a user pool.
+func (s *MemoryStorage) GetUserPoolMfaConfig(_ context.Context, userPoolID string) (*MfaConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, ok := s.UserPools[userPoolID]; !ok {
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	cfg, ok := s.MfaConfigs[userPoolID]
+	if !ok {
+		return &MfaConfig{MfaConfiguration: "OFF"}, nil
+	}
+
+	return cfg, nil
+}
+
+// SetUserPoolMfaConfig sets the MFA configuration for a user pool.
+func (s *MemoryStorage) SetUserPoolMfaConfig(_ context.Context, userPoolID string, config *MfaConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.UserPools[userPoolID]; !ok {
+		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	s.MfaConfigs[userPoolID] = config
+
+	return nil
 }
 
 // convertLambdaConfigInputToLambdaConfig converts LambdaConfigInput to LambdaConfig.

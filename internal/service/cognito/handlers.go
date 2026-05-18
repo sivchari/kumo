@@ -31,10 +31,8 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"SignUp":                 s.SignUp,
 		"ConfirmSignUp":          s.ConfirmSignUp,
 		"InitiateAuth":           s.InitiateAuth,
-		// Refresh stubs — see refresh_stubs.go.
-		// Required by terraform-provider-aws after CreateUserPool.
-		"GetUserPoolMfaConfig": s.GetUserPoolMfaConfig,
-		"SetUserPoolMfaConfig": s.SetUserPoolMfaConfig,
+		"GetUserPoolMfaConfig":   s.GetUserPoolMfaConfig,
+		"SetUserPoolMfaConfig":   s.SetUserPoolMfaConfig,
 	}
 }
 
@@ -684,6 +682,94 @@ func getErrorStatus(code string) int {
 	default:
 		return http.StatusBadRequest
 	}
+}
+
+// GetUserPoolMfaConfig handles the GetUserPoolMfaConfig API.
+func (s *Service) GetUserPoolMfaConfig(w http.ResponseWriter, r *http.Request) {
+	var req GetUserPoolMfaConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	cfg, err := s.storage.GetUserPoolMfaConfig(r.Context(), req.UserPoolID)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	resp := &GetUserPoolMfaConfigResponse{
+		MfaConfiguration: cfg.MfaConfiguration,
+	}
+
+	if cfg.SmsMfaConfiguration != nil {
+		resp.SmsMfaConfiguration = &SmsMfaConfigurationOutput{
+			SmsAuthenticationMessage: cfg.SmsMfaConfiguration.SmsAuthenticationMessage,
+			SmsConfiguration:         cfg.SmsMfaConfiguration.SmsConfiguration,
+		}
+	}
+
+	if cfg.SoftwareTokenMfaConfiguration != nil {
+		resp.SoftwareTokenMfaConfiguration = &SoftwareTokenMfaConfigurationOutput{
+			Enabled: cfg.SoftwareTokenMfaConfiguration.Enabled,
+		}
+	}
+
+	writeResponse(w, resp)
+}
+
+// SetUserPoolMfaConfig handles the SetUserPoolMfaConfig API.
+func (s *Service) SetUserPoolMfaConfig(w http.ResponseWriter, r *http.Request) {
+	var req SetUserPoolMfaConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	cfg := &MfaConfig{
+		MfaConfiguration: req.MfaConfiguration,
+	}
+
+	if req.SmsMfaConfiguration != nil {
+		cfg.SmsMfaConfiguration = &SmsMfaConfiguration{
+			SmsAuthenticationMessage: req.SmsMfaConfiguration.SmsAuthenticationMessage,
+			SmsConfiguration:         req.SmsMfaConfiguration.SmsConfiguration,
+		}
+	}
+
+	if req.SoftwareTokenMfaConfiguration != nil {
+		cfg.SoftwareTokenMfaConfiguration = &SoftwareTokenMfaConfiguration{
+			Enabled: req.SoftwareTokenMfaConfiguration.Enabled,
+		}
+	}
+
+	if err := s.storage.SetUserPoolMfaConfig(r.Context(), req.UserPoolID, cfg); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	resp := &SetUserPoolMfaConfigResponse{
+		MfaConfiguration: cfg.MfaConfiguration,
+	}
+
+	if cfg.SmsMfaConfiguration != nil {
+		resp.SmsMfaConfiguration = &SmsMfaConfigurationOutput{
+			SmsAuthenticationMessage: cfg.SmsMfaConfiguration.SmsAuthenticationMessage,
+			SmsConfiguration:         cfg.SmsMfaConfiguration.SmsConfiguration,
+		}
+	}
+
+	if cfg.SoftwareTokenMfaConfiguration != nil {
+		resp.SoftwareTokenMfaConfiguration = &SoftwareTokenMfaConfigurationOutput{
+			Enabled: cfg.SoftwareTokenMfaConfiguration.Enabled,
+		}
+	}
+
+	writeResponse(w, resp)
 }
 
 // extractRegion extracts the AWS region from the Authorization header.

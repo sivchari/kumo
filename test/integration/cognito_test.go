@@ -332,6 +332,61 @@ func TestCognito_InitiateAuth(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("AccessToken", "IdToken", "RefreshToken", "NewDeviceMetadata", "ResultMetadata")).Assert(t.Name(), authOutput)
 }
 
+func TestCognito_MfaConfig(t *testing.T) {
+	client := newCognitoClient(t)
+	ctx := t.Context()
+
+	// Create user pool.
+	createOutput, err := client.CreateUserPool(ctx, &cognitoidentityprovider.CreateUserPoolInput{
+		PoolName: aws.String("test-mfa-config-pool"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userPoolID := *createOutput.UserPool.Id
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteUserPool(ctx, &cognitoidentityprovider.DeleteUserPoolInput{
+			UserPoolId: aws.String(userPoolID),
+		})
+	})
+
+	// Get default MFA config (should be OFF).
+	getOutput, err := client.GetUserPoolMfaConfig(ctx, &cognitoidentityprovider.GetUserPoolMfaConfigInput{
+		UserPoolId: aws.String(userPoolID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get_default", getOutput)
+
+	// Set MFA config to OPTIONAL with software token.
+	setOutput, err := client.SetUserPoolMfaConfig(ctx, &cognitoidentityprovider.SetUserPoolMfaConfigInput{
+		UserPoolId:       aws.String(userPoolID),
+		MfaConfiguration: types.UserPoolMfaTypeOptional,
+		SoftwareTokenMfaConfiguration: &types.SoftwareTokenMfaConfigType{
+			Enabled: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_set", setOutput)
+
+	// Get MFA config after setting it (should reflect the change).
+	getOutput2, err := client.GetUserPoolMfaConfig(ctx, &cognitoidentityprovider.GetUserPoolMfaConfigInput{
+		UserPoolId: aws.String(userPoolID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get_after_set", getOutput2)
+}
+
 func TestCognito_UserPoolNotFound(t *testing.T) {
 	client := newCognitoClient(t)
 	ctx := t.Context()
