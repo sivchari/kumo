@@ -533,7 +533,7 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 
 // UpdateItem updates an item in a table.
 //
-//nolint:funlen // UpdateItem keeps validation, condition evaluation, mutation, and return value handling together.
+//nolint:funlen,cyclop // UpdateItem keeps validation, condition evaluation, key-attribute enforcement, mutation, and return value handling together.
 func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, returnValues string, cond ConditionInput) (Item, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
