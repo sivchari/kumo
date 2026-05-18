@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -77,17 +78,24 @@ type MemoryStorage struct {
 	Alarms       map[string]*Alarm           `json:"alarms"`
 	Tags         map[string][]Tag            `json:"tags"`
 	baseURL      string
+	region       string
 	dataDir      string
 	snsPublisher SNSPublisher `json:"-"`
 }
 
 // NewMemoryStorage creates a new in-memory CloudWatch storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Metrics: make(map[MetricKey]*StoredMetric),
 		Alarms:  make(map[string]*Alarm),
 		Tags:    make(map[string][]Tag),
 		baseURL: baseURL,
+		region:  region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -512,7 +520,7 @@ func (s *MemoryStorage) SetAlarmState(ctx context.Context, alarmName, stateValue
 			return fmt.Errorf("SetAlarmState failed: %w", err)
 		}
 
-		subject := fmt.Sprintf("ALARM: %q in %s", alarmName, defaultRegion)
+		subject := fmt.Sprintf("ALARM: %q in %s", alarmName, s.region)
 
 		for _, arn := range actionARNs {
 			// Best-effort delivery: log but do not fail the SetAlarmState
@@ -568,7 +576,7 @@ func (s *MemoryStorage) buildAlarmNotification(alarm *Alarm, previousState strin
 		NewStateReason:   alarm.StateReason,
 		OldStateValue:    previousState,
 		StateChangeTime:  alarm.StateUpdatedAt,
-		Region:           defaultRegion,
+		Region:           s.region,
 		AlarmARN:         alarm.AlarmARN,
 		Trigger: alarmNotificationTrigger{
 			MetricName:         alarm.MetricName,

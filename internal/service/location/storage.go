@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"sync"
 	"time"
 
@@ -99,13 +100,18 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Maps:                make(map[string]*MapResource),
 		PlaceIndexes:        make(map[string]*PlaceIndex),
 		RouteCalculators:    make(map[string]*RouteCalculator),
 		GeofenceCollections: make(map[string]*GeofenceCollection),
 		Trackers:            make(map[string]*Tracker),
-		region:              defaultRegion,
+		region:              region,
 		accountID:           defaultAccountID,
 	}
 	for _, o := range opts {

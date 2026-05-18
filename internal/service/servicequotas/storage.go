@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -92,12 +93,17 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage with predefined services and quotas.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Services:      make(map[string]*ServiceInfo),
 		Quotas:        make(map[string]map[string]*ServiceQuota),
 		DefaultQuotas: make(map[string]map[string]*ServiceQuota),
 		Requests:      make(map[string]*QuotaChangeRequest),
-		region:        defaultRegion,
+		region:        region,
 		accountID:     defaultAccountID,
 	}
 

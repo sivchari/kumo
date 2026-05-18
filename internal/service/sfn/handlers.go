@@ -9,6 +9,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// Validation result values.
+const validationResultOK = "OK"
+
 // handlerFunc is a type alias for handler functions.
 type handlerFunc func(http.ResponseWriter, *http.Request)
 
@@ -420,7 +423,7 @@ func (s *Service) SendTaskHeartbeat(w http.ResponseWriter, _ *http.Request) {
 // shape check.
 func (s *Service) ValidateStateMachineDefinition(w http.ResponseWriter, _ *http.Request) {
 	writeResponse(w, ValidateStateMachineDefinitionResponse{
-		Result:      "OK",
+		Result:      validationResultOK,
 		Diagnostics: []validateDiagnostic{},
 	})
 }

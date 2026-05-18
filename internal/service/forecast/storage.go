@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Storage defines the interface for Forecast storage operations.
 type Storage interface {
@@ -71,13 +75,18 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Datasets:      make(map[string]*Dataset),
 		DatasetGroups: make(map[string]*DatasetGroup),
 		Predictors:    make(map[string]*Predictor),
 		Forecasts:     make(map[string]*Forecast),
 		accountID:     "123456789012",
-		region:        "us-east-1",
+		region:        region,
 	}
 	for _, o := range opts {
 		o(s)

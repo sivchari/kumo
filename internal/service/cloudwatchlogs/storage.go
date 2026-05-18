@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -70,14 +71,21 @@ type MemoryStorage struct {
 	mu        sync.RWMutex             `json:"-"`
 	LogGroups map[string]*LogGroupData `json:"logGroups"`
 	baseURL   string
+	region    string
 	dataDir   string
 }
 
 // NewMemoryStorage creates a new in-memory CloudWatch Logs storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		LogGroups: make(map[string]*LogGroupData),
 		baseURL:   baseURL,
+		region:    region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -720,13 +728,13 @@ func findLogStreamStartIndex(streams []LogStreamResponse, nextToken string) int 
 // buildLogGroupARN builds an ARN for a log group.
 func (m *MemoryStorage) buildLogGroupARN(name string) string {
 	return fmt.Sprintf("arn:aws:logs:%s:%s:log-group:%s",
-		defaultRegion, defaultAccountID, name)
+		m.region, defaultAccountID, name)
 }
 
 // buildLogStreamARN builds an ARN for a log stream.
 func (m *MemoryStorage) buildLogStreamARN(groupName, streamName string) string {
 	return fmt.Sprintf("arn:aws:logs:%s:%s:log-group:%s:log-stream:%s",
-		defaultRegion, defaultAccountID, groupName, streamName)
+		m.region, defaultAccountID, groupName, streamName)
 }
 
 // filterEventsByTime filters events by time range.

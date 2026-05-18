@@ -6,11 +6,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Storage defines the Lambda storage interface.
 type Storage interface {
@@ -75,11 +79,16 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Functions:           make(map[string]*Function),
 		EventSourceMappings: make(map[string]*EventSourceMapping),
 		baseURL:             baseURL,
-		region:              "us-east-1",
+		region:              region,
 		accountID:           "000000000000",
 	}
 	for _, o := range opts {

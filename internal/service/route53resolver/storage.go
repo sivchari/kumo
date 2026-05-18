@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ const (
 	errResourceInUse    = "ResourceInUseException"
 	errInvalidParameter = "InvalidParameterException"
 
+	defaultRegion  = "us-east-1"
 	statusDeleting = "DELETING"
 )
 
@@ -70,12 +72,17 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Endpoints:    make(map[string]*ResolverEndpoint),
 		Rules:        make(map[string]*ResolverRule),
 		Associations: make(map[string]*ResolverRuleAssociation),
 		accountID:    "123456789012",
-		region:       "us-east-1",
+		region:       region,
 	}
 	for _, o := range opts {
 		o(s)

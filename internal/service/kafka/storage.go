@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ const (
 	statusActive   = "ACTIVE"
 	statusDeleting = "DELETING"
 
+	defaultRegion       = "us-east-1"
 	defaultKafkaVersion = "3.6.0"
 	defaultInstanceType = "kafka.m5.large"
 	defaultVolumeSize   = 100
@@ -67,9 +69,14 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Clusters:  make(map[string]*ClusterInfo),
-		region:    "us-east-1",
+		region:    region,
 		accountID: "123456789012",
 	}
 	for _, o := range opts {

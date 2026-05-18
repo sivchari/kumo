@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -124,13 +125,18 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Accounts:            make(map[string]*Account),
 		OrganizationalUnits: make(map[string]*OrganizationalUnit),
 		OuParents:           make(map[string]string),
 		Policies:            make(map[string]*Policy),
 		PolicyAttachments:   make(map[string]map[string]bool),
-		region:              defaultRegion,
+		region:              region,
 		accountID:           defaultAccountID,
 	}
 

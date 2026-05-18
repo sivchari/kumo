@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -64,14 +65,21 @@ type MemoryStorage struct {
 	mu           sync.RWMutex                       `json:"-"`
 	Applications map[string]*ApplicationDescription `json:"applications"`
 	Environments map[string]*EnvironmentDescription `json:"environments"`
+	region       string
 	dataDir      string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Applications: make(map[string]*ApplicationDescription),
 		Environments: make(map[string]*EnvironmentDescription),
+		region:       region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -154,7 +162,7 @@ func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicat
 		Description:     req.Description,
 		DateCreated:     now,
 		DateUpdated:     now,
-		ApplicationArn:  fmt.Sprintf("arn:aws:elasticbeanstalk:%s:%s:application/%s", defaultRegion, defaultAccountID, req.ApplicationName),
+		ApplicationArn:  fmt.Sprintf("arn:aws:elasticbeanstalk:%s:%s:application/%s", m.region, defaultAccountID, req.ApplicationName),
 	}
 
 	m.Applications[req.ApplicationName] = app
@@ -250,7 +258,7 @@ func (m *MemoryStorage) CreateEnvironment(_ context.Context, req *CreateEnvironm
 		Health:            "Green",
 		DateCreated:       now,
 		DateUpdated:       now,
-		EnvironmentArn:    fmt.Sprintf("arn:aws:elasticbeanstalk:%s:%s:environment/%s/%s", defaultRegion, defaultAccountID, req.ApplicationName, req.EnvironmentName),
+		EnvironmentArn:    fmt.Sprintf("arn:aws:elasticbeanstalk:%s:%s:environment/%s/%s", m.region, defaultAccountID, req.ApplicationName, req.EnvironmentName),
 	}
 
 	m.Environments[req.EnvironmentName] = env

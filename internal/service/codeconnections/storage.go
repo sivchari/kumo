@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Error codes for CodeConnections.
 const (
@@ -75,12 +79,17 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Connections:     make(map[string]*Connection),
 		Hosts:           make(map[string]*Host),
 		RepositoryLinks: make(map[string]*RepositoryLink),
 		accountID:       "000000000000",
-		region:          "us-east-1",
+		region:          region,
 	}
 	for _, o := range opts {
 		o(s)

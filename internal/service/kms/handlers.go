@@ -10,6 +10,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// Default values.
+const defaultKeyPolicyName = "default"
+
 // handlerFunc is a type alias for handler functions.
 type handlerFunc func(http.ResponseWriter, *http.Request)
 
@@ -455,7 +458,7 @@ func (s *Service) GetKeyPolicy(w http.ResponseWriter, r *http.Request) {
 
 	writeKMSResponse(w, &GetKeyPolicyResponse{
 		Policy:     policy,
-		PolicyName: "default",
+		PolicyName: defaultKeyPolicyName,
 	})
 }
 
@@ -495,7 +498,7 @@ func (s *Service) ListKeyPolicies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeKMSResponse(w, &ListKeyPoliciesResponse{
-		PolicyNames: []string{"default"},
+		PolicyNames: []string{defaultKeyPolicyName},
 		Truncated:   false,
 	})
 }

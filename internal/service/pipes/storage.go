@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -133,9 +134,17 @@ func (m *MemoryStorage) Close() error {
 }
 
 const (
-	accountID = "123456789012"
-	region    = "us-east-1"
+	accountID     = "123456789012"
+	defaultRegion = "us-east-1"
 )
+
+var region = defaultRegion //nolint:gochecknoglobals // set once at init
+
+func init() {
+	if v := os.Getenv("AWS_DEFAULT_REGION"); v != "" {
+		region = v
+	}
+}
 
 // generatePipeArn generates an ARN for a pipe.
 func generatePipeArn(name string) string {

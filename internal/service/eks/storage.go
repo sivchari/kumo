@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ const (
 	statusActive   = "ACTIVE"
 	statusDeleting = "DELETING"
 
+	defaultRegion            = "us-east-1"
 	defaultKubernetesVersion = "1.29"
 	defaultPlatformVersion   = "eks.1"
 )
@@ -62,10 +64,15 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Clusters:   make(map[string]*Cluster),
 		Nodegroups: make(map[string]map[string]*Nodegroup),
-		region:     "us-east-1",
+		region:     region,
 		accountID:  "123456789012",
 	}
 	for _, o := range opts {

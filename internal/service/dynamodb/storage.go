@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,6 +69,7 @@ type MemoryStorage struct {
 	Tables      map[string]*tableData `json:"tables"`
 	Tags        map[string][]Tag      `json:"tags,omitempty"`
 	baseURL     string
+	region      string
 	dataDir     string
 	stopTTL     chan struct{}
 	streamStore *streams.Store
@@ -80,10 +82,16 @@ type tableData struct {
 
 // NewMemoryStorage creates a new in-memory DynamoDB storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Tables:      make(map[string]*tableData),
 		Tags:        make(map[string][]Tag),
 		baseURL:     baseURL,
+		region:      region,
 		stopTTL:     make(chan struct{}),
 		streamStore: streams.Global,
 	}
@@ -235,7 +243,7 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		TableStatus:            "ACTIVE",
 		ItemCount:              0,
 		TableSizeBytes:         0,
-		TableARN:               fmt.Sprintf("arn:aws:dynamodb:%s:%s:table/%s", defaultRegion, defaultAccountID, req.TableName),
+		TableARN:               fmt.Sprintf("arn:aws:dynamodb:%s:%s:table/%s", m.region, defaultAccountID, req.TableName),
 		BillingMode:            billingMode,
 		DeletionProtection:     req.DeletionProtectionEnabled,
 	}
@@ -1808,7 +1816,7 @@ func (m *MemoryStorage) emitStreamEvent(table *Table, eventName streams.Operatio
 	record := &streams.StreamRecord{
 		EventID:        uuid.New().String(),
 		EventName:      eventName,
-		AwsRegion:      defaultRegion,
+		AwsRegion:      m.region,
 		StreamViewType: table.StreamViewType,
 		TableName:      table.Name,
 		StreamARN:      table.LatestStreamArn,

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ const (
 
 // Default values.
 const (
+	defaultRegion           = "us-east-1"
 	defaultShardCount       = 1
 	defaultRetentionHours   = 24
 	maxRecordsPerGet        = 10000
@@ -101,10 +103,15 @@ type shardIteratorData struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Streams:        make(map[string]*StreamData),
 		shardIterators: make(map[string]*shardIteratorData),
-		region:         "us-east-1",
+		region:         region,
 		accountID:      "000000000000",
 	}
 	for _, o := range opts {

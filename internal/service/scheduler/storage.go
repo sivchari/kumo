@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -69,10 +70,15 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	ms := &MemoryStorage{
 		Schedules:      make(map[string]*Schedule),
 		ScheduleGroups: make(map[string]*ScheduleGroup),
-		region:         defaultRegion,
+		region:         region,
 		accountID:      defaultAccountID,
 	}
 
@@ -87,7 +93,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	// Create default schedule group.
 	ms.ScheduleGroups[defaultGroupName] = &ScheduleGroup{
 		Name:         defaultGroupName,
-		ARN:          generateScheduleGroupARN(defaultRegion, defaultAccountID, defaultGroupName),
+		ARN:          generateScheduleGroupARN(ms.region, defaultAccountID, defaultGroupName),
 		State:        ScheduleGroupStateActive,
 		CreationDate: time.Now(),
 	}

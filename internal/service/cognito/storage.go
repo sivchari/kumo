@@ -25,6 +25,9 @@ const (
 	errInvalidParameter       = "InvalidParameterException"
 )
 
+// Default values.
+const defaultMfaConfiguration = "OFF"
+
 // Storage defines the Cognito storage interface.
 type Storage interface {
 	// User Pool operations.
@@ -691,7 +694,7 @@ func (s *MemoryStorage) GetUserPoolMfaConfig(_ context.Context, userPoolID strin
 
 	cfg, ok := s.MfaConfigs[userPoolID]
 	if !ok {
-		return &MfaConfig{MfaConfiguration: "OFF"}, nil
+		return &MfaConfig{MfaConfiguration: defaultMfaConfiguration}, nil
 	}
 
 	return cfg, nil

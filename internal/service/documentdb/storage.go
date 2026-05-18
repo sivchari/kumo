@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -52,14 +53,21 @@ type MemoryStorage struct {
 	mu        sync.RWMutex           `json:"-"`
 	Clusters  map[string]*DBCluster  `json:"clusters"`
 	Instances map[string]*DBInstance `json:"instances"`
+	region    string
 	dataDir   string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Clusters:  make(map[string]*DBCluster),
 		Instances: make(map[string]*DBInstance),
+		region:    region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -158,8 +166,8 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 		EngineVersion:       engineVersion,
 		Status:              DBClusterStatusAvailable,
 		MasterUsername:      input.MasterUsername,
-		Endpoint:            fmt.Sprintf("%s.cluster-%s.%s.docdb.amazonaws.com", input.DBClusterIdentifier, generateID(), defaultRegion),
-		ReaderEndpoint:      fmt.Sprintf("%s.cluster-ro-%s.%s.docdb.amazonaws.com", input.DBClusterIdentifier, generateID(), defaultRegion),
+		Endpoint:            fmt.Sprintf("%s.cluster-%s.%s.docdb.amazonaws.com", input.DBClusterIdentifier, generateID(), m.region),
+		ReaderEndpoint:      fmt.Sprintf("%s.cluster-ro-%s.%s.docdb.amazonaws.com", input.DBClusterIdentifier, generateID(), m.region),
 		Port:                port,
 		ClusterCreateTime:   time.Now(),
 		DeletionProtection:  input.DeletionProtection,
@@ -273,7 +281,7 @@ func (m *MemoryStorage) CreateDBInstance(_ context.Context, input *CreateDBInsta
 		InstanceCreateTime:   time.Now(),
 		Tags:                 input.Tags,
 		Endpoint: &Endpoint{
-			Address: fmt.Sprintf("%s.%s.%s.docdb.amazonaws.com", input.DBInstanceIdentifier, generateID(), defaultRegion),
+			Address: fmt.Sprintf("%s.%s.%s.docdb.amazonaws.com", input.DBInstanceIdentifier, generateID(), m.region),
 			Port:    defaultDocDBPort,
 		},
 	}
@@ -358,11 +366,11 @@ func (m *MemoryStorage) DescribeDBInstances(_ context.Context, identifier string
 // Helper functions.
 
 func (m *MemoryStorage) dbClusterArn(identifier string) string {
-	return fmt.Sprintf("arn:aws:docdb:%s:%s:cluster:%s", defaultRegion, defaultAccountID, identifier)
+	return fmt.Sprintf("arn:aws:docdb:%s:%s:cluster:%s", m.region, defaultAccountID, identifier)
 }
 
 func (m *MemoryStorage) dbInstanceArn(identifier string) string {
-	return fmt.Sprintf("arn:aws:docdb:%s:%s:db:%s", defaultRegion, defaultAccountID, identifier)
+	return fmt.Sprintf("arn:aws:docdb:%s:%s:db:%s", m.region, defaultAccountID, identifier)
 }
 
 func generateID() string {

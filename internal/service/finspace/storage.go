@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ const (
 	errConflict         = "ConflictException"
 	errValidation       = "ValidationException"
 
+	defaultRegion = "us-east-1"
 	statusCreated = "CREATED"
 )
 
@@ -80,13 +82,18 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Environments: make(map[string]*KxEnvironment),
 		Databases:    make(map[string]*KxDatabase),
 		Users:        make(map[string]*KxUser),
 		Tags:         make(map[string]map[string]string),
 		accountID:    "123456789012",
-		region:       "us-east-1",
+		region:       region,
 	}
 	for _, o := range opts {
 		o(s)

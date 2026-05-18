@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -66,14 +67,21 @@ type MemoryStorage struct {
 	mu       sync.RWMutex                  `json:"-"`
 	Apps     map[string]*App               `json:"apps"`
 	Branches map[string]map[string]*Branch `json:"branches"` // appID -> branchName -> Branch
+	region   string
 	dataDir  string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Apps:     make(map[string]*App),
 		Branches: make(map[string]map[string]*Branch),
+		region:   region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -152,7 +160,7 @@ func (m *MemoryStorage) CreateApp(_ context.Context, input *CreateAppInput) (*Ap
 	}
 
 	app := &App{
-		AppArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s", defaultRegion, defaultAccountID, appID),
+		AppArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s", m.region, defaultAccountID, appID),
 		AppID:                 appID,
 		CreateTime:            now,
 		DefaultDomain:         fmt.Sprintf("%s.amplifyapp.com", appID),
@@ -289,7 +297,7 @@ func (m *MemoryStorage) CreateBranch(_ context.Context, appID string, input *Cre
 
 	branch := &Branch{
 		ActiveJobID:              "",
-		BranchArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s/branches/%s", defaultRegion, defaultAccountID, appID, input.BranchName),
+		BranchArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s/branches/%s", m.region, defaultAccountID, appID, input.BranchName),
 		BranchName:               input.BranchName,
 		CreateTime:               now,
 		CustomDomains:            []string{},

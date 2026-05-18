@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -79,17 +80,24 @@ type MemoryStorage struct {
 	VirtualServices map[string]map[string]*VirtualServiceData   `json:"virtualServices"` // meshName -> virtualServiceName -> data
 	VirtualRouters  map[string]map[string]*VirtualRouterData    `json:"virtualRouters"`  // meshName -> virtualRouterName -> data
 	Routes          map[string]map[string]map[string]*RouteData `json:"routes"`          // meshName -> virtualRouterName -> routeName -> data
+	region          string
 	dataDir         string
 }
 
 // NewMemoryStorage creates a new MemoryStorage instance.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Meshes:          make(map[string]*MeshData),
 		VirtualNodes:    make(map[string]map[string]*VirtualNodeData),
 		VirtualServices: make(map[string]map[string]*VirtualServiceData),
 		VirtualRouters:  make(map[string]map[string]*VirtualRouterData),
 		Routes:          make(map[string]map[string]map[string]*RouteData),
+		region:          region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -182,7 +190,7 @@ func (m *MemoryStorage) CreateMesh(_ context.Context, req *CreateMeshInput) (*Me
 
 	now := time.Now()
 	uid := uuid.New().String()
-	arn := fmt.Sprintf("arn:aws:appmesh:%s:%s:mesh/%s", defaultRegion, defaultAccountID, req.MeshName)
+	arn := fmt.Sprintf("arn:aws:appmesh:%s:%s:mesh/%s", m.region, defaultAccountID, req.MeshName)
 
 	mesh := &MeshData{
 		MeshName: req.MeshName,
@@ -347,7 +355,7 @@ func (m *MemoryStorage) CreateVirtualNode(_ context.Context, req *CreateVirtualN
 	now := time.Now()
 	uid := uuid.New().String()
 	arn := fmt.Sprintf("arn:aws:appmesh:%s:%s:mesh/%s/virtualNode/%s",
-		defaultRegion, defaultAccountID, req.MeshName, req.VirtualNodeName)
+		m.region, defaultAccountID, req.MeshName, req.VirtualNodeName)
 
 	node := &VirtualNodeData{
 		MeshName:        req.MeshName,
@@ -512,7 +520,7 @@ func (m *MemoryStorage) CreateVirtualService(_ context.Context, req *CreateVirtu
 	now := time.Now()
 	uid := uuid.New().String()
 	arn := fmt.Sprintf("arn:aws:appmesh:%s:%s:mesh/%s/virtualService/%s",
-		defaultRegion, defaultAccountID, req.MeshName, req.VirtualServiceName)
+		m.region, defaultAccountID, req.MeshName, req.VirtualServiceName)
 
 	service := &VirtualServiceData{
 		MeshName:           req.MeshName,
@@ -677,7 +685,7 @@ func (m *MemoryStorage) CreateVirtualRouter(_ context.Context, req *CreateVirtua
 	now := time.Now()
 	uid := uuid.New().String()
 	arn := fmt.Sprintf("arn:aws:appmesh:%s:%s:mesh/%s/virtualRouter/%s",
-		defaultRegion, defaultAccountID, req.MeshName, req.VirtualRouterName)
+		m.region, defaultAccountID, req.MeshName, req.VirtualRouterName)
 
 	router := &VirtualRouterData{
 		MeshName:          req.MeshName,
@@ -859,7 +867,7 @@ func (m *MemoryStorage) CreateRoute(_ context.Context, req *CreateRouteInput) (*
 	now := time.Now()
 	uid := uuid.New().String()
 	arn := fmt.Sprintf("arn:aws:appmesh:%s:%s:mesh/%s/virtualRouter/%s/route/%s",
-		defaultRegion, defaultAccountID, req.MeshName, req.VirtualRouterName, req.RouteName)
+		m.region, defaultAccountID, req.MeshName, req.VirtualRouterName, req.RouteName)
 
 	route := &RouteData{
 		MeshName:          req.MeshName,

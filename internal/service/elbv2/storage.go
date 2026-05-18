@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -74,16 +75,23 @@ type MemoryStorage struct {
 	TargetGroups  map[string]*TargetGroup  `json:"targetGroups"`  // keyed by ARN
 	Listeners     map[string]*Listener     `json:"listeners"`     // keyed by ARN
 	Targets       map[string][]Target      `json:"targets"`       // keyed by targetGroupArn
+	region        string
 	dataDir       string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		LoadBalancers: make(map[string]*LoadBalancer),
 		TargetGroups:  make(map[string]*TargetGroup),
 		Listeners:     make(map[string]*Listener),
 		Targets:       make(map[string][]Target),
+		region:        region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -220,13 +228,13 @@ func (m *MemoryStorage) checkDuplicateLoadBalancerName(name string) error {
 func (m *MemoryStorage) buildLoadBalancer(req *CreateLoadBalancerRequest, defaults loadBalancerDefaults) *LoadBalancer {
 	lbID := uuid.New().String()[:17]
 	arn := fmt.Sprintf("arn:aws:elasticloadbalancing:%s:%s:loadbalancer/%s/%s/%s",
-		defaultRegion, defaultAccountID, defaults.lbType[:3], req.Name, lbID)
-	dnsName := fmt.Sprintf("%s-%s.%s.elb.amazonaws.com", req.Name, lbID[:8], defaultRegion)
+		m.region, defaultAccountID, defaults.lbType[:3], req.Name, lbID)
+	dnsName := fmt.Sprintf("%s-%s.%s.elb.amazonaws.com", req.Name, lbID[:8], m.region)
 
 	azs := make([]AvailabilityZone, 0, len(req.Subnets))
 	for i, subnet := range req.Subnets {
 		azs = append(azs, AvailabilityZone{
-			ZoneName: fmt.Sprintf("%s%c", defaultRegion, 'a'+byte(i%3)),
+			ZoneName: fmt.Sprintf("%s%c", m.region, 'a'+byte(i%3)),
 			SubnetID: subnet,
 		})
 	}
@@ -412,7 +420,7 @@ func (m *MemoryStorage) checkDuplicateTargetGroupName(name string) error {
 func (m *MemoryStorage) buildTargetGroup(req *CreateTargetGroupRequest, defaults *targetGroupDefaults) *TargetGroup {
 	tgID := uuid.New().String()[:17]
 	arn := fmt.Sprintf("arn:aws:elasticloadbalancing:%s:%s:targetgroup/%s/%s",
-		defaultRegion, defaultAccountID, req.Name, tgID)
+		m.region, defaultAccountID, req.Name, tgID)
 
 	return &TargetGroup{
 		TargetGroupArn:             arn,
@@ -584,7 +592,7 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 	lbType := lb.Type[:3]
 
 	arn := fmt.Sprintf("arn:aws:elasticloadbalancing:%s:%s:listener/%s/%s/%s/%s",
-		defaultRegion, defaultAccountID, lbType, lb.LoadBalancerName, lbID, listenerID)
+		m.region, defaultAccountID, lbType, lb.LoadBalancerName, lbID, listenerID)
 
 	listener := &Listener{
 		ListenerArn:     arn,

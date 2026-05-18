@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Storage is the interface for S3 Control storage operations.
 type Storage interface {
@@ -44,14 +48,21 @@ type MemoryStorage struct {
 	mu                 sync.RWMutex                               `json:"-"`
 	PublicAccessBlocks map[string]*PublicAccessBlockConfiguration `json:"publicAccessBlocks"` // key: accountID
 	AccessPoints       map[string]map[string]*AccessPoint         `json:"accessPoints"`       // key: accountID -> name -> AccessPoint
+	region             string
 	dataDir            string
 }
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		PublicAccessBlocks: make(map[string]*PublicAccessBlockConfiguration),
 		AccessPoints:       make(map[string]map[string]*AccessPoint),
+		region:             region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -170,7 +181,7 @@ func (s *MemoryStorage) CreateAccessPoint(_ context.Context, accountID string, a
 
 	// Generate ARN and alias
 	ap.AccountID = accountID
-	ap.AccessPointArn = fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", "us-east-1", accountID, ap.Name)
+	ap.AccessPointArn = fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", s.region, accountID, ap.Name)
 	ap.Alias = fmt.Sprintf("%s-%s-s3alias", ap.Name, accountID[:12])
 
 	if ap.VpcConfiguration != nil {
@@ -180,7 +191,7 @@ func (s *MemoryStorage) CreateAccessPoint(_ context.Context, accountID string, a
 	}
 
 	ap.Endpoints = map[string]string{
-		"https": fmt.Sprintf("https://%s-%s.s3-accesspoint.us-east-1.amazonaws.com", ap.Name, accountID),
+		"https": fmt.Sprintf("https://%s-%s.s3-accesspoint.%s.amazonaws.com", ap.Name, accountID, s.region),
 	}
 
 	s.AccessPoints[accountID][ap.Name] = ap
