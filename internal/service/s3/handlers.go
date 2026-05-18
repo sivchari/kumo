@@ -801,6 +801,8 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 }
 
 // CopyObject handles PUT /{bucket}/{key} with X-Amz-Copy-Source header.
+//
+//nolint:funlen // CopyObject keeps source-resolution, preconditions, put, version header, and event emission in one place.
 func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	dstBucket := r.PathValue("bucket")
 	dstKey := r.PathValue("key")
