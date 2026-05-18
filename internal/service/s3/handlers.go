@@ -778,9 +778,9 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store tags from x-amz-tagging header (URL-encoded query string format).
-	if taggingHeader := r.Header.Get("X-Amz-Tagging"); taggingHeader != "" {
-		tags := parseTaggingHeader(taggingHeader)
-		if len(tags) > 0 {
+	if header := r.Header.Get("X-Amz-Tagging"); header != "" {
+		tags, err := parseTaggingHeader(header)
+		if err == nil && len(tags) > 0 {
 			_ = s.storage.PutObjectTagging(r.Context(), bucket, key, tags)
 		}
 	}
@@ -897,31 +897,10 @@ func (s *Service) copyObjectTags(ctx context.Context, header http.Header, srcBuc
 
 		return cloneStringMap(tags), nil
 	case taggingDirectiveReplace:
-		return parseObjectTaggingHeader(header.Get(taggingHeader))
+		return parseTaggingHeader(header.Get(taggingHeader))
 	default:
 		return nil, errors.New("invalid tagging directive")
 	}
-}
-
-func parseObjectTaggingHeader(raw string) (map[string]string, error) {
-	values, err := url.ParseQuery(raw)
-	if err != nil {
-		return nil, errors.New("invalid tagging")
-	}
-
-	tags := make(map[string]string, len(values))
-
-	for key, value := range values {
-		if len(value) == 0 {
-			tags[key] = ""
-
-			continue
-		}
-
-		tags[key] = value[0]
-	}
-
-	return tags, nil
 }
 
 func cloneStringMap(src map[string]string) map[string]string {
@@ -2511,19 +2490,27 @@ func extractObjectMetadata(r *http.Request) map[string]string {
 
 // parseTaggingHeader parses the x-amz-tagging header value.
 // Format: URL-encoded query string, e.g. "key1=value1&key2=value2".
-func parseTaggingHeader(header string) map[string]string {
-	tags := make(map[string]string)
+// Percent-encoded keys / values are decoded via url.ParseQuery, so PutObject
+// and CopyObject (with REPLACE directive) treat tagging strings identically.
+func parseTaggingHeader(raw string) (map[string]string, error) {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil, errors.New("invalid tagging")
+	}
 
-	for _, pair := range strings.Split(header, "&") {
-		k, v, ok := strings.Cut(pair, "=")
-		if !ok || k == "" {
+	tags := make(map[string]string, len(values))
+
+	for key, value := range values {
+		if len(value) == 0 {
+			tags[key] = ""
+
 			continue
 		}
 
-		tags[k] = v
+		tags[key] = value[0]
 	}
 
-	return tags
+	return tags, nil
 }
 
 // PutObjectTagging handles PUT /{bucket}/{key}?tagging.
