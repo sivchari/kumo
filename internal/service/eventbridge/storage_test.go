@@ -2,8 +2,14 @@ package eventbridge
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 //nolint:funlen // Table-driven test with comprehensive InputPath coverage.
@@ -337,5 +343,152 @@ func TestIsSQSArn(t *testing.T) {
 				t.Errorf("isSQSArn(%q) = %v, want %v", tt.arn, got, tt.want)
 			}
 		})
+	}
+}
+
+const (
+	regionAPNE1 = "ap-northeast-1"
+	regionEUW1  = "eu-west-1"
+	regionUSE1  = "us-east-1"
+)
+
+// TestNewMemoryStorage_RegionFromEnv verifies that NewMemoryStorage honours
+// AWS_DEFAULT_REGION and falls back to us-east-1 when the env var is empty
+// or unset, matching the convention established by sfn (PR #520).
+func TestNewMemoryStorage_RegionFromEnv(t *testing.T) {
+	//nolint:paralleltest // t.Setenv is incompatible with t.Parallel.
+	tests := []struct {
+		name       string
+		envValue   string
+		wantRegion string
+	}{
+		{
+			name:       "AWS_DEFAULT_REGION " + regionAPNE1,
+			envValue:   regionAPNE1,
+			wantRegion: regionAPNE1,
+		},
+		{
+			name:       "AWS_DEFAULT_REGION " + regionEUW1,
+			envValue:   regionEUW1,
+			wantRegion: regionEUW1,
+		},
+		{
+			name:       "AWS_DEFAULT_REGION empty falls back to " + regionUSE1,
+			envValue:   "",
+			wantRegion: regionUSE1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AWS_DEFAULT_REGION", tt.envValue)
+
+			s := NewMemoryStorage()
+			if s.region != tt.wantRegion {
+				t.Errorf("region = %q, want %q", s.region, tt.wantRegion)
+			}
+
+			wantArn := "arn:aws:events:" + tt.wantRegion + ":000000000000:event-bus/default"
+			if got := s.EventBuses[defaultEventBusName].Arn; got != wantArn {
+				t.Errorf("default event bus ARN = %q, want %q", got, wantArn)
+			}
+		})
+	}
+}
+
+// TestPutEvents_APIDestinationCrossRegion is the regression test for the
+// silent-drop bug where a target ARN whose region differs from the storage's
+// own region failed strict ARN comparison in resolveAPIDestination, causing
+// matchAndDeliver to skip dispatch while PutEvents still reported success.
+//
+//nolint:funlen // End-to-end test with setup, dispatch, and assertion.
+func TestPutEvents_APIDestinationCrossRegion(t *testing.T) {
+	t.Parallel()
+
+	received := make(chan []byte, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		select {
+		case received <- body:
+		default:
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	s := NewMemoryStorage()
+	ctx := context.Background()
+
+	conn, err := s.CreateConnection(ctx, &CreateConnectionRequest{
+		Name:              "test-conn",
+		AuthorizationType: "API_KEY",
+		AuthParameters: AuthParameters{
+			APIKeyAuthParameters: &APIKeyAuthParameters{
+				APIKeyName:  "X-Api-Key",
+				APIKeyValue: "secret",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection: %v", err)
+	}
+
+	dest, err := s.CreateAPIDestination(ctx, &CreateAPIDestinationRequest{
+		Name:               "test-dest",
+		ConnectionArn:      conn.Arn,
+		InvocationEndpoint: server.URL,
+		HTTPMethod:         http.MethodPost,
+	})
+	if err != nil {
+		t.Fatalf("CreateAPIDestination: %v", err)
+	}
+
+	// The storage emits the API destination ARN under its own region. Pick a
+	// different region for the target ARN so we exercise the cross-region path.
+	otherRegion := regionAPNE1
+	if s.region == otherRegion {
+		otherRegion = regionEUW1
+	}
+
+	if strings.Contains(dest.Arn, ":"+otherRegion+":") {
+		t.Fatalf("test precondition failed: dest.Arn %q should not contain %q", dest.Arn, otherRegion)
+	}
+
+	crossRegionTargetArn := "arn:aws:events:" + otherRegion + ":000000000000:api-destination/" + dest.Name
+
+	if _, err := s.PutRule(ctx, &PutRuleRequest{
+		Name:         "test-rule",
+		EventPattern: `{"source":["my.test"]}`,
+		State:        "ENABLED",
+	}); err != nil {
+		t.Fatalf("PutRule: %v", err)
+	}
+
+	if _, err := s.PutTargets(ctx, "", "test-rule", []TargetInput{
+		{ID: "target-1", Arn: crossRegionTargetArn},
+	}); err != nil {
+		t.Fatalf("PutTargets: %v", err)
+	}
+
+	if _, err := s.PutEvents(ctx, []PutEventsRequestEntry{
+		{Source: "my.test", DetailType: "TestEvent", Detail: `{"hello":"world"}`},
+	}); err != nil {
+		t.Fatalf("PutEvents: %v", err)
+	}
+
+	select {
+	case body := <-received:
+		var ev map[string]any
+		if err := json.Unmarshal(body, &ev); err != nil {
+			t.Fatalf("dispatched body not valid JSON: %v", err)
+		}
+
+		if ev["source"] != "my.test" {
+			t.Errorf("source = %v, want my.test", ev["source"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not receive dispatched event within timeout (silent drop)")
 	}
 }

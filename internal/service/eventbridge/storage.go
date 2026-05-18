@@ -116,13 +116,18 @@ type MemoryStorage struct {
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+
 	s := &MemoryStorage{
 		EventBuses:      make(map[string]*EventBus),
 		Rules:           make(map[string]map[string]*Rule),
 		Targets:         make(map[string]map[string][]*Target),
 		Connections:     make(map[string]*Connection),
 		APIDestinations: make(map[string]*APIDestination),
-		region:          "us-east-1",
+		region:          region,
 		accountID:       "000000000000",
 		baseURL:         "http://localhost:4566",
 		logger:          slog.New(slog.NewTextHandler(os.Stdout, nil)),
@@ -1071,12 +1076,19 @@ func (s *MemoryStorage) DeleteAPIDestination(_ context.Context, name string) err
 	return nil
 }
 
-// resolveAPIDestination finds the API destination and its endpoint from a target ARN.
+// resolveAPIDestination finds the API destination for a target ARN.
+// Lookup is by name (the suffix after ":api-destination/") so callers can supply
+// a target ARN whose region/account differs from the storage's own — AWS production
+// callers usually pin their target ARNs to the production region, while kumo emits
+// API destination ARNs under its configured emulator region.
 func (s *MemoryStorage) resolveAPIDestination(targetArn string) *APIDestination {
-	for _, dest := range s.APIDestinations {
-		if dest.Arn == targetArn {
-			return dest
-		}
+	name := targetArn
+	if i := strings.LastIndex(targetArn, ":api-destination/"); i >= 0 {
+		name = targetArn[i+len(":api-destination/"):]
+	}
+
+	if dest, ok := s.APIDestinations[name]; ok {
+		return dest
 	}
 
 	return nil
