@@ -84,7 +84,6 @@ func (s *Service) Actions() []string {
 		"DeleteAlarms",
 		"DescribeAlarms",
 		"SetAlarmState",
-		// Tag stubs — see tag_stubs.go.
 		"ListTagsForResource",
 		"TagResource",
 		"UntagResource",

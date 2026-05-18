@@ -34,6 +34,9 @@ type Storage interface {
 	DeleteAlarms(ctx context.Context, alarmNames []string) error
 	DescribeAlarms(ctx context.Context, req *DescribeAlarmsRequest) (*DescribeAlarmsResult, error)
 	SetAlarmState(ctx context.Context, alarmName, stateValue, stateReason string) error
+	TagResource(ctx context.Context, resourceARN string, tags []Tag) error
+	UntagResource(ctx context.Context, resourceARN string, tagKeys []string) error
+	ListTagsForResource(ctx context.Context, resourceARN string) ([]Tag, error)
 }
 
 // MetricKey uniquely identifies a metric.
@@ -72,6 +75,7 @@ type MemoryStorage struct {
 	mu           sync.RWMutex                `json:"-"`
 	Metrics      map[MetricKey]*StoredMetric `json:"metrics"`
 	Alarms       map[string]*Alarm           `json:"alarms"`
+	Tags         map[string][]Tag            `json:"tags"`
 	baseURL      string
 	dataDir      string
 	snsPublisher SNSPublisher `json:"-"`
@@ -82,6 +86,7 @@ func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Metrics: make(map[MetricKey]*StoredMetric),
 		Alarms:  make(map[string]*Alarm),
+		Tags:    make(map[string][]Tag),
 		baseURL: baseURL,
 	}
 	for _, o := range opts {
@@ -118,6 +123,7 @@ func stringToMetricKey(s string) MetricKey {
 type marshalableStorage struct {
 	Metrics map[string]*StoredMetric `json:"metrics"`
 	Alarms  map[string]*Alarm        `json:"alarms"`
+	Tags    map[string][]Tag         `json:"tags"`
 }
 
 // MarshalJSON serializes the storage state to JSON.
@@ -128,6 +134,7 @@ func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	m := &marshalableStorage{
 		Metrics: make(map[string]*StoredMetric, len(s.Metrics)),
 		Alarms:  s.Alarms,
+		Tags:    s.Tags,
 	}
 
 	for k, v := range s.Metrics {
@@ -163,6 +170,12 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.Alarms == nil {
 		s.Alarms = make(map[string]*Alarm)
+	}
+
+	s.Tags = m.Tags
+
+	if s.Tags == nil {
+		s.Tags = make(map[string][]Tag)
 	}
 
 	return nil
@@ -778,4 +791,73 @@ func (s *MemoryStorage) calculateStatistics(points []MetricDatapoint, statistics
 	}
 
 	return []Datapoint{dp}
+}
+
+// TagResource adds or overwrites tags on a resource identified by its ARN.
+func (s *MemoryStorage) TagResource(_ context.Context, resourceARN string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing := s.Tags[resourceARN]
+	tagMap := make(map[string]string, len(existing)+len(tags))
+
+	for _, tag := range existing {
+		tagMap[tag.Key] = tag.Value
+	}
+
+	for _, tag := range tags {
+		tagMap[tag.Key] = tag.Value
+	}
+
+	merged := make([]Tag, 0, len(tagMap))
+
+	for k, v := range tagMap {
+		merged = append(merged, Tag{Key: k, Value: v})
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Key < merged[j].Key
+	})
+
+	s.Tags[resourceARN] = merged
+
+	return nil
+}
+
+// UntagResource removes the specified tag keys from a resource.
+func (s *MemoryStorage) UntagResource(_ context.Context, resourceARN string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing := s.Tags[resourceARN]
+
+	keySet := make(map[string]bool, len(tagKeys))
+	for _, key := range tagKeys {
+		keySet[key] = true
+	}
+
+	remaining := make([]Tag, 0, len(existing))
+
+	for _, tag := range existing {
+		if !keySet[tag.Key] {
+			remaining = append(remaining, tag)
+		}
+	}
+
+	s.Tags[resourceARN] = remaining
+
+	return nil
+}
+
+// ListTagsForResource returns the tags attached to a resource.
+func (s *MemoryStorage) ListTagsForResource(_ context.Context, resourceARN string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tags := s.Tags[resourceARN]
+	if tags == nil {
+		tags = make([]Tag, 0)
+	}
+
+	return tags, nil
 }

@@ -266,6 +266,96 @@ func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, struct{}{})
 }
 
+// ListTagsForResource returns the tags attached to a CloudWatch resource.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	members := make([]xmlTagMember, 0, len(tags))
+	for _, tag := range tags {
+		members = append(members, xmlTagMember(tag))
+	}
+
+	writeCloudWatchXML(w, xmlListTagsForResourceResponse{
+		Xmlns: cloudWatchXMLNS,
+		ListTagsForResourceResult: xmlListTagsForResourceResult{
+			Tags: xmlTagList{Members: members},
+		},
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// TagResource attaches tags to a CloudWatch resource.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlTagResourceResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// UntagResource removes tags from a CloudWatch resource.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlUntagResourceResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
