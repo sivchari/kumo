@@ -1,4 +1,6 @@
 {
-  "Tags": {},
+  "Tags": {
+    "env": "test"
+  },
   "ResultMetadata": {}
 }
