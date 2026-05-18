@@ -1,10 +1,7 @@
 {
   "NextMarker": null,
-  "Tags": [
-    {
-      "TagKey": "Env",
-      "TagValue": "test"
-    }
+  "PolicyNames": [
+    "default"
   ],
   "Truncated": false,
   "ResultMetadata": {}
