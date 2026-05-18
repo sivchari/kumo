@@ -59,11 +59,9 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("PUT", prefix+"/2015-03-31/event-source-mappings/{uuid}", s.UpdateEventSourceMapping)
 		r.Handle("DELETE", prefix+"/2015-03-31/event-source-mappings/{uuid}", s.DeleteEventSourceMapping)
 
-		// Refresh stubs — see refresh_stubs.go. Required by
-		// terraform-provider-aws after CreateFunction; without these the
-		// apply errors immediately on the post-create read. Versioned-API
-		// dates (2019-09-25, 2020-06-30) are now isolated by router prefix
-		// from the S3 catch-all so the bare-prefix variants register too.
+		// terraform-provider-aws refresh endpoints. Required after
+		// CreateFunction; without these the apply errors immediately on
+		// the post-create read.
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/versions", s.ListVersionsByFunction)
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/aliases", s.ListAliases)
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/policy", s.GetPolicy)
@@ -72,6 +70,8 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("GET", prefix+"/2020-06-30/functions/{functionName}/code-signing-config", s.GetFunctionCodeSigningConfig)
 		r.Handle("GET", prefix+"/2019-09-25/functions/{functionName}/event-invoke-config/list", s.ListFunctionEventInvokeConfigs)
 		r.Handle("GET", prefix+"/2017-03-31/tags/{arn...}", s.ListTags)
+		r.Handle("POST", prefix+"/2017-03-31/tags/{arn...}", s.TagResource)
+		r.Handle("DELETE", prefix+"/2017-03-31/tags/{arn...}", s.UntagResource)
 	}
 }
 

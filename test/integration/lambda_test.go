@@ -641,3 +641,85 @@ func TestLambda_GetFunctionConfiguration(t *testing.T) {
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "FunctionArn", "CodeSha256", "LastModified")).Assert(t.Name(), getOutput)
 }
+
+func TestLambda_TagOperations(t *testing.T) {
+	client := newLambdaClient(t)
+	ctx := t.Context()
+	functionName := "test-function-tag-ops"
+
+	// Create function with initial tags.
+	createOutput, err := client.CreateFunction(ctx, &lambda.CreateFunctionInput{
+		FunctionName: aws.String(functionName),
+		Runtime:      types.RuntimePython312,
+		Role:         aws.String("arn:aws:iam::000000000000:role/test-role"),
+		Handler:      aws.String("index.handler"),
+		Code: &types.FunctionCode{
+			ZipFile: []byte("fake-zip-content"),
+		},
+		Tags: map[string]string{
+			"Environment": "test",
+			"Project":     "kumo",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	functionArn := createOutput.FunctionArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	// ListTags should return initial tags.
+	listOutput, err := client.ListTags(ctx, &lambda.ListTagsInput{
+		Resource: functionArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_initial", listOutput)
+
+	// TagResource: add new tags.
+	_, err = client.TagResource(ctx, &lambda.TagResourceInput{
+		Resource: functionArn,
+		Tags: map[string]string{
+			"NewTag": "newvalue",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTags should include the new tag.
+	listOutput, err = client.ListTags(ctx, &lambda.ListTagsInput{
+		Resource: functionArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_after_add", listOutput)
+
+	// UntagResource: remove a tag.
+	_, err = client.UntagResource(ctx, &lambda.UntagResourceInput{
+		Resource: functionArn,
+		TagKeys:  []string{"NewTag"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTags should not include the removed tag.
+	listOutput, err = client.ListTags(ctx, &lambda.ListTagsInput{
+		Resource: functionArn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_after_remove", listOutput)
+}

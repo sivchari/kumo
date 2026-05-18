@@ -22,9 +22,21 @@ type Storage interface {
 	UpdateFunctionCode(ctx context.Context, name string, req *UpdateFunctionCodeRequest) (*Function, error)
 	UpdateFunctionConfiguration(ctx context.Context, name string, req *UpdateFunctionConfigurationRequest) (*Function, error)
 
+	// Tag operations
+	ListTags(ctx context.Context, arn string) (map[string]string, error)
+	TagResource(ctx context.Context, arn string, tags map[string]string) error
+	UntagResource(ctx context.Context, arn string, tagKeys []string) error
+
 	// Permission operations
 	AddPermission(ctx context.Context, functionName string, stmt *PolicyStatement) error
 	RemovePermission(ctx context.Context, functionName, statementID string) error
+	GetPolicy(ctx context.Context, functionName string) (*ResourcePolicy, error)
+
+	// Read-only accessors
+	ListVersionsByFunction(ctx context.Context, functionName string) (*Function, error)
+	ListAliases(ctx context.Context, functionName string) error
+	ListFunctionEventInvokeConfigs(ctx context.Context, functionName string) error
+	GetFunctionCodeSigningConfig(ctx context.Context, functionName string) (string, error)
 
 	// EventSourceMapping operations
 	CreateEventSourceMapping(ctx context.Context, req *CreateEventSourceMappingRequest) (*EventSourceMapping, error)
@@ -460,6 +472,156 @@ func (s *MemoryStorage) RemovePermission(_ context.Context, functionName, statem
 		Type:    ErrResourceNotFound,
 		Message: fmt.Sprintf("Statement %s is not found in resource policy.", statementID),
 	}
+}
+
+// GetPolicy returns the resource policy for a function.
+func (s *MemoryStorage) GetPolicy(_ context.Context, functionName string) (*ResourcePolicy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return nil, &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return fn.Policy, nil
+}
+
+// ListTags returns the tags for a function identified by its ARN.
+func (s *MemoryStorage) ListTags(_ context.Context, arn string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			tags := fn.Tags
+			if tags == nil {
+				tags = make(map[string]string)
+			}
+
+			return tags, nil
+		}
+	}
+
+	return nil, &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// TagResource adds or overwrites tags on a function identified by its ARN.
+func (s *MemoryStorage) TagResource(_ context.Context, arn string, tags map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			if fn.Tags == nil {
+				fn.Tags = make(map[string]string)
+			}
+
+			for k, v := range tags {
+				fn.Tags[k] = v
+			}
+
+			return nil
+		}
+	}
+
+	return &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// UntagResource removes tags from a function identified by its ARN.
+func (s *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			if fn.Tags == nil {
+				return nil
+			}
+
+			for _, key := range tagKeys {
+				delete(fn.Tags, key)
+			}
+
+			return nil
+		}
+	}
+
+	return &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// ListVersionsByFunction returns the function for version listing.
+func (s *MemoryStorage) ListVersionsByFunction(_ context.Context, functionName string) (*Function, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return nil, &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return fn, nil
+}
+
+// ListAliases validates the function exists for alias listing.
+func (s *MemoryStorage) ListAliases(_ context.Context, functionName string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.Functions[functionName]; !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return nil
+}
+
+// ListFunctionEventInvokeConfigs validates the function exists for event invoke config listing.
+func (s *MemoryStorage) ListFunctionEventInvokeConfigs(_ context.Context, functionName string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.Functions[functionName]; !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return nil
+}
+
+// GetFunctionCodeSigningConfig returns the code signing config ARN for a function.
+func (s *MemoryStorage) GetFunctionCodeSigningConfig(_ context.Context, functionName string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.Functions[functionName]; !exists {
+		return "", &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	// Code signing is not modeled; return the function name only.
+	return functionName, nil
 }
 
 // CreateEventSourceMapping creates a new event source mapping.

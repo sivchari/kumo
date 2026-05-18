@@ -311,3 +311,8 @@ type getPolicyResponse struct {
 type listTagsResponse struct {
 	Tags map[string]string `json:"Tags"`
 }
+
+// tagResourceRequest is the request body for TagResource.
+type tagResourceRequest struct {
+	Tags map[string]string `json:"Tags"`
+}
