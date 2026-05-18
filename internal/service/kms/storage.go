@@ -21,6 +21,12 @@ const (
 	defaultAccountID = "000000000000"
 )
 
+// defaultKeyPolicy is the AWS-default key policy returned for any key when
+// no explicit policy has been set. terraform-provider-aws hashes this for
+// drift detection so it must be a stable JSON document with the standard
+// AccountRootEnable statement.
+const defaultKeyPolicy = `{"Version":"2012-10-17","Id":"key-default-1","Statement":[{"Sid":"Enable IAM User Permissions","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"kms:*","Resource":"*"}]}`
+
 // Error codes.
 const (
 	errNotFound          = "NotFoundException"
@@ -64,6 +70,18 @@ type Storage interface {
 	Encrypt(ctx context.Context, keyID string, plaintext []byte, encryptionContext map[string]string) ([]byte, error)
 	Decrypt(ctx context.Context, ciphertextBlob []byte, encryptionContext map[string]string, keyID string) ([]byte, string, error)
 	GenerateDataKey(ctx context.Context, keyID string, keySpec string, numberOfBytes int32, encryptionContext map[string]string) ([]byte, []byte, error)
+
+	// Policy operations.
+	GetKeyPolicy(ctx context.Context, keyID string) (string, error)
+	PutKeyPolicy(ctx context.Context, keyID, policy string) error
+
+	// Tag operations.
+	ListResourceTags(ctx context.Context, keyID string) ([]Tag, error)
+	TagResource(ctx context.Context, keyID string, tags []Tag) error
+	UntagResource(ctx context.Context, keyID string, tagKeys []string) error
+
+	// Rotation operations.
+	GetKeyRotationStatus(ctx context.Context, keyID string) (bool, error)
 
 	// Alias operations.
 	CreateAlias(ctx context.Context, aliasName, targetKeyID string) error
@@ -634,4 +652,107 @@ func (s *MemoryStorage) GetAlias(_ context.Context, aliasName string) (*Alias, e
 	}
 
 	return alias, nil
+}
+
+// GetKeyPolicy returns the policy for a key.
+func (s *MemoryStorage) GetKeyPolicy(_ context.Context, keyID string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return "", err
+	}
+
+	policy := key.Policy
+	if policy == "" {
+		policy = defaultKeyPolicy
+	}
+
+	return policy, nil
+}
+
+// PutKeyPolicy sets the policy for a key.
+func (s *MemoryStorage) PutKeyPolicy(_ context.Context, keyID, policy string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return err
+	}
+
+	key.Policy = policy
+
+	return nil
+}
+
+// ListResourceTags returns the tags for a key.
+func (s *MemoryStorage) ListResourceTags(_ context.Context, keyID string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return nil, err
+	}
+
+	tags := make([]Tag, 0, len(key.Tags))
+	for k, v := range key.Tags {
+		tags = append(tags, Tag{TagKey: k, TagValue: v})
+	}
+
+	return tags, nil
+}
+
+// TagResource adds tags to a key.
+func (s *MemoryStorage) TagResource(_ context.Context, keyID string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return err
+	}
+
+	if key.Tags == nil {
+		key.Tags = make(map[string]string)
+	}
+
+	for _, tag := range tags {
+		key.Tags[tag.TagKey] = tag.TagValue
+	}
+
+	return nil
+}
+
+// UntagResource removes tags from a key.
+func (s *MemoryStorage) UntagResource(_ context.Context, keyID string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return err
+	}
+
+	for _, tagKey := range tagKeys {
+		delete(key.Tags, tagKey)
+	}
+
+	return nil
+}
+
+// GetKeyRotationStatus returns the rotation status for a key.
+func (s *MemoryStorage) GetKeyRotationStatus(_ context.Context, keyID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	_, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return false, err
+	}
+
+	// Rotation is not modeled in storage; always report disabled.
+	return false, nil
 }

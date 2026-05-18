@@ -349,37 +349,83 @@ func (e *ServiceError) Error() string {
 	return e.Message
 }
 
-// getKeyPolicyRequest is the wire shape of GetKeyPolicy.
-type getKeyPolicyRequest struct {
+// GetKeyPolicyRequest is the request for GetKeyPolicy.
+type GetKeyPolicyRequest struct {
 	KeyID      string `json:"KeyId"`
 	PolicyName string `json:"PolicyName,omitempty"`
 }
 
-// putKeyPolicyRequest is the wire shape of PutKeyPolicy.
-type putKeyPolicyRequest struct {
-	KeyID      string `json:"KeyId"`
-	Policy     string `json:"Policy"`
-	PolicyName string `json:"PolicyName,omitempty"`
-}
-
-// getKeyPolicyResponse is the wire shape of GetKeyPolicy.
-type getKeyPolicyResponse struct {
+// GetKeyPolicyResponse is the response for GetKeyPolicy.
+type GetKeyPolicyResponse struct {
 	Policy     string `json:"Policy"`
 	PolicyName string `json:"PolicyName"`
 }
 
-// listKeyPoliciesResponse is the wire shape of ListKeyPolicies.
-type listKeyPoliciesResponse struct {
+// PutKeyPolicyRequest is the request for PutKeyPolicy.
+type PutKeyPolicyRequest struct {
+	KeyID                          string `json:"KeyId"`
+	Policy                         string `json:"Policy"`
+	PolicyName                     string `json:"PolicyName,omitempty"`
+	BypassPolicyLockoutSafetyCheck bool   `json:"BypassPolicyLockoutSafetyCheck,omitempty"`
+}
+
+// PutKeyPolicyResponse is the response for PutKeyPolicy.
+type PutKeyPolicyResponse struct{}
+
+// ListKeyPoliciesRequest is the request for ListKeyPolicies.
+type ListKeyPoliciesRequest struct {
+	KeyID  string `json:"KeyId"`
+	Limit  int32  `json:"Limit,omitempty"`
+	Marker string `json:"Marker,omitempty"`
+}
+
+// ListKeyPoliciesResponse is the response for ListKeyPolicies.
+type ListKeyPoliciesResponse struct {
 	PolicyNames []string `json:"PolicyNames"`
+	NextMarker  string   `json:"NextMarker,omitempty"`
+	Truncated   bool     `json:"Truncated"`
 }
 
-// listResourceTagsResponse mirrors AWS — the Tags field must be present
-// even when empty so terraform-provider-aws can parse it.
-type listResourceTagsResponse struct {
-	Tags []map[string]string `json:"Tags"`
+// ListResourceTagsRequest is the request for ListResourceTags.
+type ListResourceTagsRequest struct {
+	KeyID  string `json:"KeyId"`
+	Limit  int32  `json:"Limit,omitempty"`
+	Marker string `json:"Marker,omitempty"`
 }
 
-// getKeyRotationStatusResponse is the wire shape of GetKeyRotationStatus.
-type getKeyRotationStatusResponse struct {
+// ListResourceTagsResponse is the response for ListResourceTags.
+// The Tags field must be present even when empty so terraform-provider-aws
+// can parse it.
+type ListResourceTagsResponse struct {
+	Tags       []Tag  `json:"Tags"`
+	NextMarker string `json:"NextMarker,omitempty"`
+	Truncated  bool   `json:"Truncated"`
+}
+
+// TagResourceRequest is the request for TagResource.
+type TagResourceRequest struct {
+	KeyID string `json:"KeyId"`
+	Tags  []Tag  `json:"Tags"`
+}
+
+// TagResourceResponse is the response for TagResource.
+type TagResourceResponse struct{}
+
+// UntagResourceRequest is the request for UntagResource.
+type UntagResourceRequest struct {
+	KeyID   string   `json:"KeyId"`
+	TagKeys []string `json:"TagKeys"`
+}
+
+// UntagResourceResponse is the response for UntagResource.
+type UntagResourceResponse struct{}
+
+// GetKeyRotationStatusRequest is the request for GetKeyRotationStatus.
+type GetKeyRotationStatusRequest struct {
+	KeyID string `json:"KeyId"`
+}
+
+// GetKeyRotationStatusResponse is the response for GetKeyRotationStatus.
+type GetKeyRotationStatusResponse struct {
 	KeyRotationEnabled bool `json:"KeyRotationEnabled"`
 }

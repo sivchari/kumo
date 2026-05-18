@@ -28,8 +28,7 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"CreateAlias":         s.CreateAlias,
 		"DeleteAlias":         s.DeleteAlias,
 		"ListAliases":         s.ListAliases,
-		// Key policy + tag stubs — see policy_tag_stubs.go.
-		// Required by terraform-provider-aws after CreateKey.
+		// Key policy + tag operations.
 		"GetKeyPolicy":         s.GetKeyPolicy,
 		"PutKeyPolicy":         s.PutKeyPolicy,
 		"ListKeyPolicies":      s.ListKeyPolicies,
@@ -436,4 +435,146 @@ func getErrorStatus(code string) int {
 	default:
 		return http.StatusBadRequest
 	}
+}
+
+// GetKeyPolicy handles the GetKeyPolicy API.
+func (s *Service) GetKeyPolicy(w http.ResponseWriter, r *http.Request) {
+	var req GetKeyPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	policy, err := s.storage.GetKeyPolicy(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &GetKeyPolicyResponse{
+		Policy:     policy,
+		PolicyName: "default",
+	})
+}
+
+// PutKeyPolicy handles the PutKeyPolicy API.
+func (s *Service) PutKeyPolicy(w http.ResponseWriter, r *http.Request) {
+	var req PutKeyPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.PutKeyPolicy(r.Context(), req.KeyID, req.Policy); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &PutKeyPolicyResponse{})
+}
+
+// ListKeyPolicies handles the ListKeyPolicies API.
+// AWS always returns a single policy named "default".
+func (s *Service) ListKeyPolicies(w http.ResponseWriter, r *http.Request) {
+	var req ListKeyPoliciesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	// Verify the key exists.
+	if _, err := s.storage.GetKey(r.Context(), req.KeyID); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &ListKeyPoliciesResponse{
+		PolicyNames: []string{"default"},
+		Truncated:   false,
+	})
+}
+
+// ListResourceTags handles the ListResourceTags API.
+func (s *Service) ListResourceTags(w http.ResponseWriter, r *http.Request) {
+	var req ListResourceTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListResourceTags(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &ListResourceTagsResponse{
+		Tags:      tags,
+		Truncated: false,
+	})
+}
+
+// TagResource handles the TagResource API.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.KeyID, req.Tags); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &TagResourceResponse{})
+}
+
+// UntagResource handles the UntagResource API.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.KeyID, req.TagKeys); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &UntagResourceResponse{})
+}
+
+// GetKeyRotationStatus handles the GetKeyRotationStatus API.
+func (s *Service) GetKeyRotationStatus(w http.ResponseWriter, r *http.Request) {
+	var req GetKeyRotationStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	rotationEnabled, err := s.storage.GetKeyRotationStatus(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &GetKeyRotationStatusResponse{
+		KeyRotationEnabled: rotationEnabled,
+	})
 }

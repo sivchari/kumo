@@ -447,4 +447,96 @@ func TestKMS_KeyPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_updated", getOutput2)
+
+	// ListKeyPolicies should always return ["default"].
+	listOutput, err := client.ListKeyPolicies(ctx, &kms.ListKeyPoliciesInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list", listOutput)
+}
+
+func TestKMS_TagOperations(t *testing.T) {
+	client := newKMSClient(t)
+	ctx := t.Context()
+
+	// Create a key with initial tags.
+	createOutput, err := client.CreateKey(ctx, &kms.CreateKeyInput{
+		Description: aws.String("test-tag-operations"),
+		Tags: []types.Tag{
+			{TagKey: aws.String("Env"), TagValue: aws.String("test")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyID := *createOutput.KeyMetadata.KeyId
+
+	t.Cleanup(func() {
+		_, _ = client.ScheduleKeyDeletion(context.Background(), &kms.ScheduleKeyDeletionInput{
+			KeyId:               aws.String(keyID),
+			PendingWindowInDays: aws.Int32(7),
+		})
+	})
+
+	// ListResourceTags should return the initial tag.
+	listOutput, err := client.ListResourceTags(ctx, &kms.ListResourceTagsInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_initial", listOutput)
+
+	// TagResource adds more tags.
+	_, err = client.TagResource(ctx, &kms.TagResourceInput{
+		KeyId: aws.String(keyID),
+		Tags: []types.Tag{
+			{TagKey: aws.String("Team"), TagValue: aws.String("platform")},
+			{TagKey: aws.String("Project"), TagValue: aws.String("kumo")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListResourceTags should now return 3 tags.
+	listOutput2, err := client.ListResourceTags(ctx, &kms.ListResourceTagsInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "Tags")).Assert(t.Name()+"_after_tag", listOutput2)
+
+	// Verify that all 3 tags are present.
+	if len(listOutput2.Tags) != 3 {
+		t.Errorf("expected 3 tags, got %d", len(listOutput2.Tags))
+	}
+
+	// UntagResource removes one tag.
+	_, err = client.UntagResource(ctx, &kms.UntagResourceInput{
+		KeyId:   aws.String(keyID),
+		TagKeys: []string{"Team"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListResourceTags should now return 2 tags.
+	listOutput3, err := client.ListResourceTags(ctx, &kms.ListResourceTagsInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "Tags")).Assert(t.Name()+"_after_untag", listOutput3)
+
+	// Verify that 2 tags remain.
+	if len(listOutput3.Tags) != 2 {
+		t.Errorf("expected 2 tags, got %d", len(listOutput3.Tags))
+	}
 }
