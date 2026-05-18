@@ -4,6 +4,8 @@ BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
 BUILD_DIR=bin
 GOLANGCI_LINT=go tool -modfile tools/go.mod golangci-lint
+GOTOOLCHAIN=go1.25.10
+export GOTOOLCHAIN
 
 # Build
 build:
