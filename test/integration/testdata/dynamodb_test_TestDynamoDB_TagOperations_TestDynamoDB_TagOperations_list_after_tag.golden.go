@@ -1,5 +1,14 @@
 {
   "NextToken": null,
-  "Tags": [],
+  "Tags": [
+    {
+      "Key": "env",
+      "Value": "dev"
+    },
+    {
+      "Key": "team",
+      "Value": "platform"
+    }
+  ],
   "ResultMetadata": {}
 }
