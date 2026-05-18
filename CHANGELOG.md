@@ -1,5 +1,43 @@
 # Changelog
 
+## [v0.21.0](https://github.com/sivchari/kumo/compare/v0.20.0...v0.21.0) - 2026-05-18
+- feat(ssm): no-op stubs for ListTagsForResource / AddTagsToResource / RemoveTagsFromResource by @sivchari in https://github.com/sivchari/kumo/pull/626
+- feat(sqs): support Policy attribute in SetQueueAttributes / GetQueueAttributes by @sivchari in https://github.com/sivchari/kumo/pull/627
+- feat(sns): implement GetSubscriptionAttributes by @sivchari in https://github.com/sivchari/kumo/pull/632
+- fix(kms): store key policy in CreateKey and PutKeyPolicy by @sivchari in https://github.com/sivchari/kumo/pull/633
+- fix(s3): implement GetBucketCors handler by @sivchari in https://github.com/sivchari/kumo/pull/634
+- fix(ssm): implement ParameterFilters in DescribeParameters by @sivchari in https://github.com/sivchari/kumo/pull/636
+- feat(sns): implement SetSubscriptionAttributes by @sivchari in https://github.com/sivchari/kumo/pull/639
+- feat(dynamodb): no-op stub for UpdateTable by @sivchari in https://github.com/sivchari/kumo/pull/640
+- feat(elbv2): empty-payload stubs for read-only metadata APIs by @mizchi in https://github.com/sivchari/kumo/pull/567
+- feat(cloudcontrol): AWS Cloud Control API + S3 Bucket / EC2 VPC+Subnet / IAM Role by @mizchi in https://github.com/sivchari/kumo/pull/569
+- feat(cloudfront): RFC 9111-conformant edge cache layer (Cache-Control / Vary / Range / revalidation / swr) by @mizchi in https://github.com/sivchari/kumo/pull/583
+- feat(dynamodb): support StreamSpecification in CreateTable and TableDescription by @sivchari in https://github.com/sivchari/kumo/pull/642
+- fix(lambda): add GetFunctionConfiguration route by @sivchari in https://github.com/sivchari/kumo/pull/657
+- feat(sqs): implement ChangeMessageVisibility and ChangeMessageVisibilityBatch by @sivchari in https://github.com/sivchari/kumo/pull/658
+- feat(cloudwatch): implement SetAlarmState by @sivchari in https://github.com/sivchari/kumo/pull/660
+- fix(sqs): allow batch receive of multiple FIFO messages from same group by @sivchari in https://github.com/sivchari/kumo/pull/662
+- fix(sns): pass MessageGroupId and MessageDeduplicationId to SQS on FIFO publish by @sivchari in https://github.com/sivchari/kumo/pull/663
+- feat(kinesis): implement DescribeStreamSummary by @sivchari in https://github.com/sivchari/kumo/pull/659
+- fix(s3): support x-amz-tagging header and SSE-KMS in PutObject by @sivchari in https://github.com/sivchari/kumo/pull/661
+- fix(sqs): requeue messages after visibility timeout expires by @sivchari in https://github.com/sivchari/kumo/pull/701
+- feat(eventbridge): implement InputTransformer for event targets by @sivchari in https://github.com/sivchari/kumo/pull/702
+- feat(s3): deliver ObjectCreated notifications to SQS queues by @sivchari in https://github.com/sivchari/kumo/pull/703
+- feat(sfn): implement state machine execution engine by @sivchari in https://github.com/sivchari/kumo/pull/705
+- feat(ses): add SES v1 Query protocol service by @sivchari in https://github.com/sivchari/kumo/pull/704
+- fix(ses): use /_aws/ses mailbox endpoint matching harness convention by @sivchari in https://github.com/sivchari/kumo/pull/706
+- fix(sqs): accept numeric maxReceiveCount in RedrivePolicy and notify DLQ on redrive by @sivchari in https://github.com/sivchari/kumo/pull/717
+- feat(cloudwatch): notify SNS action targets on alarm state change by @sivchari in https://github.com/sivchari/kumo/pull/719
+- fix(sns): evaluate FilterPolicy before delivering messages to subscriptions by @sivchari in https://github.com/sivchari/kumo/pull/718
+- fix(lambda): echo payload on Invoke and fix EventSourceMapping UUID extraction by @sivchari in https://github.com/sivchari/kumo/pull/716
+- fix(s3): implement ListObjectsV2 pagination with MaxKeys and ContinuationToken by @sivchari in https://github.com/sivchari/kumo/pull/715
+- feat(lambda): implement AddPermission, RemovePermission, and ListTags by @sivchari in https://github.com/sivchari/kumo/pull/721
+- fix(sns): parse MessageAttributes from Query protocol and support RawMessageDelivery by @sivchari in https://github.com/sivchari/kumo/pull/722
+- feat(dynamodbstreams): add DynamoDB Streams service with cross-service event emission by @sivchari in https://github.com/sivchari/kumo/pull/723
+- fix(awsquery): convert non-string attribute values in flattenAttributes by @sivchari in https://github.com/sivchari/kumo/pull/724
+- fix(eventbridge): respect AWS_DEFAULT_REGION and resolve API destinations tolerantly by @tak848 in https://github.com/sivchari/kumo/pull/726
+- release v0.21.0 by @sivchari in https://github.com/sivchari/kumo/pull/727
+
 ## [v0.20.0](https://github.com/sivchari/kumo/compare/v0.19.0...v0.20.0) - 2026-05-12
 - feat(s3): PutBucketLogging / GetBucketLogging by @mizchi in https://github.com/sivchari/kumo/pull/577
 - feat(apigateway): bare-prefix routes + DeleteMethod + path-extract fix by @mizchi in https://github.com/sivchari/kumo/pull/602
