@@ -40,6 +40,15 @@ type Storage interface {
 	ListExecutions(ctx context.Context, stateMachineArn, statusFilter string, maxResults int32, nextToken string) ([]*Execution, string, error)
 	GetExecutionHistory(ctx context.Context, executionArn string, maxResults int32, nextToken string, reverseOrder bool) ([]*HistoryEvent, string, error)
 
+	// Tag operations.
+	TagResource(ctx context.Context, resourceArn string, tags []Tag) error
+	UntagResource(ctx context.Context, resourceArn string, tagKeys []string) error
+	ListTagsForResource(ctx context.Context, resourceArn string) ([]Tag, error)
+
+	// Version and alias operations.
+	ListStateMachineVersions(ctx context.Context, stateMachineArn string, maxResults int32, nextToken string) ([]map[string]string, string, error)
+	ListStateMachineAliases(ctx context.Context, stateMachineArn string, maxResults int32, nextToken string) ([]map[string]string, string, error)
+
 	// DispatchAction dispatches the request to the appropriate handler.
 	DispatchAction(action string) bool
 }
@@ -72,6 +81,7 @@ type MemoryStorage struct {
 	mu            sync.RWMutex              `json:"-"`
 	StateMachines map[string]*StateMachine  `json:"stateMachines"`
 	Executions    map[string]*ExecutionData `json:"executions"`
+	Tags          map[string][]Tag          `json:"tags"`
 	region        string
 	accountID     string
 	EventCounter  int64 `json:"eventCounter"`
@@ -96,6 +106,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		StateMachines: make(map[string]*StateMachine),
 		Executions:    make(map[string]*ExecutionData),
+		Tags:          make(map[string][]Tag),
 		region:        region,
 		accountID:     "000000000000",
 		baseURL:       defaultBaseURL,
@@ -149,6 +160,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Executions = make(map[string]*ExecutionData)
 	}
 
+	if s.Tags == nil {
+		s.Tags = make(map[string][]Tag)
+	}
+
 	return nil
 }
 
@@ -197,6 +212,10 @@ func (s *MemoryStorage) CreateStateMachine(_ context.Context, req *CreateStateMa
 
 	s.StateMachines[arn] = sm
 
+	if len(req.Tags) > 0 {
+		s.Tags[arn] = append([]Tag{}, req.Tags...)
+	}
+
 	return sm, nil
 }
 
@@ -210,6 +229,7 @@ func (s *MemoryStorage) DeleteStateMachine(_ context.Context, arn string) error 
 	}
 
 	delete(s.StateMachines, arn)
+	delete(s.Tags, arn)
 
 	return nil
 }
@@ -490,6 +510,83 @@ func (s *MemoryStorage) GetExecutionHistory(_ context.Context, executionArn stri
 	}
 
 	return events, "", nil
+}
+
+// TagResource adds tags to a resource.
+func (s *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existingTags := s.Tags[resourceArn]
+	tagMap := make(map[string]string)
+
+	for _, tag := range existingTags {
+		tagMap[tag.Key] = tag.Value
+	}
+
+	for _, tag := range tags {
+		tagMap[tag.Key] = tag.Value
+	}
+
+	newTags := make([]Tag, 0, len(tagMap))
+
+	for k, v := range tagMap {
+		newTags = append(newTags, Tag{Key: k, Value: v})
+	}
+
+	s.Tags[resourceArn] = newTags
+
+	return nil
+}
+
+// UntagResource removes tags from a resource.
+func (s *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existingTags := s.Tags[resourceArn]
+	keySet := make(map[string]bool)
+
+	for _, key := range tagKeys {
+		keySet[key] = true
+	}
+
+	newTags := make([]Tag, 0)
+
+	for _, tag := range existingTags {
+		if !keySet[tag.Key] {
+			newTags = append(newTags, tag)
+		}
+	}
+
+	s.Tags[resourceArn] = newTags
+
+	return nil
+}
+
+// ListTagsForResource lists tags for a resource.
+func (s *MemoryStorage) ListTagsForResource(_ context.Context, resourceArn string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tags := s.Tags[resourceArn]
+	if tags == nil {
+		tags = make([]Tag, 0)
+	}
+
+	return tags, nil
+}
+
+// ListStateMachineVersions lists versions for a state machine.
+// Versions are not modeled in kumo; this always returns an empty list.
+func (s *MemoryStorage) ListStateMachineVersions(_ context.Context, _ string, _ int32, _ string) ([]map[string]string, string, error) {
+	return []map[string]string{}, "", nil
+}
+
+// ListStateMachineAliases lists aliases for a state machine.
+// Aliases are not modeled in kumo; this always returns an empty list.
+func (s *MemoryStorage) ListStateMachineAliases(_ context.Context, _ string, _ int32, _ string) ([]map[string]string, string, error) {
+	return []map[string]string{}, "", nil
 }
 
 // DispatchAction checks if the action is valid.
