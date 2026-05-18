@@ -504,6 +504,75 @@ func (s *Service) GetChange(w http.ResponseWriter, r *http.Request) {
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
+// ListTagsForResource handles the ListTagsForResource API.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	resourceType := r.PathValue("type")
+	resourceID := r.PathValue("id")
+
+	if resourceType == "" || resourceID == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Resource type and ID are required")
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(resourceType, resourceID)
+	if err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
+
+		return
+	}
+
+	writeXMLResponse(w, http.StatusOK, ListTagsForResourceXMLResponse{
+		XMLNS: xmlns,
+		ResourceTagSet: ResourceTagSet{
+			ResourceType: resourceType,
+			ResourceID:   resourceID,
+			Tags:         TagList{Tag: tags},
+		},
+	})
+}
+
+// ChangeTagsForResource handles the ChangeTagsForResource API.
+func (s *Service) ChangeTagsForResource(w http.ResponseWriter, r *http.Request) {
+	resourceType := r.PathValue("type")
+	resourceID := r.PathValue("id")
+
+	if resourceType == "" || resourceID == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Resource type and ID are required")
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Failed to read request body")
+
+		return
+	}
+
+	var req ChangeTagsForResourceRequest
+	if err := xml.Unmarshal(body, &req); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Failed to parse request body")
+
+		return
+	}
+
+	var addTags []Tag
+	if req.AddTags != nil {
+		addTags = req.AddTags.Tags
+	}
+
+	if err := s.storage.ChangeTagsForResource(resourceType, resourceID, addTags, req.RemoveTagKeys); err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
+
+		return
+	}
+
+	writeXMLResponse(w, http.StatusOK, ChangeTagsForResourceXMLResponse{
+		XMLNS: xmlns,
+	})
+}
+
 // writeXMLResponse writes an XML response.
 func writeXMLResponse(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/xml")
