@@ -461,6 +461,127 @@ func writeSecretsManagerError(w http.ResponseWriter, code, message string, statu
 	})
 }
 
+// GetResourcePolicy returns the resource policy for an existing secret.
+func (s *Service) GetResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	var req GetResourcePolicyRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.SecretID == "" {
+		writeSecretsManagerError(w, errInvalidParameter, "You must provide a value for the SecretId parameter.", http.StatusBadRequest)
+
+		return
+	}
+
+	secret, policy, err := s.storage.GetResourcePolicy(r.Context(), req.SecretID)
+	if err != nil {
+		var sErr *SecretError
+		if errors.As(err, &sErr) {
+			status := http.StatusBadRequest
+			if sErr.Code == errResourceNotFound {
+				status = http.StatusNotFound
+			}
+
+			writeSecretsManagerError(w, sErr.Code, sErr.Message, status)
+
+			return
+		}
+
+		writeSecretsManagerError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, GetResourcePolicyResponse{
+		ARN:            secret.ARN,
+		Name:           secret.Name,
+		ResourcePolicy: policy,
+	})
+}
+
+// PutResourcePolicy attaches a resource policy to a secret.
+func (s *Service) PutResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	var req PutResourcePolicyRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.SecretID == "" {
+		writeSecretsManagerError(w, errInvalidParameter, "You must provide a value for the SecretId parameter.", http.StatusBadRequest)
+
+		return
+	}
+
+	secret, err := s.storage.PutResourcePolicy(r.Context(), req.SecretID, req.ResourcePolicy)
+	if err != nil {
+		var sErr *SecretError
+		if errors.As(err, &sErr) {
+			status := http.StatusBadRequest
+			if sErr.Code == errResourceNotFound {
+				status = http.StatusNotFound
+			}
+
+			writeSecretsManagerError(w, sErr.Code, sErr.Message, status)
+
+			return
+		}
+
+		writeSecretsManagerError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, PutResourcePolicyResponse{
+		ARN:  secret.ARN,
+		Name: secret.Name,
+	})
+}
+
+// DeleteResourcePolicy removes the resource policy from a secret.
+func (s *Service) DeleteResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	var req DeleteResourcePolicyRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.SecretID == "" {
+		writeSecretsManagerError(w, errInvalidParameter, "You must provide a value for the SecretId parameter.", http.StatusBadRequest)
+
+		return
+	}
+
+	secret, err := s.storage.DeleteResourcePolicy(r.Context(), req.SecretID)
+	if err != nil {
+		var sErr *SecretError
+		if errors.As(err, &sErr) {
+			status := http.StatusBadRequest
+			if sErr.Code == errResourceNotFound {
+				status = http.StatusNotFound
+			}
+
+			writeSecretsManagerError(w, sErr.Code, sErr.Message, status)
+
+			return
+		}
+
+		writeSecretsManagerError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DeleteResourcePolicyResponse{
+		ARN:  secret.ARN,
+		Name: secret.Name,
+	})
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 // This method implements the JSONProtocolService interface.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {

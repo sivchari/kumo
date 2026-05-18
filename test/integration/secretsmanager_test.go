@@ -518,6 +518,75 @@ func TestSecretsManager_GetSecretValueByExactARN(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("ARN", "VersionId", "CreatedDate", "ResultMetadata")).Assert(t.Name(), getOutput)
 }
 
+func TestSecretsManager_ResourcePolicy(t *testing.T) {
+	client := newSecretsManagerClient(t)
+	ctx := t.Context()
+	secretName := "test-secret-resource-policy"
+
+	// Create secret.
+	_, err := client.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
+		Name:         aws.String(secretName),
+		SecretString: aws.String("policy-test-value"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteSecret(context.Background(), &secretsmanager.DeleteSecretInput{
+			SecretId:                   aws.String(secretName),
+			ForceDeleteWithoutRecovery: aws.Bool(true),
+		})
+	})
+
+	// GetResourcePolicy (empty - no policy attached yet).
+	getOutput1, err := client.GetResourcePolicy(ctx, &secretsmanager.GetResourcePolicyInput{
+		SecretId: aws.String(secretName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ARN", "ResultMetadata")).Assert(t.Name()+"_get_empty", getOutput1)
+
+	// PutResourcePolicy.
+	policy := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"secretsmanager:GetSecretValue","Resource":"*"}]}`
+	putOutput, err := client.PutResourcePolicy(ctx, &secretsmanager.PutResourcePolicyInput{
+		SecretId:       aws.String(secretName),
+		ResourcePolicy: aws.String(policy),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ARN", "ResultMetadata")).Assert(t.Name()+"_put", putOutput)
+
+	// GetResourcePolicy (should contain the policy).
+	getOutput2, err := client.GetResourcePolicy(ctx, &secretsmanager.GetResourcePolicyInput{
+		SecretId: aws.String(secretName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ARN", "ResultMetadata")).Assert(t.Name()+"_get_with_policy", getOutput2)
+
+	// DeleteResourcePolicy.
+	deleteOutput, err := client.DeleteResourcePolicy(ctx, &secretsmanager.DeleteResourcePolicyInput{
+		SecretId: aws.String(secretName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ARN", "ResultMetadata")).Assert(t.Name()+"_delete", deleteOutput)
+
+	// GetResourcePolicy (empty again after deletion).
+	getOutput3, err := client.GetResourcePolicy(ctx, &secretsmanager.GetResourcePolicyInput{
+		SecretId: aws.String(secretName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ARN", "ResultMetadata")).Assert(t.Name()+"_get_after_delete", getOutput3)
+}
+
 func TestSecretsManager_GetRandomPassword(t *testing.T) {
 	client := newSecretsManagerClient(t)
 	ctx := t.Context()
