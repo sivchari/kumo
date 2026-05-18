@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sivchari/kumo/internal/awsname"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -288,29 +289,7 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 }
 
 func isValidQueueName(name string) bool {
-	if name == "" || len(name) > 80 {
-		return false
-	}
-
-	base := name
-	if strings.HasSuffix(name, ".fifo") {
-		base = strings.TrimSuffix(name, ".fifo")
-		if base == "" {
-			return false
-		}
-	} else if strings.Contains(name, ".") {
-		return false
-	}
-
-	for _, r := range base {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
-			continue
-		}
-
-		return false
-	}
-
-	return true
+	return awsname.IsValidMessagingResource(name, 80)
 }
 
 // DeleteQueue deletes a queue.
