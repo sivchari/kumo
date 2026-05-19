@@ -347,8 +347,8 @@ func functionSummaryXML(fn *Function, stage string) xmlFunctionSummary {
 // decodeFunctionCode handles the base64 wrapping AWS uses for
 // FunctionCode. Empty payloads are rejected. The decoded output is
 // rejected when it exceeds maxFunctionCodeBytes — without that cap a
-// caller can submit a multi-megabyte JS source and stress the goja
-// parser when TestFunction runs against it.
+// caller can submit a multi-megabyte JS source and stress the quickjs
+// (wazero) parser when TestFunction runs against it.
 func decodeFunctionCode(encoded string) ([]byte, error) {
 	encoded = strings.TrimSpace(encoded)
 	if encoded == "" {
