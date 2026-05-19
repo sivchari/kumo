@@ -212,6 +212,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "eventbridge", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.deliveryCancel != nil {
@@ -250,6 +266,8 @@ func (s *MemoryStorage) CreateEventBus(_ context.Context, req *CreateEventBusReq
 	s.EventBuses[req.Name] = eventBus
 	s.Rules[req.Name] = make(map[string]*Rule)
 
+	s.saveLocked()
+
 	return eventBus, nil
 }
 
@@ -275,6 +293,8 @@ func (s *MemoryStorage) DeleteEventBus(_ context.Context, name string) error {
 			delete(s.Targets, key)
 		}
 	}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -360,6 +380,8 @@ func (s *MemoryStorage) PutRule(_ context.Context, req *PutRuleRequest) (*Rule, 
 
 	s.Rules[eventBusName][req.Name] = rule
 
+	s.saveLocked()
+
 	return rule, nil
 }
 
@@ -386,6 +408,8 @@ func (s *MemoryStorage) DeleteRule(_ context.Context, eventBusName, ruleName str
 	// Delete targets for this rule.
 	targetKey := eventBusName + ":" + ruleName
 	delete(s.Targets, targetKey)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -445,6 +469,27 @@ func (s *MemoryStorage) ListRules(_ context.Context, eventBusName, namePrefix st
 	return result, "", nil
 }
 
+// convertTargetInput converts a TargetInput to a Target.
+func convertTargetInput(t *TargetInput) *Target {
+	target := &Target{
+		ID:             t.ID,
+		Arn:            t.Arn,
+		RoleArn:        t.RoleArn,
+		Input:          t.Input,
+		InputPath:      t.InputPath,
+		HTTPParameters: t.HTTPParameters,
+	}
+
+	if t.InputTransformer != nil {
+		target.InputTransformer = &InputTransformer{
+			InputPathsMap: t.InputTransformer.InputPathsMap,
+			InputTemplate: t.InputTransformer.InputTemplate,
+		}
+	}
+
+	return target
+}
+
 // PutTargets adds targets to a rule.
 func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName string, targets []TargetInput) ([]PutTargetsResultEntry, error) {
 	s.mu.Lock()
@@ -472,21 +517,7 @@ func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName str
 	var failedEntries []PutTargetsResultEntry
 
 	for _, t := range targets {
-		target := &Target{
-			ID:             t.ID,
-			Arn:            t.Arn,
-			RoleArn:        t.RoleArn,
-			Input:          t.Input,
-			InputPath:      t.InputPath,
-			HTTPParameters: t.HTTPParameters,
-		}
-
-		if t.InputTransformer != nil {
-			target.InputTransformer = &InputTransformer{
-				InputPathsMap: t.InputTransformer.InputPathsMap,
-				InputTemplate: t.InputTransformer.InputTemplate,
-			}
-		}
+		target := convertTargetInput(&t)
 
 		// Find and update existing target or add new one.
 		found := false
@@ -505,6 +536,8 @@ func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName str
 			s.Targets[targetKey][ruleName] = append(s.Targets[targetKey][ruleName], target)
 		}
 	}
+
+	s.saveLocked()
 
 	return failedEntries, nil
 }
@@ -542,6 +575,8 @@ func (s *MemoryStorage) RemoveTargets(_ context.Context, eventBusName, ruleName 
 	}
 
 	s.Targets[targetKey][ruleName] = newTargets
+
+	s.saveLocked()
 
 	return failedEntries, nil
 }
@@ -592,6 +627,8 @@ func (s *MemoryStorage) PutEvents(_ context.Context, entries []PutEventsRequestE
 
 		s.matchAndDeliver(eventID, eventBusName, &entry)
 	}
+
+	s.saveLocked()
 
 	return results, nil
 }
@@ -997,6 +1034,8 @@ func (s *MemoryStorage) CreateConnection(_ context.Context, req *CreateConnectio
 
 	s.Connections[req.Name] = conn
 
+	s.saveLocked()
+
 	return conn, nil
 }
 
@@ -1024,6 +1063,8 @@ func (s *MemoryStorage) DeleteConnection(_ context.Context, name string) (*Conne
 	}
 
 	delete(s.Connections, name)
+
+	s.saveLocked()
 
 	return conn, nil
 }
@@ -1057,6 +1098,8 @@ func (s *MemoryStorage) CreateAPIDestination(_ context.Context, req *CreateAPIDe
 
 	s.APIDestinations[req.Name] = dest
 
+	s.saveLocked()
+
 	return dest, nil
 }
 
@@ -1083,6 +1126,8 @@ func (s *MemoryStorage) DeleteAPIDestination(_ context.Context, name string) err
 	}
 
 	delete(s.APIDestinations, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1147,6 +1192,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, arn string, tags []Tag) e
 
 	s.Tags[arn] = existing
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1178,6 +1225,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []s
 	} else {
 		s.Tags[arn] = remaining
 	}
+
+	s.saveLocked()
 
 	return nil
 }

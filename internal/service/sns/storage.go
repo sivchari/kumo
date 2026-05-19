@@ -123,6 +123,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "sns", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -169,6 +185,8 @@ func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes m
 
 	m.Topics[arn] = topic
 
+	m.saveLocked()
+
 	return topic, nil
 }
 
@@ -212,6 +230,8 @@ func (m *MemoryStorage) SetTopicAttribute(_ context.Context, topicARN, name, val
 		topic.DisplayName = value
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -234,6 +254,8 @@ func (m *MemoryStorage) DeleteTopic(_ context.Context, topicARN string) error {
 	}
 
 	delete(m.Topics, topicARN)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -325,6 +347,8 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	m.Subscriptions[subscriptionARN] = subscription
 	topic.Subscriptions[subscriptionARN] = subscription
 
+	m.saveLocked()
+
 	return subscription, nil
 }
 
@@ -363,6 +387,8 @@ func (m *MemoryStorage) SetSubscriptionAttribute(_ context.Context, subscription
 
 	subscription.SubscriptionAttributes[name] = value
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -385,6 +411,8 @@ func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) e
 	}
 
 	delete(m.Subscriptions, subscriptionARN)
+
+	m.saveLocked()
 
 	return nil
 }

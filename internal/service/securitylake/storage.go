@@ -151,6 +151,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "securitylake", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -207,6 +223,8 @@ func (s *MemoryStorage) CreateDataLake(_ context.Context, req *CreateDataLakeReq
 		dataLakes = append(dataLakes, dataLake)
 	}
 
+	s.saveLocked()
+
 	return dataLakes, nil
 }
 
@@ -227,6 +245,8 @@ func (s *MemoryStorage) DeleteDataLake(_ context.Context, regions []string) erro
 		delete(s.Tags, dataLake.ARN)
 		delete(s.DataLakes, region)
 	}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -289,6 +309,8 @@ func (s *MemoryStorage) UpdateDataLake(_ context.Context, req *UpdateDataLakeReq
 		dataLakes = append(dataLakes, dataLake)
 	}
 
+	s.saveLocked()
+
 	return dataLakes, nil
 }
 
@@ -330,6 +352,8 @@ func (s *MemoryStorage) CreateSubscriber(_ context.Context, req *CreateSubscribe
 		s.Tags[arn] = req.Tags
 	}
 
+	s.saveLocked()
+
 	return subscriber, nil
 }
 
@@ -365,6 +389,8 @@ func (s *MemoryStorage) DeleteSubscriber(_ context.Context, subscriberID string)
 	delete(s.Tags, subscriber.SubscriberARN)
 	delete(s.Subscribers, subscriberID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -398,6 +424,8 @@ func (s *MemoryStorage) UpdateSubscriber(_ context.Context, req *UpdateSubscribe
 	}
 
 	subscriber.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
+	s.saveLocked()
 
 	return subscriber, nil
 }
@@ -452,6 +480,8 @@ func (s *MemoryStorage) CreateAwsLogSource(_ context.Context, req *CreateAwsLogS
 		}
 	}
 
+	s.saveLocked()
+
 	return failed, nil
 }
 
@@ -469,6 +499,8 @@ func (s *MemoryStorage) DeleteAwsLogSource(_ context.Context, req *DeleteAwsLogS
 			delete(s.LogSources, key)
 		}
 	}
+
+	s.saveLocked()
 
 	return failed, nil
 }
@@ -530,6 +562,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, resourceARN string, tags 
 
 	s.Tags[resourceARN] = newTags
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -554,6 +588,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, resourceARN string, tag
 	}
 
 	s.Tags[resourceARN] = newTags
+
+	s.saveLocked()
 
 	return nil
 }

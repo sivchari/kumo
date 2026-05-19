@@ -119,6 +119,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "ssm", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -185,6 +201,8 @@ func (s *MemoryStorage) PutParameter(_ context.Context, req *PutParameterRequest
 	}
 
 	s.Parameters[req.Name] = param
+
+	s.saveLocked()
 
 	return param, nil
 }
@@ -322,6 +340,8 @@ func (s *MemoryStorage) DeleteParameter(_ context.Context, name string) error {
 
 	delete(s.Parameters, name)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -343,6 +363,8 @@ func (s *MemoryStorage) DeleteParameters(_ context.Context, names []string) ([]s
 			invalid = append(invalid, name)
 		}
 	}
+
+	s.saveLocked()
 
 	return deleted, invalid, nil
 }
@@ -491,6 +513,8 @@ func (s *MemoryStorage) AddTagsToResource(_ context.Context, resourceType, resou
 
 	s.Tags[key] = merged
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -517,6 +541,8 @@ func (s *MemoryStorage) RemoveTagsFromResource(_ context.Context, resourceType, 
 	}
 
 	s.Tags[key] = filtered
+
+	s.saveLocked()
 
 	return nil
 }

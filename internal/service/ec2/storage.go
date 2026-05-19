@@ -237,6 +237,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "ec2", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -285,6 +301,8 @@ func (m *MemoryStorage) RunInstances(_ context.Context, req *RunInstancesRequest
 		Instances:     instances,
 	}
 
+	m.saveLocked()
+
 	return instances, reservationID, nil
 }
 
@@ -313,6 +331,8 @@ func (m *MemoryStorage) TerminateInstances(_ context.Context, instanceIDs []stri
 			PreviousState: prevState,
 		})
 	}
+
+	m.saveLocked()
 
 	return changes, nil
 }
@@ -393,6 +413,8 @@ func (m *MemoryStorage) StartInstances(_ context.Context, instanceIDs []string) 
 		})
 	}
 
+	m.saveLocked()
+
 	return changes, nil
 }
 
@@ -422,6 +444,8 @@ func (m *MemoryStorage) StopInstances(_ context.Context, instanceIDs []string) (
 		})
 	}
 
+	m.saveLocked()
+
 	return changes, nil
 }
 
@@ -450,6 +474,8 @@ func (m *MemoryStorage) CreateSecurityGroup(_ context.Context, req *CreateSecuri
 
 	m.SecurityGroups[sg.GroupID] = sg
 
+	m.saveLocked()
+
 	return sg, nil
 }
 
@@ -468,12 +494,16 @@ func (m *MemoryStorage) DeleteSecurityGroup(_ context.Context, groupID, groupNam
 
 		delete(m.SecurityGroups, groupID)
 
+		m.saveLocked()
+
 		return nil
 	}
 
 	for id, sg := range m.SecurityGroups {
 		if sg.GroupName == groupName {
 			delete(m.SecurityGroups, id)
+
+			m.saveLocked()
 
 			return nil
 		}
@@ -500,6 +530,8 @@ func (m *MemoryStorage) AuthorizeSecurityGroupIngress(_ context.Context, groupID
 
 	sg.IngressRules = append(sg.IngressRules, permissions...)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -517,6 +549,8 @@ func (m *MemoryStorage) AuthorizeSecurityGroupEgress(_ context.Context, groupID 
 	}
 
 	sg.EgressRules = append(sg.EgressRules, permissions...)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -544,6 +578,8 @@ func (m *MemoryStorage) RevokeSecurityGroupIngress(_ context.Context, groupID, g
 
 	sg.IngressRules = revokeMatching(sg.IngressRules, permissions)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -562,6 +598,8 @@ func (m *MemoryStorage) RevokeSecurityGroupEgress(_ context.Context, groupID str
 	}
 
 	sg.EgressRules = revokeMatching(sg.EgressRules, permissions)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -706,6 +744,8 @@ func (m *MemoryStorage) CreateKeyPair(_ context.Context, keyName, _ string) (*Ke
 
 	m.KeyPairs[kp.KeyPairID] = kp
 
+	m.saveLocked()
+
 	return kp, nil
 }
 
@@ -724,12 +764,16 @@ func (m *MemoryStorage) DeleteKeyPair(_ context.Context, keyName, keyPairID stri
 
 		delete(m.KeyPairs, keyPairID)
 
+		m.saveLocked()
+
 		return nil
 	}
 
 	for id, kp := range m.KeyPairs {
 		if kp.KeyName == keyName {
 			delete(m.KeyPairs, id)
+
+			m.saveLocked()
 
 			return nil
 		}
@@ -923,6 +967,8 @@ func (m *MemoryStorage) CreateVpc(_ context.Context, req *CreateVpcRequest) (*Vp
 
 	m.Vpcs[vpc.VpcID] = vpc
 
+	m.saveLocked()
+
 	return vpc, nil
 }
 
@@ -960,6 +1006,8 @@ func (m *MemoryStorage) DeleteVpc(_ context.Context, vpcID string) error {
 	}
 
 	delete(m.Vpcs, vpcID)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -1024,6 +1072,8 @@ func (m *MemoryStorage) CreateSubnet(_ context.Context, req *CreateSubnetRequest
 
 	m.Subnets[subnet.SubnetID] = subnet
 
+	m.saveLocked()
+
 	return subnet, nil
 }
 
@@ -1040,6 +1090,8 @@ func (m *MemoryStorage) DeleteSubnet(_ context.Context, subnetID string) error {
 	}
 
 	delete(m.Subnets, subnetID)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -1113,6 +1165,8 @@ func (m *MemoryStorage) CreateInternetGateway(_ context.Context, _ *CreateIntern
 
 	m.InternetGateways[igw.InternetGatewayID] = igw
 
+	m.saveLocked()
+
 	return igw, nil
 }
 
@@ -1151,6 +1205,8 @@ func (m *MemoryStorage) AttachInternetGateway(_ context.Context, igwID, vpcID st
 		State: "available",
 	})
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -1170,6 +1226,8 @@ func (m *MemoryStorage) DetachInternetGateway(_ context.Context, igwID, vpcID st
 	for i, attachment := range igw.Attachments {
 		if attachment.VpcID == vpcID {
 			igw.Attachments = append(igw.Attachments[:i], igw.Attachments[i+1:]...)
+
+			m.saveLocked()
 
 			return nil
 		}
@@ -1202,6 +1260,8 @@ func (m *MemoryStorage) DeleteInternetGateway(_ context.Context, igwID string) e
 	}
 
 	delete(m.InternetGateways, igwID)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -1265,6 +1325,8 @@ func (m *MemoryStorage) CreateRouteTable(_ context.Context, req *CreateRouteTabl
 
 	m.RouteTables[rt.RouteTableID] = rt
 
+	m.saveLocked()
+
 	return rt, nil
 }
 
@@ -1300,6 +1362,8 @@ func (m *MemoryStorage) CreateRoute(_ context.Context, req *CreateRouteRequest) 
 
 	rt.Routes = append(rt.Routes, route)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -1330,6 +1394,8 @@ func (m *MemoryStorage) AssociateRouteTable(_ context.Context, req *AssociateRou
 		SubnetID:                req.SubnetID,
 		Main:                    false,
 	})
+
+	m.saveLocked()
 
 	return associationID, nil
 }
@@ -1395,6 +1461,8 @@ func (m *MemoryStorage) CreateNatGateway(_ context.Context, req *CreateNatGatewa
 
 	m.NatGateways[natgw.NatGatewayID] = natgw
 
+	m.saveLocked()
+
 	return natgw, nil
 }
 
@@ -1458,6 +1526,8 @@ func (m *MemoryStorage) CreateTags(_ context.Context, resourceIDs []string, tags
 		}
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -1483,6 +1553,8 @@ func (m *MemoryStorage) ModifyVpcAttribute(_ context.Context, vpcID string, upda
 		vpc.EnableDNSSupport = *updates.EnableDNSSupport
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -1504,6 +1576,8 @@ func (m *MemoryStorage) ModifySubnetAttribute(_ context.Context, subnetID string
 	}
 
 	_ = updates.AssignIPv6AddressOnCreation // accepted but not modeled
+
+	m.saveLocked()
 
 	return nil
 }
@@ -1531,6 +1605,8 @@ func (m *MemoryStorage) DeleteTags(_ context.Context, resourceIDs []string, tags
 			return err
 		}
 	}
+
+	m.saveLocked()
 
 	return nil
 }

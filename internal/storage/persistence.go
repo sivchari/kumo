@@ -37,6 +37,13 @@ func Save(dataDir, name string, v json.Marshaler) error {
 		return fmt.Errorf("failed to marshal snapshot %s: %w", name, err)
 	}
 
+	return SaveBytes(dataDir, name, data)
+}
+
+// SaveBytes writes pre-marshaled JSON data atomically to dataDir/{name}.json.
+// This is useful when the caller already holds a lock and cannot use MarshalJSON
+// (which may also acquire a lock, causing a deadlock).
+func SaveBytes(dataDir, name string, data []byte) error {
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create data directory %s: %w", dataDir, err)
 	}

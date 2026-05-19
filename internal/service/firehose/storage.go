@@ -112,6 +112,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "firehose", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -142,6 +158,8 @@ func (s *MemoryStorage) CreateDeliveryStream(_ context.Context, input *CreateDel
 		Stream:  stream,
 		Records: make([]StoredRecord, 0),
 	}
+
+	s.saveLocked()
 
 	return stream, nil
 }
@@ -246,6 +264,8 @@ func (s *MemoryStorage) DeleteDeliveryStream(_ context.Context, name string, _ b
 
 	delete(s.Streams, name)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -348,6 +368,8 @@ func (s *MemoryStorage) PutRecord(_ context.Context, streamName string, record R
 		Received: time.Now(),
 	})
 
+	s.saveLocked()
+
 	return recordID, nil
 }
 
@@ -381,7 +403,44 @@ func (s *MemoryStorage) PutRecordBatch(_ context.Context, streamName string, rec
 		}
 	}
 
+	s.saveLocked()
+
 	return responses, 0, nil
+}
+
+// updateDestinationLocked finds and updates the matching destination in the stream.
+// Must be called under lock.
+func (s *MemoryStorage) updateDestinationLocked(data *StreamData, input *UpdateDestinationInput) error {
+	for i, dest := range data.Stream.Destinations {
+		if dest.DestinationID != input.DestinationID {
+			continue
+		}
+
+		if input.S3DestinationUpdate != nil {
+			if dest.S3DestinationDescription == nil {
+				dest.S3DestinationDescription = &S3DestinationDescription{}
+			}
+
+			s.applyS3Update(dest.S3DestinationDescription, input.S3DestinationUpdate)
+		}
+
+		if input.ExtendedS3DestinationUpdate != nil {
+			if dest.ExtendedS3DestinationDescription == nil {
+				dest.ExtendedS3DestinationDescription = &ExtendedS3DestinationDescription{}
+			}
+
+			s.applyExtendedS3Update(dest.ExtendedS3DestinationDescription, input.ExtendedS3DestinationUpdate)
+		}
+
+		data.Stream.Destinations[i] = dest
+
+		return nil
+	}
+
+	return &Error{
+		Code:    errInvalidArgument,
+		Message: fmt.Sprintf("Destination %s not found", input.DestinationID),
+	}
 }
 
 // UpdateDestination updates a destination.
@@ -404,46 +463,15 @@ func (s *MemoryStorage) UpdateDestination(_ context.Context, input *UpdateDestin
 		}
 	}
 
-	found := false
-
-	for i, dest := range data.Stream.Destinations {
-		if dest.DestinationID != input.DestinationID {
-			continue
-		}
-
-		found = true
-
-		if input.S3DestinationUpdate != nil {
-			if dest.S3DestinationDescription == nil {
-				dest.S3DestinationDescription = &S3DestinationDescription{}
-			}
-
-			s.applyS3Update(dest.S3DestinationDescription, input.S3DestinationUpdate)
-		}
-
-		if input.ExtendedS3DestinationUpdate != nil {
-			if dest.ExtendedS3DestinationDescription == nil {
-				dest.ExtendedS3DestinationDescription = &ExtendedS3DestinationDescription{}
-			}
-
-			s.applyExtendedS3Update(dest.ExtendedS3DestinationDescription, input.ExtendedS3DestinationUpdate)
-		}
-
-		data.Stream.Destinations[i] = dest
-
-		break
-	}
-
-	if !found {
-		return &Error{
-			Code:    errInvalidArgument,
-			Message: fmt.Sprintf("Destination %s not found", input.DestinationID),
-		}
+	if err := s.updateDestinationLocked(data, input); err != nil {
+		return err
 	}
 
 	versionNum, _ := strconv.Atoi(data.Stream.VersionID)
 	data.Stream.VersionID = strconv.Itoa(versionNum + 1)
 	data.Stream.LastUpdateTimestamp = time.Now()
+
+	s.saveLocked()
 
 	return nil
 }

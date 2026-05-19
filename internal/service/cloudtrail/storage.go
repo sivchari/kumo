@@ -119,6 +119,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "cloudtrail", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -186,6 +202,8 @@ func (m *MemoryStorage) CreateTrail(_ context.Context, req *CreateTrailRequest) 
 
 	m.Trails[req.Name] = trail
 
+	m.saveLocked()
+
 	return trail, nil
 }
 
@@ -199,6 +217,8 @@ func (m *MemoryStorage) DeleteTrail(_ context.Context, name string) error {
 	}
 
 	delete(m.Trails, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -255,6 +275,8 @@ func (m *MemoryStorage) StartLogging(_ context.Context, name string) error {
 
 	trail.IsLogging = true
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -269,6 +291,8 @@ func (m *MemoryStorage) StopLogging(_ context.Context, name string) error {
 	}
 
 	trail.IsLogging = false
+
+	m.saveLocked()
 
 	return nil
 }

@@ -125,6 +125,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "eks", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -155,6 +171,8 @@ func (s *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 
 	s.Clusters[req.Name] = cluster
 	s.Nodegroups[req.Name] = make(map[string]*Nodegroup)
+
+	s.saveLocked()
 
 	return cluster, nil
 }
@@ -261,6 +279,8 @@ func (s *MemoryStorage) DeleteCluster(_ context.Context, name string) (*Cluster,
 	delete(s.Clusters, name)
 	delete(s.Nodegroups, name)
 
+	s.saveLocked()
+
 	return cluster, nil
 }
 
@@ -317,6 +337,8 @@ func (s *MemoryStorage) CreateNodegroup(_ context.Context, req *CreateNodegroupR
 	nodegroup.Status = statusActive
 
 	s.Nodegroups[req.ClusterName][req.NodegroupName] = nodegroup
+
+	s.saveLocked()
 
 	return nodegroup, nil
 }
@@ -410,6 +432,8 @@ func (s *MemoryStorage) DeleteNodegroup(_ context.Context, clusterName, nodegrou
 	nodegroup.Status = statusDeleting
 
 	delete(s.Nodegroups[clusterName], nodegroupName)
+
+	s.saveLocked()
 
 	return nodegroup, nil
 }

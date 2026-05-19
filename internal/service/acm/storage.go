@@ -105,6 +105,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "acm", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -197,6 +213,8 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 
 	s.Certificates[arn] = cert
 
+	s.saveLocked()
+
 	return cert, nil
 }
 
@@ -257,6 +275,8 @@ func (s *MemoryStorage) DeleteCertificate(_ context.Context, arn string) error {
 	}
 
 	delete(s.Certificates, arn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -343,6 +363,8 @@ func (s *MemoryStorage) ImportCertificate(_ context.Context, req *ImportCertific
 	}
 
 	s.Certificates[arn] = cert
+
+	s.saveLocked()
 
 	return cert, nil
 }

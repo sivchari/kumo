@@ -159,6 +159,8 @@ func (m *MemoryStorage) deleteExpiredItems() {
 			delete(td.Items, key)
 		}
 	}
+
+	m.saveLocked()
 }
 
 // MarshalJSON serializes the storage state to JSON.
@@ -198,6 +200,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "dynamodb", data)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -278,6 +296,8 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		Items: make(map[string]Item),
 	}
 
+	m.saveLocked()
+
 	return table, nil
 }
 
@@ -298,6 +318,8 @@ func (m *MemoryStorage) DeleteTable(_ context.Context, tableName string) (*Table
 	table.TableStatus = "DELETING"
 
 	delete(m.Tables, tableName)
+
+	m.saveLocked()
 
 	return table, nil
 }
@@ -417,6 +439,8 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 		m.emitStreamEvent(td.Table, eventName, m.extractKey(td.Table, item), existingItem, item)
 	}
 
+	m.saveLocked()
+
 	return oldItem, nil
 }
 
@@ -490,6 +514,8 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 		}
 	}
 
+	m.saveLocked()
+
 	return oldItem, nil
 }
 
@@ -553,6 +579,8 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 
 		m.emitStreamEvent(td.Table, eventName, key, oldItem, item)
 	}
+
+	m.saveLocked()
 
 	// Return based on returnValues.
 	switch returnValues {
@@ -1585,6 +1613,8 @@ func (m *MemoryStorage) TransactWriteItems(_ context.Context, items []TransactWr
 		m.applyTransactWriteItem(twi)
 	}
 
+	m.saveLocked()
+
 	return nil, nil // Success: nil CancellationReasons means no failures.
 }
 
@@ -1726,6 +1756,8 @@ func (m *MemoryStorage) BatchWriteItem(_ context.Context, requestItems map[strin
 		}
 	}
 
+	m.saveLocked()
+
 	// kumo processes all items; never returns UnprocessedItems.
 	return nil, nil //nolint:nilnil // Intentional: nil UnprocessedItems means all items were processed.
 }
@@ -1775,6 +1807,8 @@ func (m *MemoryStorage) UpdateTimeToLive(_ context.Context, tableName, attribute
 
 	td.Table.TTLAttributeName = attributeName
 	td.Table.TTLEnabled = enabled
+
+	m.saveLocked()
 
 	return nil
 }
@@ -1979,6 +2013,8 @@ func (m *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags 
 
 	m.Tags[resourceArn] = existing
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -2010,6 +2046,8 @@ func (m *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tag
 	} else {
 		m.Tags[resourceArn] = remaining
 	}
+
+	m.saveLocked()
 
 	return nil
 }

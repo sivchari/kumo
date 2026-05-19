@@ -130,6 +130,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "batch", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -184,6 +200,8 @@ func (s *MemoryStorage) CreateComputeEnvironment(_ context.Context, input *Creat
 
 	s.ComputeEnvironments[input.ComputeEnvironmentName] = ce
 
+	s.saveLocked()
+
 	return ce, nil
 }
 
@@ -200,6 +218,8 @@ func (s *MemoryStorage) DeleteComputeEnvironment(_ context.Context, name string)
 	}
 
 	delete(s.ComputeEnvironments, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -268,6 +288,8 @@ func (s *MemoryStorage) CreateJobQueue(_ context.Context, input *CreateJobQueueI
 
 	s.JobQueues[input.JobQueueName] = jq
 
+	s.saveLocked()
+
 	return jq, nil
 }
 
@@ -284,6 +306,8 @@ func (s *MemoryStorage) DeleteJobQueue(_ context.Context, name string) error {
 	}
 
 	delete(s.JobQueues, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -358,6 +382,8 @@ func (s *MemoryStorage) RegisterJobDefinition(_ context.Context, input *Register
 
 	s.JobDefinitions[jdKey] = jd
 
+	s.saveLocked()
+
 	return jd, nil
 }
 
@@ -410,6 +436,8 @@ func (s *MemoryStorage) SubmitJob(_ context.Context, input *SubmitJobInput) (*Jo
 
 	s.Jobs[jobID] = job
 
+	s.saveLocked()
+
 	return job, nil
 }
 
@@ -446,6 +474,8 @@ func (s *MemoryStorage) TerminateJob(_ context.Context, jobID, reason string) er
 	job.StatusReason = reason
 	job.IsTerminated = true
 	job.StoppedAt = nowMillis()
+
+	s.saveLocked()
 
 	return nil
 }

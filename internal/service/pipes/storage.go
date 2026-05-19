@@ -120,6 +120,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "pipes", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -223,6 +239,8 @@ func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pi
 
 	m.Pipes[req.Name] = pipe
 
+	m.saveLocked()
+
 	return pipe, nil
 }
 
@@ -309,6 +327,8 @@ func (m *MemoryStorage) UpdatePipe(_ context.Context, req *UpdatePipeInput) (*Pi
 		pipe.KmsKeyIdentifier = req.KmsKeyIdentifier
 	}
 
+	m.saveLocked()
+
 	return pipe, nil
 }
 
@@ -341,6 +361,8 @@ func (m *MemoryStorage) DeletePipe(_ context.Context, name string) (*Pipe, error
 	}
 
 	delete(m.Pipes, name)
+
+	m.saveLocked()
 
 	return result, nil
 }
@@ -429,6 +451,8 @@ func (m *MemoryStorage) StartPipe(_ context.Context, name string) (*Pipe, error)
 	pipe.CurrentState = CurrentStateRunning
 	pipe.LastModifiedTime = AWSTimestamp{Time: time.Now()}
 
+	m.saveLocked()
+
 	return pipe, nil
 }
 
@@ -456,6 +480,8 @@ func (m *MemoryStorage) StopPipe(_ context.Context, name string) (*Pipe, error) 
 	pipe.DesiredState = DesiredStateStopped
 	pipe.CurrentState = CurrentStateStopped
 	pipe.LastModifiedTime = AWSTimestamp{Time: time.Now()}
+
+	m.saveLocked()
 
 	return pipe, nil
 }
@@ -488,6 +514,8 @@ func (m *MemoryStorage) TagResource(_ context.Context, arn string, tags map[stri
 	}
 
 	maps.Copy(pipe.Tags, tags)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -522,6 +550,8 @@ func (m *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []s
 	for _, key := range tagKeys {
 		delete(pipe.Tags, key)
 	}
+
+	m.saveLocked()
 
 	return nil
 }

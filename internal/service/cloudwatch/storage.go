@@ -189,6 +189,30 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	m := &marshalableStorage{
+		Metrics: make(map[string]*StoredMetric, len(s.Metrics)),
+		Alarms:  s.Alarms,
+		Tags:    s.Tags,
+	}
+
+	for k, v := range s.Metrics {
+		m.Metrics[metricKeyToString(k)] = v
+	}
+
+	data, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "monitoring", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -234,6 +258,8 @@ func (s *MemoryStorage) PutMetricData(_ context.Context, namespace string, metri
 
 		s.appendDatapoints(metric, datum, timestamp)
 	}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -451,6 +477,8 @@ func (s *MemoryStorage) PutMetricAlarm(_ context.Context, req *PutMetricAlarmReq
 
 	s.Alarms[req.AlarmName] = alarm
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -471,6 +499,8 @@ func (s *MemoryStorage) DeleteAlarms(_ context.Context, alarmNames []string) err
 	for _, name := range alarmNames {
 		delete(s.Alarms, name)
 	}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -511,6 +541,7 @@ func (s *MemoryStorage) SetAlarmState(ctx context.Context, alarmName, stateValue
 	// Copy alarm fields needed for the notification while still holding
 	// the lock, then release before performing I/O.
 	notification := s.buildAlarmNotification(alarm, previousState)
+	s.saveLocked()
 	s.mu.Unlock()
 
 	// Publish to each action target (SNS topic ARNs).
@@ -829,6 +860,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, resourceARN string, tags 
 
 	s.Tags[resourceARN] = merged
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -853,6 +886,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, resourceARN string, tag
 	}
 
 	s.Tags[resourceARN] = remaining
+
+	s.saveLocked()
 
 	return nil
 }

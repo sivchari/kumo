@@ -97,6 +97,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "pinpointsmsvoicev2", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -135,6 +151,8 @@ func (s *MemoryStorage) SendTextMessage(_ context.Context, req *SendTextMessageI
 	}
 
 	s.SentTextMessages = append(s.SentTextMessages, msg)
+
+	s.saveLocked()
 
 	return messageID, nil
 }

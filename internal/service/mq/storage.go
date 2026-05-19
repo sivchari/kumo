@@ -117,6 +117,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "mq", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -176,6 +192,8 @@ func (s *MemoryStorage) CreateBroker(_ context.Context, req *CreateBrokerRequest
 
 	s.Brokers[brokerID] = broker
 
+	s.saveLocked()
+
 	return broker, nil
 }
 
@@ -192,6 +210,8 @@ func (s *MemoryStorage) DeleteBroker(_ context.Context, brokerID string) error {
 	}
 
 	delete(s.Brokers, brokerID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -286,6 +306,8 @@ func (s *MemoryStorage) UpdateBroker(_ context.Context, brokerID string, req *Up
 		broker.Configuration = req.Configuration
 	}
 
+	s.saveLocked()
+
 	return broker, nil
 }
 
@@ -327,6 +349,8 @@ func (s *MemoryStorage) CreateConfiguration(_ context.Context, req *CreateConfig
 	}
 
 	s.Configurations[configID] = config
+
+	s.saveLocked()
 
 	return config, nil
 }

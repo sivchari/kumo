@@ -133,6 +133,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "ecr", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -177,6 +193,8 @@ func (s *MemoryStorage) CreateRepository(_ context.Context, req *CreateRepositor
 		Images:     make(map[string]*Image),
 	}
 
+	s.saveLocked()
+
 	return repo, nil
 }
 
@@ -195,6 +213,8 @@ func (s *MemoryStorage) DeleteRepository(_ context.Context, repositoryName strin
 	}
 
 	delete(s.Repositories, repositoryName)
+
+	s.saveLocked()
 
 	return rd.Repository, nil
 }
@@ -319,6 +339,8 @@ func (s *MemoryStorage) PutImage(_ context.Context, repositoryName, imageManifes
 
 	rd.Images[digest] = img
 
+	s.saveLocked()
+
 	return img, nil
 }
 
@@ -402,6 +424,8 @@ func (s *MemoryStorage) BatchDeleteImage(_ context.Context, repositoryName strin
 		}
 	}
 
+	s.saveLocked()
+
 	return deleted, failures, nil
 }
 
@@ -448,6 +472,8 @@ func (s *MemoryStorage) PutLifecyclePolicy(_ context.Context, repositoryName, po
 
 	repo.LifecyclePolicyText = policyText
 	repo.LifecyclePolicyAt = time.Now().UTC()
+
+	s.saveLocked()
 
 	return policyText, nil
 }
@@ -501,6 +527,8 @@ func (s *MemoryStorage) DeleteLifecyclePolicy(_ context.Context, repositoryName 
 	at := repo.LifecyclePolicyAt
 	repo.LifecyclePolicyText = ""
 	repo.LifecyclePolicyAt = time.Time{}
+
+	s.saveLocked()
 
 	return prev, at, nil
 }

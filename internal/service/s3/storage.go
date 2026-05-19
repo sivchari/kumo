@@ -221,6 +221,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "s3", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -252,6 +268,8 @@ func (s *MemoryStorage) CreateBucket(_ context.Context, name string) error {
 		MultipartUploads: make(map[string]*MultipartUpload),
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -270,6 +288,8 @@ func (s *MemoryStorage) DeleteBucket(_ context.Context, name string) error {
 	}
 
 	delete(s.Buckets, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -343,7 +363,18 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 		obj.ContentType = "application/octet-stream"
 	}
 
-	// Handle versioning
+	putObjectVersion(b, key, obj)
+
+	// Always update current object
+	b.Objects[key] = obj
+
+	s.saveLocked()
+
+	return obj, nil
+}
+
+// putObjectVersion handles versioning for a newly stored object.
+func putObjectVersion(b *MemoryBucket, key string, obj *Object) {
 	switch b.VersioningStatus {
 	case VersioningEnabled:
 		// Generate version ID
@@ -368,11 +399,6 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 
 		b.Versions[key] = append([]*Object{obj}, newVersions...)
 	}
-
-	// Always update current object
-	b.Objects[key] = obj
-
-	return obj, nil
 }
 
 // applySSEMetadata extracts SSE headers from metadata and sets them on the object.
@@ -449,6 +475,8 @@ func (s *MemoryStorage) PutObjectTagging(_ context.Context, bucket, key string, 
 	obj.Tags = tags
 	bd.Objects[key] = obj
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -499,6 +527,8 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 		b.Versions[key] = append([]*Object{deleteMarker}, b.Versions[key]...)
 		b.Objects[key] = deleteMarker
 
+		s.saveLocked()
+
 		return deleteMarker, nil
 	}
 
@@ -522,6 +552,8 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 			b.Versions[key] = newVersions
 		}
 	}
+
+	s.saveLocked()
 
 	// Return empty object for non-versioned delete (S3 returns 204 with no body)
 	return &Object{Key: key}, nil
@@ -553,6 +585,8 @@ func (s *MemoryStorage) DeleteObjectVersion(_ context.Context, bucket, key, vers
 		// Update current object to the newest version
 		b.Objects[key] = newVersions[0]
 	}
+
+	s.saveLocked()
 
 	return deletedObj, nil
 }
@@ -686,6 +720,8 @@ func (s *MemoryStorage) PutBucketVersioning(_ context.Context, bucket, status st
 	}
 
 	b.VersioningStatus = status
+
+	s.saveLocked()
 
 	return nil
 }
@@ -894,6 +930,8 @@ func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key str
 
 	b.MultipartUploads[uploadID] = upload
 
+	s.saveLocked()
+
 	return upload, nil
 }
 
@@ -933,6 +971,8 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 	}
 
 	upload.Parts[partNumber] = part
+
+	s.saveLocked()
 
 	return part, nil
 }
@@ -981,6 +1021,8 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 	}
 
 	upload.Parts[partNumber] = part
+
+	s.saveLocked()
 
 	return part, nil
 }
@@ -1074,6 +1116,8 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 	b.Objects[key] = obj
 	delete(b.MultipartUploads, uploadID)
 
+	s.saveLocked()
+
 	return obj, nil
 }
 
@@ -1097,6 +1141,8 @@ func (s *MemoryStorage) AbortMultipartUpload(_ context.Context, bucket, key, upl
 	}
 
 	delete(b.MultipartUploads, uploadID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1228,6 +1274,8 @@ func (s *MemoryStorage) SetEventBridgeNotification(_ context.Context, bucket str
 	if b, exists := s.Buckets[bucket]; exists {
 		b.EventBridgeEnabled = enabled
 	}
+
+	s.saveLocked()
 }
 
 // IsEventBridgeEnabled returns whether EventBridge notification is enabled for a bucket.
@@ -1250,6 +1298,8 @@ func (s *MemoryStorage) SetQueueConfigurations(_ context.Context, bucket string,
 	if b, exists := s.Buckets[bucket]; exists {
 		b.QueueConfigurations = configs
 	}
+
+	s.saveLocked()
 }
 
 // GetQueueConfigurations returns the SQS queue notification destinations for a bucket.
@@ -1272,6 +1322,8 @@ func (s *MemoryStorage) SetCORSConfiguration(_ context.Context, bucket string, r
 	if b, exists := s.Buckets[bucket]; exists {
 		b.CORSRules = rules
 	}
+
+	s.saveLocked()
 }
 
 // GetCORSRules returns the CORS rules for a bucket.
@@ -1298,6 +1350,8 @@ func (s *MemoryStorage) PutPublicAccessBlock(_ context.Context, bucket string, c
 
 	c := cfg
 	b.PublicAccessBlock = &c
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1337,6 +1391,8 @@ func (s *MemoryStorage) DeletePublicAccessBlock(_ context.Context, bucket string
 
 	b.PublicAccessBlock = nil
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1352,6 +1408,8 @@ func (s *MemoryStorage) PutBucketEncryption(_ context.Context, bucket string, cf
 
 	c := ServerSideEncryptionConfig{Rules: append([]ServerSideEncryptionRule(nil), cfg.Rules...)}
 	b.Encryption = &c
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1391,6 +1449,8 @@ func (s *MemoryStorage) DeleteBucketEncryption(_ context.Context, bucket string)
 
 	b.Encryption = nil
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1407,6 +1467,8 @@ func (s *MemoryStorage) PutBucketPolicy(_ context.Context, bucket, document stri
 	}
 
 	b.Policy = document
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1447,6 +1509,8 @@ func (s *MemoryStorage) DeleteBucketPolicy(_ context.Context, bucket string) err
 
 	b.Policy = ""
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1466,11 +1530,15 @@ func (s *MemoryStorage) PutBucketLogging(_ context.Context, bucket string, cfg B
 	if cfg.TargetBucket == "" {
 		b.Logging = nil
 
+		s.saveLocked()
+
 		return nil
 	}
 
 	c := cfg
 	b.Logging = &c
+
+	s.saveLocked()
 
 	return nil
 }

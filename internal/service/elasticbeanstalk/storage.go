@@ -131,6 +131,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "elasticbeanstalk", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -166,6 +182,8 @@ func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicat
 	}
 
 	m.Applications[req.ApplicationName] = app
+
+	m.saveLocked()
 
 	return app, nil
 }
@@ -214,6 +232,8 @@ func (m *MemoryStorage) UpdateApplication(_ context.Context, req *UpdateApplicat
 
 	app.DateUpdated = time.Now().UTC().Format(time.RFC3339)
 
+	m.saveLocked()
+
 	return app, nil
 }
 
@@ -230,6 +250,8 @@ func (m *MemoryStorage) DeleteApplication(_ context.Context, name string) error 
 	}
 
 	delete(m.Applications, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -262,6 +284,8 @@ func (m *MemoryStorage) CreateEnvironment(_ context.Context, req *CreateEnvironm
 	}
 
 	m.Environments[req.EnvironmentName] = env
+
+	m.saveLocked()
 
 	return env, nil
 }
@@ -312,6 +336,8 @@ func (m *MemoryStorage) TerminateEnvironment(_ context.Context, envName string) 
 	env.Status = "Terminated"
 
 	delete(m.Environments, envName)
+
+	m.saveLocked()
 
 	return env, nil
 }

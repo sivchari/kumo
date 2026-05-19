@@ -140,6 +140,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "scheduler", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -205,6 +221,8 @@ func (m *MemoryStorage) CreateSchedule(_ context.Context, name string, req *Crea
 
 	m.Schedules[key] = schedule
 
+	m.saveLocked()
+
 	return schedule, nil
 }
 
@@ -266,6 +284,8 @@ func (m *MemoryStorage) UpdateSchedule(_ context.Context, name string, req *Upda
 		schedule.EndDate = nil
 	}
 
+	m.saveLocked()
+
 	return schedule, nil
 }
 
@@ -282,6 +302,8 @@ func (m *MemoryStorage) DeleteSchedule(_ context.Context, name, groupName string
 	}
 
 	delete(m.Schedules, key)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -329,6 +351,8 @@ func (m *MemoryStorage) CreateScheduleGroup(_ context.Context, name string, _ *C
 
 	m.ScheduleGroups[name] = group
 
+	m.saveLocked()
+
 	return group, nil
 }
 
@@ -366,6 +390,8 @@ func (m *MemoryStorage) DeleteScheduleGroup(_ context.Context, name string) erro
 	}
 
 	delete(m.ScheduleGroups, name)
+
+	m.saveLocked()
 
 	return nil
 }

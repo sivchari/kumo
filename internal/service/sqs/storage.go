@@ -171,6 +171,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "sqs", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -266,6 +282,8 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 
 	s.Queues[queueURL] = qd
 
+	s.saveLocked()
+
 	return queue, nil
 }
 
@@ -280,6 +298,8 @@ func (s *MemoryStorage) DeleteQueue(_ context.Context, queueURL string) error {
 	}
 
 	delete(s.Queues, storedURL)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -358,6 +378,8 @@ func (s *MemoryStorage) TagQueue(_ context.Context, queueURL string, tags map[st
 
 	qd.Queue.LastModifiedTimestamp = time.Now()
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -376,6 +398,8 @@ func (s *MemoryStorage) UntagQueue(_ context.Context, queueURL string, tagKeys [
 	}
 
 	qd.Queue.LastModifiedTimestamp = time.Now()
+
+	s.saveLocked()
 
 	return nil
 }
@@ -498,9 +522,31 @@ func (s *MemoryStorage) SendMessage(_ context.Context, queueURL, body string, de
 		dedupID = result.DedupID
 	}
 
+	msg := buildMessage(body, now, delay, messageAttributes, messageGroupID, messageDeduplicationID, sequenceNumber)
+
+	if qd.Queue.FifoQueue {
+		qd.updateFIFOCache(dedupID, msg.MessageID)
+	}
+
+	qd.Messages = append(qd.Messages, msg)
+
+	// Notify long-polling receivers.
+	select {
+	case qd.notify <- struct{}{}:
+	default:
+	}
+
+	s.saveLocked()
+
+	return msg, nil
+}
+
+// buildMessage creates a new Message with the given parameters.
+func buildMessage(body string, now time.Time, delay int, messageAttributes map[string]MessageAttributeValue, messageGroupID, messageDeduplicationID, sequenceNumber string) *Message {
 	// MD5 is required by SQS specification for message body hash.
 	md5Hash := md5.Sum([]byte(body)) //nolint:gosec // MD5 is required by SQS spec
-	msg := &Message{
+
+	return &Message{
 		MessageID:              uuid.New().String(),
 		Body:                   body,
 		MD5OfBody:              hex.EncodeToString(md5Hash[:]),
@@ -516,20 +562,6 @@ func (s *MemoryStorage) SendMessage(_ context.Context, queueURL, body string, de
 			"ApproximateFirstReceiveTimestamp": "",
 		},
 	}
-
-	if qd.Queue.FifoQueue {
-		qd.updateFIFOCache(dedupID, msg.MessageID)
-	}
-
-	qd.Messages = append(qd.Messages, msg)
-
-	// Notify long-polling receivers.
-	select {
-	case qd.notify <- struct{}{}:
-	default:
-	}
-
-	return msg, nil
 }
 
 // ReceiveMessage receives messages from a queue.
@@ -624,6 +656,8 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 
 	qd.Messages = remaining
 
+	s.saveLocked()
+
 	return result, qd.notify, nil
 }
 
@@ -667,6 +701,8 @@ func (s *MemoryStorage) ChangeMessageVisibility(_ context.Context, queueURL, rec
 
 	msg.VisibleAt = time.Now().Add(time.Duration(visibilityTimeout) * time.Second)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -686,6 +722,8 @@ func (s *MemoryStorage) DeleteMessage(_ context.Context, queueURL, receiptHandle
 
 	delete(qd.Inflight, receiptHandle)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -701,6 +739,8 @@ func (s *MemoryStorage) PurgeQueue(_ context.Context, queueURL string) error {
 
 	qd.Messages = make([]*Message, 0)
 	qd.Inflight = make(map[string]*Message)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -767,6 +807,8 @@ func (s *MemoryStorage) SetQueueAttributes(_ context.Context, queueURL string, a
 
 	applyQueueAttributes(qd.Queue, attributes)
 	qd.Queue.LastModifiedTimestamp = time.Now()
+
+	s.saveLocked()
 
 	return nil
 }

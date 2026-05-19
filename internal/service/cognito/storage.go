@@ -160,6 +160,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "cognito-idp", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -227,6 +243,8 @@ func (s *MemoryStorage) CreateUserPool(_ context.Context, req *CreateUserPoolReq
 	s.UserPools[poolID] = pool
 	s.Users[poolID] = make(map[string]*User)
 
+	s.saveLocked()
+
 	return pool, nil
 }
 
@@ -285,6 +303,8 @@ func (s *MemoryStorage) DeleteUserPool(_ context.Context, userPoolID string) err
 	delete(s.Users, userPoolID)
 	delete(s.UserPools, userPoolID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -336,6 +356,8 @@ func (s *MemoryStorage) CreateUserPoolClient(_ context.Context, req *CreateUserP
 	}
 
 	s.UserPoolClients[clientID] = client
+
+	s.saveLocked()
 
 	return client, nil
 }
@@ -389,6 +411,8 @@ func (s *MemoryStorage) DeleteUserPoolClient(_ context.Context, userPoolID, clie
 
 	delete(s.UserPoolClients, clientID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -426,6 +450,8 @@ func (s *MemoryStorage) AdminCreateUser(_ context.Context, req *AdminCreateUserR
 
 	s.Users[req.UserPoolID][req.Username] = user
 
+	s.saveLocked()
+
 	return user, nil
 }
 
@@ -462,6 +488,8 @@ func (s *MemoryStorage) AdminDeleteUser(_ context.Context, userPoolID, username 
 	}
 
 	delete(users, username)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -541,6 +569,8 @@ func (s *MemoryStorage) SignUp(_ context.Context, req *SignUpRequest) (*User, er
 	// Generate confirmation code (simulated).
 	s.ConfirmationCodes[req.Username] = "123456"
 
+	s.saveLocked()
+
 	return user, nil
 }
 
@@ -580,6 +610,8 @@ func (s *MemoryStorage) ConfirmSignUp(_ context.Context, clientID, username, cod
 	user.UserLastModified = time.Now()
 
 	delete(s.ConfirmationCodes, username)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -710,6 +742,8 @@ func (s *MemoryStorage) SetUserPoolMfaConfig(_ context.Context, userPoolID strin
 	}
 
 	s.MfaConfigs[userPoolID] = config
+
+	s.saveLocked()
 
 	return nil
 }

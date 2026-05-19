@@ -146,6 +146,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "forecast", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -209,6 +225,8 @@ func (m *MemoryStorage) CreateDataset(_ context.Context, req *CreateDatasetInput
 	}
 
 	m.Datasets[datasetArn] = dataset
+
+	m.saveLocked()
 
 	return datasetArn, nil
 }
@@ -283,6 +301,8 @@ func (m *MemoryStorage) DeleteDataset(_ context.Context, datasetArn string) erro
 
 	delete(m.Datasets, datasetArn)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -343,6 +363,8 @@ func (m *MemoryStorage) CreateDatasetGroup(_ context.Context, req *CreateDataset
 	}
 
 	m.DatasetGroups[datasetGroupArn] = datasetGroup
+
+	m.saveLocked()
 
 	return datasetGroupArn, nil
 }
@@ -415,6 +437,8 @@ func (m *MemoryStorage) DeleteDatasetGroup(_ context.Context, datasetGroupArn st
 
 	delete(m.DatasetGroups, datasetGroupArn)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -451,6 +475,8 @@ func (m *MemoryStorage) UpdateDatasetGroup(_ context.Context, datasetGroupArn st
 
 	dg.DatasetArns = datasetArns
 	dg.LastModificationTime = ToAWSTimestamp(time.Now())
+
+	m.saveLocked()
 
 	return nil
 }
@@ -523,6 +549,8 @@ func (m *MemoryStorage) CreatePredictor(_ context.Context, req *CreatePredictorI
 	}
 
 	m.Predictors[predictorArn] = predictor
+
+	m.saveLocked()
 
 	return predictorArn, nil
 }
@@ -608,6 +636,8 @@ func (m *MemoryStorage) DeletePredictor(_ context.Context, predictorArn string) 
 
 	delete(m.Predictors, predictorArn)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -663,6 +693,8 @@ func (m *MemoryStorage) CreateForecast(_ context.Context, req *CreateForecastInp
 	}
 
 	m.Forecasts[forecastArn] = forecast
+
+	m.saveLocked()
 
 	return forecastArn, nil
 }
@@ -733,6 +765,8 @@ func (m *MemoryStorage) DeleteForecast(_ context.Context, forecastArn string) er
 	}
 
 	delete(m.Forecasts, forecastArn)
+
+	m.saveLocked()
 
 	return nil
 }

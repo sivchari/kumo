@@ -114,6 +114,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "xray", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -210,6 +226,8 @@ func (s *MemoryStorage) PutTraceSegments(_ context.Context, documents []string) 
 			}
 		}
 	}
+
+	s.saveLocked()
 
 	return unprocessed, nil
 }
@@ -352,6 +370,8 @@ func (s *MemoryStorage) CreateGroup(_ context.Context, input *CreateGroupInput) 
 
 	s.Groups[input.GroupName] = group
 
+	s.saveLocked()
+
 	return group, nil
 }
 
@@ -390,6 +410,8 @@ func (s *MemoryStorage) DeleteGroup(_ context.Context, groupName, groupARN strin
 	}
 
 	delete(s.Groups, targetName)
+
+	s.saveLocked()
 
 	return nil
 }

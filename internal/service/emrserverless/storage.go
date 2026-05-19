@@ -112,6 +112,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "emrserverless", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -227,6 +243,8 @@ func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicat
 
 	m.Applications[applicationID] = app
 	m.JobRuns[applicationID] = make(map[string]*JobRun)
+
+	m.saveLocked()
 
 	return app, nil
 }
@@ -351,6 +369,8 @@ func (m *MemoryStorage) UpdateApplication(_ context.Context, req *UpdateApplicat
 
 	app.UpdatedAt = AWSTimestamp{Time: time.Now()}
 
+	m.saveLocked()
+
 	return app, nil
 }
 
@@ -392,6 +412,8 @@ func (m *MemoryStorage) DeleteApplication(_ context.Context, applicationID strin
 	delete(m.Applications, applicationID)
 	delete(m.JobRuns, applicationID)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -420,6 +442,8 @@ func (m *MemoryStorage) StartApplication(_ context.Context, applicationID string
 	app.State = ApplicationStateStarted
 	app.UpdatedAt = AWSTimestamp{Time: time.Now()}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -447,6 +471,8 @@ func (m *MemoryStorage) StopApplication(_ context.Context, applicationID string)
 	// For simulation, immediately set to STOPPED.
 	app.State = ApplicationStateStopped
 	app.UpdatedAt = AWSTimestamp{Time: time.Now()}
+
+	m.saveLocked()
 
 	return nil
 }
@@ -525,6 +551,8 @@ func (m *MemoryStorage) StartJobRun(_ context.Context, req *StartJobRunInput) (*
 	}
 
 	m.JobRuns[req.ApplicationID][jobRunID] = jobRun
+
+	m.saveLocked()
 
 	return jobRun, nil
 }
@@ -645,6 +673,8 @@ func (m *MemoryStorage) CancelJobRun(_ context.Context, applicationID, jobRunID 
 	// For simulation, immediately set to CANCELLED.
 	jobRun.State = JobRunStateCancelled
 	jobRun.UpdatedAt = AWSTimestamp{Time: time.Now()}
+
+	m.saveLocked()
 
 	return jobRun, nil
 }

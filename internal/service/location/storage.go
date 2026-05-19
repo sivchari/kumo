@@ -176,6 +176,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "location", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -214,6 +230,8 @@ func (m *MemoryStorage) CreateMap(_ context.Context, req *CreateMapRequest) (*Cr
 		CreateTime:    now,
 		UpdateTime:    now,
 	}
+
+	m.saveLocked()
 
 	return &CreateMapResponse{
 		MapName:    req.MapName,
@@ -264,6 +282,8 @@ func (m *MemoryStorage) UpdateMap(_ context.Context, name string, req *UpdateMap
 
 	mr.UpdateTime = time.Now()
 
+	m.saveLocked()
+
 	return &UpdateMapResponse{
 		MapName:    mr.Name,
 		MapArn:     mr.ARN,
@@ -281,6 +301,8 @@ func (m *MemoryStorage) DeleteMap(_ context.Context, name string) error {
 	}
 
 	delete(m.Maps, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -345,6 +367,8 @@ func (m *MemoryStorage) CreatePlaceIndex(_ context.Context, req *CreatePlaceInde
 		UpdateTime:              now,
 	}
 
+	m.saveLocked()
+
 	return &CreatePlaceIndexResponse{
 		IndexName:  req.IndexName,
 		IndexArn:   arn,
@@ -399,6 +423,8 @@ func (m *MemoryStorage) UpdatePlaceIndex(_ context.Context, name string, req *Up
 
 	pi.UpdateTime = time.Now()
 
+	m.saveLocked()
+
 	return &UpdatePlaceIndexResponse{
 		IndexName:  pi.IndexName,
 		IndexArn:   pi.ARN,
@@ -416,6 +442,8 @@ func (m *MemoryStorage) DeletePlaceIndex(_ context.Context, name string) error {
 	}
 
 	delete(m.PlaceIndexes, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -475,6 +503,8 @@ func (m *MemoryStorage) CreateRouteCalculator(_ context.Context, req *CreateRout
 		UpdateTime:     now,
 	}
 
+	m.saveLocked()
+
 	return &CreateRouteCalculatorResponse{
 		CalculatorName: req.CalculatorName,
 		CalculatorArn:  arn,
@@ -524,6 +554,8 @@ func (m *MemoryStorage) UpdateRouteCalculator(_ context.Context, name string, re
 
 	rc.UpdateTime = time.Now()
 
+	m.saveLocked()
+
 	return &UpdateRouteCalculatorResponse{
 		CalculatorName: rc.CalculatorName,
 		CalculatorArn:  rc.ARN,
@@ -541,6 +573,8 @@ func (m *MemoryStorage) DeleteRouteCalculator(_ context.Context, name string) er
 	}
 
 	delete(m.RouteCalculators, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -599,6 +633,8 @@ func (m *MemoryStorage) CreateGeofenceCollection(_ context.Context, req *CreateG
 		UpdateTime:     now,
 	}
 
+	m.saveLocked()
+
 	return &CreateGeofenceCollectionResponse{
 		CollectionName: req.CollectionName,
 		CollectionArn:  arn,
@@ -647,6 +683,8 @@ func (m *MemoryStorage) UpdateGeofenceCollection(_ context.Context, name string,
 
 	gc.UpdateTime = time.Now()
 
+	m.saveLocked()
+
 	return &UpdateGeofenceCollectionResponse{
 		CollectionName: gc.CollectionName,
 		CollectionArn:  gc.ARN,
@@ -664,6 +702,8 @@ func (m *MemoryStorage) DeleteGeofenceCollection(_ context.Context, name string)
 	}
 
 	delete(m.GeofenceCollections, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -722,6 +762,8 @@ func (m *MemoryStorage) CreateTracker(_ context.Context, req *CreateTrackerReque
 		UpdateTime:        now,
 	}
 
+	m.saveLocked()
+
 	return &CreateTrackerResponse{
 		TrackerName: req.TrackerName,
 		TrackerArn:  arn,
@@ -775,6 +817,8 @@ func (m *MemoryStorage) UpdateTracker(_ context.Context, name string, req *Updat
 
 	t.UpdateTime = time.Now()
 
+	m.saveLocked()
+
 	return &UpdateTrackerResponse{
 		TrackerName: t.TrackerName,
 		TrackerArn:  t.ARN,
@@ -792,6 +836,8 @@ func (m *MemoryStorage) DeleteTracker(_ context.Context, name string) error {
 	}
 
 	delete(m.Trackers, name)
+
+	m.saveLocked()
 
 	return nil
 }

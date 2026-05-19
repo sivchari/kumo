@@ -116,6 +116,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "elasticache", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -143,6 +159,8 @@ func (m *MemoryStorage) CreateCacheCluster(_ context.Context, input *CreateCache
 
 	cluster := m.buildCacheCluster(input)
 	m.CacheClusters[input.CacheClusterID] = cluster
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -229,6 +247,8 @@ func (m *MemoryStorage) DeleteCacheCluster(_ context.Context, clusterID string) 
 
 	delete(m.CacheClusters, clusterID)
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -283,6 +303,8 @@ func (m *MemoryStorage) ModifyCacheCluster(_ context.Context, input *ModifyCache
 
 	applyCacheClusterModifications(cluster, input)
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -334,6 +356,8 @@ func (m *MemoryStorage) CreateReplicationGroup(_ context.Context, input *CreateR
 
 	group := m.buildReplicationGroup(input)
 	m.ReplicationGroups[input.ReplicationGroupID] = group
+
+	m.saveLocked()
 
 	return group, nil
 }
@@ -448,6 +472,8 @@ func (m *MemoryStorage) DeleteReplicationGroup(_ context.Context, groupID string
 	group.Status = ReplicationGroupStatusDeleting
 
 	delete(m.ReplicationGroups, groupID)
+
+	m.saveLocked()
 
 	return group, nil
 }

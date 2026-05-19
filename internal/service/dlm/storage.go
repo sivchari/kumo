@@ -119,6 +119,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "dlm", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -155,6 +171,8 @@ func (m *MemoryStorage) CreateLifecyclePolicy(_ context.Context, req *CreateLife
 	}
 
 	m.Policies[policyID] = policy
+
+	m.saveLocked()
 
 	return policy, nil
 }
@@ -241,6 +259,8 @@ func (m *MemoryStorage) UpdateLifecyclePolicy(_ context.Context, policyID string
 
 	policy.DateModified = time.Now()
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -254,6 +274,8 @@ func (m *MemoryStorage) DeleteLifecyclePolicy(_ context.Context, policyID string
 	}
 
 	delete(m.Policies, policyID)
+
+	m.saveLocked()
 
 	return nil
 }

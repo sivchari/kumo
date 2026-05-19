@@ -180,6 +180,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "gamelift", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -213,6 +229,8 @@ func (m *MemoryStorage) CreateBuild(_ context.Context, req *CreateBuildRequest) 
 	}
 
 	m.Builds[buildID] = build
+
+	m.saveLocked()
 
 	return build, nil
 }
@@ -264,6 +282,8 @@ func (m *MemoryStorage) DeleteBuild(_ context.Context, buildID string) error {
 
 	delete(m.Builds, buildID)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -294,6 +314,8 @@ func (m *MemoryStorage) CreateFleet(_ context.Context, req *CreateFleetRequest) 
 	}
 
 	m.Fleets[fleetID] = fleet
+
+	m.saveLocked()
 
 	return fleet, nil
 }
@@ -359,6 +381,8 @@ func (m *MemoryStorage) DeleteFleet(_ context.Context, fleetID string) error {
 
 	delete(m.Fleets, fleetID)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -394,6 +418,8 @@ func (m *MemoryStorage) CreateGameSession(_ context.Context, req *CreateGameSess
 	}
 
 	m.GameSessions[gameSessionID] = gameSession
+
+	m.saveLocked()
 
 	return gameSession, nil
 }
@@ -443,6 +469,8 @@ func (m *MemoryStorage) UpdateGameSession(_ context.Context, req *UpdateGameSess
 		session.Name = req.Name
 	}
 
+	m.saveLocked()
+
 	return session, nil
 }
 
@@ -476,6 +504,8 @@ func (m *MemoryStorage) CreatePlayerSession(_ context.Context, gameSessionID, pl
 
 	m.PlayerSessions[playerSessionID] = playerSession
 	gameSession.CurrentPlayerSessionCount++
+
+	m.saveLocked()
 
 	return playerSession, nil
 }
@@ -518,6 +548,8 @@ func (m *MemoryStorage) CreatePlayerSessions(_ context.Context, gameSessionID st
 
 	//nolint:gosec // len(playerIDs) is bounded by the request, which is limited by AWS SDK.
 	gameSession.CurrentPlayerSessionCount += int32(len(playerIDs))
+
+	m.saveLocked()
 
 	return result, nil
 }

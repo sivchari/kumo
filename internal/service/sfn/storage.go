@@ -167,6 +167,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "states", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -216,6 +232,8 @@ func (s *MemoryStorage) CreateStateMachine(_ context.Context, req *CreateStateMa
 		s.Tags[arn] = append([]Tag{}, req.Tags...)
 	}
 
+	s.saveLocked()
+
 	return sm, nil
 }
 
@@ -230,6 +248,8 @@ func (s *MemoryStorage) DeleteStateMachine(_ context.Context, arn string) error 
 
 	delete(s.StateMachines, arn)
 	delete(s.Tags, arn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -310,6 +330,8 @@ func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name,
 	ed := &ExecutionData{Execution: exec, History: history}
 	s.Executions[executionArn] = ed
 
+	s.saveLocked()
+
 	// Parse the definition and run the state machine asynchronously.
 	definition := sm.Definition
 
@@ -358,6 +380,8 @@ func (s *MemoryStorage) succeedExecution(ed *ExecutionData, lastEventID int64, o
 			Output: output, OutputDetails: &CloudWatchEventsExecutionDataDetails{Included: true},
 		},
 	})
+
+	s.saveLocked()
 }
 
 // failExecution marks an execution as FAILED.
@@ -378,6 +402,8 @@ func (s *MemoryStorage) failExecution(ed *ExecutionData, lastEventID int64, erro
 			Error: errorCode, Cause: cause,
 		},
 	})
+
+	s.saveLocked()
 }
 
 // createExecution creates a new execution object.
@@ -429,6 +455,8 @@ func (s *MemoryStorage) StopExecution(_ context.Context, executionArn, errorCode
 	}
 
 	ed.History = append(ed.History, abortEvent)
+
+	s.saveLocked()
 
 	return ed.Execution, nil
 }
@@ -536,6 +564,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags 
 
 	s.Tags[resourceArn] = newTags
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -560,6 +590,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tag
 	}
 
 	s.Tags[resourceArn] = newTags
+
+	s.saveLocked()
 
 	return nil
 }

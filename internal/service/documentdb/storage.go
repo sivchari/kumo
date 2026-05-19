@@ -119,6 +119,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "docdb", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -177,6 +193,8 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 
 	m.Clusters[input.DBClusterIdentifier] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -196,6 +214,8 @@ func (m *MemoryStorage) DeleteDBCluster(_ context.Context, identifier string, _ 
 	cluster.Status = DBClusterStatusDeleting
 
 	delete(m.Clusters, identifier)
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -250,6 +270,8 @@ func (m *MemoryStorage) ModifyDBCluster(_ context.Context, input *ModifyDBCluste
 		cluster.DeletionProtection = *input.DeletionProtection
 	}
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -300,6 +322,8 @@ func (m *MemoryStorage) CreateDBInstance(_ context.Context, input *CreateDBInsta
 		}
 	}
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -334,6 +358,8 @@ func (m *MemoryStorage) DeleteDBInstance(_ context.Context, identifier string, _
 	}
 
 	delete(m.Instances, identifier)
+
+	m.saveLocked()
 
 	return instance, nil
 }

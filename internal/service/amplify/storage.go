@@ -133,6 +133,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "amplify", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -177,6 +193,8 @@ func (m *MemoryStorage) CreateApp(_ context.Context, input *CreateAppInput) (*Ap
 
 	m.Apps[appID] = app
 	m.Branches[appID] = make(map[string]*Branch)
+
+	m.saveLocked()
 
 	return app, nil
 }
@@ -251,6 +269,8 @@ func (m *MemoryStorage) UpdateApp(_ context.Context, appID string, input *Update
 
 	app.UpdateTime = epochNow()
 
+	m.saveLocked()
+
 	return app, nil
 }
 
@@ -271,6 +291,8 @@ func (m *MemoryStorage) DeleteApp(_ context.Context, appID string) (*App, error)
 	delete(m.Apps, appID)
 
 	delete(m.Branches, appID)
+
+	m.saveLocked()
 
 	return app, nil
 }
@@ -316,6 +338,8 @@ func (m *MemoryStorage) CreateBranch(_ context.Context, appID string, input *Cre
 	}
 
 	m.Branches[appID][input.BranchName] = branch
+
+	m.saveLocked()
 
 	return branch, nil
 }
@@ -393,6 +417,8 @@ func (m *MemoryStorage) DeleteBranch(_ context.Context, appID, branchName string
 	}
 
 	delete(appBranches, branchName)
+
+	m.saveLocked()
 
 	return branch, nil
 }

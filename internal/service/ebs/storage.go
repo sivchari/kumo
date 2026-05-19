@@ -127,6 +127,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "ebs", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -161,6 +177,8 @@ func (m *MemoryStorage) StartSnapshot(_ context.Context, req *StartSnapshotReque
 
 	m.Snapshots[snapshotID] = snapshot
 
+	m.saveLocked()
+
 	return snapshot, nil
 }
 
@@ -178,6 +196,8 @@ func (m *MemoryStorage) CompleteSnapshot(_ context.Context, snapshotID string) (
 	}
 
 	snapshot.Status = "completed"
+
+	m.saveLocked()
 
 	return snapshot, nil
 }
@@ -250,6 +270,8 @@ func (m *MemoryStorage) PutSnapshotBlock(_ context.Context, snapshotID string, b
 		Data:     data,
 		Checksum: checksum,
 	}
+
+	m.saveLocked()
 
 	return nil
 }

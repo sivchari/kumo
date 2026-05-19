@@ -120,6 +120,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "secretsmanager", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -176,6 +192,8 @@ func (m *MemoryStorage) CreateSecret(_ context.Context, req *CreateSecretRequest
 	}
 
 	m.Secrets[req.Name] = secret
+
+	m.saveLocked()
 
 	return secret, nil
 }
@@ -267,20 +285,7 @@ func (m *MemoryStorage) PutSecretValue(_ context.Context, secretID, clientToken,
 	}
 
 	// Remove AWSCURRENT stage from previous version.
-	for _, v := range secret.VersionIDs {
-		newStages := make([]string, 0)
-
-		for _, stage := range v.VersionStages {
-			if stage != stageCurrent {
-				newStages = append(newStages, stage)
-			} else {
-				// Add AWSPREVIOUS to the old current version.
-				newStages = append(newStages, stagePrevious)
-			}
-		}
-
-		v.VersionStages = newStages
-	}
+	m.rotateVersionStages(secret)
 
 	version := &SecretVersion{
 		VersionID:     versionID,
@@ -296,6 +301,8 @@ func (m *MemoryStorage) PutSecretValue(_ context.Context, secretID, clientToken,
 	secret.SecretString = secretString
 	secret.SecretBinary = secretBinary
 	secret.LastChangedDate = now
+
+	m.saveLocked()
 
 	return secret, version, nil
 }
@@ -321,6 +328,8 @@ func (m *MemoryStorage) DeleteSecret(_ context.Context, secretID string, recover
 		delete(m.Policies, secret.Name)
 		secret.DeletedDate = &now
 
+		m.saveLocked()
+
 		return secret, nil
 	}
 
@@ -332,6 +341,8 @@ func (m *MemoryStorage) DeleteSecret(_ context.Context, secretID string, recover
 	secret.DeletedDate = &now
 	secret.ScheduledDeletionDate = &deletionDate
 	secret.RecoveryWindowInDays = recoveryWindow
+
+	m.saveLocked()
 
 	return secret, nil
 }
@@ -434,6 +445,8 @@ func (m *MemoryStorage) UpdateSecret(_ context.Context, req *UpdateSecretRequest
 
 	version := m.createNewVersionIfNeeded(secret, req, now)
 	secret.LastChangedDate = now
+
+	m.saveLocked()
 
 	return secret, version, nil
 }
@@ -542,6 +555,8 @@ func (m *MemoryStorage) PutResourcePolicy(_ context.Context, secretID, policy st
 
 	m.Policies[secret.Name] = policy
 
+	m.saveLocked()
+
 	return secret, nil
 }
 
@@ -556,6 +571,8 @@ func (m *MemoryStorage) DeleteResourcePolicy(_ context.Context, secretID string)
 	}
 
 	delete(m.Policies, secret.Name)
+
+	m.saveLocked()
 
 	return secret, nil
 }

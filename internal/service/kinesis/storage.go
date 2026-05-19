@@ -164,6 +164,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "kinesis", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -235,6 +251,8 @@ func (s *MemoryStorage) CreateStream(_ context.Context, req *CreateStreamRequest
 		Shards: shards,
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -248,6 +266,8 @@ func (s *MemoryStorage) DeleteStream(_ context.Context, streamName string) error
 	}
 
 	delete(s.Streams, streamName)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -416,6 +436,8 @@ func (s *MemoryStorage) PutRecord(_ context.Context, streamName string, data []b
 
 	sd.Shards[shardID].Records = append(sd.Shards[shardID].Records, record)
 
+	s.saveLocked()
+
 	return shardID, seqNum, nil
 }
 
@@ -442,6 +464,8 @@ func (s *MemoryStorage) PutRecords(_ context.Context, streamName string, records
 			failedCount++
 		}
 	}
+
+	s.saveLocked()
 
 	return results, failedCount, nil
 }
@@ -523,6 +547,8 @@ func (s *MemoryStorage) GetShardIterator(_ context.Context, streamName, shardID,
 		expiresAt:  time.Now().Add(shardIteratorExpiration),
 	}
 
+	s.saveLocked()
+
 	return encodedIterator, nil
 }
 
@@ -574,6 +600,8 @@ func (s *MemoryStorage) GetRecords(_ context.Context, shardIterator string, limi
 		position:   endPos,
 		expiresAt:  time.Now().Add(shardIteratorExpiration),
 	}
+
+	s.saveLocked()
 
 	return records, nextIterator, 0, nil
 }

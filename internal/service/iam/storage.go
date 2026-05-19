@@ -186,6 +186,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "iam", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -229,6 +245,8 @@ func (s *MemoryStorage) CreateUser(_ context.Context, req *CreateUserRequest) (*
 	s.Users[req.UserName] = user
 	s.AccessKeys[req.UserName] = make(map[string]*AccessKey)
 
+	s.saveLocked()
+
 	return user, nil
 }
 
@@ -261,6 +279,8 @@ func (s *MemoryStorage) DeleteUser(_ context.Context, userName string) error {
 
 	delete(s.Users, userName)
 	delete(s.AccessKeys, userName)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -345,6 +365,8 @@ func (s *MemoryStorage) CreateRole(_ context.Context, req *CreateRoleRequest) (*
 
 	s.Roles[req.RoleName] = role
 
+	s.saveLocked()
+
 	return role, nil
 }
 
@@ -369,6 +391,8 @@ func (s *MemoryStorage) DeleteRole(_ context.Context, roleName string) error {
 	}
 
 	delete(s.Roles, roleName)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -413,6 +437,8 @@ func (s *MemoryStorage) UpdateRole(_ context.Context, roleName string, descripti
 		role.MaxSessionDuration = *maxSessionDuration
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -447,6 +473,8 @@ func (s *MemoryStorage) TagRole(_ context.Context, roleName string, tags []Tag) 
 		byKey[t.Key] = len(role.Tags) - 1
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -466,6 +494,8 @@ func (s *MemoryStorage) UpdateAssumeRolePolicy(_ context.Context, roleName, poli
 	}
 
 	role.AssumeRolePolicyDocument = policyDocument
+
+	s.saveLocked()
 
 	return nil
 }
@@ -535,6 +565,8 @@ func (s *MemoryStorage) CreatePolicy(_ context.Context, req *CreatePolicyRequest
 
 	s.Policies[arn] = policy
 
+	s.saveLocked()
+
 	return policy, nil
 }
 
@@ -559,6 +591,8 @@ func (s *MemoryStorage) DeletePolicy(_ context.Context, policyArn string) error 
 	}
 
 	delete(s.Policies, policyArn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -646,6 +680,8 @@ func (s *MemoryStorage) AttachUserPolicy(_ context.Context, userName, policyArn 
 	})
 	policy.AttachmentCount++
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -690,6 +726,8 @@ func (s *MemoryStorage) DetachUserPolicy(_ context.Context, userName, policyArn 
 
 	policy.AttachmentCount--
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -725,6 +763,8 @@ func (s *MemoryStorage) AttachRolePolicy(_ context.Context, roleName, policyArn 
 		PolicyArn:  policyArn,
 	})
 	policy.AttachmentCount++
+
+	s.saveLocked()
 
 	return nil
 }
@@ -770,6 +810,8 @@ func (s *MemoryStorage) DetachRolePolicy(_ context.Context, roleName, policyArn 
 
 	policy.AttachmentCount--
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -803,6 +845,8 @@ func (s *MemoryStorage) CreateAccessKey(_ context.Context, userName string) (*Ac
 
 	s.AccessKeys[userName][accessKey.AccessKeyID] = accessKey
 
+	s.saveLocked()
+
 	return accessKey, nil
 }
 
@@ -834,6 +878,8 @@ func (s *MemoryStorage) DeleteAccessKey(_ context.Context, userName, accessKeyID
 	}
 
 	delete(s.AccessKeys[userName], accessKeyID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -912,6 +958,8 @@ func (s *MemoryStorage) PutRolePolicy(_ context.Context, roleName, policyName, p
 
 	role.InlinePolicies[policyName] = policyDocument
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -960,6 +1008,8 @@ func (s *MemoryStorage) DeleteRolePolicy(_ context.Context, roleName, policyName
 	}
 
 	delete(role.InlinePolicies, policyName)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1032,6 +1082,8 @@ func (s *MemoryStorage) CreateOIDCProvider(_ context.Context, url string, client
 	}
 	s.OIDCProviders[arn] = provider
 
+	s.saveLocked()
+
 	return provider, nil
 }
 
@@ -1065,6 +1117,8 @@ func (s *MemoryStorage) DeleteOIDCProvider(_ context.Context, arn string) error 
 
 	delete(s.OIDCProviders, arn)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1097,6 +1151,8 @@ func (s *MemoryStorage) UpdateOIDCProviderThumbprint(_ context.Context, arn stri
 	}
 
 	provider.ThumbprintList = append([]string(nil), thumbprints...)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1136,6 +1192,8 @@ func (s *MemoryStorage) CreateInstanceProfile(_ context.Context, name, path stri
 	}
 	s.InstanceProfiles[name] = profile
 
+	s.saveLocked()
+
 	return profile, nil
 }
 
@@ -1154,6 +1212,8 @@ func (s *MemoryStorage) DeleteInstanceProfile(_ context.Context, name string) er
 	}
 
 	delete(s.InstanceProfiles, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1236,6 +1296,8 @@ func (s *MemoryStorage) AddRoleToInstanceProfile(_ context.Context, profileName,
 
 	profile.Roles = append(profile.Roles, *role)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1252,6 +1314,8 @@ func (s *MemoryStorage) RemoveRoleFromInstanceProfile(_ context.Context, profile
 	for i := range profile.Roles {
 		if profile.Roles[i].RoleName == roleName {
 			profile.Roles = append(profile.Roles[:i], profile.Roles[i+1:]...)
+
+			s.saveLocked()
 
 			return nil
 		}

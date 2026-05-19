@@ -137,6 +137,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "memorydb", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -245,6 +261,8 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 	cluster := buildCluster(req)
 	m.Clusters[req.ClusterName] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -286,6 +304,15 @@ func (m *MemoryStorage) UpdateCluster(_ context.Context, req *UpdateClusterReque
 		}
 	}
 
+	applyClusterUpdates(cluster, req)
+
+	m.saveLocked()
+
+	return cluster, nil
+}
+
+// applyClusterUpdates applies non-empty fields from the update request to the cluster.
+func applyClusterUpdates(cluster *Cluster, req *UpdateClusterRequest) {
 	if req.Description != "" {
 		cluster.Description = req.Description
 	}
@@ -333,8 +360,6 @@ func (m *MemoryStorage) UpdateCluster(_ context.Context, req *UpdateClusterReque
 
 		cluster.SecurityGroups = sgs
 	}
-
-	return cluster, nil
 }
 
 // DeleteCluster deletes a cluster.
@@ -353,6 +378,8 @@ func (m *MemoryStorage) DeleteCluster(_ context.Context, clusterName string) (*C
 	cluster.Status = statusDeleting
 
 	delete(m.Clusters, clusterName)
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -393,6 +420,8 @@ func (m *MemoryStorage) CreateUser(_ context.Context, req *CreateUserRequest) (*
 	}
 
 	m.Users[req.UserName] = user
+
+	m.saveLocked()
 
 	return user, nil
 }
@@ -439,6 +468,8 @@ func (m *MemoryStorage) DeleteUser(_ context.Context, userName string) (*User, e
 
 	delete(m.Users, userName)
 
+	m.saveLocked()
+
 	return user, nil
 }
 
@@ -469,6 +500,8 @@ func (m *MemoryStorage) CreateACL(_ context.Context, req *CreateACLRequest) (*AC
 	}
 
 	m.Acls[req.ACLName] = acl
+
+	m.saveLocked()
 
 	return acl, nil
 }
@@ -514,6 +547,8 @@ func (m *MemoryStorage) DeleteACL(_ context.Context, aclName string) (*ACL, erro
 	acl.Status = statusDeleting
 
 	delete(m.Acls, aclName)
+
+	m.saveLocked()
 
 	return acl, nil
 }

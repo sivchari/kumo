@@ -133,6 +133,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "logs", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -172,6 +188,8 @@ func (m *MemoryStorage) CreateLogGroup(_ context.Context, req *CreateLogGroupReq
 		Streams: make(map[string]*LogStreamData),
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -188,6 +206,8 @@ func (m *MemoryStorage) DeleteLogGroup(_ context.Context, name string) error {
 	}
 
 	delete(m.LogGroups, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -225,6 +245,8 @@ func (m *MemoryStorage) CreateLogStream(_ context.Context, groupName, streamName
 		Events: make([]*LogEvent, 0),
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -249,6 +271,8 @@ func (m *MemoryStorage) DeleteLogStream(_ context.Context, groupName, streamName
 	}
 
 	delete(groupData.Streams, streamName)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -299,6 +323,8 @@ func (m *MemoryStorage) PutLogEvents(_ context.Context, groupName, streamName st
 	// Generate new sequence token
 	newToken := uuid.New().String()
 	streamData.Stream.UploadSequenceToken = newToken
+
+	m.saveLocked()
 
 	return &PutLogEventsResponse{
 		NextSequenceToken: newToken,
@@ -786,6 +812,8 @@ func (m *MemoryStorage) PutRetentionPolicy(_ context.Context, groupName string, 
 	v := retentionInDays
 	group.Group.RetentionInDays = &v
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -804,6 +832,8 @@ func (m *MemoryStorage) DeleteRetentionPolicy(_ context.Context, groupName strin
 	}
 
 	group.Group.RetentionInDays = nil
+
+	m.saveLocked()
 
 	return nil
 }

@@ -157,6 +157,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "sagemaker", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -223,6 +239,8 @@ func (m *MemoryStorage) CreateNotebookInstance(_ context.Context, req *CreateNot
 
 	m.NotebookInstances[req.NotebookInstanceName] = instance
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -239,6 +257,8 @@ func (m *MemoryStorage) DeleteNotebookInstance(_ context.Context, name string) e
 	}
 
 	delete(m.NotebookInstances, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -314,6 +334,8 @@ func (m *MemoryStorage) CreateTrainingJob(_ context.Context, req *CreateTraining
 
 	m.TrainingJobs[req.TrainingJobName] = job
 
+	m.saveLocked()
+
 	return job, nil
 }
 
@@ -359,6 +381,8 @@ func (m *MemoryStorage) CreateModel(_ context.Context, req *CreateModelRequest) 
 
 	m.Models[req.ModelName] = model
 
+	m.saveLocked()
+
 	return model, nil
 }
 
@@ -375,6 +399,8 @@ func (m *MemoryStorage) DeleteModel(_ context.Context, name string) error {
 	}
 
 	delete(m.Models, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -405,6 +431,8 @@ func (m *MemoryStorage) CreateEndpoint(_ context.Context, req *CreateEndpointReq
 
 	m.Endpoints[req.EndpointName] = endpoint
 
+	m.saveLocked()
+
 	return endpoint, nil
 }
 
@@ -421,6 +449,8 @@ func (m *MemoryStorage) DeleteEndpoint(_ context.Context, name string) error {
 	}
 
 	delete(m.Endpoints, name)
+
+	m.saveLocked()
 
 	return nil
 }

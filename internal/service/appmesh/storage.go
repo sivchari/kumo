@@ -161,6 +161,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "appmesh", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -212,6 +228,8 @@ func (m *MemoryStorage) CreateMesh(_ context.Context, req *CreateMeshInput) (*Me
 	m.VirtualServices[req.MeshName] = make(map[string]*VirtualServiceData)
 	m.VirtualRouters[req.MeshName] = make(map[string]*VirtualRouterData)
 	m.Routes[req.MeshName] = make(map[string]map[string]*RouteData)
+
+	m.saveLocked()
 
 	return mesh, nil
 }
@@ -282,6 +300,8 @@ func (m *MemoryStorage) UpdateMesh(_ context.Context, req *UpdateMeshInput) (*Me
 	mesh.Metadata.LastUpdatedAt = AWSTimestamp{time.Now()}
 	mesh.Metadata.Version++
 
+	m.saveLocked()
+
 	return mesh, nil
 }
 
@@ -327,6 +347,8 @@ func (m *MemoryStorage) DeleteMesh(_ context.Context, meshName string) (*MeshDat
 	delete(m.VirtualServices, meshName)
 	delete(m.VirtualRouters, meshName)
 	delete(m.Routes, meshName)
+
+	m.saveLocked()
 
 	return mesh, nil
 }
@@ -374,6 +396,8 @@ func (m *MemoryStorage) CreateVirtualNode(_ context.Context, req *CreateVirtualN
 	}
 
 	m.VirtualNodes[req.MeshName][req.VirtualNodeName] = node
+
+	m.saveLocked()
 
 	return node, nil
 }
@@ -466,6 +490,8 @@ func (m *MemoryStorage) UpdateVirtualNode(_ context.Context, req *UpdateVirtualN
 	node.Metadata.LastUpdatedAt = AWSTimestamp{time.Now()}
 	node.Metadata.Version++
 
+	m.saveLocked()
+
 	return node, nil
 }
 
@@ -492,6 +518,8 @@ func (m *MemoryStorage) DeleteVirtualNode(_ context.Context, meshName, virtualNo
 	node.Status.Status = StatusDeleted
 
 	delete(m.VirtualNodes[meshName], virtualNodeName)
+
+	m.saveLocked()
 
 	return node, nil
 }
@@ -539,6 +567,8 @@ func (m *MemoryStorage) CreateVirtualService(_ context.Context, req *CreateVirtu
 	}
 
 	m.VirtualServices[req.MeshName][req.VirtualServiceName] = service
+
+	m.saveLocked()
 
 	return service, nil
 }
@@ -631,6 +661,8 @@ func (m *MemoryStorage) UpdateVirtualService(_ context.Context, req *UpdateVirtu
 	service.Metadata.LastUpdatedAt = AWSTimestamp{time.Now()}
 	service.Metadata.Version++
 
+	m.saveLocked()
+
 	return service, nil
 }
 
@@ -657,6 +689,8 @@ func (m *MemoryStorage) DeleteVirtualService(_ context.Context, meshName, virtua
 	service.Status.Status = StatusDeleted
 
 	delete(m.VirtualServices[meshName], virtualServiceName)
+
+	m.saveLocked()
 
 	return service, nil
 }
@@ -705,6 +739,8 @@ func (m *MemoryStorage) CreateVirtualRouter(_ context.Context, req *CreateVirtua
 
 	m.VirtualRouters[req.MeshName][req.VirtualRouterName] = router
 	m.Routes[req.MeshName][req.VirtualRouterName] = make(map[string]*RouteData)
+
+	m.saveLocked()
 
 	return router, nil
 }
@@ -797,6 +833,8 @@ func (m *MemoryStorage) UpdateVirtualRouter(_ context.Context, req *UpdateVirtua
 	router.Metadata.LastUpdatedAt = AWSTimestamp{time.Now()}
 	router.Metadata.Version++
 
+	m.saveLocked()
+
 	return router, nil
 }
 
@@ -832,6 +870,8 @@ func (m *MemoryStorage) DeleteVirtualRouter(_ context.Context, meshName, virtual
 
 	delete(m.VirtualRouters[meshName], virtualRouterName)
 	delete(m.Routes[meshName], virtualRouterName)
+
+	m.saveLocked()
 
 	return router, nil
 }
@@ -887,6 +927,8 @@ func (m *MemoryStorage) CreateRoute(_ context.Context, req *CreateRouteInput) (*
 	}
 
 	m.Routes[req.MeshName][req.VirtualRouterName][req.RouteName] = route
+
+	m.saveLocked()
 
 	return route, nil
 }
@@ -1001,6 +1043,8 @@ func (m *MemoryStorage) UpdateRoute(_ context.Context, req *UpdateRouteInput) (*
 	route.Metadata.LastUpdatedAt = AWSTimestamp{time.Now()}
 	route.Metadata.Version++
 
+	m.saveLocked()
+
 	return route, nil
 }
 
@@ -1034,6 +1078,8 @@ func (m *MemoryStorage) DeleteRoute(_ context.Context, meshName, virtualRouterNa
 	route.Status.Status = StatusDeleted
 
 	delete(m.Routes[meshName][virtualRouterName], routeName)
+
+	m.saveLocked()
 
 	return route, nil
 }

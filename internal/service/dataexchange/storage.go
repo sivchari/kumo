@@ -116,6 +116,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "dataexchange", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -150,6 +166,8 @@ func (m *MemoryStorage) CreateDataSet(input *CreateDataSetInput) *DataSet {
 	}
 
 	m.DataSets[id] = ds
+
+	m.saveLocked()
 
 	return ds
 }
@@ -200,6 +218,8 @@ func (m *MemoryStorage) UpdateDataSet(id string, input *UpdateDataSetInput) (*Da
 
 	ds.UpdatedAt = time.Now().UTC()
 
+	m.saveLocked()
+
 	return ds, nil
 }
 
@@ -214,6 +234,8 @@ func (m *MemoryStorage) DeleteDataSet(id string) error {
 
 	delete(m.DataSets, id)
 	delete(m.Revisions, id)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -244,6 +266,8 @@ func (m *MemoryStorage) CreateRevision(dataSetID string, input *CreateRevisionIn
 	}
 
 	m.Revisions[dataSetID][id] = rev
+
+	m.saveLocked()
 
 	return rev, nil
 }
@@ -310,6 +334,8 @@ func (m *MemoryStorage) UpdateRevision(dataSetID, revisionID string, input *Upda
 
 	rev.UpdatedAt = time.Now().UTC()
 
+	m.saveLocked()
+
 	return rev, nil
 }
 
@@ -328,6 +354,8 @@ func (m *MemoryStorage) DeleteRevision(dataSetID, revisionID string) error {
 	}
 
 	delete(dsRevisions, revisionID)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -350,6 +378,8 @@ func (m *MemoryStorage) CreateJob(input *CreateJobInput) *Job {
 	}
 
 	m.Jobs[id] = job
+
+	m.saveLocked()
 
 	return job
 }

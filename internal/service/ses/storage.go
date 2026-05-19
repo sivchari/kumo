@@ -103,6 +103,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "ses", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -125,6 +141,8 @@ func (m *MemoryStorage) VerifyEmailIdentity(_ context.Context, email string) err
 		Email:      email,
 		VerifiedAt: time.Now(),
 	}
+
+	m.saveLocked()
 
 	return nil
 }
@@ -150,6 +168,8 @@ func (m *MemoryStorage) DeleteIdentity(_ context.Context, identity string) error
 	defer m.mu.Unlock()
 
 	delete(m.Identities, identity)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -178,6 +198,8 @@ func (m *MemoryStorage) SendEmail(_ context.Context, email *SentEmail) (string, 
 	email.MessageID = uuid.New().String()
 	email.SentAt = time.Now()
 	m.Emails = append(m.Emails, email)
+
+	m.saveLocked()
 
 	return email.MessageID, nil
 }

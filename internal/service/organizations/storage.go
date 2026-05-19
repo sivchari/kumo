@@ -204,6 +204,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "organizations", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -294,6 +310,8 @@ func (m *MemoryStorage) CreateOrganization(_ context.Context, featureSet string)
 		"p-FullAWSAccess": true,
 	}
 
+	m.saveLocked()
+
 	return m.Organization, nil
 }
 
@@ -321,6 +339,8 @@ func (m *MemoryStorage) DeleteOrganization(_ context.Context) error {
 	m.Root = nil
 	m.Accounts = make(map[string]*Account)
 	m.PolicyAttachments = make(map[string]map[string]bool)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -373,6 +393,8 @@ func (m *MemoryStorage) CreateAccount(_ context.Context, req *CreateAccountInput
 	m.PolicyAttachments[accountID] = map[string]bool{
 		"p-FullAWSAccess": true,
 	}
+
+	m.saveLocked()
 
 	// Create the status.
 	status := &CreateAccountStatus{
@@ -465,6 +487,8 @@ func (m *MemoryStorage) CreateOrganizationalUnit(_ context.Context, name, parent
 		"p-FullAWSAccess": true,
 	}
 
+	m.saveLocked()
+
 	return ou, nil
 }
 
@@ -531,6 +555,8 @@ func (m *MemoryStorage) AttachPolicy(_ context.Context, policyID, targetID strin
 
 	m.PolicyAttachments[targetID][policyID] = true
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -561,6 +587,8 @@ func (m *MemoryStorage) DetachPolicy(_ context.Context, policyID, targetID strin
 
 	// Detach the policy.
 	delete(m.PolicyAttachments[targetID], policyID)
+
+	m.saveLocked()
 
 	return nil
 }

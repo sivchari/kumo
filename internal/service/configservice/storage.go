@@ -138,6 +138,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "configservice", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -202,6 +218,8 @@ func (m *MemoryStorage) PutConfigurationRecorder(_ context.Context, req *PutConf
 		}
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -216,6 +234,8 @@ func (m *MemoryStorage) DeleteConfigurationRecorder(_ context.Context, name stri
 
 	delete(m.Recorders, name)
 	delete(m.RecorderStatuses, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -263,6 +283,8 @@ func (m *MemoryStorage) StartConfigurationRecorder(_ context.Context, name strin
 	now := time.Now()
 	status.LastStartTime = &now
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -280,6 +302,8 @@ func (m *MemoryStorage) StopConfigurationRecorder(_ context.Context, name string
 
 	now := time.Now()
 	status.LastStopTime = &now
+
+	m.saveLocked()
 
 	return nil
 }
@@ -338,6 +362,8 @@ func (m *MemoryStorage) PutConfigRule(_ context.Context, req *PutConfigRuleReque
 
 	m.Rules[input.ConfigRuleName] = rule
 
+	m.saveLocked()
+
 	return rule, nil
 }
 
@@ -351,6 +377,8 @@ func (m *MemoryStorage) DeleteConfigRule(_ context.Context, name string) error {
 	}
 
 	delete(m.Rules, name)
+
+	m.saveLocked()
 
 	return nil
 }

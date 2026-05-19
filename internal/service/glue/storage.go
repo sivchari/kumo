@@ -140,6 +140,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "glue", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -201,6 +217,8 @@ func (s *MemoryStorage) CreateDatabase(_ context.Context, catalogID string, inpu
 	}
 
 	s.Databases[key] = db
+
+	s.saveLocked()
 
 	return nil
 }
@@ -268,6 +286,8 @@ func (s *MemoryStorage) DeleteDatabase(_ context.Context, catalogID, name string
 
 	delete(s.Databases, key)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -320,6 +340,8 @@ func (s *MemoryStorage) CreateTable(_ context.Context, catalogID, databaseName s
 	}
 
 	s.Tables[key] = table
+
+	s.saveLocked()
 
 	return nil
 }
@@ -387,6 +409,8 @@ func (s *MemoryStorage) DeleteTable(_ context.Context, catalogID, databaseName, 
 
 	delete(s.Tables, key)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -438,6 +462,8 @@ func (s *MemoryStorage) CreateJob(_ context.Context, input *CreateJobInput) (*Jo
 
 	s.Jobs[input.Name] = job
 
+	s.saveLocked()
+
 	return job, nil
 }
 
@@ -454,6 +480,8 @@ func (s *MemoryStorage) DeleteJob(_ context.Context, jobName string) error {
 	}
 
 	delete(s.Jobs, jobName)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -495,6 +523,8 @@ func (s *MemoryStorage) StartJobRun(_ context.Context, input *StartJobRunInput) 
 
 	s.JobRuns[runID] = jobRun
 
+	s.saveLocked()
+
 	return jobRun, nil
 }
 
@@ -530,6 +560,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, resourceArn string, tagsT
 		s.Tags[resourceArn][k] = v
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -546,6 +578,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tag
 	for _, key := range tagsToRemove {
 		delete(tags, key)
 	}
+
+	s.saveLocked()
 
 	return nil
 }

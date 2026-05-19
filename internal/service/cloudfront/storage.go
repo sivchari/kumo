@@ -104,6 +104,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "cloudfront", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -172,6 +188,8 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 	}
 
 	s.Distributions[id] = dist
+
+	s.saveLocked()
 
 	return dist, nil
 }
@@ -276,6 +294,8 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 		ViewerCertificate:    convertViewerCertificateFromXML(config.ViewerCertificate),
 	}
 
+	s.saveLocked()
+
 	return dist, nil
 }
 
@@ -302,6 +322,8 @@ func (s *MemoryStorage) DeleteDistribution(_ context.Context, id, etag string) e
 
 	delete(s.Distributions, id)
 	delete(s.Invalidations, id)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -339,6 +361,8 @@ func (s *MemoryStorage) CreateInvalidation(_ context.Context, distributionID str
 	}
 
 	s.Invalidations[distributionID][id] = inv
+
+	s.saveLocked()
 
 	return inv, nil
 }

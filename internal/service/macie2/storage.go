@@ -182,6 +182,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "macie2", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -217,6 +233,8 @@ func (m *MemoryStorage) EnableMacie(_ context.Context, req *EnableMacieRequest) 
 		CreatedAt:                  now,
 		UpdatedAt:                  now,
 	}
+
+	m.saveLocked()
 
 	return &EnableMacieResponse{}, nil
 }
@@ -258,6 +276,8 @@ func (m *MemoryStorage) UpdateMacieSession(_ context.Context, req *UpdateMacieSe
 
 	m.Session.UpdatedAt = time.Now()
 
+	m.saveLocked()
+
 	return &UpdateMacieSessionResponse{}, nil
 }
 
@@ -271,6 +291,8 @@ func (m *MemoryStorage) DisableMacie(_ context.Context) (*DisableMacieResponse, 
 	}
 
 	m.Session = nil
+
+	m.saveLocked()
 
 	return &DisableMacieResponse{}, nil
 }
@@ -306,6 +328,8 @@ func (m *MemoryStorage) CreateAllowList(_ context.Context, req *CreateAllowListR
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+
+	m.saveLocked()
 
 	return &CreateAllowListResponse{
 		ID:  id,
@@ -376,6 +400,8 @@ func (m *MemoryStorage) UpdateAllowList(_ context.Context, id string, req *Updat
 	al.Criteria = criteria
 	al.UpdatedAt = time.Now()
 
+	m.saveLocked()
+
 	return &UpdateAllowListResponse{
 		ID:  al.ID,
 		ARN: al.ARN,
@@ -392,6 +418,8 @@ func (m *MemoryStorage) DeleteAllowList(_ context.Context, id string) error {
 	}
 
 	delete(m.AllowLists, id)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -448,6 +476,8 @@ func (m *MemoryStorage) CreateClassificationJob(_ context.Context, req *CreateCl
 		Tags:      maps.Clone(req.Tags),
 		CreatedAt: now,
 	}
+
+	m.saveLocked()
 
 	return &CreateClassificationJobResponse{
 		JobID:  jobID,
@@ -528,6 +558,8 @@ func (m *MemoryStorage) UpdateClassificationJob(_ context.Context, jobID string,
 		job.JobStatus = req.JobStatus
 	}
 
+	m.saveLocked()
+
 	return &UpdateClassificationJobResponse{}, nil
 }
 
@@ -552,6 +584,8 @@ func (m *MemoryStorage) CreateCustomDataIdentifier(_ context.Context, req *Creat
 		Tags:        maps.Clone(req.Tags),
 		CreatedAt:   now,
 	}
+
+	m.saveLocked()
 
 	return &CreateCustomDataIdentifierResponse{
 		CustomDataIdentifierID: id,
@@ -590,6 +624,8 @@ func (m *MemoryStorage) DeleteCustomDataIdentifier(_ context.Context, id string)
 	}
 
 	delete(m.CustomDataIdentifiers, id)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -666,6 +702,8 @@ func (m *MemoryStorage) CreateFindingsFilter(_ context.Context, req *CreateFindi
 		Tags:     maps.Clone(req.Tags),
 		Position: position,
 	}
+
+	m.saveLocked()
 
 	return &CreateFindingsFilterResponse{
 		ID:  id,
@@ -744,6 +782,8 @@ func (m *MemoryStorage) UpdateFindingsFilter(_ context.Context, id string, req *
 		ff.FindingCriteria = FindingCriteria{Criterion: criterion}
 	}
 
+	m.saveLocked()
+
 	return &UpdateFindingsFilterResponse{
 		ID:  ff.ID,
 		ARN: ff.ARN,
@@ -760,6 +800,8 @@ func (m *MemoryStorage) DeleteFindingsFilter(_ context.Context, id string) error
 	}
 
 	delete(m.FindingsFilters, id)
+
+	m.saveLocked()
 
 	return nil
 }

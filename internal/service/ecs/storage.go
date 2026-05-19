@@ -152,6 +152,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "ecs", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -215,6 +231,8 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 
 	m.Clusters[arn] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -251,6 +269,8 @@ func (m *MemoryStorage) DeleteCluster(_ context.Context, cluster string) (*Clust
 	existing.Status = statusInactive
 
 	delete(m.Clusters, arn)
+
+	m.saveLocked()
 
 	return existing, nil
 }
@@ -334,6 +354,8 @@ func (m *MemoryStorage) RegisterTaskDefinition(_ context.Context, req *RegisterT
 	m.TaskDefinitions[arn] = td
 	m.TaskDefFamilies[req.Family] = append(m.TaskDefFamilies[req.Family], arn)
 
+	m.saveLocked()
+
 	return td, nil
 }
 
@@ -353,6 +375,8 @@ func (m *MemoryStorage) DeregisterTaskDefinition(_ context.Context, taskDefiniti
 	}
 
 	td.Status = statusInactive
+
+	m.saveLocked()
 
 	return td, nil
 }
@@ -386,6 +410,8 @@ func (m *MemoryStorage) RunTask(_ context.Context, req *RunTaskRequest) ([]Task,
 
 	tasks := m.createTasks(clusterArn, td, req, count, launchType)
 	cluster.RunningTasksCount += count
+
+	m.saveLocked()
 
 	return tasks, nil, nil
 }
@@ -516,6 +542,8 @@ func (m *MemoryStorage) StopTask(_ context.Context, cluster, taskID, reason stri
 		c.RunningTasksCount--
 	}
 
+	m.saveLocked()
+
 	return task, nil
 }
 
@@ -618,6 +646,8 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 	m.Services[arn] = svc
 	cluster.ActiveServicesCount++
 
+	m.saveLocked()
+
 	return svc, nil
 }
 
@@ -661,6 +691,8 @@ func (m *MemoryStorage) DeleteService(_ context.Context, cluster, service string
 		c.ActiveServicesCount--
 	}
 
+	m.saveLocked()
+
 	return svc, nil
 }
 
@@ -700,6 +732,8 @@ func (m *MemoryStorage) UpdateService(_ context.Context, req *UpdateServiceReque
 		svc.Deployments[0].DesiredCount = svc.DesiredCount
 		svc.Deployments[0].UpdatedAt = newTimestamp()
 	}
+
+	m.saveLocked()
 
 	return svc, nil
 }

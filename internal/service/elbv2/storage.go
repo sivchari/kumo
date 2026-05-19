@@ -151,6 +151,22 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(m.dataDir, "elbv2", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -206,6 +222,8 @@ func (m *MemoryStorage) CreateLoadBalancer(_ context.Context, req *CreateLoadBal
 	defaults := getLoadBalancerDefaults(req)
 	lb := m.buildLoadBalancer(req, defaults)
 	m.LoadBalancers[lb.LoadBalancerArn] = lb
+
+	m.saveLocked()
 
 	return lb, nil
 }
@@ -275,6 +293,8 @@ func (m *MemoryStorage) DeleteLoadBalancer(_ context.Context, loadBalancerArn st
 	}
 
 	delete(m.LoadBalancers, loadBalancerArn)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -399,6 +419,8 @@ func (m *MemoryStorage) CreateTargetGroup(_ context.Context, req *CreateTargetGr
 	m.TargetGroups[tg.TargetGroupArn] = tg
 	m.Targets[tg.TargetGroupArn] = []Target{}
 
+	m.saveLocked()
+
 	return tg, nil
 }
 
@@ -455,6 +477,8 @@ func (m *MemoryStorage) DeleteTargetGroup(_ context.Context, targetGroupArn stri
 
 	delete(m.TargetGroups, targetGroupArn)
 	delete(m.Targets, targetGroupArn)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -535,6 +559,8 @@ func (m *MemoryStorage) RegisterTargets(_ context.Context, targetGroupArn string
 
 	m.Targets[targetGroupArn] = existingTargets
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -565,6 +591,8 @@ func (m *MemoryStorage) DeregisterTargets(_ context.Context, targetGroupArn stri
 	}
 
 	m.Targets[targetGroupArn] = newTargets
+
+	m.saveLocked()
 
 	return nil
 }
@@ -615,6 +643,8 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 		}
 	}
 
+	m.saveLocked()
+
 	return listener, nil
 }
 
@@ -631,6 +661,8 @@ func (m *MemoryStorage) DeleteListener(_ context.Context, listenerArn string) er
 	}
 
 	delete(m.Listeners, listenerArn)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -656,6 +688,8 @@ func (m *MemoryStorage) CreateRule(_ context.Context, listenerArn, priority stri
 		IsDefault:  false,
 	}
 	listener.Rules = append(listener.Rules, rule)
+
+	m.saveLocked()
 
 	return &listener.Rules[len(listener.Rules)-1], nil
 }
@@ -729,6 +763,8 @@ func (m *MemoryStorage) ModifyRule(_ context.Context, ruleArn string, conditions
 				listener.Rules[i].Actions = append([]Action(nil), actions...)
 			}
 
+			m.saveLocked()
+
 			return &listener.Rules[i], nil
 		}
 	}
@@ -745,6 +781,8 @@ func (m *MemoryStorage) DeleteRule(_ context.Context, ruleArn string) error {
 		for i := range listener.Rules {
 			if listener.Rules[i].RuleArn == ruleArn {
 				listener.Rules = append(listener.Rules[:i], listener.Rules[i+1:]...)
+
+				m.saveLocked()
 
 				return nil
 			}
@@ -784,6 +822,8 @@ func (m *MemoryStorage) SetRulePriorities(_ context.Context, priorities map[stri
 			return nil, &Error{Code: "RuleNotFound", Message: "Rule '" + arn + "' not found"}
 		}
 	}
+
+	m.saveLocked()
 
 	return updated, nil
 }
@@ -839,6 +879,8 @@ func (m *MemoryStorage) ModifyLoadBalancerAttributes(_ context.Context, lbArn st
 		lb.Attributes[k] = v
 	}
 
+	m.saveLocked()
+
 	return cloneAttributes(lb.Attributes), nil
 }
 
@@ -856,6 +898,8 @@ func (m *MemoryStorage) DescribeLoadBalancerAttributes(_ context.Context, lbArn 
 	if lb.Attributes == nil {
 		lb.Attributes = defaultLoadBalancerAttributes()
 	}
+
+	m.saveLocked()
 
 	return cloneAttributes(lb.Attributes), nil
 }
@@ -878,6 +922,8 @@ func (m *MemoryStorage) ModifyTargetGroupAttributes(_ context.Context, tgArn str
 		tg.Attributes[k] = v
 	}
 
+	m.saveLocked()
+
 	return cloneAttributes(tg.Attributes), nil
 }
 
@@ -894,6 +940,8 @@ func (m *MemoryStorage) DescribeTargetGroupAttributes(_ context.Context, tgArn s
 	if tg.Attributes == nil {
 		tg.Attributes = defaultTargetGroupAttributes()
 	}
+
+	m.saveLocked()
 
 	return cloneAttributes(tg.Attributes), nil
 }
@@ -959,6 +1007,8 @@ func (m *MemoryStorage) ModifyListener(_ context.Context, listenerArn string, po
 	if defaultActions != nil {
 		listener.DefaultActions = append([]Action(nil), defaultActions...)
 	}
+
+	m.saveLocked()
 
 	return listener, nil
 }

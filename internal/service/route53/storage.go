@@ -133,6 +133,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "route53", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -157,6 +173,8 @@ func (s *MemoryStorage) CreateHostedZone(zone *HostedZone) error {
 
 	s.HostedZones[zone.ID] = zone
 	s.RecordSets[zone.ID] = []ResourceRecordSet{}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -211,6 +229,8 @@ func (s *MemoryStorage) DeleteHostedZone(id string) error {
 	// Clean up tags associated with the hosted zone.
 	bareID := strings.TrimPrefix(id, "/hostedzone/")
 	delete(s.Tags, "hostedzone/"+bareID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -277,6 +297,8 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 		zone.ResourceRecordSetCount = int64(len(records))
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -287,6 +309,8 @@ func (s *MemoryStorage) PutChange(change *ChangeInfo) error {
 
 	id := strings.TrimPrefix(change.ID, "/change/")
 	s.Changes[id] = change
+
+	s.saveLocked()
 
 	return nil
 }
@@ -373,6 +397,8 @@ func (s *MemoryStorage) ChangeTagsForResource(resourceType, resourceID string, a
 	}
 
 	s.Tags[key] = tags
+
+	s.saveLocked()
 
 	return nil
 }

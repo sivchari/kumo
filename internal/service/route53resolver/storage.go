@@ -138,6 +138,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "route53resolver", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -211,6 +227,8 @@ func (s *MemoryStorage) CreateResolverEndpoint(_ context.Context, req *CreateRes
 
 	s.Endpoints[id] = endpoint
 
+	s.saveLocked()
+
 	return endpoint, nil
 }
 
@@ -246,6 +264,8 @@ func (s *MemoryStorage) DeleteResolverEndpoint(_ context.Context, id string) (*R
 	endpoint.Status = statusDeleting
 
 	delete(s.Endpoints, id)
+
+	s.saveLocked()
 
 	return endpoint, nil
 }
@@ -306,6 +326,8 @@ func (s *MemoryStorage) CreateResolverRule(_ context.Context, req *CreateResolve
 
 	s.Rules[id] = rule
 
+	s.saveLocked()
+
 	return rule, nil
 }
 
@@ -351,6 +373,8 @@ func (s *MemoryStorage) DeleteResolverRule(_ context.Context, id string) (*Resol
 	rule.Status = statusDeleting
 
 	delete(s.Rules, id)
+
+	s.saveLocked()
 
 	return rule, nil
 }
@@ -410,6 +434,8 @@ func (s *MemoryStorage) AssociateResolverRule(_ context.Context, req *AssociateR
 
 	s.Associations[id] = assoc
 
+	s.saveLocked()
+
 	return assoc, nil
 }
 
@@ -423,6 +449,8 @@ func (s *MemoryStorage) DisassociateResolverRule(_ context.Context, ruleID, vpcI
 			assoc.Status = statusDeleting
 
 			delete(s.Associations, id)
+
+			s.saveLocked()
 
 			return assoc, nil
 		}

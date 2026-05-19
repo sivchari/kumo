@@ -141,6 +141,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "lambda", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -168,6 +184,8 @@ func (s *MemoryStorage) CreateFunction(_ context.Context, req *CreateFunctionReq
 
 	fn := s.buildFunction(req)
 	s.Functions[req.FunctionName] = fn
+
+	s.saveLocked()
 
 	return fn, nil
 }
@@ -255,6 +273,8 @@ func (s *MemoryStorage) DeleteFunction(_ context.Context, name string) error {
 	}
 
 	delete(s.Functions, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -344,6 +364,8 @@ func (s *MemoryStorage) UpdateFunctionCode(_ context.Context, name string, req *
 
 	fn.LastModified = time.Now().UTC()
 
+	s.saveLocked()
+
 	return fn, nil
 }
 
@@ -393,6 +415,8 @@ func (s *MemoryStorage) UpdateFunctionConfiguration(_ context.Context, name stri
 	}
 
 	fn.LastModified = time.Now().UTC()
+
+	s.saveLocked()
 
 	return fn, nil
 }
@@ -446,6 +470,8 @@ func (s *MemoryStorage) AddPermission(_ context.Context, functionName string, st
 
 	fn.Policy.Statements = append(fn.Policy.Statements, stmt)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -472,6 +498,8 @@ func (s *MemoryStorage) RemovePermission(_ context.Context, functionName, statem
 	for i, stmt := range fn.Policy.Statements {
 		if stmt.Sid == statementID {
 			fn.Policy.Statements = append(fn.Policy.Statements[:i], fn.Policy.Statements[i+1:]...)
+
+			s.saveLocked()
 
 			return nil
 		}
@@ -536,6 +564,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, arn string, tags map[stri
 				fn.Tags[k] = v
 			}
 
+			s.saveLocked()
+
 			return nil
 		}
 	}
@@ -560,6 +590,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []s
 			for _, key := range tagKeys {
 				delete(fn.Tags, key)
 			}
+
+			s.saveLocked()
 
 			return nil
 		}
@@ -680,6 +712,8 @@ func (s *MemoryStorage) CreateEventSourceMapping(_ context.Context, req *CreateE
 
 	s.EventSourceMappings[mappingUUID] = mapping
 
+	s.saveLocked()
+
 	return mapping, nil
 }
 
@@ -716,6 +750,8 @@ func (s *MemoryStorage) DeleteEventSourceMapping(_ context.Context, uuid string)
 	mapping.State = "Deleting"
 
 	delete(s.EventSourceMappings, uuid)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -819,6 +855,8 @@ func (s *MemoryStorage) UpdateEventSourceMapping(_ context.Context, uuid string,
 	}
 
 	mapping.LastModified = toUnixTimestamp(time.Now().UTC())
+
+	s.saveLocked()
 
 	return mapping, nil
 }

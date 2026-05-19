@@ -178,6 +178,23 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+// It uses a type alias to avoid calling MarshalJSON (which would deadlock).
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	type alias MemoryStorage
+
+	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(s)})
+	if err != nil {
+		return
+	}
+
+	_ = storage.SaveBytes(s.dataDir, "kms", data)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -248,6 +265,7 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 	}
 
 	s.Keys[keyID] = key
+	s.saveLocked()
 
 	return key, nil
 }
@@ -336,6 +354,8 @@ func (s *MemoryStorage) EnableKey(_ context.Context, keyID string) error {
 	key.KeyState = KeyStateEnabled
 	key.Enabled = true
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -358,6 +378,8 @@ func (s *MemoryStorage) DisableKey(_ context.Context, keyID string) error {
 
 	key.KeyState = KeyStateDisabled
 	key.Enabled = false
+
+	s.saveLocked()
 
 	return nil
 }
@@ -388,6 +410,8 @@ func (s *MemoryStorage) ScheduleKeyDeletion(_ context.Context, keyID string, pen
 	key.Enabled = false
 	key.DeletionDate = &deletionDate
 	key.PendingDeletionWindow = pendingWindowInDays
+
+	s.saveLocked()
 
 	return key, nil
 }
@@ -593,6 +617,7 @@ func (s *MemoryStorage) CreateAlias(_ context.Context, aliasName, targetKeyID st
 		CreationDate:    now,
 		LastUpdatedDate: now,
 	}
+	s.saveLocked()
 
 	return nil
 }
@@ -607,6 +632,7 @@ func (s *MemoryStorage) DeleteAlias(_ context.Context, aliasName string) error {
 	}
 
 	delete(s.Aliases, aliasName)
+	s.saveLocked()
 
 	return nil
 }
@@ -690,6 +716,8 @@ func (s *MemoryStorage) PutKeyPolicy(_ context.Context, keyID, policy string) er
 
 	key.Policy = policy
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -729,6 +757,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, keyID string, tags []Tag)
 		key.Tags[tag.TagKey] = tag.TagValue
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -745,6 +775,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, keyID string, tagKeys [
 	for _, tagKey := range tagKeys {
 		delete(key.Tags, tagKey)
 	}
+
+	s.saveLocked()
 
 	return nil
 }
