@@ -1,6 +1,6 @@
 {
   "StreamDescription": {
-    "CreationRequestDateTime": "2026-05-18T15:45:55Z",
+    "CreationRequestDateTime": "2026-05-19T02:24:12Z",
     "KeySchema": [
       {
         "AttributeName": "pk",
@@ -18,8 +18,8 @@
         "ShardId": "shardId-000000000000"
       }
     ],
-    "StreamArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-streams-describe/stream/2026-05-19T00:45:55.479",
-    "StreamLabel": "2026-05-19T00:45:55.479",
+    "StreamArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-streams-describe/stream/2026-05-19T11:24:12.960",
+    "StreamLabel": "2026-05-19T11:24:12.960",
     "StreamStatus": "ENABLED",
     "StreamViewType": "NEW_AND_OLD_IMAGES",
     "TableName": "test-streams-describe"

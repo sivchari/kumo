@@ -5,6 +5,10 @@ on:
     - cron: '0 18 * * *' # UTC 18:00 = JST 3:00
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   fuzz:
     name: Fuzz tests
@@ -15,4 +19,14 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: Run fuzz tests
+        id: fuzz
         run: make test-fuzz
+      - name: Create issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Fuzz test failure on $(date -u +%Y-%m-%d)" \
+            --body "Daily fuzz test failed. See [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details." \
+            --label bug

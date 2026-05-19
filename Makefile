@@ -26,10 +26,12 @@ test-integration:
 	go test -C test -v -tags=integration ./integration/...
 
 test-fuzz:
-	go test -fuzz=FuzzParseByteRangeInvariants -fuzztime=60s ./internal/service/s3/...
-	go test -fuzz=FuzzParseCopySourceAndRangeNoPanic -fuzztime=60s ./internal/service/s3/...
-	go test -fuzz=FuzzConditionExpressionNoPanic -fuzztime=60s ./internal/service/dynamodb/...
-	go test -fuzz=FuzzAttributeValueJSONRoundTrip -fuzztime=60s ./internal/service/dynamodb/...
+	@grep -rl '^func Fuzz' internal/ | xargs -I{} dirname {} | sort -u | while read pkg; do \
+		grep -oh 'func \(Fuzz[A-Za-z]*\)' "$$pkg"/*_test.go | sed 's/func //' | while read fn; do \
+			echo "=== fuzzing $$fn in $$pkg ==="; \
+			go test -fuzz="$$fn" -fuzztime=60s "./$$pkg/..." || exit 1; \
+		done; \
+	done
 
 test-helm-e2e:
 	bash test/e2e/helm-e2e.sh

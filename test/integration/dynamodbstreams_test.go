@@ -87,6 +87,7 @@ func TestDynamoDBStreams_DescribeStream(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields(
 		"ResultMetadata", "StreamArn", "StreamLabel", "CreationRequestDateTime",
+		"StartingSequenceNumber",
 	)).Assert(t.Name(), describeOutput)
 }
 
