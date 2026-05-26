@@ -1,0 +1,78 @@
+name: govulncheck
+
+on:
+  schedule:
+    - cron: '0 19 * * *' # UTC 19:00 = JST 4:00
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  govulncheck:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck (root)
+        id: root
+        run: |
+          set +e
+          govulncheck ./... 2>&1 | tee /tmp/govulncheck-root.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Run govulncheck (test)
+        id: test
+        working-directory: test
+        run: |
+          set +e
+          govulncheck ./... 2>&1 | tee /tmp/govulncheck-test.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Create issues for vulnerabilities
+        if: steps.root.outputs.exit_code != '0' || steps.test.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          create_issue_if_new() {
+            local vuln_id="$1"
+            local module="$2"
+            local title="govulncheck: ${vuln_id} in ${module}"
+
+            # Check for existing open issue with the same vuln ID
+            existing=$(gh issue list --state open --search "${vuln_id}" --json number --jq 'length')
+            if [ "$existing" -gt 0 ]; then
+              echo "Issue for ${vuln_id} already exists, skipping."
+              return
+            fi
+
+            gh issue create \
+              --title "${title}" \
+              --body "\`govulncheck\` detected **${vuln_id}** in \`${module}\`.
+
+          See [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for full output.
+
+          Reference: https://pkg.go.dev/vuln/${vuln_id}" \
+              --label bug
+          }
+
+          # Parse vuln IDs from output
+          for file in /tmp/govulncheck-root.txt /tmp/govulncheck-test.txt; do
+            if [ ! -f "$file" ]; then
+              continue
+            fi
+            grep -oE 'GO-[0-9]{4}-[0-9]+' "$file" | sort -u | while read -r vuln_id; do
+              # Extract the module name from the line following the vuln ID
+              module=$(grep -A1 "$vuln_id" "$file" | grep -oE 'golang\.org/[^ ]+|github\.com/[^ ]+' | head -1)
+              module="${module:-unknown}"
+              create_issue_if_new "$vuln_id" "$module"
+            done
+          done
