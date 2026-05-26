@@ -1,5 +1,46 @@
 # Changelog
 
+## [v0.22.0](https://github.com/sivchari/kumo/compare/v0.21.0...v0.22.0) - 2026-05-26
+- Fix DynamoDB UpdateExpression invalid UTF-8 panic by @mizchi in https://github.com/sivchari/kumo/pull/674
+- fix(s3): reject unordered multipart completion by @mizchi in https://github.com/sivchari/kumo/pull/680
+- fix(range): reject suffix ranges on empty bodies by @mizchi in https://github.com/sivchari/kumo/pull/681
+- Add fuzz coverage for S3 and DynamoDB edge cases by @mizchi in https://github.com/sivchari/kumo/pull/669
+- fix(dynamodb): partition parallel scan segments by @mizchi in https://github.com/sivchari/kumo/pull/700
+- fix(dynamodb): apply projection expressions to reads by @mizchi in https://github.com/sivchari/kumo/pull/699
+- fix(s3): honor copy source version id by @mizchi in https://github.com/sivchari/kumo/pull/693
+- fix(kinesis): validate record key inputs by @mizchi in https://github.com/sivchari/kumo/pull/685
+- Proposal: env-var endpoint passthrough for RDS (and a model for ElastiCache / AMP / MSK / …) by @mizchi in https://github.com/sivchari/kumo/pull/579
+- fix(s3): fix fuzz test build failure for parseCopySource by @sivchari in https://github.com/sivchari/kumo/pull/730
+- delete tflog by @sivchari in https://github.com/sivchari/kumo/pull/733
+- fix(s3): reduce CopyObject function length to satisfy funlen linter by @sivchari in https://github.com/sivchari/kumo/pull/731
+- chore: add lefthook for pre-commit and pre-push hooks by @sivchari in https://github.com/sivchari/kumo/pull/735
+- add toolchain by @sivchari in https://github.com/sivchari/kumo/pull/738
+- delete integration test task by @sivchari in https://github.com/sivchari/kumo/pull/739
+- feat(ssm): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/732
+- feat(eventbridge): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/734
+- feat(glue): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/737
+- feat(route53): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/740
+- feat(kms): implement policy and tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/741
+- feat(lambda): implement tag and permission operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/742
+- feat(cloudwatch): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/743
+- feat(sfn): implement tag and validation operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/744
+- feat(secretsmanager): implement resource policy operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/745
+- feat(dynamodb): implement tag and backup operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/746
+- feat(cognito): implement MFA config operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/747
+- ci(fuzz): add daily fuzzing CI workflow by @sivchari in https://github.com/sivchari/kumo/pull/748
+- test(dynamodbstreams): add integration test by @sivchari in https://github.com/sivchari/kumo/pull/749
+- refactor: eliminate hardcoded magic strings across services by @sivchari in https://github.com/sivchari/kumo/pull/751
+- fix(ci): improve fuzz workflow and fix dynamodbstreams golden test by @sivchari in https://github.com/sivchari/kumo/pull/752
+- feat: add write-through persistence to all services by @sivchari in https://github.com/sivchari/kumo/pull/753
+- fix(s3): honor CopyObject tagging directive by @mizchi in https://github.com/sivchari/kumo/pull/691
+- fix(dynamodb): validate key schema and write actions by @mizchi in https://github.com/sivchari/kumo/pull/679
+- feat(cloudfront): PublicKey + KeyGroup CRUD (signed URL building blocks) by @mizchi in https://github.com/sivchari/kumo/pull/586
+- fix(s3): honor CopyObject metadata directive by @mizchi in https://github.com/sivchari/kumo/pull/689
+- fix(server): normalize AWS service name from User-Agent by @OliveiraNt in https://github.com/sivchari/kumo/pull/755
+- feat(sesv2): EmailTemplate CRUD + SendBulkEmail by @hc100 in https://github.com/sivchari/kumo/pull/720
+- ci(govulncheck): add daily vulnerability scan and pin toolchain by @sivchari in https://github.com/sivchari/kumo/pull/756
+- release v0.22.0 by @sivchari in https://github.com/sivchari/kumo/pull/757
+
 ## [v0.21.0](https://github.com/sivchari/kumo/compare/v0.20.0...v0.21.0) - 2026-05-18
 - feat(ssm): no-op stubs for ListTagsForResource / AddTagsToResource / RemoveTagsFromResource by @sivchari in https://github.com/sivchari/kumo/pull/626
 - feat(sqs): support Policy attribute in SetQueueAttributes / GetQueueAttributes by @sivchari in https://github.com/sivchari/kumo/pull/627
