@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.23.1](https://github.com/sivchari/kumo/compare/v0.23.0...v0.23.1) - 2026-05-28
+- fix(dynamodb): accept space-separated values for --key-schema and --attribute-definitions by @hirasawayuki in https://github.com/sivchari/kumo/pull/761
+- fix(dynamodb): support legacy KeyConditions in Query by @sivchari in https://github.com/sivchari/kumo/pull/763
+- release v0.23.1 by @sivchari in https://github.com/sivchari/kumo/pull/764
+
 ## [v0.23.0](https://github.com/sivchari/kumo/compare/v0.22.0...v0.23.0) - 2026-05-28
 - feat(cloudfront): Signed Cookie / Signed URL verification on Edge proxy by @sivchari in https://github.com/sivchari/kumo/pull/758
 - release v0.23.0 by @sivchari in https://github.com/sivchari/kumo/pull/760
