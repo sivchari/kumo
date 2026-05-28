@@ -369,11 +369,18 @@ type UpdateItemResponse struct {
 	Attributes Item `json:"Attributes,omitempty"`
 }
 
+// KeyCondition represents a legacy v1 key condition used in KeyConditions.
+type KeyCondition struct {
+	AttributeValueList []AttributeValue `json:"AttributeValueList"`
+	ComparisonOperator string           `json:"ComparisonOperator"`
+}
+
 // QueryRequest is the request for Query.
 type QueryRequest struct {
 	TableName                 string                    `json:"TableName"`
 	IndexName                 string                    `json:"IndexName,omitempty"`
 	KeyConditionExpression    string                    `json:"KeyConditionExpression,omitempty"`
+	KeyConditions             map[string]KeyCondition   `json:"KeyConditions,omitempty"`
 	FilterExpression          string                    `json:"FilterExpression,omitempty"`
 	ProjectionExpression      string                    `json:"ProjectionExpression,omitempty"`
 	ExpressionAttributeNames  map[string]string         `json:"ExpressionAttributeNames,omitempty"`

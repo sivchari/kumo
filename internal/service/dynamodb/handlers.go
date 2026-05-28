@@ -360,6 +360,9 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Convert legacy KeyConditions to KeyConditionExpression if needed.
+	applyLegacyKeyConditions(&req)
+
 	scanForward := true
 	if req.ScanIndexForward != nil {
 		scanForward = *req.ScanIndexForward
@@ -1038,4 +1041,73 @@ func (s *Service) DescribeContinuousBackups(w http.ResponseWriter, r *http.Reque
 	writeJSONResponse(w, DescribeContinuousBackupsResponse{
 		ContinuousBackupsDescription: *desc,
 	})
+}
+
+// applyLegacyKeyConditions converts legacy KeyConditions to
+// KeyConditionExpression + ExpressionAttributeValues when needed.
+func applyLegacyKeyConditions(req *QueryRequest) {
+	if req.KeyConditionExpression != "" || len(req.KeyConditions) == 0 {
+		return
+	}
+
+	expr, vals := convertKeyConditionsToExpression(req.KeyConditions)
+	req.KeyConditionExpression = expr
+
+	if req.ExpressionAttributeValues == nil {
+		req.ExpressionAttributeValues = vals
+
+		return
+	}
+
+	for k := range vals {
+		req.ExpressionAttributeValues[k] = vals[k]
+	}
+}
+
+// comparisonOperatorFormats maps legacy ComparisonOperator values to
+// format strings for KeyConditionExpression conversion.
+var comparisonOperatorFormats = map[string]string{
+	"EQ":          "%s = %s",
+	"LE":          "%s <= %s",
+	"LT":          "%s < %s",
+	"GE":          "%s >= %s",
+	"GT":          "%s > %s",
+	"BEGINS_WITH": "begins_with(%s, %s)",
+}
+
+// convertKeyConditionsToExpression converts legacy KeyConditions (v1 API) to
+// a KeyConditionExpression string and synthetic ExpressionAttributeValues.
+// Supported operators: EQ, LE, LT, GE, GT, BEGINS_WITH, BETWEEN.
+func convertKeyConditionsToExpression(conditions map[string]KeyCondition) (string, map[string]AttributeValue) {
+	exprValues := make(map[string]AttributeValue)
+
+	var parts []string
+
+	idx := 0
+
+	for attrName := range conditions {
+		cond := conditions[attrName]
+		placeholder := fmt.Sprintf(":kcv%d", idx)
+		idx++
+
+		if format, ok := comparisonOperatorFormats[cond.ComparisonOperator]; ok {
+			if len(cond.AttributeValueList) < 1 {
+				continue
+			}
+
+			exprValues[placeholder] = cond.AttributeValueList[0]
+
+			parts = append(parts, fmt.Sprintf(format, attrName, placeholder))
+		} else if cond.ComparisonOperator == "BETWEEN" && len(cond.AttributeValueList) >= 2 {
+			placeholder2 := fmt.Sprintf(":kcv%d", idx)
+			idx++
+
+			exprValues[placeholder] = cond.AttributeValueList[0]
+			exprValues[placeholder2] = cond.AttributeValueList[1]
+
+			parts = append(parts, fmt.Sprintf("%s BETWEEN %s AND %s", attrName, placeholder, placeholder2))
+		}
+	}
+
+	return strings.Join(parts, " AND "), exprValues
 }

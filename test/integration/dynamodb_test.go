@@ -7,6 +7,11 @@ import (
 	"errors"
 	"testing"
 
+	awsv1 "github.com/aws/aws-sdk-go/aws"
+	awsv1creds "github.com/aws/aws-sdk-go/aws/credentials"
+	awsv1session "github.com/aws/aws-sdk-go/aws/session"
+	dynamodbv1 "github.com/aws/aws-sdk-go/service/dynamodb"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -31,6 +36,21 @@ func newDynamoDBClient(t *testing.T) *dynamodb.Client {
 	return dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
 		o.BaseEndpoint = aws.String("http://localhost:4566")
 	})
+}
+
+func newDynamoDBV1Client(t *testing.T) *dynamodbv1.DynamoDB {
+	t.Helper()
+
+	sess, err := awsv1session.NewSession(&awsv1.Config{
+		Region:      awsv1.String("us-east-1"),
+		Endpoint:    awsv1.String("http://localhost:4566"),
+		Credentials: awsv1creds.NewStaticCredentials("test", "test", ""),
+	})
+	if err != nil {
+		t.Fatalf("failed to create v1 session: %v", err)
+	}
+
+	return dynamodbv1.New(sess)
 }
 
 func TestDynamoDB_CreateAndDeleteTable(t *testing.T) {
@@ -1574,4 +1594,205 @@ func TestDynamoDB_DescribeContinuousBackups(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), backupsOutput)
+}
+
+// TestDynamoDB_QueryKeyConditions tests the legacy v1 KeyConditions format
+// used by libraries like guregu/dynamo.
+func TestDynamoDB_QueryKeyConditions(t *testing.T) {
+	v2Client := newDynamoDBClient(t)
+	v1Client := newDynamoDBV1Client(t)
+	ctx := t.Context()
+	tableName := "test-table-query-keyconditions"
+
+	// Create table with PK only (no sort key) — matches the reported bug scenario.
+	_, err := v2Client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("PK"),
+				KeyType:       types.KeyTypeHash,
+			},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{
+				AttributeName: aws.String("PK"),
+				AttributeType: types.ScalarAttributeTypeS,
+			},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = v2Client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	// Put a single item.
+	_, err = v2Client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item: map[string]types.AttributeValue{
+			"PK":   &types.AttributeValueMemberS{Value: "existing-key"},
+			"data": &types.AttributeValueMemberS{Value: "some-data"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to put item: %v", err)
+	}
+
+	// Query with legacy KeyConditions for a non-existent PK — must return empty.
+	t.Run("non_existent_pk", func(t *testing.T) {
+		out, err := v1Client.QueryWithContext(ctx, &dynamodbv1.QueryInput{
+			TableName: awsv1.String(tableName),
+			KeyConditions: map[string]*dynamodbv1.Condition{
+				"PK": {
+					AttributeValueList: []*dynamodbv1.AttributeValue{
+						{S: awsv1.String("non-existent-key")},
+					},
+					ComparisonOperator: awsv1.String("EQ"),
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		golden.New(t).Assert(t.Name(), out)
+	})
+
+	// Query with legacy KeyConditions for the existing PK — must return the item.
+	t.Run("existing_pk", func(t *testing.T) {
+		out, err := v1Client.QueryWithContext(ctx, &dynamodbv1.QueryInput{
+			TableName: awsv1.String(tableName),
+			KeyConditions: map[string]*dynamodbv1.Condition{
+				"PK": {
+					AttributeValueList: []*dynamodbv1.AttributeValue{
+						{S: awsv1.String("existing-key")},
+					},
+					ComparisonOperator: awsv1.String("EQ"),
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		golden.New(t).Assert(t.Name(), out)
+	})
+}
+
+// TestDynamoDB_QueryKeyConditionsWithSortKey tests legacy KeyConditions
+// with both partition key and sort key conditions.
+func TestDynamoDB_QueryKeyConditionsWithSortKey(t *testing.T) {
+	v2Client := newDynamoDBClient(t)
+	v1Client := newDynamoDBV1Client(t)
+	ctx := t.Context()
+	tableName := "test-table-query-keyconditions-sk"
+
+	// Create table with PK + SK.
+	_, err := v2Client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("PK"),
+				KeyType:       types.KeyTypeHash,
+			},
+			{
+				AttributeName: aws.String("SK"),
+				KeyType:       types.KeyTypeRange,
+			},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{
+				AttributeName: aws.String("PK"),
+				AttributeType: types.ScalarAttributeTypeS,
+			},
+			{
+				AttributeName: aws.String("SK"),
+				AttributeType: types.ScalarAttributeTypeS,
+			},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = v2Client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	// Put items.
+	for _, item := range []struct{ pk, sk, data string }{
+		{"user-1", "item-1", "data1"},
+		{"user-1", "item-2", "data2"},
+		{"user-1", "item-3", "data3"},
+		{"user-2", "item-1", "data4"},
+	} {
+		_, err = v2Client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item: map[string]types.AttributeValue{
+				"PK":   &types.AttributeValueMemberS{Value: item.pk},
+				"SK":   &types.AttributeValueMemberS{Value: item.sk},
+				"data": &types.AttributeValueMemberS{Value: item.data},
+			},
+		})
+		if err != nil {
+			t.Fatalf("failed to put item: %v", err)
+		}
+	}
+
+	// Query with KeyConditions: PK=EQ + SK=BEGINS_WITH.
+	t.Run("pk_eq_sk_begins_with", func(t *testing.T) {
+		out, err := v1Client.QueryWithContext(ctx, &dynamodbv1.QueryInput{
+			TableName: awsv1.String(tableName),
+			KeyConditions: map[string]*dynamodbv1.Condition{
+				"PK": {
+					AttributeValueList: []*dynamodbv1.AttributeValue{
+						{S: awsv1.String("user-1")},
+					},
+					ComparisonOperator: awsv1.String("EQ"),
+				},
+				"SK": {
+					AttributeValueList: []*dynamodbv1.AttributeValue{
+						{S: awsv1.String("item-")},
+					},
+					ComparisonOperator: awsv1.String("BEGINS_WITH"),
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		golden.New(t).Assert(t.Name(), out)
+	})
+
+	// Query with KeyConditions: PK=EQ + SK=BETWEEN.
+	t.Run("pk_eq_sk_between", func(t *testing.T) {
+		out, err := v1Client.QueryWithContext(ctx, &dynamodbv1.QueryInput{
+			TableName: awsv1.String(tableName),
+			KeyConditions: map[string]*dynamodbv1.Condition{
+				"PK": {
+					AttributeValueList: []*dynamodbv1.AttributeValue{
+						{S: awsv1.String("user-1")},
+					},
+					ComparisonOperator: awsv1.String("EQ"),
+				},
+				"SK": {
+					AttributeValueList: []*dynamodbv1.AttributeValue{
+						{S: awsv1.String("item-1")},
+						{S: awsv1.String("item-2")},
+					},
+					ComparisonOperator: awsv1.String("BETWEEN"),
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		golden.New(t).Assert(t.Name(), out)
+	})
 }
