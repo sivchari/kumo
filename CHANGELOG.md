@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.23.0](https://github.com/sivchari/kumo/compare/v0.22.0...v0.23.0) - 2026-05-28
+- feat(cloudfront): Signed Cookie / Signed URL verification on Edge proxy by @sivchari in https://github.com/sivchari/kumo/pull/758
+- release v0.23.0 by @sivchari in https://github.com/sivchari/kumo/pull/760
+
 ## [v0.22.0](https://github.com/sivchari/kumo/compare/v0.21.0...v0.22.0) - 2026-05-26
 - Fix DynamoDB UpdateExpression invalid UTF-8 panic by @mizchi in https://github.com/sivchari/kumo/pull/674
 - fix(s3): reject unordered multipart completion by @mizchi in https://github.com/sivchari/kumo/pull/680
