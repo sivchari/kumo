@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.24.0](https://github.com/sivchari/kumo/compare/v0.23.1...v0.24.0) - 2026-05-29
+- feat(kms): support Sign, Verify, GetPublicKey and asymmetric keys by @sivchari in https://github.com/sivchari/kumo/pull/765
+- release v0.24.0 by @sivchari in https://github.com/sivchari/kumo/pull/766
+
 ## [v0.23.1](https://github.com/sivchari/kumo/compare/v0.23.0...v0.23.1) - 2026-05-28
 - fix(dynamodb): accept space-separated values for --key-schema and --attribute-definitions by @hirasawayuki in https://github.com/sivchari/kumo/pull/761
 - fix(dynamodb): support legacy KeyConditions in Query by @sivchari in https://github.com/sivchari/kumo/pull/763
