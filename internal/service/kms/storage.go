@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,6 +40,7 @@ const (
 	errIncorrectKey      = "IncorrectKeyException"
 	errDisabled          = "DisabledException"
 	errInvalidKeyUsage   = "InvalidKeyUsageException"
+	errInvalidSignature  = "KMSInvalidSignatureException"
 )
 
 // determineKeySize returns the key size based on key spec or number of bytes.
@@ -71,6 +73,11 @@ type Storage interface {
 	Encrypt(ctx context.Context, keyID string, plaintext []byte, encryptionContext map[string]string) ([]byte, error)
 	Decrypt(ctx context.Context, ciphertextBlob []byte, encryptionContext map[string]string, keyID string) ([]byte, string, error)
 	GenerateDataKey(ctx context.Context, keyID string, keySpec string, numberOfBytes int32, encryptionContext map[string]string) ([]byte, []byte, error)
+
+	// Asymmetric operations.
+	Sign(ctx context.Context, keyID string, message []byte, algorithm SigningAlgorithm, messageType MessageType) ([]byte, *Key, error)
+	Verify(ctx context.Context, keyID string, message, signature []byte, algorithm SigningAlgorithm, messageType MessageType) (bool, *Key, error)
+	GetPublicKey(ctx context.Context, keyID string) ([]byte, *Key, error)
 
 	// Policy operations.
 	GetKeyPolicy(ctx context.Context, keyID string) (string, error)
@@ -208,6 +215,26 @@ func (s *MemoryStorage) Close() error {
 	return nil
 }
 
+// generateKeyMaterial produces the key material for a new key. Asymmetric specs
+// return a PKCS#8 DER private key; symmetric specs return a 256-bit AES key.
+func generateKeyMaterial(keySpec KeySpec) (symmetric, asymmetric []byte, err error) {
+	if isAsymmetricSpec(keySpec) {
+		der, genErr := generateAsymmetricKey(keySpec)
+		if genErr != nil {
+			return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Failed to generate key material"}
+		}
+
+		return nil, der, nil
+	}
+
+	material := make([]byte, 32)
+	if _, readErr := io.ReadFull(rand.Reader, material); readErr != nil {
+		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Failed to generate key material"}
+	}
+
+	return material, nil, nil
+}
+
 // CreateKey creates a new KMS key.
 func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Key, error) {
 	s.mu.Lock()
@@ -215,12 +242,6 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 
 	keyID := uuid.New().String()
 	arn := fmt.Sprintf("arn:aws:kms:%s:%s:key/%s", s.region, defaultAccountID, keyID)
-
-	// Generate random key material (256-bit for AES-256).
-	keyMaterial := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, keyMaterial); err != nil {
-		return nil, &ServiceError{Code: errDependencyTimeout, Message: "Failed to generate key material"}
-	}
 
 	keyUsage := KeyUsageEncryptDecrypt
 	if req.KeyUsage != "" {
@@ -230,6 +251,11 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 	keySpec := KeySpecSymmetricDefault
 	if req.KeySpec != "" {
 		keySpec = KeySpec(req.KeySpec)
+	}
+
+	keyMaterial, asymmetricKey, err := generateKeyMaterial(keySpec)
+	if err != nil {
+		return nil, err
 	}
 
 	origin := "AWS_KMS"
@@ -248,20 +274,21 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 	}
 
 	key := &Key{
-		KeyID:        keyID,
-		Arn:          arn,
-		Description:  req.Description,
-		KeyState:     KeyStateEnabled,
-		KeyUsage:     keyUsage,
-		KeySpec:      keySpec,
-		KeyManager:   KeyManagerCustomer,
-		CreationDate: time.Now(),
-		Enabled:      true,
-		Origin:       origin,
-		MultiRegion:  req.MultiRegion,
-		Tags:         tags,
-		Policy:       policy,
-		KeyMaterial:  keyMaterial,
+		KeyID:         keyID,
+		Arn:           arn,
+		Description:   req.Description,
+		KeyState:      KeyStateEnabled,
+		KeyUsage:      keyUsage,
+		KeySpec:       keySpec,
+		KeyManager:    KeyManagerCustomer,
+		CreationDate:  time.Now(),
+		Enabled:       true,
+		Origin:        origin,
+		MultiRegion:   req.MultiRegion,
+		Tags:          tags,
+		Policy:        policy,
+		KeyMaterial:   keyMaterial,
+		AsymmetricKey: asymmetricKey,
 	}
 
 	s.Keys[keyID] = key
@@ -584,6 +611,91 @@ func (s *MemoryStorage) GenerateDataKey(_ context.Context, keyID, keySpec string
 	encryptedKey = append(encryptedKey, ciphertext...)
 
 	return plaintext, encryptedKey, nil
+}
+
+// Sign signs a message with an asymmetric key.
+func (s *MemoryStorage) Sign(_ context.Context, keyID string, message []byte, algorithm SigningAlgorithm, messageType MessageType) ([]byte, *Key, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if key.KeyState != KeyStateEnabled {
+		return nil, nil, &ServiceError{Code: errDisabled, Message: "Key " + keyID + " is disabled."}
+	}
+
+	if key.KeyUsage != KeyUsageSignVerify || len(key.AsymmetricKey) == 0 {
+		return nil, nil, &ServiceError{Code: errInvalidKeyUsage, Message: "Key " + keyID + " is not configured for signing."}
+	}
+
+	signature, err := signDigest(key.AsymmetricKey, message, algorithm, messageType)
+	if err != nil {
+		return nil, nil, wrapSigningError(err)
+	}
+
+	return signature, key, nil
+}
+
+// Verify verifies a signature against a message with an asymmetric key.
+func (s *MemoryStorage) Verify(_ context.Context, keyID string, message, signature []byte, algorithm SigningAlgorithm, messageType MessageType) (bool, *Key, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if key.KeyState != KeyStateEnabled {
+		return false, nil, &ServiceError{Code: errDisabled, Message: "Key " + keyID + " is disabled."}
+	}
+
+	if key.KeyUsage != KeyUsageSignVerify || len(key.AsymmetricKey) == 0 {
+		return false, nil, &ServiceError{Code: errInvalidKeyUsage, Message: "Key " + keyID + " is not configured for verification."}
+	}
+
+	valid, err := verifyDigest(key.AsymmetricKey, message, signature, algorithm, messageType)
+	if err != nil {
+		return false, nil, wrapSigningError(err)
+	}
+
+	return valid, key, nil
+}
+
+// GetPublicKey returns the DER-encoded public key of an asymmetric key.
+func (s *MemoryStorage) GetPublicKey(_ context.Context, keyID string) ([]byte, *Key, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(key.AsymmetricKey) == 0 {
+		return nil, nil, &ServiceError{Code: errInvalidKeyUsage, Message: "Key " + keyID + " is not an asymmetric key."}
+	}
+
+	der, err := publicKeyDER(key.AsymmetricKey)
+	if err != nil {
+		return nil, nil, wrapSigningError(err)
+	}
+
+	return der, key, nil
+}
+
+// wrapSigningError returns the error as-is when it is already a ServiceError,
+// otherwise wraps it in an InvalidKeyUsage ServiceError.
+func wrapSigningError(err error) error {
+	var svcErr *ServiceError
+	if errors.As(err, &svcErr) {
+		return svcErr
+	}
+
+	return &ServiceError{Code: errInvalidKeyUsage, Message: err.Error()}
 }
 
 // CreateAlias creates an alias for a key.

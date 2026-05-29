@@ -4,6 +4,10 @@ package integration
 
 import (
 	"context"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -456,6 +460,188 @@ func TestKMS_KeyPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list", listOutput)
+}
+
+func TestKMS_SignVerify(t *testing.T) {
+	client := newKMSClient(t)
+	ctx := t.Context()
+
+	// Create an RSA asymmetric signing key.
+	createOutput, err := client.CreateKey(ctx, &kms.CreateKeyInput{
+		Description: aws.String("Test RSA signing key"),
+		KeyUsage:    types.KeyUsageTypeSignVerify,
+		KeySpec:     types.KeySpecRsa2048,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "KeyId", "Arn", "CreationDate")).Assert(t.Name()+"_create", createOutput)
+
+	keyID := *createOutput.KeyMetadata.KeyId
+
+	t.Cleanup(func() {
+		_, _ = client.ScheduleKeyDeletion(context.Background(), &kms.ScheduleKeyDeletionInput{
+			KeyId:               aws.String(keyID),
+			PendingWindowInDays: aws.Int32(7),
+		})
+	})
+
+	message := []byte("CloudFront signed cookie payload")
+
+	// Sign the message.
+	signOutput, err := client.Sign(ctx, &kms.SignInput{
+		KeyId:            aws.String(keyID),
+		Message:          message,
+		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signOutput.Signature) == 0 {
+		t.Fatal("signature is empty")
+	}
+
+	// Verify the signature.
+	verifyOutput, err := client.Verify(ctx, &kms.VerifyInput{
+		KeyId:            aws.String(keyID),
+		Message:          message,
+		Signature:        signOutput.Signature,
+		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !verifyOutput.SignatureValid {
+		t.Error("expected signature to be valid")
+	}
+
+	// Verifying a tampered message must fail.
+	_, err = client.Verify(ctx, &kms.VerifyInput{
+		KeyId:            aws.String(keyID),
+		Message:          []byte("tampered payload"),
+		Signature:        signOutput.Signature,
+		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha256,
+	})
+	if err == nil {
+		t.Error("expected verification of tampered message to fail")
+	}
+}
+
+func TestKMS_SignVerifyECC(t *testing.T) {
+	client := newKMSClient(t)
+	ctx := t.Context()
+
+	createOutput, err := client.CreateKey(ctx, &kms.CreateKeyInput{
+		Description: aws.String("Test ECC signing key"),
+		KeyUsage:    types.KeyUsageTypeSignVerify,
+		KeySpec:     types.KeySpecEccNistP256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "KeyId", "Arn", "CreationDate")).Assert(t.Name()+"_create", createOutput)
+
+	keyID := *createOutput.KeyMetadata.KeyId
+
+	t.Cleanup(func() {
+		_, _ = client.ScheduleKeyDeletion(context.Background(), &kms.ScheduleKeyDeletionInput{
+			KeyId:               aws.String(keyID),
+			PendingWindowInDays: aws.Int32(7),
+		})
+	})
+
+	message := []byte("hello ecc")
+
+	signOutput, err := client.Sign(ctx, &kms.SignInput{
+		KeyId:            aws.String(keyID),
+		Message:          message,
+		SigningAlgorithm: types.SigningAlgorithmSpecEcdsaSha256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verifyOutput, err := client.Verify(ctx, &kms.VerifyInput{
+		KeyId:            aws.String(keyID),
+		Message:          message,
+		Signature:        signOutput.Signature,
+		SigningAlgorithm: types.SigningAlgorithmSpecEcdsaSha256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !verifyOutput.SignatureValid {
+		t.Error("expected signature to be valid")
+	}
+}
+
+func TestKMS_GetPublicKey(t *testing.T) {
+	client := newKMSClient(t)
+	ctx := t.Context()
+
+	createOutput, err := client.CreateKey(ctx, &kms.CreateKeyInput{
+		Description: aws.String("Test get public key"),
+		KeyUsage:    types.KeyUsageTypeSignVerify,
+		KeySpec:     types.KeySpecRsa2048,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyID := *createOutput.KeyMetadata.KeyId
+
+	t.Cleanup(func() {
+		_, _ = client.ScheduleKeyDeletion(context.Background(), &kms.ScheduleKeyDeletionInput{
+			KeyId:               aws.String(keyID),
+			PendingWindowInDays: aws.Int32(7),
+		})
+	})
+
+	pubOutput, err := client.GetPublicKey(ctx, &kms.GetPublicKeyInput{
+		KeyId: aws.String(keyID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(pubOutput.PublicKey) == 0 {
+		t.Fatal("public key is empty")
+	}
+
+	// The returned public key must be a parseable DER SubjectPublicKeyInfo and
+	// must verify a signature produced by the same key (offline verification).
+	pubKey, err := x509.ParsePKIXPublicKey(pubOutput.PublicKey)
+	if err != nil {
+		t.Fatalf("failed to parse public key: %v", err)
+	}
+
+	rsaPub, ok := pubKey.(*rsa.PublicKey)
+	if !ok {
+		t.Fatalf("expected RSA public key, got %T", pubKey)
+	}
+
+	message := []byte("offline verification")
+	signOutput, err := client.Sign(ctx, &kms.SignInput{
+		KeyId:            aws.String(keyID),
+		Message:          message,
+		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	digest := sha256.Sum256(message)
+	if err := rsa.VerifyPKCS1v15(rsaPub, crypto.SHA256, digest[:], signOutput.Signature); err != nil {
+		t.Errorf("offline verification failed: %v", err)
+	}
+
+	// PublicKey and key identifiers are dynamic; assert the stable shape only.
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "KeyId", "PublicKey")).Assert(t.Name(), pubOutput)
 }
 
 func TestKMS_TagOperations(t *testing.T) {
