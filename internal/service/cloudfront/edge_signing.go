@@ -3,7 +3,8 @@ package cloudfront
 import (
 	"crypto"
 	"crypto/rsa"
-	"crypto/sha1" //nolint:gosec // CloudFront uses RSA-SHA1 for signed URL/cookie verification.
+	"crypto/sha1" //nolint:gosec // CloudFront uses RSA-SHA1 for legacy signed URL/cookie verification.
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -19,15 +20,23 @@ import (
 const (
 	schemeHTTPS = "https"
 	schemeHTTP  = "http"
+
+	// hashAlgorithmSHA256 is the value AWS CloudFront sends in the
+	// CloudFront-Hash-Algorithm cookie / Hash-Algorithm query parameter
+	// when a request is signed with RSA-SHA256. CloudFront added SHA256
+	// signing on 2026-04-01; an empty or "SHA1" value means legacy
+	// RSA-SHA1.
+	hashAlgorithmSHA256 = "SHA256"
 )
 
 // signedCredentials holds the three components needed to verify a
 // CloudFront signed request (cookie or URL).
 type signedCredentials struct {
-	Policy    string // CF-Base64-encoded custom policy JSON, or "" for canned
-	Signature string // CF-Base64-encoded RSA-SHA1 signature
-	KeyPairID string // ID of the public key to use for verification
-	Expires   int64  // Unix epoch for canned policy (from Expires param)
+	Policy        string // CF-Base64-encoded custom policy JSON, or "" for canned
+	Signature     string // CF-Base64-encoded RSA-SHA1 or RSA-SHA256 signature
+	KeyPairID     string // ID of the public key to use for verification
+	Expires       int64  // Unix epoch for canned policy (from Expires param)
+	HashAlgorithm string // "SHA256" selects RSA-SHA256; empty or "SHA1" means legacy RSA-SHA1
 }
 
 // cfPolicy is the JSON structure of a CloudFront access policy.
@@ -80,9 +89,10 @@ func extractFromCookies(r *http.Request) *signedCredentials {
 	}
 
 	return &signedCredentials{
-		Policy:    cookieValue(r, "CloudFront-Policy"),
-		Signature: sig,
-		KeyPairID: kid,
+		Policy:        cookieValue(r, "CloudFront-Policy"),
+		Signature:     sig,
+		KeyPairID:     kid,
+		HashAlgorithm: cookieValue(r, "CloudFront-Hash-Algorithm"),
 	}
 }
 
@@ -96,8 +106,9 @@ func extractFromQuery(r *http.Request) *signedCredentials {
 	}
 
 	creds := &signedCredentials{
-		Signature: sig,
-		KeyPairID: kid,
+		Signature:     sig,
+		KeyPairID:     kid,
+		HashAlgorithm: q.Get("Hash-Algorithm"),
 	}
 
 	if policy := q.Get("Policy"); policy != "" {
@@ -161,7 +172,7 @@ func (s *Service) verifySigned(r *http.Request, dist *Distribution, creds *signe
 		return fmt.Errorf("invalid policy: %w", err)
 	}
 
-	if err := verifyRSASHA1(pubKey, policyBytes, creds.Signature); err != nil {
+	if err := verifySignature(pubKey, policyBytes, creds.Signature, creds.HashAlgorithm); err != nil {
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
 
@@ -267,6 +278,7 @@ func requestResourceURL(r *http.Request) string {
 	q.Del("Signature")
 	q.Del("Key-Pair-Id")
 	q.Del("Policy")
+	q.Del("Hash-Algorithm")
 
 	if encoded := q.Encode(); encoded != "" {
 		base += "?" + encoded
@@ -290,6 +302,20 @@ func cfBase64Decode(s string) ([]byte, error) {
 	return decoded, nil
 }
 
+// verifySignature verifies an RSA signature against the message using
+// the hash algorithm advertised by CloudFront. hashAlg comes from the
+// CloudFront-Hash-Algorithm cookie or the Hash-Algorithm query
+// parameter. AWS CloudFront began supporting RSA-SHA256 signing on
+// 2026-04-01; an empty or "SHA1" value selects the legacy RSA-SHA1 path
+// so previously issued signatures keep working.
+func verifySignature(pub *rsa.PublicKey, message []byte, sig, hashAlg string) error {
+	if strings.EqualFold(hashAlg, hashAlgorithmSHA256) {
+		return verifyRSASHA256(pub, message, sig)
+	}
+
+	return verifyRSASHA1(pub, message, sig)
+}
+
 // verifyRSASHA1 verifies an RSA-SHA1 signature against the given
 // message using CloudFront's modified Base64 for the signature.
 func verifyRSASHA1(pub *rsa.PublicKey, message []byte, sig string) error {
@@ -298,9 +324,29 @@ func verifyRSASHA1(pub *rsa.PublicKey, message []byte, sig string) error {
 		return fmt.Errorf("decode signature: %w", err)
 	}
 
-	h := sha1.Sum(message) //nolint:gosec // CloudFront protocol mandates SHA1.
+	h := sha1.Sum(message) //nolint:gosec // CloudFront legacy signatures use SHA1.
 
 	if err := rsa.VerifyPKCS1v15(pub, crypto.SHA1, h[:], sigBytes); err != nil {
+		return fmt.Errorf("rsa verify: %w", err)
+	}
+
+	return nil
+}
+
+// verifyRSASHA256 verifies an RSA-SHA256 signature against the given
+// message. Used when a request advertises CloudFront-Hash-Algorithm=
+// SHA256 (AWS CloudFront 2026-04 behavior). KMS-backed signers can only
+// produce SHA256 or stronger, so this is the path real CloudFront takes
+// for KMS-signed cookies.
+func verifyRSASHA256(pub *rsa.PublicKey, message []byte, sig string) error {
+	sigBytes, err := cfBase64Decode(sig)
+	if err != nil {
+		return fmt.Errorf("decode signature: %w", err)
+	}
+
+	h := sha256.Sum256(message)
+
+	if err := rsa.VerifyPKCS1v15(pub, crypto.SHA256, h[:], sigBytes); err != nil {
 		return fmt.Errorf("rsa verify: %w", err)
 	}
 

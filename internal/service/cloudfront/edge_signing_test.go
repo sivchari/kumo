@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1" //nolint:gosec // Test helper for CloudFront RSA-SHA1 signatures.
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -52,6 +53,22 @@ func cfSign(t *testing.T, priv *rsa.PrivateKey, message []byte) string {
 	h := sha1.Sum(message)
 
 	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA1, h[:])
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	return cfBase64Encode(sig)
+}
+
+// cfSignSHA256 produces a CloudFront-Base64-encoded RSA-SHA256
+// signature, matching the format AWS CloudFront uses for SHA256-signed
+// cookies/URLs (and the only format a KMS-backed signer can produce).
+func cfSignSHA256(t *testing.T, priv *rsa.PrivateKey, message []byte) string {
+	t.Helper()
+
+	h := sha256.Sum256(message)
+
+	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, h[:])
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
@@ -195,6 +212,116 @@ func TestVerifyRSASHA1(t *testing.T) {
 	// Tampered message should fail.
 	if err := verifyRSASHA1(pub, []byte("tampered"), sig); err == nil {
 		t.Fatal("expected error for tampered message")
+	}
+}
+
+func TestVerifyRSASHA256(t *testing.T) {
+	t.Parallel()
+
+	priv, pubPEM := testKeyPair(t)
+
+	pub, err := parseRSAPublicKey(pubPEM)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+
+	message := []byte("hello world")
+	sig := cfSignSHA256(t, priv, message)
+
+	if err := verifyRSASHA256(pub, message, sig); err != nil {
+		t.Fatalf("verify failed: %v", err)
+	}
+
+	// Tampered message should fail.
+	if err := verifyRSASHA256(pub, []byte("tampered"), sig); err == nil {
+		t.Fatal("expected error for tampered message")
+	}
+
+	// A SHA1 signature must not verify as SHA256.
+	if err := verifyRSASHA256(pub, message, cfSign(t, priv, message)); err == nil {
+		t.Fatal("expected error for SHA1 signature verified as SHA256")
+	}
+}
+
+// TestVerifySignature exercises the algorithm dispatch driven by the
+// CloudFront-Hash-Algorithm value. Empty/"SHA1" -> RSA-SHA1,
+// "SHA256" -> RSA-SHA256.
+func TestVerifySignature(t *testing.T) {
+	t.Parallel()
+
+	priv, pubPEM := testKeyPair(t)
+
+	pub, err := parseRSAPublicKey(pubPEM)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+
+	message := []byte("hello world")
+	sha1Sig := cfSign(t, priv, message)
+	sha256Sig := cfSignSHA256(t, priv, message)
+
+	tests := []struct {
+		name    string
+		sig     string
+		hashAlg string
+		wantErr bool
+	}{
+		{name: "empty algo accepts SHA1", sig: sha1Sig, hashAlg: "", wantErr: false},
+		{name: "SHA1 algo accepts SHA1", sig: sha1Sig, hashAlg: "SHA1", wantErr: false},
+		{name: "SHA256 algo accepts SHA256", sig: sha256Sig, hashAlg: "SHA256", wantErr: false},
+		{name: "SHA256 algo is case-insensitive", sig: sha256Sig, hashAlg: "sha256", wantErr: false},
+		{name: "SHA256 algo rejects SHA1 signature", sig: sha1Sig, hashAlg: "SHA256", wantErr: true},
+		{name: "empty algo rejects SHA256 signature", sig: sha256Sig, hashAlg: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := verifySignature(pub, message, tt.sig, tt.hashAlg)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestExtractSignedCredentials_CookiesSHA256(t *testing.T) {
+	t.Parallel()
+
+	req := newTestRequest(t, "/kumo/cdn/E123/file.txt")
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: testPolicyValue})
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: "sig"})
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: "KID"})
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: "SHA256"})
+
+	creds := extractSignedCredentials(req)
+	if creds == nil {
+		t.Fatal("expected credentials from cookies")
+	}
+
+	if creds.HashAlgorithm != "SHA256" {
+		t.Errorf("HashAlgorithm = %q, want %q", creds.HashAlgorithm, "SHA256")
+	}
+}
+
+func TestExtractSignedCredentials_QuerySHA256(t *testing.T) {
+	t.Parallel()
+
+	req := newTestRequest(t,
+		"/kumo/cdn/E123/file.txt?Policy=abc&Signature=sig&Key-Pair-Id=KID&Hash-Algorithm=SHA256")
+
+	creds := extractSignedCredentials(req)
+	if creds == nil {
+		t.Fatal("expected credentials from query")
+	}
+
+	if creds.HashAlgorithm != "SHA256" {
+		t.Errorf("HashAlgorithm = %q, want %q", creds.HashAlgorithm, "SHA256")
 	}
 }
 
@@ -533,6 +660,134 @@ func TestCheckEdgeSigning_MissingCredentials(t *testing.T) {
 
 	if svc.checkEdgeSigning(rec, req, dist) {
 		t.Fatal("expected rejection when credentials are missing")
+	}
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+// newSignedDistribution registers a public key and key group backed by
+// pubPEM and returns a Distribution that trusts it, plus the public key
+// ID to use as CloudFront-Key-Pair-Id.
+func newSignedDistribution(t *testing.T, storage *MemoryStorage, pubPEM string) (*Distribution, string) {
+	t.Helper()
+
+	pk, err := storage.CreatePublicKey(context.Background(), &PublicKeyConfig{
+		CallerReference: "ref1",
+		Name:            "k1",
+		EncodedKey:      pubPEM,
+	})
+	if err != nil {
+		t.Fatalf("create public key: %v", err)
+	}
+
+	kg, err := storage.CreateKeyGroup(context.Background(), &KeyGroupConfig{
+		Name:  "g1",
+		Items: []string{pk.ID},
+	})
+	if err != nil {
+		t.Fatalf("create key group: %v", err)
+	}
+
+	dist := &Distribution{
+		DistributionConfig: &DistributionConfig{
+			DefaultCacheBehavior: &DefaultCacheBehavior{
+				TrustedKeyGroups: &TrustedKeyGroups{
+					Enabled:  true,
+					Quantity: 1,
+					Items:    []string{kg.ID},
+				},
+			},
+		},
+	}
+
+	return dist, pk.ID
+}
+
+// signedCookieRequest builds a request carrying a CloudFront signed
+// custom-policy cookie set. hashAlg is omitted from the cookies when
+// empty (legacy SHA1 behavior).
+func signedCookieRequest(t *testing.T, policy []byte, sig, keyID, hashAlg string) *http.Request {
+	t.Helper()
+
+	req := newTestRequest(t, "/kumo/cdn/E1/file.txt")
+	req.RemoteAddr = testRemoteAddr
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: cfBase64Encode(policy)})
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: sig})
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: keyID})
+
+	if hashAlg != "" {
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: hashAlg})
+	}
+
+	return req
+}
+
+// validCustomPolicy is a custom policy that never expires, used by the
+// edge-signing E2E tests.
+var validCustomPolicy = []byte(
+	`{"Statement":[{"Resource":"*","Condition":{"DateLessThan":{"AWS:EpochTime":9999999999}}}]}`)
+
+// TestCheckEdgeSigning_SHA256Cookie covers the AWS 2026-04 behavior:
+// a SHA256-signed cookie carrying CloudFront-Hash-Algorithm=SHA256 is
+// accepted (delivery proceeds). This is the path KMS-signed cookies
+// take, since KMS cannot produce SHA1 signatures.
+func TestCheckEdgeSigning_SHA256Cookie(t *testing.T) {
+	t.Parallel()
+
+	storage := NewMemoryStorage()
+	svc := New(storage)
+	priv, pubPEM := testKeyPair(t)
+	dist, keyID := newSignedDistribution(t, storage, pubPEM)
+
+	sig := cfSignSHA256(t, priv, validCustomPolicy)
+	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, "SHA256")
+
+	rec := httptest.NewRecorder()
+	if !svc.checkEdgeSigning(rec, req, dist) {
+		t.Fatalf("expected SHA256-signed request to pass, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCheckEdgeSigning_SHA1CookieBackwardCompat ensures legacy
+// SHA1-signed cookies without a hash algorithm still verify.
+func TestCheckEdgeSigning_SHA1CookieBackwardCompat(t *testing.T) {
+	t.Parallel()
+
+	storage := NewMemoryStorage()
+	svc := New(storage)
+	priv, pubPEM := testKeyPair(t)
+	dist, keyID := newSignedDistribution(t, storage, pubPEM)
+
+	sig := cfSign(t, priv, validCustomPolicy)
+	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, "")
+
+	rec := httptest.NewRecorder()
+	if !svc.checkEdgeSigning(rec, req, dist) {
+		t.Fatalf("expected SHA1-signed request to pass, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCheckEdgeSigning_SHA256SignatureMismatch ensures a SHA256 request
+// whose signature does not match is still rejected with 403.
+func TestCheckEdgeSigning_SHA256SignatureMismatch(t *testing.T) {
+	t.Parallel()
+
+	storage := NewMemoryStorage()
+	svc := New(storage)
+	priv, pubPEM := testKeyPair(t)
+	dist, keyID := newSignedDistribution(t, storage, pubPEM)
+
+	// Sign a different policy than the one presented.
+	otherPolicy := []byte(
+		`{"Statement":[{"Resource":"*","Condition":{"DateLessThan":{"AWS:EpochTime":1}}}]}`)
+	sig := cfSignSHA256(t, priv, otherPolicy)
+	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, "SHA256")
+
+	rec := httptest.NewRecorder()
+	if svc.checkEdgeSigning(rec, req, dist) {
+		t.Fatal("expected rejection for mismatched SHA256 signature")
 	}
 
 	if rec.Code != http.StatusForbidden {

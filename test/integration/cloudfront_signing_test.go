@@ -7,7 +7,8 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1" //nolint:gosec // CloudFront uses RSA-SHA1 for signed URL/cookie verification.
+	"crypto/sha1" //nolint:gosec // CloudFront uses RSA-SHA1 for legacy signed URL/cookie verification.
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -62,6 +63,22 @@ func signPolicy(t *testing.T, priv *rsa.PrivateKey, policy []byte) string {
 	h := sha1.Sum(policy)
 
 	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA1, h[:])
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	return cfBase64(sig)
+}
+
+// signPolicySHA256 signs a policy JSON with RSA-SHA256 and returns a
+// CloudFront-Base64-encoded signature. AWS CloudFront added SHA256
+// signing on 2026-04-01; KMS-backed signers can only produce SHA256+.
+func signPolicySHA256(t *testing.T, priv *rsa.PrivateKey, policy []byte) string {
+	t.Helper()
+
+	h := sha256.Sum256(policy)
+
+	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, h[:])
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
@@ -337,6 +354,65 @@ func TestCloudFront_EdgeSignedCookie(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: cfBase64(policy)})
 		req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: sig})
 		req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: pkID})
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+		}
+	})
+
+	t.Run("valid_sha256_signed_cookie_passes", func(t *testing.T) {
+		t.Parallel()
+
+		// AWS CloudFront 2026-04 SHA256 path: cookie carries
+		// CloudFront-Hash-Algorithm=SHA256 and an RSA-SHA256 signature.
+		policy := []byte(`{"Statement":[{"Resource":"*","Condition":{"DateLessThan":{"AWS:EpochTime":9999999999}}}]}`)
+		sig := signPolicySHA256(t, priv, policy)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, edgeURL, http.NoBody)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: cfBase64(policy)})
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: sig})
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: pkID})
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: "SHA256"})
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Errorf("status = %d, want %d; body = %s", resp.StatusCode, http.StatusOK, body)
+		}
+	})
+
+	t.Run("sha256_header_with_sha1_signature_returns_403", func(t *testing.T) {
+		t.Parallel()
+
+		// Hash-Algorithm advertises SHA256 but the signature is SHA1 —
+		// must be rejected (no silent downgrade).
+		policy := []byte(`{"Statement":[{"Resource":"*","Condition":{"DateLessThan":{"AWS:EpochTime":9999999999}}}]}`)
+		sig := signPolicy(t, priv, policy)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, edgeURL, http.NoBody)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: cfBase64(policy)})
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: sig})
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: pkID})
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: "SHA256"})
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
