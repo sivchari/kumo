@@ -46,6 +46,8 @@ github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.54.0 h1:wSPO/44H6qv5TfzFdGEpD
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.54.0/go.mod h1:Cj+LUEvAU073qB2jInKV6Y0nvHX0k7bL7KAga9zZ3jw=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.63.1 h1:l65dmgr7tO26EcHe6WMdseRnFLoJ2nqdkPz1nJdXfaw=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.63.1/go.mod h1:wvnXh1w1pGS2UpEvPTKSjXYuxiXhuvob/IMaK2AWvek=
+github.com/aws/aws-sdk-go-v2/service/codecommit v1.33.14 h1:3N664oayz66ttIkc8B9/OLntMWhoGhKqPudRRfsZQ20=
+github.com/aws/aws-sdk-go-v2/service/codecommit v1.33.14/go.mod h1:M+6j5lOmtDMjLlFMO8lfTs0gI3qBsSjM8L7F1cQF5Ng=
 github.com/aws/aws-sdk-go-v2/service/codeconnections v1.10.16 h1:7JabEMZbLSw9HJxlghUusC65ADiq4lbS/ViCRRXkp4g=
 github.com/aws/aws-sdk-go-v2/service/codeconnections v1.10.16/go.mod h1:nQ5OPwpYtK/MI5vBzJTbGGc+PwTt7HHnt9URQJif43I=
 github.com/aws/aws-sdk-go-v2/service/codeguruprofiler v1.29.19 h1:rlfJ+KIvThNKEkwIgaWjBUerIbfq7/JeSgjfbvVbOU0=

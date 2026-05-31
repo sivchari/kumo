@@ -20,6 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.55.6
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.54.0
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.63.1
+	github.com/aws/aws-sdk-go-v2/service/codecommit v1.33.14
 	github.com/aws/aws-sdk-go-v2/service/codeconnections v1.10.16
 	github.com/aws/aws-sdk-go-v2/service/codeguruprofiler v1.29.19
 	github.com/aws/aws-sdk-go-v2/service/codegurureviewer v1.34.18
