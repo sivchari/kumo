@@ -29,6 +29,17 @@ type Handler interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
+// ExecuteAPIHandler is an optional interface for services that expose a
+// deployed API invoke surface (execute-api). The router dispatches
+// virtual-hosted execute-api requests ({apiId}.execute-api.<host>) to it.
+type ExecuteAPIHandler interface {
+	// HandleExecuteAPI handles an invocation for apiID. invokePath is the
+	// request path after the host, e.g. "/dev/items" (including the stage
+	// segment). It returns false when apiID is not managed by this service,
+	// so the router can try another handler.
+	HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
+}
+
 // JSONProtocolService is an optional interface for services using AWS JSON 1.0 protocol.
 // Services implementing this interface will have their handlers dispatched via
 // a unified POST / endpoint based on the X-Amz-Target header.

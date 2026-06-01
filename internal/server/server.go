@@ -171,6 +171,12 @@ func (s *Server) RegisterService(svc service.Service) {
 		s.logger.Debug("registered JSON protocol service", "name", svc.Name(), "prefix", jsonSvc.TargetPrefix())
 	}
 
+	// Check if service exposes an execute-api invoke surface.
+	if execSvc, ok := svc.(service.ExecuteAPIHandler); ok {
+		s.router.AddExecuteAPIHandler(execSvc.HandleExecuteAPI)
+		s.logger.Debug("registered execute-api handler", "name", svc.Name())
+	}
+
 	// Check if service implements Query protocol.
 	if querySvc, ok := svc.(service.QueryProtocolService); ok {
 		s.queryDispatcher.Register(querySvc.TargetPrefix(), querySvc.DispatchAction)

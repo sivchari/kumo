@@ -12,6 +12,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// localhostHost is the loopback host label used by kumo virtual-hosted URLs.
+const localhostHost = "localhost"
+
 // Route represents a registered HTTP route.
 type Route struct {
 	Method  string
@@ -19,12 +22,23 @@ type Route struct {
 	Handler http.HandlerFunc
 }
 
+// executeAPIDispatch handles a virtual-hosted execute-api request. It returns
+// false when apiID is not owned by the handler.
+type executeAPIDispatch func(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
+
 // Router is the HTTP router for kumo.
 type Router struct {
-	mux           *http.ServeMux
-	routes        []Route
-	prefixRouters map[string]*http.ServeMux // Separate routers for services with prefixes
-	logger        *slog.Logger
+	mux                *http.ServeMux
+	routes             []Route
+	prefixRouters      map[string]*http.ServeMux // Separate routers for services with prefixes
+	executeAPIHandlers []executeAPIDispatch
+	logger             *slog.Logger
+}
+
+// AddExecuteAPIHandler registers a handler for virtual-hosted execute-api
+// requests ({apiId}.execute-api.<host>).
+func (r *Router) AddExecuteAPIHandler(fn executeAPIDispatch) {
+	r.executeAPIHandlers = append(r.executeAPIHandlers, fn)
 }
 
 // NewRouter creates a new router.
@@ -182,6 +196,24 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Virtual-hosted execute-api: a deployed API stage is invoked at
+	// {apiId}.execute-api.<host>/{stage}/{path}. Dispatch to the service
+	// that owns apiID (API Gateway v1 or v2).
+	if apiID, ok := extractExecuteAPIHost(req.Host); ok {
+		for _, h := range r.executeAPIHandlers {
+			if h(w, req, apiID, req.URL.Path) {
+				return
+			}
+		}
+
+		// No service owns this API id: real API Gateway answers 403.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Forbidden"}`))
+
+		return
+	}
+
 	// Rewrite AWS S3 virtual-hosted-style requests so the rest of the
 	// router only deals with path-style. terraform / aws-sdk-go-v2
 	// default to virtual-hosted-style: the bucket goes in the Host
@@ -236,6 +268,44 @@ func (r *Router) Routes() []Route {
 	return r.routes
 }
 
+// extractExecuteAPIHost recognises API Gateway execute-api virtual-hosted
+// hosts and returns the API id. Empty/false means it is not such a host.
+//
+// Recognised shapes (the kumo-local form resolves to loopback):
+//
+//	{apiId}.execute-api.localhost(:port)
+//	{apiId}.execute-api.{region}.amazonaws.com
+func extractExecuteAPIHost(host string) (string, bool) {
+	if host == "" {
+		return "", false
+	}
+
+	if idx := strings.LastIndex(host, ":"); idx >= 0 {
+		host = host[:idx]
+	}
+
+	const marker = ".execute-api."
+
+	i := strings.Index(host, marker)
+	if i <= 0 {
+		return "", false
+	}
+
+	apiID := host[:i]
+	rest := host[i+len(marker):]
+
+	// The API id is a single label.
+	if apiID == "" || strings.Contains(apiID, ".") {
+		return "", false
+	}
+
+	if rest == localhostHost || strings.HasSuffix(rest, ".amazonaws.com") {
+		return apiID, true
+	}
+
+	return "", false
+}
+
 // extractBucketFromHost recognises AWS S3 virtual-hosted-style hosts
 // and returns the bucket name. Empty result means path-style (or a
 // non-S3 host) — caller leaves the URL untouched.
@@ -257,7 +327,7 @@ func extractBucketFromHost(host string) string {
 	}
 
 	// Localhost / loopback IPs are never virtual-hosted.
-	if host == "localhost" || host == "127.0.0.1" {
+	if host == localhostHost || host == "127.0.0.1" {
 		return ""
 	}
 
@@ -277,7 +347,7 @@ func extractBucketFromHost(host string) string {
 	}
 
 	switch {
-	case rest == "localhost":
+	case rest == localhostHost:
 		return bucket
 	case rest == "s3.amazonaws.com":
 		return bucket

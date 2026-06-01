@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/sivchari/kumo/internal/service"
+	"github.com/sivchari/kumo/internal/service/execapi"
 )
 
 // Compile-time check that Service implements io.Closer.
@@ -18,12 +19,16 @@ func init() {
 		opts = append(opts, WithDataDir(dir))
 	}
 
-	service.Register(New(NewMemoryStorage(opts...)))
+	svc := New(NewMemoryStorage(opts...))
+	svc.baseURL = execapi.ResolveBaseURL()
+
+	service.Register(svc)
 }
 
 // Service implements the API Gateway service.
 type Service struct {
 	storage Storage
+	baseURL string
 }
 
 // New creates a new API Gateway service.
