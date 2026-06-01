@@ -10,10 +10,6 @@ import (
 )
 
 const (
-	// defaultEndpointHost is the host suffix used to build the apiEndpoint
-	// returned for an API. Overridable via KUMO_APIGATEWAYV2_ENDPOINT.
-	defaultEndpointHost = "execute-api.localhost:4566"
-
 	// defaultRouteSelectionExpression is the default routeSelectionExpression
 	// for HTTP APIs when the caller does not provide one.
 	defaultRouteSelectionExpression = "$request.method $request.path"
@@ -29,10 +25,6 @@ func init() {
 	var opts []Option
 	if dir := os.Getenv("KUMO_DATA_DIR"); dir != "" {
 		opts = append(opts, WithDataDir(dir))
-	}
-
-	if host := os.Getenv("KUMO_APIGATEWAYV2_ENDPOINT"); host != "" {
-		opts = append(opts, WithEndpoint(host))
 	}
 
 	service.Register(New(NewMemoryStorage(opts...)))

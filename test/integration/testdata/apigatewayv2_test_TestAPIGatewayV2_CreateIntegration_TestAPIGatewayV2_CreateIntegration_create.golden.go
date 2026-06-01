@@ -5,7 +5,7 @@
   "ContentHandlingStrategy": "",
   "CredentialsArn": null,
   "Description": null,
-  "IntegrationId": "aca5d359-e",
+  "IntegrationId": "918820a7-4",
   "IntegrationMethod": "GET",
   "IntegrationResponseSelectionExpression": null,
   "IntegrationSubtype": null,

@@ -1,10 +1,10 @@
 {
-  "ApiEndpoint": "https://86bd93a8-5.execute-api.localhost:4566",
+  "ApiEndpoint": "https://6600f455-b.execute-api.us-east-1.amazonaws.com",
   "ApiGatewayManaged": null,
-  "ApiId": "86bd93a8-5",
+  "ApiId": "6600f455-b",
   "ApiKeySelectionExpression": null,
   "CorsConfiguration": null,
-  "CreatedDate": "2026-06-01T03:08:30Z",
+  "CreatedDate": "2026-06-01T06:45:40Z",
   "Description": "Test HTTP API",
   "DisableExecuteApiEndpoint": null,
   "DisableSchemaValidation": null,

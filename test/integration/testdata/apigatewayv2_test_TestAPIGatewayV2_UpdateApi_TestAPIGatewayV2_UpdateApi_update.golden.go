@@ -1,10 +1,10 @@
 {
-  "ApiEndpoint": "https://cc77fbe7-9.execute-api.localhost:4566",
+  "ApiEndpoint": "https://8bfeedf8-5.execute-api.us-east-1.amazonaws.com",
   "ApiGatewayManaged": null,
-  "ApiId": "cc77fbe7-9",
+  "ApiId": "8bfeedf8-5",
   "ApiKeySelectionExpression": null,
   "CorsConfiguration": null,
-  "CreatedDate": "2026-06-01T03:08:30Z",
+  "CreatedDate": "2026-06-01T06:45:40Z",
   "Description": "updated description",
   "DisableExecuteApiEndpoint": null,
   "DisableSchemaValidation": null,

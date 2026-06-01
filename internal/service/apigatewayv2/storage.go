@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -17,6 +18,10 @@ const (
 	errNotFound   = "NotFoundException"
 	errBadRequest = "BadRequestException"
 )
+
+// defaultRegion is used to build AWS-shaped endpoints when AWS_DEFAULT_REGION
+// is not set.
+const defaultRegion = "us-east-1"
 
 // Storage defines the API Gateway v2 storage interface.
 type Storage interface {
@@ -64,13 +69,6 @@ func WithDataDir(dir string) Option {
 	}
 }
 
-// WithEndpoint overrides the execute-api endpoint host used to build apiEndpoint.
-func WithEndpoint(host string) Option {
-	return func(s *MemoryStorage) {
-		s.endpointHost = host
-	}
-}
-
 // Compile-time interface checks.
 var (
 	_ json.Marshaler   = (*MemoryStorage)(nil)
@@ -79,10 +77,10 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu           sync.RWMutex        `json:"-"`
-	APIs         map[string]*APIData `json:"apis"`
-	dataDir      string
-	endpointHost string
+	mu      sync.RWMutex        `json:"-"`
+	APIs    map[string]*APIData `json:"apis"`
+	dataDir string
+	region  string
 }
 
 // APIData holds an API and its child resources.
@@ -96,9 +94,14 @@ type APIData struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
-		APIs:         make(map[string]*APIData),
-		endpointHost: defaultEndpointHost,
+		APIs:   make(map[string]*APIData),
+		region: region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -199,7 +202,7 @@ func (s *MemoryStorage) CreateAPI(_ context.Context, req *CreateAPIRequest) (*AP
 		DisableSchemaValidation:   req.DisableSchemaValidation,
 		IPAddressType:             req.IPAddressType,
 		CorsConfiguration:         req.CorsConfiguration,
-		APIEndpoint:               fmt.Sprintf("https://%s.%s", id, s.endpointHost),
+		APIEndpoint:               fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com", id, s.region),
 		CreatedDate:               time.Now().UTC(),
 		Tags:                      req.Tags,
 	}
