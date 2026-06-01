@@ -1,0 +1,20 @@
+{
+  "ApiEndpoint": "https://86bd93a8-5.execute-api.localhost:4566",
+  "ApiGatewayManaged": null,
+  "ApiId": "86bd93a8-5",
+  "ApiKeySelectionExpression": null,
+  "CorsConfiguration": null,
+  "CreatedDate": "2026-06-01T03:08:30Z",
+  "Description": "Test HTTP API",
+  "DisableExecuteApiEndpoint": null,
+  "DisableSchemaValidation": null,
+  "ImportInfo": null,
+  "IpAddressType": "",
+  "Name": "test-http-api",
+  "ProtocolType": "HTTP",
+  "RouteSelectionExpression": "$request.method $request.path",
+  "Tags": null,
+  "Version": null,
+  "Warnings": null,
+  "ResultMetadata": {}
+}

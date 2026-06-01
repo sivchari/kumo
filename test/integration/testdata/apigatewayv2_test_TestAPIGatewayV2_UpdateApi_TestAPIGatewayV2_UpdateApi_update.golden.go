@@ -1,0 +1,20 @@
+{
+  "ApiEndpoint": "https://cc77fbe7-9.execute-api.localhost:4566",
+  "ApiGatewayManaged": null,
+  "ApiId": "cc77fbe7-9",
+  "ApiKeySelectionExpression": null,
+  "CorsConfiguration": null,
+  "CreatedDate": "2026-06-01T03:08:30Z",
+  "Description": "updated description",
+  "DisableExecuteApiEndpoint": null,
+  "DisableSchemaValidation": null,
+  "ImportInfo": null,
+  "IpAddressType": "",
+  "Name": "test-update-http-api",
+  "ProtocolType": "HTTP",
+  "RouteSelectionExpression": "$request.method $request.path",
+  "Tags": null,
+  "Version": null,
+  "Warnings": null,
+  "ResultMetadata": {}
+}

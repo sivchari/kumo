@@ -12,6 +12,7 @@ import (
 	_ "github.com/sivchari/kumo/internal/service/acm" // Register services via init().
 	_ "github.com/sivchari/kumo/internal/service/amplify"
 	_ "github.com/sivchari/kumo/internal/service/apigateway"
+	_ "github.com/sivchari/kumo/internal/service/apigatewayv2"
 	_ "github.com/sivchari/kumo/internal/service/appmesh"
 	_ "github.com/sivchari/kumo/internal/service/appsync"
 	_ "github.com/sivchari/kumo/internal/service/athena"

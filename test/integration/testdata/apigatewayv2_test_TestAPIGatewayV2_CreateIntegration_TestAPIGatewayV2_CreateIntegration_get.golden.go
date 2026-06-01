@@ -1,0 +1,23 @@
+{
+  "ApiGatewayManaged": null,
+  "ConnectionId": null,
+  "ConnectionType": "",
+  "ContentHandlingStrategy": "",
+  "CredentialsArn": null,
+  "Description": null,
+  "IntegrationId": "aca5d359-e",
+  "IntegrationMethod": "GET",
+  "IntegrationResponseSelectionExpression": null,
+  "IntegrationSubtype": null,
+  "IntegrationType": "HTTP_PROXY",
+  "IntegrationUri": "https://example.com",
+  "PassthroughBehavior": "",
+  "PayloadFormatVersion": "1.0",
+  "RequestParameters": null,
+  "RequestTemplates": null,
+  "ResponseParameters": null,
+  "TemplateSelectionExpression": null,
+  "TimeoutInMillis": null,
+  "TlsConfig": null,
+  "ResultMetadata": {}
+}

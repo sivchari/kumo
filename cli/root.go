@@ -30,6 +30,7 @@ func NewRootCmd() *cobra.Command {
 		newACMCmd(),
 		newAmplifyCmd(),
 		newAPIGatewayCmd(),
+		newAPIGatewayV2Cmd(),
 		newAppMeshCmd(),
 		newAppSyncCmd(),
 		newAthenaCmd(),
