@@ -308,6 +308,13 @@ func (s *Service) handleBucketPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Browser-based "presigned POST" uploads arrive as multipart/form-data.
+	if strings.HasPrefix(r.Header.Get(contentTypeHeader), "multipart/form-data") {
+		s.PostObject(w, r)
+
+		return
+	}
+
 	writeS3Error(w, r, "InvalidRequest", "Invalid request", http.StatusBadRequest)
 }
 

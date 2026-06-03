@@ -153,6 +153,16 @@ type ErrorResponse struct {
 	Key        string   `xml:"Key,omitempty"`
 }
 
+// PostResponse is the body returned for a POST Object request when
+// success_action_status is set to 201.
+type PostResponse struct {
+	XMLName  xml.Name `xml:"PostResponse"`
+	Location string   `xml:"Location"`
+	Bucket   string   `xml:"Bucket"`
+	Key      string   `xml:"Key"`
+	ETag     string   `xml:"ETag"`
+}
+
 // Versioning Types
 
 // VersioningConfiguration represents bucket versioning configuration.
