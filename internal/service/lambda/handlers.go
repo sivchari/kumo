@@ -264,8 +264,6 @@ func (s *Service) UpdateFunctionConfiguration(w http.ResponseWriter, r *http.Req
 }
 
 // Invoke handles the Invoke API.
-//
-//nolint:funlen // Invoke handles multiple code paths (sync, async, stub).
 func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 	functionName := extractFunctionNameFromInvokePath(r.URL.Path)
 	if functionName == "" {
@@ -293,47 +291,99 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 		invocationType = "RequestResponse"
 	}
 
-	// When no InvokeEndpoint is configured the function is treated as an
-	// echo stub: the invocation is accepted and the input payload is
-	// returned as-is. This lets SDK callers exercise functions created
-	// without kumo's InvokeEndpoint extension and still receive a
-	// meaningful response payload, which matches the expectation of
-	// tests that invoke Lambda functions via the standard AWS SDK.
-	if fn.InvokeEndpoint == "" {
-		switch invocationType {
-		case "DryRun":
-			writeInvokeHeaders(w)
-			w.WriteHeader(http.StatusNoContent)
-		case "Event":
-			writeInvokeHeaders(w)
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte("{}"))
-		default:
-			writeInvokeHeaders(w)
-			w.WriteHeader(http.StatusOK)
-
-			if len(payload) == 0 {
-				_, _ = w.Write([]byte("null"))
-			} else {
-				_, _ = w.Write(payload)
-			}
-		}
+	// DryRun validates access without executing the function.
+	if invocationType == "DryRun" {
+		writeInvokeHeaders(w)
+		w.WriteHeader(http.StatusNoContent)
 
 		return
 	}
 
-	switch invocationType {
-	case "DryRun":
-		writeInvokeHeaders(w)
-		w.WriteHeader(http.StatusNoContent)
-	case "Event":
-		s.invokeAsync(functionName, fn.InvokeEndpoint, payload)
-		writeInvokeHeaders(w)
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte("{}"))
+	async := invocationType == "Event"
+
+	// Resolution order: a handler polling the Runtime API wins, then a
+	// configured InvokeEndpoint, otherwise there is nothing to execute.
+	switch {
+	case s.broker.registered(functionName):
+		s.invokeViaRuntime(w, r, functionName, payload, async)
+	case fn.InvokeEndpoint != "":
+		s.invokeViaEndpoint(w, r, functionName, fn.InvokeEndpoint, payload, async)
 	default:
-		s.invokeSync(r.Context(), w, fn.InvokeEndpoint, payload)
+		s.invokeNoBackend(w, functionName, async)
 	}
+}
+
+// invokeViaRuntime dispatches to a handler connected through the Runtime API.
+func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn string, payload []byte, async bool) {
+	if async {
+		_, _ = s.broker.invoke(r.Context(), fn, payload, true)
+
+		writeInvokeAccepted(w)
+
+		return
+	}
+
+	res, err := s.broker.invoke(r.Context(), fn, payload, false)
+	if err != nil {
+		writeFunctionError(w, ErrServiceException, "runtime invocation failed: "+err.Error(), http.StatusBadGateway)
+
+		return
+	}
+
+	writeInvokeHeaders(w)
+
+	if res.errored {
+		w.Header().Set("X-Amz-Function-Error", "Unhandled")
+	}
+
+	w.WriteHeader(http.StatusOK)
+	writeInvokePayload(w, res.payload)
+}
+
+// invokeViaEndpoint forwards to a function's configured InvokeEndpoint.
+func (s *Service) invokeViaEndpoint(w http.ResponseWriter, r *http.Request, fn, endpoint string, payload []byte, async bool) {
+	if async {
+		s.invokeAsync(fn, endpoint, payload)
+		writeInvokeAccepted(w)
+
+		return
+	}
+
+	s.invokeSync(r.Context(), w, endpoint, payload)
+}
+
+// invokeNoBackend handles a function with neither a Runtime API handler nor an
+// InvokeEndpoint. Async invocations are accepted (and dropped); a
+// RequestResponse invocation has nothing to execute and fails — kumo does not
+// fabricate an echo response.
+func (s *Service) invokeNoBackend(w http.ResponseWriter, fn string, async bool) {
+	if async {
+		writeInvokeAccepted(w)
+
+		return
+	}
+
+	writeFunctionError(w, ErrServiceException,
+		"function "+fn+" has no runtime handler; run it with AWS_LAMBDA_RUNTIME_API=<kumo>/_runtime/"+fn+" or set InvokeEndpoint",
+		http.StatusBadGateway)
+}
+
+// writeInvokeAccepted writes the 202 response for an async invocation.
+func writeInvokeAccepted(w http.ResponseWriter) {
+	writeInvokeHeaders(w)
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte("{}"))
+}
+
+// writeInvokePayload writes a sync invocation payload, defaulting to "null".
+func writeInvokePayload(w http.ResponseWriter, payload []byte) {
+	if len(payload) == 0 {
+		_, _ = w.Write([]byte("null"))
+
+		return
+	}
+
+	_, _ = w.Write(payload)
 }
 
 // handleGetFunctionError writes error response for GetFunction errors.

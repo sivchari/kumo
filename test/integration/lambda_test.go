@@ -150,24 +150,11 @@ func TestLambda_ListFunctions(t *testing.T) {
 }
 
 func TestLambda_Invoke(t *testing.T) {
-	// Start mock Lambda endpoint server.
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		// Echo back the payload with a wrapper.
-		response := map[string]any{
-			"statusCode": 200,
-			"body":       string(body),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(response)
-	}))
-	t.Cleanup(mockServer.Close)
-
 	client := newLambdaClient(t)
 	ctx := t.Context()
-	functionName := "test-function-invoke"
+	functionName := "test-function-invoke-no-backend"
 
-	// Create function with InvokeEndpoint.
+	// Create a function with no InvokeEndpoint and no Runtime API handler.
 	_, err := client.CreateFunction(ctx, &lambda.CreateFunctionInput{
 		FunctionName: aws.String(functionName),
 		Runtime:      types.RuntimePython312,
@@ -187,31 +174,16 @@ func TestLambda_Invoke(t *testing.T) {
 		})
 	})
 
-	// Update function configuration to set InvokeEndpoint.
-	_, err = client.UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
-		FunctionName: aws.String(functionName),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Without an InvokeEndpoint configured, Invoke echoes the input
-	// payload back as the function response. This lets SDK callers
-	// exercise functions without setting up a separate HTTP listener.
-	out, err := client.Invoke(ctx, &lambda.InvokeInput{
+	// A RequestResponse invoke of a function with nothing to execute fails:
+	// kumo does not run code and no longer fabricates an echo response. To
+	// actually invoke, set InvokeEndpoint or run a handler against the
+	// Runtime API (see TestLambda_InvokeWithEndpoint / the runtime tests).
+	_, err = client.Invoke(ctx, &lambda.InvokeInput{
 		FunctionName: aws.String(functionName),
 		Payload:      []byte(`{"key": "value"}`),
 	})
-	if err != nil {
-		t.Fatalf("stub-mode invoke should succeed, got error: %v", err)
-	}
-
-	if out.StatusCode != 200 {
-		t.Errorf("expected status 200, got %d", out.StatusCode)
-	}
-
-	if got := string(out.Payload); got != `{"key": "value"}` {
-		t.Errorf("expected echoed payload, got %q", got)
+	if err == nil {
+		t.Fatal("expected error invoking a function with no runtime handler or InvokeEndpoint")
 	}
 }
 

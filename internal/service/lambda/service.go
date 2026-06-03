@@ -26,6 +26,7 @@ func init() {
 type Service struct {
 	storage Storage
 	baseURL string
+	broker  *runtimeBroker
 }
 
 // New creates a new Lambda service.
@@ -33,6 +34,7 @@ func New(storage Storage, baseURL string) *Service {
 	return &Service{
 		storage: storage,
 		baseURL: baseURL,
+		broker:  newRuntimeBroker(),
 	}
 }
 
@@ -73,6 +75,14 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("POST", prefix+"/2017-03-31/tags/{arn...}", s.TagResource)
 		r.Handle("DELETE", prefix+"/2017-03-31/tags/{arn...}", s.UntagResource)
 	}
+
+	// kumo-native Lambda Runtime API. A handler built with lambda.Start
+	// connects here with AWS_LAMBDA_RUNTIME_API=<host>/_runtime/{functionName},
+	// so an unmodified binary runs against kumo without external RIE.
+	r.Handle("GET", "/_runtime/{functionName}/2018-06-01/runtime/invocation/next", s.RuntimeNext)
+	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/invocation/{requestId}/response", s.RuntimeResponse)
+	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/invocation/{requestId}/error", s.RuntimeError)
+	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/init/error", s.RuntimeInitError)
 }
 
 // Close saves the storage state if persistence is enabled.

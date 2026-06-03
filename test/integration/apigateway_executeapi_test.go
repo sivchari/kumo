@@ -280,20 +280,21 @@ func TestExecuteAPI_HTTPProxy(t *testing.T) {
 	}
 }
 
-// TestExecuteAPI_NoInvokeEndpoint asserts that without a wired InvokeEndpoint
-// the Lambda echoes the event (no statusCode), so the gateway returns 502 —
-// matching a malformed Lambda proxy response on real AWS.
+// TestExecuteAPI_NoInvokeEndpoint asserts that a Lambda integration whose
+// function has no runtime handler and no InvokeEndpoint fails the invocation
+// (the Lambda invoke errors), so the gateway returns a 5xx rather than a
+// fabricated response.
 func TestExecuteAPI_NoInvokeEndpoint(t *testing.T) {
 	client := executeAPIClient(t)
 
 	fn := "executeapi-noendpoint-fn"
-	createLambdaWithEndpoint(t, fn, "") // empty -> echo stub
+	createLambdaWithEndpoint(t, fn, "") // no backend wired
 
 	apiID := buildLambdaAPI(t, client, "executeapi-noendpoint", fn, "dev")
 
 	status, _ := callStage(t, http.MethodGet, apiID, "dev", "/items")
-	if status != http.StatusBadGateway {
-		t.Errorf("status = %d, want 502", status)
+	if status < 500 {
+		t.Errorf("status = %d, want 5xx", status)
 	}
 }
 
