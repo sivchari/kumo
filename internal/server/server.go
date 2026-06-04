@@ -252,17 +252,20 @@ func (s *Server) Start(readyCh ...chan struct{}) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("shutting down server")
 
-	// Save snapshots for services that implement io.Closer.
+	// Drain in-flight requests first so no handler mutates state after we take
+	// the final snapshot. Persistence is now debounced (see internal/storage), so
+	// a mutation that lands after Close would otherwise be lost on exit.
+	if err := s.server.Shutdown(ctx); err != nil {
+		return fmt.Errorf("failed to shutdown server: %w", err)
+	}
+
+	// Save final snapshots for services that implement io.Closer.
 	for _, svc := range s.registry.All() {
 		if c, ok := svc.(io.Closer); ok {
 			if err := c.Close(); err != nil {
 				s.logger.Error("failed to save snapshot", "service", svc.Name(), "error", err)
 			}
 		}
-	}
-
-	if err := s.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("failed to shutdown server: %w", err)
 	}
 
 	return nil

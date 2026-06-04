@@ -195,22 +195,7 @@ func (s *MemoryStorage) saveLocked() {
 		return
 	}
 
-	m := &marshalableStorage{
-		Metrics: make(map[string]*StoredMetric, len(s.Metrics)),
-		Alarms:  s.Alarms,
-		Tags:    s.Tags,
-	}
-
-	for k, v := range s.Metrics {
-		m.Metrics[metricKeyToString(k)] = v
-	}
-
-	data, err := json.Marshal(m)
-	if err != nil {
-		return
-	}
-
-	_ = storage.SaveBytes(s.dataDir, "monitoring", data)
+	storage.ScheduleSave(s.dataDir, "monitoring", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.

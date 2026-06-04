@@ -137,14 +137,7 @@ func (m *MemoryStorage) saveLocked() {
 		return
 	}
 
-	type alias MemoryStorage
-
-	data, err := json.Marshal(&struct{ *alias }{alias: (*alias)(m)})
-	if err != nil {
-		return
-	}
-
-	_ = storage.SaveBytes(m.dataDir, "elasticbeanstalk", data)
+	storage.ScheduleSave(m.dataDir, "elasticbeanstalk", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
