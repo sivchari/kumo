@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.25.0](https://github.com/sivchari/kumo/compare/v0.24.1...v0.25.0) - 2026-06-04
+- feat(apigatewayv2): implement API Gateway v2 (HTTP API) CRUD by @sivchari in https://github.com/sivchari/kumo/pull/772
+- feat(apigateway): execute-api invoke for deployed stages (v1 + v2) by @sivchari in https://github.com/sivchari/kumo/pull/773
+- feat(lambda): kumo-native Lambda Runtime API (run lambda.Start without RIE) by @sivchari in https://github.com/sivchari/kumo/pull/776
+- feat(s3): support browser-based POST Object (presigned POST) by @sivchari in https://github.com/sivchari/kumo/pull/777
+- fix(storage): debounce snapshot persistence to stop OOM under write load by @sivchari in https://github.com/sivchari/kumo/pull/799
+- release v0.25.0 by @sivchari in https://github.com/sivchari/kumo/pull/800
+
 ## [v0.24.1](https://github.com/sivchari/kumo/compare/v0.24.0...v0.24.1) - 2026-05-30
 - fix(cloudfront): support SHA256 signed cookie/URL verification by @sivchari in https://github.com/sivchari/kumo/pull/768
 - release v0.24.1 by @sivchari in https://github.com/sivchari/kumo/pull/770
