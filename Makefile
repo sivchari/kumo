@@ -1,4 +1,4 @@
-.PHONY: build run test test-fuzz test-integration test-helm-e2e clean docker lint lint-fix fmt fmt-diff
+.PHONY: build run test test-fuzz test-integration test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme
 
 BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
@@ -48,6 +48,10 @@ fmt:
 
 fmt-diff:
 	$(GOLANGCI_LINT) fmt ./... --diff
+
+# Regenerate the README service catalog from each service's Meta().
+readme:
+	go run ./cmd/readme-gen
 
 # Docker
 docker:

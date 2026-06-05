@@ -14,6 +14,26 @@ type Service interface {
 	RegisterRoutes(r Router)
 }
 
+// Meta describes a service for documentation generation (e.g. the README
+// service catalog). It carries the human-facing presentation of a service,
+// distinct from the protocol-level identifiers used for routing.
+type Meta struct {
+	// Display is the human-readable service name, e.g. "DynamoDB Streams".
+	Display string
+	// Category is the catalog section the service belongs to, e.g. "Storage".
+	Category string
+	// Description is a one-line summary shown next to the service.
+	Description string
+}
+
+// Describer is an optional interface for services that expose documentation
+// metadata. The README generator (cmd/readme-gen) and its verifying test
+// (internal/catalog) require every registered service to implement it.
+type Describer interface {
+	// Meta returns the service's documentation metadata.
+	Meta() Meta
+}
+
 // Router is the interface for registering HTTP routes.
 type Router interface {
 	// Handle registers a handler for the given method and pattern.

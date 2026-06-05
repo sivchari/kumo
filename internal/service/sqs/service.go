@@ -80,3 +80,12 @@ func (s *Service) Storage() Storage {
 func (s *Service) BaseURL() string {
 	return s.baseURL
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "SQS",
+		Category:    "Messaging & Integration",
+		Description: "Message queuing",
+	}
+}

@@ -70,3 +70,12 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	// Provider service routes.
 	r.Handle("GET", "/providerservices", s.ListProviderServices)
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Entity Resolution",
+		Category:    "Analytics & ML",
+		Description: "Entity matching",
+	}
+}

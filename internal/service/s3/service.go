@@ -246,3 +246,12 @@ func (s *Service) putEvents(ctx context.Context, body []byte, bucket, key string
 
 	s.logger.Info("emitted S3 Object Created event", "bucket", bucket, "key", key, "status", resp.StatusCode)
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "S3",
+		Category:    "Storage",
+		Description: "Object storage",
+	}
+}

@@ -101,3 +101,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 
 	handler(w, r)
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Comprehend",
+		Category:    "Analytics & ML",
+		Description: "NLP service",
+	}
+}
