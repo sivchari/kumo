@@ -45,8 +45,7 @@ type asyncEvent struct {
 // the InvokeEndpoint execution path.
 type asyncDispatcher struct {
 	client *http.Client
-	ctx    context.Context //nolint:containedctx // lifecycle handle for drain goroutines, canceled by close.
-	cancel context.CancelFunc
+	done   chan struct{}
 	wg     sync.WaitGroup
 
 	initialBackoff time.Duration
@@ -58,12 +57,9 @@ type asyncDispatcher struct {
 }
 
 func newAsyncDispatcher() *asyncDispatcher {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &asyncDispatcher{
 		client:         http.DefaultClient,
-		ctx:            ctx,
-		cancel:         cancel,
+		done:           make(chan struct{}),
 		initialBackoff: asyncInitialBackoff,
 		maxBackoff:     asyncMaxBackoff,
 		maxEventAge:    asyncMaxEventAge,
@@ -104,9 +100,9 @@ func (d *asyncDispatcher) enqueue(functionName, endpoint string, payload []byte)
 }
 
 // close stops all drain goroutines and waits for them to exit. In-flight
-// requests are aborted through the dispatcher context.
+// requests are aborted through each drain goroutine's context.
 func (d *asyncDispatcher) close() {
-	d.cancel()
+	close(d.done)
 	d.wg.Wait()
 }
 
@@ -115,12 +111,26 @@ func (d *asyncDispatcher) close() {
 func (d *asyncDispatcher) drain(functionName string, q chan *asyncEvent) {
 	defer d.wg.Done()
 
+	// Lifecycle context for this goroutine's deliveries, canceled when the
+	// dispatcher closes so in-flight requests are aborted. Created here and
+	// passed down instead of being stored on the dispatcher.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		select {
+		case <-d.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	for {
 		select {
-		case <-d.ctx.Done():
+		case <-d.done:
 			return
 		case ev := <-q:
-			d.deliver(functionName, ev)
+			d.deliver(ctx, functionName, ev)
 		}
 	}
 }
@@ -141,12 +151,12 @@ const (
 
 // deliver posts the event to its endpoint, retrying failures until the event
 // is delivered, exhausts its function-error retries, or expires.
-func (d *asyncDispatcher) deliver(functionName string, ev *asyncEvent) {
+func (d *asyncDispatcher) deliver(ctx context.Context, functionName string, ev *asyncEvent) {
 	backoff := d.initialBackoff
 	functionErrorRetries := 0
 
 	for {
-		switch d.post(functionName, ev) {
+		switch d.post(ctx, functionName, ev) {
 		case asyncDelivered, asyncPermanentFailure:
 			return
 		case asyncFunctionError:
@@ -167,7 +177,7 @@ func (d *asyncDispatcher) deliver(functionName string, ev *asyncEvent) {
 		}
 
 		select {
-		case <-d.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-time.After(backoff):
 		}
@@ -177,8 +187,8 @@ func (d *asyncDispatcher) deliver(functionName string, ev *asyncEvent) {
 }
 
 // post performs a single delivery attempt.
-func (d *asyncDispatcher) post(functionName string, ev *asyncEvent) deliveryResult {
-	req, err := http.NewRequestWithContext(d.ctx, http.MethodPost, ev.endpoint, bytes.NewReader(ev.payload))
+func (d *asyncDispatcher) post(ctx context.Context, functionName string, ev *asyncEvent) deliveryResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ev.endpoint, bytes.NewReader(ev.payload))
 	if err != nil {
 		slog.Error("async invoke failed to create request", "function", functionName, "error", err)
 
