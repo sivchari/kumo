@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/sivchari/golden"
 )
 
 // TestLambda_AsyncInvokeRetriesUntilEndpointUp is the regression test for
@@ -77,7 +78,9 @@ func TestLambda_AsyncInvokeRetriesUntilEndpointUp(t *testing.T) {
 		})
 	})
 
-	// Async invokes while the endpoint is down must still return 202.
+	// Async invokes while the endpoint is down must still be accepted (202).
+	invokeOutputs := make([]*lambda.InvokeOutput, 0, 3)
+
 	for i := 1; i <= 3; i++ {
 		out, err := client.Invoke(ctx, &lambda.InvokeInput{
 			FunctionName:   aws.String(functionName),
@@ -88,10 +91,10 @@ func TestLambda_AsyncInvokeRetriesUntilEndpointUp(t *testing.T) {
 			t.Fatalf("async invoke %d failed: %v", i, err)
 		}
 
-		if out.StatusCode != http.StatusAccepted {
-			t.Fatalf("async invoke %d: expected 202, got %d", i, out.StatusCode)
-		}
+		invokeOutputs = append(invokeOutputs, out)
 	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_accepted", invokeOutputs)
 
 	// Bring the endpoint up and collect deliveries.
 	var (
@@ -137,16 +140,6 @@ func TestLambda_AsyncInvokeRetriesUntilEndpointUp(t *testing.T) {
 	// Allow a settle period to catch duplicate deliveries.
 	time.Sleep(500 * time.Millisecond)
 
-	got := snapshot()
-	want := []string{`{"seq":1}`, `{"seq":2}`, `{"seq":3}`}
-
-	if len(got) != len(want) {
-		t.Fatalf("expected exactly %d deliveries, got %d: %v", len(want), len(got), got)
-	}
-
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("delivery %d = %s, want %s (per-function order must be preserved)", i, got[i], want[i])
-		}
-	}
+	// The golden file encodes exactly-once delivery and per-function order.
+	golden.New(t).Assert(t.Name()+"_delivered", snapshot())
 }
