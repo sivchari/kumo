@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/smithy-go"
 	"github.com/sivchari/golden"
 )
 
@@ -1795,4 +1796,94 @@ func TestDynamoDB_QueryKeyConditionsWithSortKey(t *testing.T) {
 		}
 		golden.New(t).Assert(t.Name(), out)
 	})
+}
+
+// TestDynamoDB_ScanFilterExpressionIn covers the IN operator in a
+// FilterExpression and asserts that an invalid expression is rejected with
+// ValidationException instead of silently matching every item.
+func TestDynamoDB_ScanFilterExpressionIn(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-scan-filter-in"
+
+	// Create table.
+	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("pk"),
+				KeyType:       types.KeyTypeHash,
+			},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{
+				AttributeName: aws.String("pk"),
+				AttributeType: types.ScalarAttributeTypeS,
+			},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	// Put items in three distinct states.
+	for i, status := range []string{"pending", "running", "done"} {
+		_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item: map[string]types.AttributeValue{
+				"pk":     &types.AttributeValueMemberS{Value: "item-" + string(rune('a'+i))},
+				"status": &types.AttributeValueMemberS{Value: status},
+			},
+		})
+		if err != nil {
+			t.Fatalf("failed to put item: %v", err)
+		}
+	}
+
+	// Scan with an IN filter must return only the two matching items.
+	scanOutput, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:                aws.String(tableName),
+		FilterExpression:         aws.String("#s IN (:a, :b)"),
+		ExpressionAttributeNames: map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":a": &types.AttributeValueMemberS{Value: "pending"},
+			":b": &types.AttributeValueMemberS{Value: "running"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("scan with IN filter failed: %v", err)
+	}
+
+	if scanOutput.Count != 2 || scanOutput.ScannedCount != 3 {
+		t.Fatalf("expected Count=2 ScannedCount=3, got Count=%d ScannedCount=%d", scanOutput.Count, scanOutput.ScannedCount)
+	}
+
+	for _, item := range scanOutput.Items {
+		status, ok := item["status"].(*types.AttributeValueMemberS)
+		if !ok || (status.Value != "pending" && status.Value != "running") {
+			t.Fatalf("item with status %v must not pass the IN filter", item["status"])
+		}
+	}
+
+	// An expression the parser cannot handle must be a ValidationException,
+	// never a silent match-all.
+	_, err = client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String("complete garbage !!!"),
+	})
+	if err == nil {
+		t.Fatal("expected ValidationException for invalid FilterExpression")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "ValidationException" {
+		t.Fatalf("expected ValidationException, got: %T: %v", err, err)
+	}
 }

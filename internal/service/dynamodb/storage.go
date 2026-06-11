@@ -710,7 +710,12 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		}
 
 		// Apply filter expression.
-		if filterExpr != "" && !m.evaluateFilterExpression(item, filterExpr, exprNames, exprValues) {
+		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+
+		if !match {
 			continue
 		}
 
@@ -808,7 +813,12 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		scannedCount++
 
 		// Apply filter expression.
-		if filterExpr != "" && !m.evaluateFilterExpression(item, filterExpr, exprNames, exprValues) {
+		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+
+		if !match {
 			continue
 		}
 
@@ -1150,18 +1160,33 @@ func (m *MemoryStorage) extractPartitionKeyValue(keyCondExpr, partitionKeyName s
 	return nil
 }
 
-// evaluateFilterExpression evaluates a filter expression against an item.
-func (m *MemoryStorage) evaluateFilterExpression(item Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) bool {
+// filterItem reports whether an item passes a filter expression, where an
+// empty expression passes everything.
+func (m *MemoryStorage) filterItem(item Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) (bool, error) {
+	if filterExpr == "" {
+		return true, nil
+	}
+
+	return m.evaluateFilterExpression(item, filterExpr, exprNames, exprValues)
+}
+
+// evaluateFilterExpression evaluates a filter expression against an item. An
+// expression the parser cannot handle is a ValidationException, matching
+// DynamoDB; it must never silently match (or filter out) items.
+func (m *MemoryStorage) evaluateFilterExpression(item Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) (bool, error) {
 	result, err := evaluateCondition(item, ConditionInput{
 		Expression: filterExpr,
 		ExprNames:  exprNames,
 		ExprValues: exprValues,
 	})
 	if err != nil {
-		return true
+		return false, &TableError{
+			Code:    "ValidationException",
+			Message: fmt.Sprintf("Invalid FilterExpression: %s", err),
+		}
 	}
 
-	return result
+	return result, nil
 }
 
 // attributeValuesEqual compares two attribute values for equality.

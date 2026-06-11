@@ -360,6 +360,11 @@ func parseComparison(expr string, item Item, values map[string]AttributeValue) (
 		return parseBetween(leftToken, strings.TrimSpace(rest[7:]), item, values)
 	}
 
+	// Handle IN: operand IN (operand, operand, ...)
+	if startsWithKeyword(rest, "IN") {
+		return parseIn(leftToken, strings.TrimSpace(rest[2:]), item, values)
+	}
+
 	op, afterOp, err := parseComparisonOp(rest)
 	if err != nil {
 		return false, "", err
@@ -374,6 +379,41 @@ func parseComparison(expr string, item Item, values map[string]AttributeValue) (
 	right := resolveOperand(rightToken, item, values)
 
 	result := compareAttributeValues(left, right, op)
+
+	return result, finalRest, nil
+}
+
+// maxInOperands is DynamoDB's limit on the number of operands in an IN list.
+const maxInOperands = 100
+
+// parseIn handles "operand IN (operand, operand, ...)". The result is true if
+// the left operand equals any operand in the list.
+func parseIn(leftToken, rest string, item Item, values map[string]AttributeValue) (bool, string, error) {
+	args, finalRest, err := parseArgList(rest)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to parse IN operand list: %w", err)
+	}
+
+	if len(args) == 0 {
+		return false, "", fmt.Errorf("IN requires at least 1 operand")
+	}
+
+	if len(args) > maxInOperands {
+		return false, "", fmt.Errorf("IN accepts at most %d operands, got %d", maxInOperands, len(args))
+	}
+
+	val := resolveOperand(leftToken, item, values)
+
+	result := false
+
+	for _, arg := range args {
+		operand := resolveOperand(strings.TrimSpace(arg), item, values)
+		if compareAttributeValues(val, operand, "=") {
+			result = true
+
+			break
+		}
+	}
 
 	return result, finalRest, nil
 }
