@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -341,9 +340,11 @@ func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn st
 }
 
 // invokeViaEndpoint forwards to a function's configured InvokeEndpoint.
+// Async invocations are queued on the dispatcher so the 202 means "accepted
+// for delivery": failed deliveries are retried instead of dropped.
 func (s *Service) invokeViaEndpoint(w http.ResponseWriter, r *http.Request, fn, endpoint string, payload []byte, async bool) {
 	if async {
-		s.invokeAsync(fn, endpoint, payload)
+		s.async.enqueue(fn, endpoint, payload)
 		writeInvokeAccepted(w)
 
 		return
@@ -408,37 +409,6 @@ func writeInvokeHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Amz-Executed-Version", "$LATEST")
 	w.Header().Set("X-Amz-Request-Id", uuid.New().String())
-}
-
-// invokeAsync invokes the function asynchronously.
-func (s *Service) invokeAsync(functionName, endpoint string, payload []byte) {
-	payloadCopy := make([]byte, len(payload))
-	copy(payloadCopy, payload)
-
-	go func() {
-		req, err := http.NewRequestWithContext(
-			context.Background(),
-			http.MethodPost,
-			endpoint,
-			bytes.NewReader(payloadCopy),
-		)
-		if err != nil {
-			slog.Error("async invoke failed to create request", "function", functionName, "error", err)
-
-			return
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			slog.Error("async invoke failed", "function", functionName, "error", err)
-
-			return
-		}
-
-		_ = resp.Body.Close()
-	}()
 }
 
 // invokeSync invokes the function synchronously and writes the response.

@@ -27,6 +27,7 @@ type Service struct {
 	storage Storage
 	baseURL string
 	broker  *runtimeBroker
+	async   *asyncDispatcher
 }
 
 // New creates a new Lambda service.
@@ -35,6 +36,7 @@ func New(storage Storage, baseURL string) *Service {
 		storage: storage,
 		baseURL: baseURL,
 		broker:  newRuntimeBroker(),
+		async:   newAsyncDispatcher(),
 	}
 }
 
@@ -85,8 +87,11 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/init/error", s.RuntimeInitError)
 }
 
-// Close saves the storage state if persistence is enabled.
+// Close stops the async dispatcher and saves the storage state if
+// persistence is enabled.
 func (s *Service) Close() error {
+	s.async.close()
+
 	if c, ok := s.storage.(io.Closer); ok {
 		if err := c.Close(); err != nil {
 			return fmt.Errorf("failed to close storage: %w", err)
