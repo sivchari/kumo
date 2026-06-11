@@ -26,7 +26,7 @@ jobs:
         id: root
         run: |
           set +e
-          govulncheck ./... 2>&1 | tee /tmp/govulncheck-root.txt
+          govulncheck --json ./... > /tmp/govulncheck-root.json 2>&1
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Run govulncheck (test)
@@ -34,7 +34,7 @@ jobs:
         working-directory: test
         run: |
           set +e
-          govulncheck ./... 2>&1 | tee /tmp/govulncheck-test.txt
+          govulncheck --json ./... > /tmp/govulncheck-test.json 2>&1
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Create issues for vulnerabilities
@@ -64,15 +64,13 @@ jobs:
               --label bug
           }
 
-          # Parse vuln IDs from output
-          for file in /tmp/govulncheck-root.txt /tmp/govulncheck-test.txt; do
+          # Parse vulnerabilities from JSON output
+          for file in /tmp/govulncheck-root.json /tmp/govulncheck-test.json; do
             if [ ! -f "$file" ]; then
               continue
             fi
-            grep -oE 'GO-[0-9]{4}-[0-9]+' "$file" | sort -u | while read -r vuln_id; do
-              # Extract the module name from the line following the vuln ID
-              module=$(grep -A1 "$vuln_id" "$file" | grep -oE 'golang\.org/[^ ]+|github\.com/[^ ]+' | head -1)
-              module="${module:-unknown}"
+            # Extract vulnerable modules (only reachable vulnerabilities)
+            jq -r '.Vulnerabilities[]? | select(.Reachable) | .OSV as $osv | .Modules[] | "\($osv):\(.Module)"' "$file" | sort -u | while IFS=: read -r vuln_id module; do
               create_issue_if_new "$vuln_id" "$module"
             done
           done
