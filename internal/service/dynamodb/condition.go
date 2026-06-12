@@ -638,7 +638,20 @@ func resolveItemPath(item Item, path string) (AttributeValue, bool) {
 
 // compareAttributeValues compares two attribute values using the given operator.
 //
-//nolint:gocritic,cyclop // hugeParam: AttributeValue passed by value for comparison.
+// equalityOnly evaluates the only operators DynamoDB allows for BOOL and NULL
+// operands: equality and inequality. Any other operator is false.
+func equalityOnly(equal bool, op string) bool {
+	switch op {
+	case "=":
+		return equal
+	case "<>":
+		return !equal
+	default:
+		return false
+	}
+}
+
+//nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
 func compareAttributeValues(a, b AttributeValue, op string) bool {
 	// String comparison.
 	if a.S != nil && b.S != nil {
@@ -659,26 +672,12 @@ func compareAttributeValues(a, b AttributeValue, op string) bool {
 
 	// Boolean comparison (only = and <>).
 	if a.BOOL != nil && b.BOOL != nil {
-		switch op {
-		case "=":
-			return *a.BOOL == *b.BOOL
-		case "<>":
-			return *a.BOOL != *b.BOOL
-		default:
-			return false
-		}
+		return equalityOnly(*a.BOOL == *b.BOOL, op)
 	}
 
 	// NULL comparison (only = and <>).
 	if a.NULL != nil && b.NULL != nil {
-		switch op {
-		case "=":
-			return *a.NULL == *b.NULL
-		case "<>":
-			return *a.NULL != *b.NULL
-		default:
-			return false
-		}
+		return equalityOnly(*a.NULL == *b.NULL, op)
 	}
 
 	// Type mismatch or unsupported types: only <> returns true.

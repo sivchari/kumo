@@ -453,8 +453,6 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 }
 
 // tableToDescription converts a Table to TableDescription.
-//
-//nolint:funlen // Struct initialization with GSI/LSI conversion requires many statements.
 func tableToDescription(table *Table) TableDescription {
 	desc := TableDescription{
 		TableName:                 table.Name,
@@ -490,41 +488,49 @@ func tableToDescription(table *Table) TableDescription {
 		}
 	}
 
-	for _, gsi := range table.GlobalSecondaryIndexes {
-		gsiDesc := GlobalSecondaryIndexDescription{
-			IndexName:      gsi.IndexName,
-			KeySchema:      gsi.KeySchema,
-			Projection:     gsi.Projection,
-			IndexStatus:    "ACTIVE",
-			IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, gsi.IndexName),
-			ItemCount:      table.ItemCount,
-			IndexSizeBytes: table.TableSizeBytes,
-		}
-
-		if gsi.ProvisionedThroughput != nil {
-			gsiDesc.ProvisionedThroughput = &ProvisionedThroughputDescription{
-				ReadCapacityUnits:  gsi.ProvisionedThroughput.ReadCapacityUnits,
-				WriteCapacityUnits: gsi.ProvisionedThroughput.WriteCapacityUnits,
-			}
-		}
-
-		desc.GlobalSecondaryIndexes = append(desc.GlobalSecondaryIndexes, gsiDesc)
+	for i := range table.GlobalSecondaryIndexes {
+		desc.GlobalSecondaryIndexes = append(desc.GlobalSecondaryIndexes, gsiToDescription(table, &table.GlobalSecondaryIndexes[i]))
 	}
 
-	for _, lsi := range table.LocalSecondaryIndexes {
-		lsiDesc := LocalSecondaryIndexDescription{
-			IndexName:      lsi.IndexName,
-			KeySchema:      lsi.KeySchema,
-			Projection:     lsi.Projection,
-			IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, lsi.IndexName),
-			ItemCount:      table.ItemCount,
-			IndexSizeBytes: table.TableSizeBytes,
-		}
-
-		desc.LocalSecondaryIndexes = append(desc.LocalSecondaryIndexes, lsiDesc)
+	for i := range table.LocalSecondaryIndexes {
+		desc.LocalSecondaryIndexes = append(desc.LocalSecondaryIndexes, lsiToDescription(table, &table.LocalSecondaryIndexes[i]))
 	}
 
 	return desc
+}
+
+// gsiToDescription converts a stored GSI to its API description form.
+func gsiToDescription(table *Table, gsi *GlobalSecondaryIndex) GlobalSecondaryIndexDescription {
+	desc := GlobalSecondaryIndexDescription{
+		IndexName:      gsi.IndexName,
+		KeySchema:      gsi.KeySchema,
+		Projection:     gsi.Projection,
+		IndexStatus:    "ACTIVE",
+		IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, gsi.IndexName),
+		ItemCount:      table.ItemCount,
+		IndexSizeBytes: table.TableSizeBytes,
+	}
+
+	if gsi.ProvisionedThroughput != nil {
+		desc.ProvisionedThroughput = &ProvisionedThroughputDescription{
+			ReadCapacityUnits:  gsi.ProvisionedThroughput.ReadCapacityUnits,
+			WriteCapacityUnits: gsi.ProvisionedThroughput.WriteCapacityUnits,
+		}
+	}
+
+	return desc
+}
+
+// lsiToDescription converts a stored LSI to its API description form.
+func lsiToDescription(table *Table, lsi *LocalSecondaryIndex) LocalSecondaryIndexDescription {
+	return LocalSecondaryIndexDescription{
+		IndexName:      lsi.IndexName,
+		KeySchema:      lsi.KeySchema,
+		Projection:     lsi.Projection,
+		IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, lsi.IndexName),
+		ItemCount:      table.ItemCount,
+		IndexSizeBytes: table.TableSizeBytes,
+	}
 }
 
 // readJSONRequest reads and decodes JSON request body.
