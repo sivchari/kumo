@@ -15,21 +15,89 @@ import (
 	"github.com/google/uuid"
 )
 
-// CreateHostedZone handles the CreateHostedZone API.
-//
-//nolint:funlen // Handler includes validation and response building
-func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
+// readXMLBody reads and XML-decodes the request body into v, writing an
+// InvalidInput error response and returning false on failure.
+func readXMLBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Failed to read request body")
 
-		return
+		return false
 	}
 
-	var req CreateHostedZoneRequest
-	if err := xml.Unmarshal(body, &req); err != nil {
+	if err := xml.Unmarshal(body, v); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Failed to parse request body")
 
+		return false
+	}
+
+	return true
+}
+
+// defaultDelegationSet returns the fixed name servers kumo reports for a zone.
+func defaultDelegationSet() DelegationSet {
+	return DelegationSet{
+		NameServers: []string{
+			"ns-1.kumo.local",
+			"ns-2.kumo.local",
+			"ns-3.kumo.local",
+			"ns-4.kumo.local",
+		},
+	}
+}
+
+// recordInSyncChange creates an INSYNC ChangeInfo, persists it, and returns it.
+func (s *Service) recordInSyncChange(comment string) (ChangeInfo, error) {
+	ci := ChangeInfo{
+		ID:          "/change/" + uuid.New().String(),
+		Status:      "INSYNC",
+		SubmittedAt: time.Now().UTC().Format(time.RFC3339),
+		Comment:     comment,
+	}
+
+	if err := s.storage.PutChange(&ci); err != nil {
+		return ChangeInfo{}, fmt.Errorf("put change: %w", err)
+	}
+
+	return ci, nil
+}
+
+// parseMaxItems reads a maxitems query value, clamped to (0,100], default 100.
+func parseMaxItems(maxItemsStr string) int {
+	maxItems := 100
+
+	if maxItemsStr != "" {
+		if parsed, err := strconv.Atoi(maxItemsStr); err == nil && parsed > 0 && parsed <= 100 {
+			maxItems = parsed
+		}
+	}
+
+	return maxItems
+}
+
+// pageHostedZones returns the page [startIdx, startIdx+maxItems) of zones as
+// values, the index just past the page (len(zones) when not truncated), and
+// whether more zones remain.
+func pageHostedZones(zones []*HostedZone, startIdx, maxItems int) ([]HostedZone, int, bool) {
+	endIdx := startIdx + maxItems
+
+	truncated := endIdx < len(zones)
+	if !truncated {
+		endIdx = len(zones)
+	}
+
+	page := make([]HostedZone, 0, endIdx-startIdx)
+	for i := startIdx; i < endIdx; i++ {
+		page = append(page, *zones[i])
+	}
+
+	return page, endIdx, truncated
+}
+
+// CreateHostedZone handles the CreateHostedZone API.
+func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
+	var req CreateHostedZoneRequest
+	if !readXMLBody(w, r, &req) {
 		return
 	}
 
@@ -72,29 +140,18 @@ func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ci := ChangeInfo{
-		ID:          "/change/" + uuid.New().String(),
-		Status:      "INSYNC",
-		SubmittedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := s.storage.PutChange(&ci); err != nil {
+	ci, err := s.recordInSyncChange("")
+	if err != nil {
 		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
 
 		return
 	}
 
 	resp := CreateHostedZoneResponse{
-		XMLNS:      xmlns,
-		HostedZone: *zone,
-		ChangeInfo: ci,
-		DelegationSet: DelegationSet{
-			NameServers: []string{
-				"ns-1.kumo.local",
-				"ns-2.kumo.local",
-				"ns-3.kumo.local",
-				"ns-4.kumo.local",
-			},
-		},
+		XMLNS:         xmlns,
+		HostedZone:    *zone,
+		ChangeInfo:    ci,
+		DelegationSet: defaultDelegationSet(),
 	}
 
 	w.Header().Set("Location", fmt.Sprintf("https://route53.amazonaws.com/2013-04-01%s", zone.ID))
@@ -126,36 +183,18 @@ func (s *Service) GetHostedZone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := GetHostedZoneResponse{
-		XMLNS:      xmlns,
-		HostedZone: *zone,
-		DelegationSet: DelegationSet{
-			NameServers: []string{
-				"ns-1.kumo.local",
-				"ns-2.kumo.local",
-				"ns-3.kumo.local",
-				"ns-4.kumo.local",
-			},
-		},
+		XMLNS:         xmlns,
+		HostedZone:    *zone,
+		DelegationSet: defaultDelegationSet(),
 	}
 
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
 // ListHostedZones handles the ListHostedZones API.
-//
-//nolint:funlen // Handler includes pagination logic
 func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
-	// Parse pagination parameters
 	marker := r.URL.Query().Get("marker")
-	maxItemsStr := r.URL.Query().Get("maxitems")
-
-	maxItems := 100 // Default value
-
-	if maxItemsStr != "" {
-		if parsed, err := strconv.Atoi(maxItemsStr); err == nil && parsed > 0 && parsed <= 100 {
-			maxItems = parsed
-		}
-	}
+	maxItems := parseMaxItems(r.URL.Query().Get("maxitems"))
 
 	zones, err := s.storage.ListHostedZones()
 	if err != nil {
@@ -164,12 +203,12 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sort zones by ID for consistent pagination
+	// Sort zones by ID for consistent pagination.
 	sort.Slice(zones, func(i, j int) bool {
 		return zones[i].ID < zones[j].ID
 	})
 
-	// Find starting position based on marker
+	// Find starting position based on marker.
 	startIdx := 0
 
 	if marker != "" {
@@ -183,24 +222,7 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Calculate pagination
-	endIdx := startIdx + maxItems
-	isTruncated := false
-	nextMarker := ""
-
-	if endIdx < len(zones) {
-		isTruncated = true
-		// Extract zone ID without "/hostedzone/" prefix
-		nextMarker = strings.TrimPrefix(zones[endIdx].ID, "/hostedzone/")
-	} else {
-		endIdx = len(zones)
-	}
-
-	// Build response with paginated results
-	hostedZones := make([]HostedZone, 0, endIdx-startIdx)
-	for i := startIdx; i < endIdx; i++ {
-		hostedZones = append(hostedZones, *zones[i])
-	}
+	hostedZones, endIdx, isTruncated := pageHostedZones(zones, startIdx, maxItems)
 
 	resp := ListHostedZonesResponse{
 		XMLNS:       xmlns,
@@ -214,7 +236,7 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isTruncated {
-		resp.NextMarker = nextMarker
+		resp.NextMarker = strings.TrimPrefix(zones[endIdx].ID, "/hostedzone/")
 	}
 
 	writeXMLResponse(w, http.StatusOK, resp)
@@ -225,20 +247,10 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 // sources such as aws_route53_zone). The dnsname query parameter, when
 // supplied, filters to zones with Name >= dnsname; an exact-match dnsname
 // yields a single-zone response with that zone first.
-//
-//nolint:funlen // Handler bundles parsing, sorting, and pagination by design
 func (s *Service) ListHostedZonesByName(w http.ResponseWriter, r *http.Request) {
 	dnsname := normalizeDNSName(r.URL.Query().Get("dnsname"))
 	hostedZoneID := r.URL.Query().Get("hostedzoneid")
-	maxItemsStr := r.URL.Query().Get("maxitems")
-
-	maxItems := 100
-
-	if maxItemsStr != "" {
-		if parsed, err := strconv.Atoi(maxItemsStr); err == nil && parsed > 0 && parsed <= 100 {
-			maxItems = parsed
-		}
-	}
+	maxItems := parseMaxItems(r.URL.Query().Get("maxitems"))
 
 	zones, err := s.storage.ListHostedZones()
 	if err != nil {
@@ -265,33 +277,20 @@ func (s *Service) ListHostedZonesByName(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	endIdx := startIdx + maxItems
-	isTruncated := false
-	nextDNSName := ""
-	nextHostedZoneID := ""
-
-	if endIdx < len(zones) {
-		isTruncated = true
-		nextDNSName = zones[endIdx].Name
-		nextHostedZoneID = strings.TrimPrefix(zones[endIdx].ID, "/hostedzone/")
-	} else {
-		endIdx = len(zones)
-	}
-
-	hostedZones := make([]HostedZone, 0, endIdx-startIdx)
-	for i := startIdx; i < endIdx; i++ {
-		hostedZones = append(hostedZones, *zones[i])
-	}
+	hostedZones, endIdx, isTruncated := pageHostedZones(zones, startIdx, maxItems)
 
 	resp := ListHostedZonesByNameResponse{
-		XMLNS:            xmlns,
-		HostedZones:      hostedZones,
-		DNSName:          dnsname,
-		HostedZoneID:     hostedZoneID,
-		IsTruncated:      isTruncated,
-		NextDNSName:      nextDNSName,
-		NextHostedZoneID: nextHostedZoneID,
-		MaxItems:         strconv.Itoa(maxItems),
+		XMLNS:        xmlns,
+		HostedZones:  hostedZones,
+		DNSName:      dnsname,
+		HostedZoneID: hostedZoneID,
+		IsTruncated:  isTruncated,
+		MaxItems:     strconv.Itoa(maxItems),
+	}
+
+	if isTruncated {
+		resp.NextDNSName = zones[endIdx].Name
+		resp.NextHostedZoneID = strings.TrimPrefix(zones[endIdx].ID, "/hostedzone/")
 	}
 
 	writeXMLResponse(w, http.StatusOK, resp)
@@ -342,12 +341,8 @@ func (s *Service) DeleteHostedZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ci := ChangeInfo{
-		ID:          "/change/" + uuid.New().String(),
-		Status:      "INSYNC",
-		SubmittedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := s.storage.PutChange(&ci); err != nil {
+	ci, err := s.recordInSyncChange("")
+	if err != nil {
 		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
 
 		return
@@ -363,7 +358,35 @@ func (s *Service) DeleteHostedZone(w http.ResponseWriter, r *http.Request) {
 
 // ChangeResourceRecordSets handles the ChangeResourceRecordSets API.
 //
-//nolint:funlen // Handler includes validation and error handling for multiple cases
+// changeRecordSetsErrors maps storage sentinels from ChangeRecordSets to their
+// HTTP error response, checked in order.
+var changeRecordSetsErrors = []struct {
+	err     error
+	status  int
+	code    string
+	message string
+}{
+	{ErrHostedZoneNotFound, http.StatusNotFound, "NoSuchHostedZone", "Hosted zone not found"},
+	{ErrRecordSetAlreadyExists, http.StatusBadRequest, "ResourceRecordAlreadyExists", "Resource record already exists"},
+	{ErrRecordSetNotFound, http.StatusBadRequest, "InvalidChangeBatch", "Resource record not found"},
+	{ErrInvalidInput, http.StatusBadRequest, "InvalidInput", "Invalid change action"},
+}
+
+// writeChangeRecordSetsError maps a ChangeRecordSets error to its response,
+// falling back to InternalError for an unrecognized error.
+func writeChangeRecordSetsError(w http.ResponseWriter, err error) {
+	for _, m := range changeRecordSetsErrors {
+		if errors.Is(err, m.err) {
+			writeErrorResponse(w, m.status, m.code, m.message)
+
+			return
+		}
+	}
+
+	writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
+}
+
+// ChangeResourceRecordSets handles the ChangeResourceRecordSets API.
 func (s *Service) ChangeResourceRecordSets(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -372,17 +395,8 @@ func (s *Service) ChangeResourceRecordSets(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Failed to read request body")
-
-		return
-	}
-
 	var req ChangeResourceRecordSetsRequest
-	if err := xml.Unmarshal(body, &req); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Failed to parse request body")
-
+	if !readXMLBody(w, r, &req) {
 		return
 	}
 
@@ -395,42 +409,13 @@ func (s *Service) ChangeResourceRecordSets(w http.ResponseWriter, r *http.Reques
 	zoneID := "/hostedzone/" + id
 
 	if err := s.storage.ChangeRecordSets(zoneID, req.ChangeBatch.Changes); err != nil {
-		if errors.Is(err, ErrHostedZoneNotFound) {
-			writeErrorResponse(w, http.StatusNotFound, "NoSuchHostedZone", "Hosted zone not found")
-
-			return
-		}
-
-		if errors.Is(err, ErrRecordSetAlreadyExists) {
-			writeErrorResponse(w, http.StatusBadRequest, "ResourceRecordAlreadyExists", "Resource record already exists")
-
-			return
-		}
-
-		if errors.Is(err, ErrRecordSetNotFound) {
-			writeErrorResponse(w, http.StatusBadRequest, "InvalidChangeBatch", "Resource record not found")
-
-			return
-		}
-
-		if errors.Is(err, ErrInvalidInput) {
-			writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Invalid change action")
-
-			return
-		}
-
-		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
+		writeChangeRecordSetsError(w, err)
 
 		return
 	}
 
-	ci := ChangeInfo{
-		ID:          "/change/" + uuid.New().String(),
-		Status:      "INSYNC",
-		SubmittedAt: time.Now().UTC().Format(time.RFC3339),
-		Comment:     req.ChangeBatch.Comment,
-	}
-	if err := s.storage.PutChange(&ci); err != nil {
+	ci, err := s.recordInSyncChange(req.ChangeBatch.Comment)
+	if err != nil {
 		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
 
 		return

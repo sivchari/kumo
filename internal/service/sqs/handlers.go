@@ -749,50 +749,39 @@ func writeSQSError(w http.ResponseWriter, code, message string, status int) {
 	})
 }
 
+// sqsActions maps an X-Amz-Target action name to its handler method.
+var sqsActions = map[string]func(*Service, http.ResponseWriter, *http.Request){
+	"CreateQueue":                  (*Service).CreateQueue,
+	"ListQueueTags":                (*Service).ListQueueTags,
+	"TagQueue":                     (*Service).TagQueue,
+	"UntagQueue":                   (*Service).UntagQueue,
+	"DeleteQueue":                  (*Service).DeleteQueue,
+	"ListQueues":                   (*Service).ListQueues,
+	"GetQueueUrl":                  (*Service).GetQueueURL,
+	"SendMessage":                  (*Service).SendMessage,
+	"SendMessageBatch":             (*Service).SendMessageBatch,
+	"ReceiveMessage":               (*Service).ReceiveMessage,
+	"DeleteMessage":                (*Service).DeleteMessage,
+	"DeleteMessageBatch":           (*Service).DeleteMessageBatch,
+	"PurgeQueue":                   (*Service).PurgeQueue,
+	"GetQueueAttributes":           (*Service).GetQueueAttributes,
+	"SetQueueAttributes":           (*Service).SetQueueAttributes,
+	"ChangeMessageVisibility":      (*Service).ChangeMessageVisibility,
+	"ChangeMessageVisibilityBatch": (*Service).ChangeMessageVisibilityBatch,
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 // This method implements the JSONProtocolService interface.
-//
-//nolint:cyclop // flat switch over SQS actions; complexity comes from action count, not logic.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
 	action := strings.TrimPrefix(target, "AmazonSQS.")
 
-	switch action {
-	case "CreateQueue":
-		s.CreateQueue(w, r)
-	case "ListQueueTags":
-		s.ListQueueTags(w, r)
-	case "TagQueue":
-		s.TagQueue(w, r)
-	case "UntagQueue":
-		s.UntagQueue(w, r)
-	case "DeleteQueue":
-		s.DeleteQueue(w, r)
-	case "ListQueues":
-		s.ListQueues(w, r)
-	case "GetQueueUrl":
-		s.GetQueueURL(w, r)
-	case "SendMessage":
-		s.SendMessage(w, r)
-	case "SendMessageBatch":
-		s.SendMessageBatch(w, r)
-	case "ReceiveMessage":
-		s.ReceiveMessage(w, r)
-	case "DeleteMessage":
-		s.DeleteMessage(w, r)
-	case "DeleteMessageBatch":
-		s.DeleteMessageBatch(w, r)
-	case "PurgeQueue":
-		s.PurgeQueue(w, r)
-	case "GetQueueAttributes":
-		s.GetQueueAttributes(w, r)
-	case "SetQueueAttributes":
-		s.SetQueueAttributes(w, r)
-	case "ChangeMessageVisibility":
-		s.ChangeMessageVisibility(w, r)
-	case "ChangeMessageVisibilityBatch":
-		s.ChangeMessageVisibilityBatch(w, r)
-	default:
+	handler, ok := sqsActions[action]
+	if !ok {
 		writeSQSError(w, "InvalidAction", "The action "+action+" is not valid", http.StatusBadRequest)
+
+		return
 	}
+
+	handler(s, w, r)
 }

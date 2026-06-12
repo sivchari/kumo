@@ -477,44 +477,13 @@ func (m *MemoryStorage) UpdateDatasetGroup(_ context.Context, datasetGroupArn st
 // Predictor operations.
 
 // CreatePredictor creates a new predictor.
-//
-//nolint:funlen // validation and struct initialization require more lines
 func (m *MemoryStorage) CreatePredictor(_ context.Context, req *CreatePredictorInput) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check for duplicate name.
-	for _, p := range m.Predictors {
-		if p.PredictorName == req.PredictorName {
-			return "", &Error{
-				Code:    errResourceAlreadyExistsException,
-				Message: fmt.Sprintf("A predictor with name %s already exists", req.PredictorName),
-			}
-		}
-	}
-
-	// Validate dataset group exists.
-	if req.InputDataConfig == nil || req.InputDataConfig.DatasetGroupArn == "" {
-		return "", &Error{
-			Code:    errInvalidInputException,
-			Message: "InputDataConfig.DatasetGroupArn is required",
-		}
-	}
-
-	dg, exists := m.DatasetGroups[req.InputDataConfig.DatasetGroupArn]
-	if !exists {
-		return "", &Error{
-			Code:    errResourceNotFoundException,
-			Message: fmt.Sprintf("Dataset group %s not found", req.InputDataConfig.DatasetGroupArn),
-		}
-	}
-
-	// Validate forecast horizon.
-	if req.ForecastHorizon < 1 || req.ForecastHorizon > 500 {
-		return "", &Error{
-			Code:    errInvalidInputException,
-			Message: "ForecastHorizon must be between 1 and 500",
-		}
+	dg, verr := m.validateCreatePredictor(req)
+	if verr != nil {
+		return "", verr
 	}
 
 	predictorID := uuid.New().String()[:8]
@@ -546,6 +515,44 @@ func (m *MemoryStorage) CreatePredictor(_ context.Context, req *CreatePredictorI
 	m.saveLocked()
 
 	return predictorArn, nil
+}
+
+// validateCreatePredictor validates a CreatePredictor request and returns the
+// resolved dataset group. It must be called with m.mu held.
+func (m *MemoryStorage) validateCreatePredictor(req *CreatePredictorInput) (*DatasetGroup, *Error) {
+	// Check for duplicate name.
+	for _, p := range m.Predictors {
+		if p.PredictorName == req.PredictorName {
+			return nil, &Error{
+				Code:    errResourceAlreadyExistsException,
+				Message: fmt.Sprintf("A predictor with name %s already exists", req.PredictorName),
+			}
+		}
+	}
+
+	if req.InputDataConfig == nil || req.InputDataConfig.DatasetGroupArn == "" {
+		return nil, &Error{
+			Code:    errInvalidInputException,
+			Message: "InputDataConfig.DatasetGroupArn is required",
+		}
+	}
+
+	dg, exists := m.DatasetGroups[req.InputDataConfig.DatasetGroupArn]
+	if !exists {
+		return nil, &Error{
+			Code:    errResourceNotFoundException,
+			Message: fmt.Sprintf("Dataset group %s not found", req.InputDataConfig.DatasetGroupArn),
+		}
+	}
+
+	if req.ForecastHorizon < 1 || req.ForecastHorizon > 500 {
+		return nil, &Error{
+			Code:    errInvalidInputException,
+			Message: "ForecastHorizon must be between 1 and 500",
+		}
+	}
+
+	return dg, nil
 }
 
 // DescribePredictor returns a predictor.

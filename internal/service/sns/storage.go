@@ -532,54 +532,83 @@ func matchesSingleCondition(raw json.RawMessage, value string, exists bool) bool
 // matchesOperator handles object-form conditions like {"exists": true},
 // {"prefix": "pay"}, {"anything-but": ["x"]}.
 //
-//nolint:nestif // Multiple operator branches each need their own type assertion.
+// matchesOperator evaluates a single SNS filter-policy operator object. Each
+// operator returns (result, matched); an unparseable operator value is treated
+// as not-matched so evaluation falls through, preserving the original behavior.
 func matchesOperator(obj map[string]json.RawMessage, value string, exists bool) bool {
-	// {"exists": true/false}
-	if raw, ok := obj["exists"]; ok {
-		var want bool
-		if err := json.Unmarshal(raw, &want); err == nil {
-			if want {
-				return exists
-			}
-
-			return !exists
-		}
+	if result, matched := matchExists(obj, exists); matched {
+		return result
 	}
 
-	// {"prefix": "val"}
-	if raw, ok := obj["prefix"]; ok {
-		var prefix string
-		if err := json.Unmarshal(raw, &prefix); err == nil {
-			return exists && strings.HasPrefix(value, prefix)
-		}
+	if result, matched := matchPrefix(obj, value, exists); matched {
+		return result
 	}
 
-	// {"anything-but": ["v1","v2",...]}  or  {"anything-but": "v1"}
-	if raw, ok := obj["anything-but"]; ok {
-		if !exists {
-			return false
-		}
-
-		// Try array.
-		var arr []string
-		if err := json.Unmarshal(raw, &arr); err == nil {
-			for _, deny := range arr {
-				if value == deny {
-					return false
-				}
-			}
-
-			return true
-		}
-
-		// Try single string.
-		var single string
-		if err := json.Unmarshal(raw, &single); err == nil {
-			return value != single
-		}
+	if result, matched := matchAnythingBut(obj, value, exists); matched {
+		return result
 	}
 
 	return false
+}
+
+// matchExists handles {"exists": true/false}.
+func matchExists(obj map[string]json.RawMessage, exists bool) (bool, bool) {
+	raw, ok := obj["exists"]
+	if !ok {
+		return false, false
+	}
+
+	var want bool
+	if err := json.Unmarshal(raw, &want); err != nil {
+		return false, false
+	}
+
+	return want == exists, true
+}
+
+// matchPrefix handles {"prefix": "val"}.
+func matchPrefix(obj map[string]json.RawMessage, value string, exists bool) (bool, bool) {
+	raw, ok := obj["prefix"]
+	if !ok {
+		return false, false
+	}
+
+	var prefix string
+	if err := json.Unmarshal(raw, &prefix); err != nil {
+		return false, false
+	}
+
+	return exists && strings.HasPrefix(value, prefix), true
+}
+
+// matchAnythingBut handles {"anything-but": ["v1",...]} or {"anything-but": "v1"}.
+func matchAnythingBut(obj map[string]json.RawMessage, value string, exists bool) (bool, bool) {
+	raw, ok := obj["anything-but"]
+	if !ok {
+		return false, false
+	}
+
+	if !exists {
+		return false, true
+	}
+
+	var arr []string
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		for _, deny := range arr {
+			if value == deny {
+				return false, true
+			}
+		}
+
+		return true, true
+	}
+
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		return value != single, true
+	}
+
+	return false, false
 }
 
 // deliverMessage delivers a message to a subscription.

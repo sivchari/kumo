@@ -161,8 +161,6 @@ func generatePipeArn(name string) string {
 }
 
 // CreatePipe creates a new pipe.
-//
-//nolint:funlen // validation and struct initialization require more lines
 func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pipe, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -175,25 +173,14 @@ func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pi
 		}
 	}
 
-	// Validate required fields.
-	if req.Source == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "Source is required",
-		}
-	}
-
-	if req.Target == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "Target is required",
-		}
-	}
-
-	if req.RoleArn == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "RoleArn is required",
+	// Validate required fields (first empty wins).
+	for _, f := range []struct{ name, value string }{
+		{"Source", req.Source},
+		{"Target", req.Target},
+		{"RoleArn", req.RoleArn},
+	} {
+		if f.value == "" {
+			return nil, &Error{Code: errValidationException, Message: f.name + " is required"}
 		}
 	}
 

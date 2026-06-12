@@ -116,73 +116,41 @@ func (s *Service) HandleCORSPreflight(w http.ResponseWriter, r *http.Request) {
 
 // handleBucketGet dispatches GET /{bucket} requests based on query parameters.
 //
-//nolint:funlen // It's a straightforward dispatch, and splitting it up would just add indirection.
+// bucketGetSubresources maps a GET query-parameter key to its handler, in the
+// order they must be checked. AWS treats these subresource selectors as
+// mutually exclusive, so the first present key wins.
+var bucketGetSubresources = []struct {
+	key     string
+	handler func(*Service, http.ResponseWriter, *http.Request)
+}{
+	{"versioning", (*Service).GetBucketVersioning},
+	{"publicAccessBlock", (*Service).GetPublicAccessBlock},
+	{"encryption", (*Service).GetBucketEncryption},
+	{"policy", (*Service).GetBucketPolicy},
+	{"logging", (*Service).GetBucketLogging},
+	{"versions", (*Service).ListObjectVersions},
+	{"uploads", (*Service).ListMultipartUploads},
+	{"website", (*Service).GetBucketWebsite},
+	{"lifecycle", (*Service).GetBucketLifecycleConfiguration},
+	{"cors", (*Service).GetBucketCors},
+}
+
 func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
-	if _, ok := r.URL.Query()["versioning"]; ok {
-		s.GetBucketVersioning(w, r)
+	query := r.URL.Query()
 
-		return
-	}
+	for _, sub := range bucketGetSubresources {
+		if _, ok := query[sub.key]; ok {
+			sub.handler(s, w, r)
 
-	if _, ok := r.URL.Query()["publicAccessBlock"]; ok {
-		s.GetPublicAccessBlock(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["encryption"]; ok {
-		s.GetBucketEncryption(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["policy"]; ok {
-		s.GetBucketPolicy(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["logging"]; ok {
-		s.GetBucketLogging(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["versions"]; ok {
-		s.ListObjectVersions(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["uploads"]; ok {
-		s.ListMultipartUploads(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["website"]; ok {
-		s.GetBucketWebsite(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["lifecycle"]; ok {
-		s.GetBucketLifecycleConfiguration(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["cors"]; ok {
-		s.GetBucketCors(w, r)
-
-		return
+			return
+		}
 	}
 
 	if handled := s.serveBucketSubresourceStub(w, r); handled {
 		return
 	}
 
-	if r.URL.Query().Get("list-type") == "2" {
+	if query.Get("list-type") == "2" {
 		s.ListObjects(w, r)
 
 		return

@@ -168,24 +168,17 @@ func generateJobRunArn(applicationID, jobRunID string) string {
 }
 
 // CreateApplication creates a new application.
-//
-//nolint:funlen // validation and struct initialization require more lines
 func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicationInput) (*Application, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Validate required fields.
-	if req.Type == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "Type is required",
-		}
-	}
-
-	if req.ReleaseLabel == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "ReleaseLabel is required",
+	// Validate required fields (first empty wins).
+	for _, f := range []struct{ name, value string }{
+		{"Type", req.Type},
+		{"ReleaseLabel", req.ReleaseLabel},
+	} {
+		if f.value == "" {
+			return nil, &Error{Code: errValidationException, Message: f.name + " is required"}
 		}
 	}
 
@@ -193,27 +186,7 @@ func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicat
 	applicationID := generateApplicationID()
 	arn := generateApplicationArn(applicationID)
 
-	architecture := req.Architecture
-	if architecture == "" {
-		architecture = ArchitectureX8664
-	}
-
-	// Default auto stop configuration.
-	autoStopConfig := req.AutoStopConfiguration
-	if autoStopConfig == nil {
-		autoStopConfig = &AutoStopConfiguration{
-			Enabled:            true,
-			IdleTimeoutMinutes: 15,
-		}
-	}
-
-	// Default auto start configuration.
-	autoStartConfig := req.AutoStartConfiguration
-	if autoStartConfig == nil {
-		autoStartConfig = &AutoStartConfiguration{
-			Enabled: true,
-		}
-	}
+	architecture, autoStopConfig, autoStartConfig := applicationDefaults(req)
 
 	app := &Application{
 		ApplicationID:           applicationID,
@@ -240,6 +213,32 @@ func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicat
 	m.saveLocked()
 
 	return app, nil
+}
+
+// applicationDefaults resolves the architecture and auto-start/stop configuration
+// for a new application, applying kumo's defaults when the request omits them.
+func applicationDefaults(req *CreateApplicationInput) (string, *AutoStopConfiguration, *AutoStartConfiguration) {
+	architecture := req.Architecture
+	if architecture == "" {
+		architecture = ArchitectureX8664
+	}
+
+	autoStop := req.AutoStopConfiguration
+	if autoStop == nil {
+		autoStop = &AutoStopConfiguration{
+			Enabled:            true,
+			IdleTimeoutMinutes: 15,
+		}
+	}
+
+	autoStart := req.AutoStartConfiguration
+	if autoStart == nil {
+		autoStart = &AutoStartConfiguration{
+			Enabled: true,
+		}
+	}
+
+	return architecture, autoStop, autoStart
 }
 
 // GetApplication retrieves an application by ID.

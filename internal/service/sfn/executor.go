@@ -151,55 +151,74 @@ func (e *executionEngine) executeTaskState(ctx context.Context, name string, sta
 
 // resolveParameters resolves parameter values, handling JSONPath references
 // (keys ending with ".$" whose values are JSONPath expressions like "$.field").
-//
-//nolint:nestif // JSONPath resolution requires nested type checks.
 func resolveParameters(params map[string]any, input string) (map[string]any, error) {
 	if params == nil {
 		return map[string]any{}, nil
 	}
 
+	// inputData is parsed lazily on the first JSONPath reference and reused.
 	var inputData map[string]any
 
 	resolved := make(map[string]any, len(params))
 
 	for key, value := range params {
+		// A ".$" suffix marks a JSONPath reference; otherwise it is a static value.
 		if strings.HasSuffix(key, ".$") {
-			// This is a JSONPath reference.
-			actualKey := strings.TrimSuffix(key, ".$")
-
-			pathStr, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("jsonPath reference for key %q must be a string", key)
-			}
-
-			if inputData == nil {
-				if err := json.Unmarshal([]byte(input), &inputData); err != nil {
-					return nil, fmt.Errorf("parse input for JSONPath: %w", err)
-				}
-			}
-
-			resolvedValue, err := resolveJSONPath(inputData, pathStr)
+			resolvedValue, parsed, err := resolveJSONPathRef(key, value, input, inputData)
 			if err != nil {
-				return nil, fmt.Errorf("resolve JSONPath %q for key %q: %w", pathStr, key, err)
+				return nil, err
 			}
 
-			resolved[actualKey] = resolvedValue
-		} else {
-			// Static value -- recurse into nested maps.
-			if subMap, ok := value.(map[string]any); ok {
-				subResolved, err := resolveParameters(subMap, input)
-				if err != nil {
-					return nil, err
-				}
+			inputData = parsed
+			resolved[strings.TrimSuffix(key, ".$")] = resolvedValue
 
-				resolved[key] = subResolved
-			} else {
-				resolved[key] = value
-			}
+			continue
 		}
+
+		resolvedValue, err := resolveStaticValue(value, input)
+		if err != nil {
+			return nil, err
+		}
+
+		resolved[key] = resolvedValue
 	}
 
 	return resolved, nil
+}
+
+// resolveJSONPathRef resolves a "key.$" JSONPath reference against the input.
+// inputData is the lazily-parsed input (nil until first use); the possibly newly
+// parsed map is returned so the caller can reuse it for later references,
+// keeping the input JSON unmarshaled at most once per resolveParameters call.
+func resolveJSONPathRef(key string, value any, input string, inputData map[string]any) (any, map[string]any, error) {
+	pathStr, ok := value.(string)
+	if !ok {
+		return nil, inputData, fmt.Errorf("jsonPath reference for key %q must be a string", key)
+	}
+
+	if inputData == nil {
+		if err := json.Unmarshal([]byte(input), &inputData); err != nil {
+			return nil, inputData, fmt.Errorf("parse input for JSONPath: %w", err)
+		}
+	}
+
+	resolvedValue, err := resolveJSONPath(inputData, pathStr)
+	if err != nil {
+		return nil, inputData, fmt.Errorf("resolve JSONPath %q for key %q: %w", pathStr, key, err)
+	}
+
+	return resolvedValue, inputData, nil
+}
+
+// resolveStaticValue returns a non-reference parameter value, recursing into
+// nested maps and leaving scalars unchanged.
+func resolveStaticValue(value any, input string) (any, error) {
+	subMap, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+
+	return resolveParameters(subMap, input)
 }
 
 // resolveJSONPath resolves a simple JSONPath expression ("$" or "$.field") against the input data.
