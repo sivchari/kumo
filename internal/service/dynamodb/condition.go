@@ -127,8 +127,10 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 		return result, rest[1:], nil
 	}
 
-	// Function calls.
-	for _, fn := range []string{"attribute_exists", "attribute_not_exists", "begins_with", "contains"} {
+	// Function calls. attribute_type belongs here: like the others it takes a
+	// parenthesized argument list and returns a boolean. (size() is handled
+	// separately below because its syntax is "size(path) op value".)
+	for _, fn := range []string{"attribute_exists", "attribute_not_exists", "attribute_type", "begins_with", "contains"} {
 		if strings.HasPrefix(trimmed, fn+"(") {
 			return parseFunctionCall(fn, trimmed[len(fn):], item, values)
 		}
@@ -139,16 +141,6 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 		}
 	}
 
-	// attribute_type(path, :type). Handled separately from the function loop above
-	// because its name does not share a prefix with the attribute_exists family.
-	if strings.HasPrefix(trimmed, "attribute_type(") {
-		return parseAttributeType(trimmed[len("attribute_type"):], item, values)
-	}
-
-	if strings.HasPrefix(trimmed, "attribute_type (") {
-		return parseAttributeType(strings.TrimSpace(trimmed[len("attribute_type"):]), item, values)
-	}
-
 	// size() function used in comparison: size(path) op value
 	if strings.HasPrefix(trimmed, "size(") {
 		return parseSizeComparison(trimmed, item, values)
@@ -156,32 +148,6 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 
 	// Comparison: operand op operand
 	return parseComparison(trimmed, item, values)
-}
-
-// parseAttributeType evaluates attribute_type(path, :type). Per DynamoDB the
-// type argument must be an expression attribute value holding one of the type
-// descriptors (S, N, B, SS, NS, BS, M, L, NULL, BOOL).
-func parseAttributeType(argsStr string, item Item, values map[string]AttributeValue) (bool, string, error) {
-	args, rest, err := parseArgList(argsStr)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to parse attribute_type arguments: %w", err)
-	}
-
-	if len(args) != 2 {
-		return false, "", fmt.Errorf("attribute_type requires 2 arguments")
-	}
-
-	typeVal := resolveOperand(strings.TrimSpace(args[1]), item, values)
-	if typeVal.S == nil {
-		return false, "", fmt.Errorf("attribute_type requires a string type operand")
-	}
-
-	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
-	if !exists {
-		return false, rest, nil
-	}
-
-	return matchesAttributeType(av, *typeVal.S), rest, nil
 }
 
 // matchesAttributeType reports whether the attribute value is of the given
@@ -215,67 +181,108 @@ func matchesAttributeType(av AttributeValue, typ string) bool {
 	}
 }
 
-// parseFunctionCall parses and evaluates a function call.
+// parseFunctionCall parses a function's argument list and dispatches to the
+// matching evaluator. The remaining input after the argument list is the same
+// for every function, so it is returned here rather than by each evaluator.
 func parseFunctionCall(fn, argsStr string, item Item, values map[string]AttributeValue) (bool, string, error) {
 	args, rest, err := parseArgList(argsStr)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to parse %s arguments: %w", fn, err)
 	}
 
+	var result bool
+
 	switch fn {
 	case "attribute_exists":
-		if len(args) != 1 {
-			return false, "", fmt.Errorf("attribute_exists requires 1 argument")
-		}
-
-		path := strings.TrimSpace(args[0])
-		_, exists := resolveItemPath(item, path)
-
-		return exists, rest, nil
-
+		result, err = evalAttributeExists(args, item)
 	case "attribute_not_exists":
-		if len(args) != 1 {
-			return false, "", fmt.Errorf("attribute_not_exists requires 1 argument")
-		}
-
-		path := strings.TrimSpace(args[0])
-		_, exists := resolveItemPath(item, path)
-
-		return !exists, rest, nil
-
+		result, err = evalAttributeNotExists(args, item)
+	case "attribute_type":
+		result, err = evalAttributeType(args, item, values)
 	case "begins_with":
-		if len(args) != 2 {
-			return false, "", fmt.Errorf("begins_with requires 2 arguments")
-		}
-
-		path := strings.TrimSpace(args[0])
-		val := resolveOperand(strings.TrimSpace(args[1]), item, values)
-
-		av, exists := resolveItemPath(item, path)
-		if !exists || av.S == nil || val.S == nil {
-			return false, rest, nil
-		}
-
-		return strings.HasPrefix(*av.S, *val.S), rest, nil
-
+		result, err = evalBeginsWith(args, item, values)
 	case "contains":
-		if len(args) != 2 {
-			return false, "", fmt.Errorf("contains requires 2 arguments")
-		}
-
-		path := strings.TrimSpace(args[0])
-		val := resolveOperand(strings.TrimSpace(args[1]), item, values)
-
-		av, exists := resolveItemPath(item, path)
-		if !exists {
-			return false, rest, nil
-		}
-
-		return evalContains(av, val), rest, nil
-
+		result, err = evalContainsFunc(args, item, values)
 	default:
 		return false, "", fmt.Errorf("unknown function: %s", fn)
 	}
+
+	if err != nil {
+		return false, "", err
+	}
+
+	return result, rest, nil
+}
+
+func evalAttributeExists(args []string, item Item) (bool, error) {
+	if len(args) != 1 {
+		return false, fmt.Errorf("attribute_exists requires 1 argument")
+	}
+
+	_, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+
+	return exists, nil
+}
+
+func evalAttributeNotExists(args []string, item Item) (bool, error) {
+	if len(args) != 1 {
+		return false, fmt.Errorf("attribute_not_exists requires 1 argument")
+	}
+
+	_, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+
+	return !exists, nil
+}
+
+// evalAttributeType evaluates attribute_type(path, :type). Per DynamoDB the type
+// argument must be an expression attribute value holding one of the type
+// descriptors (S, N, B, SS, NS, BS, M, L, NULL, BOOL).
+func evalAttributeType(args []string, item Item, values map[string]AttributeValue) (bool, error) {
+	if len(args) != 2 {
+		return false, fmt.Errorf("attribute_type requires 2 arguments")
+	}
+
+	typeVal := resolveOperand(strings.TrimSpace(args[1]), item, values)
+	if typeVal.S == nil {
+		return false, fmt.Errorf("attribute_type requires a string type operand")
+	}
+
+	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+	if !exists {
+		return false, nil
+	}
+
+	return matchesAttributeType(av, *typeVal.S), nil
+}
+
+func evalBeginsWith(args []string, item Item, values map[string]AttributeValue) (bool, error) {
+	if len(args) != 2 {
+		return false, fmt.Errorf("begins_with requires 2 arguments")
+	}
+
+	val := resolveOperand(strings.TrimSpace(args[1]), item, values)
+
+	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+	if !exists || av.S == nil || val.S == nil {
+		return false, nil
+	}
+
+	return strings.HasPrefix(*av.S, *val.S), nil
+}
+
+func evalContainsFunc(args []string, item Item, values map[string]AttributeValue) (bool, error) {
+	if len(args) != 2 {
+		return false, fmt.Errorf("contains requires 2 arguments")
+	}
+
+	val := resolveOperand(strings.TrimSpace(args[1]), item, values)
+
+	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+	if !exists {
+		return false, nil
+	}
+
+	return evalContains(av, val), nil
 }
 
 // evalContains evaluates the contains function for various types.
