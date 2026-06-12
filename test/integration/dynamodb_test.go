@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 
 	awsv1 "github.com/aws/aws-sdk-go/aws"
@@ -1880,6 +1881,185 @@ func TestDynamoDB_ScanFilterExpressionIn(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected ValidationException for invalid FilterExpression")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "ValidationException" {
+		t.Fatalf("expected ValidationException, got: %T: %v", err, err)
+	}
+}
+
+// sortItemsByPK orders scan results deterministically for golden comparison.
+func sortItemsByPK(items []map[string]types.AttributeValue) {
+	sort.Slice(items, func(i, j int) bool {
+		return itemPKValue(items[i]) < itemPKValue(items[j])
+	})
+}
+
+func itemPKValue(item map[string]types.AttributeValue) string {
+	if v, ok := item["pk"].(*types.AttributeValueMemberS); ok {
+		return v.Value
+	}
+
+	return ""
+}
+
+func createSimpleStringKeyTable(t *testing.T, client *dynamodb.Client, tableName string) {
+	t.Helper()
+
+	_, err := client.CreateTable(t.Context(), &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+}
+
+// TestDynamoDB_ScanFilterExpressionAttributeType verifies the attribute_type
+// function in a FilterExpression returns only items whose attribute matches the
+// requested type.
+func TestDynamoDB_ScanFilterExpressionAttributeType(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-scan-attr-type"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	items := []map[string]types.AttributeValue{
+		{"pk": &types.AttributeValueMemberS{Value: "a"}, "val": &types.AttributeValueMemberS{Value: "text"}},
+		{"pk": &types.AttributeValueMemberS{Value: "b"}, "val": &types.AttributeValueMemberN{Value: "42"}},
+		{"pk": &types.AttributeValueMemberS{Value: "c"}, "val": &types.AttributeValueMemberL{Value: []types.AttributeValue{
+			&types.AttributeValueMemberS{Value: "x"},
+		}}},
+	}
+	for _, it := range items {
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{TableName: aws.String(tableName), Item: it}); err != nil {
+			t.Fatalf("failed to put item: %v", err)
+		}
+	}
+
+	out, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:                 aws.String(tableName),
+		FilterExpression:          aws.String("attribute_type(val, :t)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":t": &types.AttributeValueMemberS{Value: "S"}},
+	})
+	if err != nil {
+		t.Fatalf("scan with attribute_type filter failed: %v", err)
+	}
+
+	if out.Count != 1 {
+		t.Fatalf("attribute_type(val, S) should match 1 item, got %d", out.Count)
+	}
+
+	sortItemsByPK(out.Items)
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), out)
+}
+
+// TestDynamoDB_ScanFilterExpressionSizeMixedAttributes is the regression test
+// for size() over a table where some items lack the attribute: those items must
+// simply not match, and the scan must succeed (not fail with ValidationException).
+func TestDynamoDB_ScanFilterExpressionSizeMixedAttributes(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-scan-size-mixed"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	items := []map[string]types.AttributeValue{
+		{"pk": &types.AttributeValueMemberS{Value: "a"}, "tags": &types.AttributeValueMemberL{Value: []types.AttributeValue{
+			&types.AttributeValueMemberS{Value: "x"},
+			&types.AttributeValueMemberS{Value: "y"},
+			&types.AttributeValueMemberS{Value: "z"},
+		}}},
+		{"pk": &types.AttributeValueMemberS{Value: "b"}, "tags": &types.AttributeValueMemberL{Value: []types.AttributeValue{
+			&types.AttributeValueMemberS{Value: "x"},
+		}}},
+		{"pk": &types.AttributeValueMemberS{Value: "c"}}, // no tags attribute
+	}
+	for _, it := range items {
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{TableName: aws.String(tableName), Item: it}); err != nil {
+			t.Fatalf("failed to put item: %v", err)
+		}
+	}
+
+	out, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:                 aws.String(tableName),
+		FilterExpression:          aws.String("size(tags) > :two"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":two": &types.AttributeValueMemberN{Value: "2"}},
+	})
+	if err != nil {
+		t.Fatalf("scan with size() over mixed attributes must not error: %v", err)
+	}
+
+	if out.Count != 1 {
+		t.Fatalf("size(tags) > 2 should match only item a, got %d", out.Count)
+	}
+
+	sortItemsByPK(out.Items)
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), out)
+}
+
+// TestDynamoDB_QueryInvalidKeyConditionExpression verifies an unparseable
+// KeyConditionExpression is rejected with ValidationException rather than a
+// silent empty result.
+func TestDynamoDB_QueryInvalidKeyConditionExpression(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-query-invalid-keycond"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item:      map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "1"}},
+	}); err != nil {
+		t.Fatalf("failed to put item: %v", err)
+	}
+
+	_, err := client.Query(ctx, &dynamodb.QueryInput{
+		TableName:                 aws.String(tableName),
+		KeyConditionExpression:    aws.String("complete garbage !!!"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":pk": &types.AttributeValueMemberS{Value: "1"}},
+	})
+	if err == nil {
+		t.Fatal("expected ValidationException for invalid KeyConditionExpression")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "ValidationException" {
+		t.Fatalf("expected ValidationException, got: %T: %v", err, err)
+	}
+}
+
+// TestDynamoDB_ScanInvalidFilterEmptyTable verifies an invalid FilterExpression
+// is rejected with ValidationException even when the table is empty (the bug
+// where validation only happened inside the per-item loop).
+func TestDynamoDB_ScanInvalidFilterEmptyTable(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-scan-invalid-empty"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	out, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String("complete garbage !!!"),
+	})
+	if err == nil {
+		t.Fatalf("expected ValidationException on empty table, got %d items", len(out.Items))
 	}
 
 	var apiErr smithy.APIError

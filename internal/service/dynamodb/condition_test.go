@@ -612,6 +612,68 @@ func TestEvaluateCondition(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "attribute_type matches string",
+			item: Item{"pk": {S: ptr("1")}, "name": {S: ptr("Alice")}},
+			cond: ConditionInput{
+				Expression: "attribute_type(name, :t)",
+				ExprValues: map[string]AttributeValue{":t": {S: ptr("S")}},
+			},
+			want: true,
+		},
+		{
+			name: "attribute_type mismatch returns false",
+			item: Item{"pk": {S: ptr("1")}, "name": {S: ptr("Alice")}},
+			cond: ConditionInput{
+				Expression: "attribute_type(name, :t)",
+				ExprValues: map[string]AttributeValue{":t": {S: ptr("N")}},
+			},
+			want: false,
+		},
+		{
+			name: "attribute_type on list",
+			item: Item{"pk": {S: ptr("1")}, "tags": {L: []*AttributeValue{{S: ptr("a")}}}},
+			cond: ConditionInput{
+				Expression: "attribute_type(tags, :t)",
+				ExprValues: map[string]AttributeValue{":t": {S: ptr("L")}},
+			},
+			want: true,
+		},
+		{
+			name: "attribute_type on missing attribute returns false (no error)",
+			item: Item{"pk": {S: ptr("1")}},
+			cond: ConditionInput{
+				Expression: "attribute_type(name, :t)",
+				ExprValues: map[string]AttributeValue{":t": {S: ptr("S")}},
+			},
+			want: false,
+		},
+		{
+			name: "attribute_type with non-string type operand errors",
+			item: Item{"pk": {S: ptr("1")}, "name": {S: ptr("Alice")}},
+			cond: ConditionInput{
+				Expression: "attribute_type(name, :t)",
+				ExprValues: map[string]AttributeValue{":t": {N: ptr("1")}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "size on missing attribute returns false (no error)",
+			item: Item{"pk": {S: ptr("1")}},
+			cond: ConditionInput{
+				Expression: "size(items) > :min",
+				ExprValues: map[string]AttributeValue{":min": {N: ptr("2")}},
+			},
+			want: false,
+		},
+		{
+			name: "size compared to attribute operand matches",
+			item: Item{"pk": {S: ptr("1")}, "items": {L: []*AttributeValue{{S: ptr("a")}, {S: ptr("b")}}}, "minLen": {N: ptr("1")}},
+			cond: ConditionInput{
+				Expression: "size(items) > minLen",
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -841,5 +903,52 @@ func TestFilterExpressionFailsClosed(t *testing.T) {
 
 	if len(queryItems) != 0 || queryScanned != 0 {
 		t.Fatalf("invalid filter must not return results, got %d items (scanned %d)", len(queryItems), queryScanned)
+	}
+}
+
+// TestExpressionValidationEdgeCases covers the follow-up gaps to PR #808: an
+// invalid filter must be rejected even on an empty table (not only when an item
+// is scanned), and an unparseable KeyConditionExpression must be a
+// ValidationException rather than a silent empty result.
+func TestExpressionValidationEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	const errCodeValidation = "ValidationException"
+
+	s := NewMemoryStorage("http://localhost:4566")
+	ctx := context.Background()
+
+	_, err := s.CreateTable(ctx, &CreateTableRequest{
+		TableName:            "edge",
+		KeySchema:            []KeySchemaElement{{AttributeName: "pk", KeyType: "HASH"}},
+		AttributeDefinitions: []AttributeDefinition{{AttributeName: "pk", AttributeType: "S"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var tErr *TableError
+
+	// Empty table: an invalid filter must still be a ValidationException, not an
+	// empty 200 result (the table has no items, so the per-item loop never runs).
+	if _, _, _, err := s.Scan(ctx, "edge", "complete garbage !!!", nil, nil, 0, nil, nil, nil); !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
+		t.Fatalf("empty-table scan with invalid filter: expected ValidationException, got: %v", err)
+	}
+
+	if _, _, _, err := s.Query(ctx, "edge", "", "pk = :pk", "complete garbage !!!", nil,
+		map[string]AttributeValue{":pk": {S: ptr("missing")}}, 0, nil, true); !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
+		t.Fatalf("empty-table query with invalid filter: expected ValidationException, got: %v", err)
+	}
+
+	// Unparseable KeyConditionExpression must be a ValidationException, not a
+	// silent empty result.
+	_, err = s.PutItem(ctx, "edge", Item{"pk": {S: ptr("1")}}, false, ConditionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, _, err := s.Query(ctx, "edge", "", "complete garbage !!!", "", nil,
+		map[string]AttributeValue{":pk": {S: ptr("1")}}, 0, nil, true); !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
+		t.Fatalf("query with invalid KeyConditionExpression: expected ValidationException, got: %v", err)
 	}
 }

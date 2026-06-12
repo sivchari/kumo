@@ -677,6 +677,18 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		resolvedKeyCondExpr = strings.ReplaceAll(resolvedKeyCondExpr, placeholder, name)
 	}
 
+	// Validate expressions up front so unparseable ones are rejected even when no
+	// item is evaluated (empty table or no key match).
+	if resolvedKeyCondExpr != "" {
+		if _, err := evaluateCondition(Item{}, ConditionInput{Expression: resolvedKeyCondExpr, ExprValues: exprValues}); err != nil {
+			return nil, nil, 0, invalidKeyConditionExpression(err)
+		}
+	}
+
+	if err := m.validateFilterExpression(filterExpr, exprNames, exprValues); err != nil {
+		return nil, nil, 0, err
+	}
+
 	// Collect matching items.
 	var results []Item
 
@@ -703,7 +715,11 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 				ExprValues: exprValues,
 			}
 
-			ok, _ := evaluateCondition(item, keyCond)
+			ok, err := evaluateCondition(item, keyCond)
+			if err != nil {
+				return nil, nil, 0, invalidKeyConditionExpression(err)
+			}
+
 			if !ok {
 				continue
 			}
@@ -799,30 +815,16 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		return nil, nil, 0, err
 	}
 
-	// Collect all items.
-	var results []Item
+	// Validate the filter up front so an unparseable FilterExpression is rejected
+	// even when the table is empty, instead of returning an empty result.
+	if err := m.validateFilterExpression(filterExpr, exprNames, exprValues); err != nil {
+		return nil, nil, 0, err
+	}
 
-	scannedCount := 0
-
-	for _, item := range td.Items {
-		key := m.serializeKey(td.Table, item)
-		if !scanSegmentMatches(key, segment, totalSegments) {
-			continue
-		}
-
-		scannedCount++
-
-		// Apply filter expression.
-		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
-		if err != nil {
-			return nil, nil, 0, err
-		}
-
-		if !match {
-			continue
-		}
-
-		results = append(results, m.copyItem(item))
+	// Collect all items matching the segment and filter.
+	results, scannedCount, err := m.scanCollectMatches(td, filterExpr, exprNames, exprValues, segment, totalSegments)
+	if err != nil {
+		return nil, nil, 0, err
 	}
 
 	// Sort by key for consistent pagination. Pre-compute keys once so the
@@ -874,6 +876,37 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 	}
 
 	return results, lastEvaluatedKey, scannedCount, nil
+}
+
+// scanCollectMatches walks every item, applies parallel-scan segment filtering
+// and the filter expression, and returns the matched items plus the scanned
+// count. A filter parse error is returned as a ValidationException.
+func (m *MemoryStorage) scanCollectMatches(td *tableData, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, segment, totalSegments *int) ([]Item, int, error) {
+	var results []Item
+
+	scannedCount := 0
+
+	for _, item := range td.Items {
+		key := m.serializeKey(td.Table, item)
+		if !scanSegmentMatches(key, segment, totalSegments) {
+			continue
+		}
+
+		scannedCount++
+
+		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if !match {
+			continue
+		}
+
+		results = append(results, m.copyItem(item))
+	}
+
+	return results, scannedCount, nil
 }
 
 func validateScanSegment(segment, totalSegments *int) error {
@@ -1168,6 +1201,30 @@ func (m *MemoryStorage) filterItem(item Item, filterExpr string, exprNames map[s
 	}
 
 	return m.evaluateFilterExpression(item, filterExpr, exprNames, exprValues)
+}
+
+// validateFilterExpression rejects an unparseable FilterExpression up front, so
+// the error surfaces even when no item is evaluated (empty table or zero key
+// matches) rather than only when an item happens to be scanned.
+func (m *MemoryStorage) validateFilterExpression(filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) error {
+	if filterExpr == "" {
+		return nil
+	}
+
+	// evaluateFilterExpression returns a ValidationException TableError on a
+	// parse error; the match result against the synthetic item is discarded.
+	_, err := m.evaluateFilterExpression(Item{}, filterExpr, exprNames, exprValues)
+
+	return err
+}
+
+// invalidKeyConditionExpression builds the ValidationException returned for an
+// unparseable KeyConditionExpression.
+func invalidKeyConditionExpression(err error) *TableError {
+	return &TableError{
+		Code:    "ValidationException",
+		Message: fmt.Sprintf("Invalid KeyConditionExpression: %s", err),
+	}
 }
 
 // evaluateFilterExpression evaluates a filter expression against an item. An

@@ -139,6 +139,16 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 		}
 	}
 
+	// attribute_type(path, :type). Handled separately from the function loop above
+	// because its name does not share a prefix with the attribute_exists family.
+	if strings.HasPrefix(trimmed, "attribute_type(") {
+		return parseAttributeType(trimmed[len("attribute_type"):], item, values)
+	}
+
+	if strings.HasPrefix(trimmed, "attribute_type (") {
+		return parseAttributeType(strings.TrimSpace(trimmed[len("attribute_type"):]), item, values)
+	}
+
 	// size() function used in comparison: size(path) op value
 	if strings.HasPrefix(trimmed, "size(") {
 		return parseSizeComparison(trimmed, item, values)
@@ -146,6 +156,63 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 
 	// Comparison: operand op operand
 	return parseComparison(trimmed, item, values)
+}
+
+// parseAttributeType evaluates attribute_type(path, :type). Per DynamoDB the
+// type argument must be an expression attribute value holding one of the type
+// descriptors (S, N, B, SS, NS, BS, M, L, NULL, BOOL).
+func parseAttributeType(argsStr string, item Item, values map[string]AttributeValue) (bool, string, error) {
+	args, rest, err := parseArgList(argsStr)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to parse attribute_type arguments: %w", err)
+	}
+
+	if len(args) != 2 {
+		return false, "", fmt.Errorf("attribute_type requires 2 arguments")
+	}
+
+	typeVal := resolveOperand(strings.TrimSpace(args[1]), item, values)
+	if typeVal.S == nil {
+		return false, "", fmt.Errorf("attribute_type requires a string type operand")
+	}
+
+	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+	if !exists {
+		return false, rest, nil
+	}
+
+	return matchesAttributeType(av, *typeVal.S), rest, nil
+}
+
+// matchesAttributeType reports whether the attribute value is of the given
+// DynamoDB type descriptor.
+//
+//nolint:gocritic // hugeParam: AttributeValue passed by value intentionally.
+func matchesAttributeType(av AttributeValue, typ string) bool {
+	switch typ {
+	case "S":
+		return av.S != nil
+	case "N":
+		return av.N != nil
+	case "B":
+		return av.B != nil
+	case "SS":
+		return av.SS != nil
+	case "NS":
+		return av.NS != nil
+	case "BS":
+		return av.BS != nil
+	case "M":
+		return av.M != nil
+	case "L":
+		return av.L != nil
+	case "NULL":
+		return av.NULL != nil
+	case "BOOL":
+		return av.BOOL != nil
+	default:
+		return false
+	}
 }
 
 // parseFunctionCall parses and evaluates a function call.
@@ -288,24 +355,16 @@ func parseSizeComparison(expr string, item Item, values map[string]AttributeValu
 	path := strings.TrimSpace(inner[:idx])
 	rest := strings.TrimSpace(inner[idx+1:])
 
-	// Get the size of the attribute.
-	av, exists := resolveItemPath(item, path)
-	if !exists {
-		return false, "", fmt.Errorf("attribute %s not found for size()", path)
-	}
-
-	sizeVal := attributeSize(av)
-
-	// Parse operator.
+	// Parse operator and right operand first so the remaining string (finalRest)
+	// is consumed correctly even when the attribute is absent.
 	op, afterOp, err := parseComparisonOp(rest)
 	if err != nil {
 		return false, "", err
 	}
 
-	// Parse right operand.
 	rightToken, finalRest := nextToken(strings.TrimSpace(afterOp))
-	rightVal := resolveOperand(rightToken, item, values)
 
+	rightVal := resolveOperand(rightToken, item, values)
 	if rightVal.N == nil {
 		return false, "", fmt.Errorf("size() comparison requires numeric operand")
 	}
@@ -315,7 +374,14 @@ func parseSizeComparison(expr string, item Item, values map[string]AttributeValu
 		return false, "", fmt.Errorf("invalid number: %s", *rightVal.N)
 	}
 
-	result := compareNumbers(float64(sizeVal), rightNum, op)
+	// A missing attribute is not an error: like any other comparison against an
+	// absent attribute, the item simply does not match (DynamoDB does not fail).
+	av, exists := resolveItemPath(item, path)
+	if !exists {
+		return false, finalRest, nil
+	}
+
+	result := compareNumbers(float64(attributeSize(av)), rightNum, op)
 
 	return result, finalRest, nil
 }
