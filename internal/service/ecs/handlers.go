@@ -4,12 +4,12 @@ package ecs
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
@@ -51,7 +51,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateCluster handles the CreateCluster action.
 func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 	var req CreateClusterRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -79,7 +79,7 @@ func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 // DeleteCluster handles the DeleteCluster action.
 func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 	var req DeleteClusterRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -113,7 +113,7 @@ func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 // DescribeClusters handles the DescribeClusters action.
 func (s *Service) DescribeClusters(w http.ResponseWriter, r *http.Request) {
 	var req DescribeClustersRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -135,7 +135,7 @@ func (s *Service) DescribeClusters(w http.ResponseWriter, r *http.Request) {
 // ListClusters handles the ListClusters action.
 func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 	var req ListClustersRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -164,7 +164,7 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 // RegisterTaskDefinition handles the RegisterTaskDefinition action.
 func (s *Service) RegisterTaskDefinition(w http.ResponseWriter, r *http.Request) {
 	var req RegisterTaskDefinitionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -205,7 +205,7 @@ func (s *Service) RegisterTaskDefinition(w http.ResponseWriter, r *http.Request)
 // DeregisterTaskDefinition handles the DeregisterTaskDefinition action.
 func (s *Service) DeregisterTaskDefinition(w http.ResponseWriter, r *http.Request) {
 	var req DeregisterTaskDefinitionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -239,7 +239,7 @@ func (s *Service) DeregisterTaskDefinition(w http.ResponseWriter, r *http.Reques
 // RunTask handles the RunTask action.
 func (s *Service) RunTask(w http.ResponseWriter, r *http.Request) {
 	var req RunTaskRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -274,7 +274,7 @@ func (s *Service) RunTask(w http.ResponseWriter, r *http.Request) {
 // StopTask handles the StopTask action.
 func (s *Service) StopTask(w http.ResponseWriter, r *http.Request) {
 	var req StopTaskRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -308,7 +308,7 @@ func (s *Service) StopTask(w http.ResponseWriter, r *http.Request) {
 // DescribeTasks handles the DescribeTasks action.
 func (s *Service) DescribeTasks(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTasksRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -336,7 +336,7 @@ func (s *Service) DescribeTasks(w http.ResponseWriter, r *http.Request) {
 // CreateService handles the CreateService action.
 func (s *Service) CreateService(w http.ResponseWriter, r *http.Request) {
 	var req CreateServiceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -376,7 +376,7 @@ func (s *Service) CreateService(w http.ResponseWriter, r *http.Request) {
 // DeleteService handles the DeleteService action.
 func (s *Service) DeleteService(w http.ResponseWriter, r *http.Request) {
 	var req DeleteServiceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -410,7 +410,7 @@ func (s *Service) DeleteService(w http.ResponseWriter, r *http.Request) {
 // UpdateService handles the UpdateService action.
 func (s *Service) UpdateService(w http.ResponseWriter, r *http.Request) {
 	var req UpdateServiceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -439,24 +439,6 @@ func (s *Service) UpdateService(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, UpdateServiceResponse{
 		Service: svc,
 	})
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

@@ -3,18 +3,18 @@ package appsync
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateGraphqlAPI handles the CreateGraphqlAPI operation.
 func (s *Service) CreateGraphqlAPI(w http.ResponseWriter, r *http.Request) {
 	var req CreateGraphqlAPIInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -130,7 +130,7 @@ func (s *Service) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateDataSourceInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -179,7 +179,7 @@ func (s *Service) CreateResolver(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateResolverInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -216,7 +216,7 @@ func (s *Service) StartSchemaCreation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req StartSchemaCreationInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -257,24 +257,6 @@ func extractPathParam(r *http.Request, param string) string {
 	}
 
 	return ""
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

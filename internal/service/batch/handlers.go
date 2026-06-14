@@ -3,18 +3,18 @@ package batch
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateComputeEnvironment handles the CreateComputeEnvironment operation.
 func (s *Service) CreateComputeEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req CreateComputeEnvironmentInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -48,7 +48,7 @@ func (s *Service) CreateComputeEnvironment(w http.ResponseWriter, r *http.Reques
 // DeleteComputeEnvironment handles the DeleteComputeEnvironment operation.
 func (s *Service) DeleteComputeEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req DeleteComputeEnvironmentInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -75,7 +75,7 @@ func (s *Service) DeleteComputeEnvironment(w http.ResponseWriter, r *http.Reques
 // DescribeComputeEnvironments handles the DescribeComputeEnvironments operation.
 func (s *Service) DescribeComputeEnvironments(w http.ResponseWriter, r *http.Request) {
 	var req DescribeComputeEnvironmentsInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -103,7 +103,7 @@ func (s *Service) DescribeComputeEnvironments(w http.ResponseWriter, r *http.Req
 // CreateJobQueue handles the CreateJobQueue operation.
 func (s *Service) CreateJobQueue(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobQueueInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -137,7 +137,7 @@ func (s *Service) CreateJobQueue(w http.ResponseWriter, r *http.Request) {
 // DeleteJobQueue handles the DeleteJobQueue operation.
 func (s *Service) DeleteJobQueue(w http.ResponseWriter, r *http.Request) {
 	var req DeleteJobQueueInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -163,7 +163,7 @@ func (s *Service) DeleteJobQueue(w http.ResponseWriter, r *http.Request) {
 // DescribeJobQueues handles the DescribeJobQueues operation.
 func (s *Service) DescribeJobQueues(w http.ResponseWriter, r *http.Request) {
 	var req DescribeJobQueuesInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -190,7 +190,7 @@ func (s *Service) DescribeJobQueues(w http.ResponseWriter, r *http.Request) {
 // RegisterJobDefinition handles the RegisterJobDefinition operation.
 func (s *Service) RegisterJobDefinition(w http.ResponseWriter, r *http.Request) {
 	var req RegisterJobDefinitionInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -225,7 +225,7 @@ func (s *Service) RegisterJobDefinition(w http.ResponseWriter, r *http.Request) 
 // SubmitJob handles the SubmitJob operation.
 func (s *Service) SubmitJob(w http.ResponseWriter, r *http.Request) {
 	var req SubmitJobInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -266,7 +266,7 @@ func (s *Service) SubmitJob(w http.ResponseWriter, r *http.Request) {
 // DescribeJobs handles the DescribeJobs operation.
 func (s *Service) DescribeJobs(w http.ResponseWriter, r *http.Request) {
 	var req DescribeJobsInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -293,7 +293,7 @@ func (s *Service) DescribeJobs(w http.ResponseWriter, r *http.Request) {
 // TerminateJob handles the TerminateJob operation.
 func (s *Service) TerminateJob(w http.ResponseWriter, r *http.Request) {
 	var req TerminateJobInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -332,24 +332,6 @@ func extractResourceName(arnOrName string) string {
 	}
 
 	return arnOrName
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

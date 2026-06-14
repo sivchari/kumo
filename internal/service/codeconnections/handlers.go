@@ -4,12 +4,12 @@ package codeconnections
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Error codes for CodeConnections handlers.
@@ -68,7 +68,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateConnection handles the CreateConnection action.
 func (s *Service) CreateConnection(w http.ResponseWriter, r *http.Request) {
 	var req CreateConnectionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -96,7 +96,7 @@ func (s *Service) CreateConnection(w http.ResponseWriter, r *http.Request) {
 // GetConnection handles the GetConnection action.
 func (s *Service) GetConnection(w http.ResponseWriter, r *http.Request) {
 	var req GetConnectionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -123,7 +123,7 @@ func (s *Service) GetConnection(w http.ResponseWriter, r *http.Request) {
 // DeleteConnection handles the DeleteConnection action.
 func (s *Service) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 	var req DeleteConnectionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -147,7 +147,7 @@ func (s *Service) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 // ListConnections handles the ListConnections action.
 func (s *Service) ListConnections(w http.ResponseWriter, r *http.Request) {
 	var req ListConnectionsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -174,7 +174,7 @@ func (s *Service) ListConnections(w http.ResponseWriter, r *http.Request) {
 // CreateHost handles the CreateHost action.
 func (s *Service) CreateHost(w http.ResponseWriter, r *http.Request) {
 	var req CreateHostRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -216,7 +216,7 @@ func (s *Service) CreateHost(w http.ResponseWriter, r *http.Request) {
 // GetHost handles the GetHost action.
 func (s *Service) GetHost(w http.ResponseWriter, r *http.Request) {
 	var req GetHostRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -247,7 +247,7 @@ func (s *Service) GetHost(w http.ResponseWriter, r *http.Request) {
 // DeleteHost handles the DeleteHost action.
 func (s *Service) DeleteHost(w http.ResponseWriter, r *http.Request) {
 	var req DeleteHostRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -271,7 +271,7 @@ func (s *Service) DeleteHost(w http.ResponseWriter, r *http.Request) {
 // ListHosts handles the ListHosts action.
 func (s *Service) ListHosts(w http.ResponseWriter, r *http.Request) {
 	var req ListHostsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -298,7 +298,7 @@ func (s *Service) ListHosts(w http.ResponseWriter, r *http.Request) {
 // UpdateHost handles the UpdateHost action.
 func (s *Service) UpdateHost(w http.ResponseWriter, r *http.Request) {
 	var req UpdateHostRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -324,7 +324,7 @@ func (s *Service) UpdateHost(w http.ResponseWriter, r *http.Request) {
 // CreateRepositoryLink handles the CreateRepositoryLink action.
 func (s *Service) CreateRepositoryLink(w http.ResponseWriter, r *http.Request) {
 	var req CreateRepositoryLinkRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -363,7 +363,7 @@ func (s *Service) CreateRepositoryLink(w http.ResponseWriter, r *http.Request) {
 // GetRepositoryLink handles the GetRepositoryLink action.
 func (s *Service) GetRepositoryLink(w http.ResponseWriter, r *http.Request) {
 	var req GetRepositoryLinkRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -390,7 +390,7 @@ func (s *Service) GetRepositoryLink(w http.ResponseWriter, r *http.Request) {
 // DeleteRepositoryLink handles the DeleteRepositoryLink action.
 func (s *Service) DeleteRepositoryLink(w http.ResponseWriter, r *http.Request) {
 	var req DeleteRepositoryLinkRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -414,7 +414,7 @@ func (s *Service) DeleteRepositoryLink(w http.ResponseWriter, r *http.Request) {
 // ListRepositoryLinks handles the ListRepositoryLinks action.
 func (s *Service) ListRepositoryLinks(w http.ResponseWriter, r *http.Request) {
 	var req ListRepositoryLinksRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -441,7 +441,7 @@ func (s *Service) ListRepositoryLinks(w http.ResponseWriter, r *http.Request) {
 // UpdateRepositoryLink handles the UpdateRepositoryLink action.
 func (s *Service) UpdateRepositoryLink(w http.ResponseWriter, r *http.Request) {
 	var req UpdateRepositoryLinkRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -468,7 +468,7 @@ func (s *Service) UpdateRepositoryLink(w http.ResponseWriter, r *http.Request) {
 // ListTagsForResource handles the ListTagsForResource action.
 func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsForResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -495,7 +495,7 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 // TagResource handles the TagResource action.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -525,7 +525,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource handles the UntagResource action.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCodeConnectionsError(w, errInvalidInputException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -616,24 +616,6 @@ func convertRepositoryLinkToOutput(link *RepositoryLink) *RepositoryLinkOutput {
 		RepositoryName:    link.RepositoryName,
 		EncryptionKeyArn:  link.EncryptionKeyArn,
 	}
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

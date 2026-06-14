@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateQueue handles the CreateQueue action.
 func (s *Service) CreateQueue(w http.ResponseWriter, r *http.Request) {
 	var req CreateQueueRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -49,7 +49,7 @@ func (s *Service) CreateQueue(w http.ResponseWriter, r *http.Request) {
 // ListQueueTags handles the ListQueueTags action.
 func (s *Service) ListQueueTags(w http.ResponseWriter, r *http.Request) {
 	var req ListQueueTagsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -83,7 +83,7 @@ func (s *Service) ListQueueTags(w http.ResponseWriter, r *http.Request) {
 // TagQueue handles the TagQueue action.
 func (s *Service) TagQueue(w http.ResponseWriter, r *http.Request) {
 	var req TagQueueRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -114,7 +114,7 @@ func (s *Service) TagQueue(w http.ResponseWriter, r *http.Request) {
 // UntagQueue handles the UntagQueue action.
 func (s *Service) UntagQueue(w http.ResponseWriter, r *http.Request) {
 	var req UntagQueueRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -145,7 +145,7 @@ func (s *Service) UntagQueue(w http.ResponseWriter, r *http.Request) {
 // DeleteQueue handles the DeleteQueue action.
 func (s *Service) DeleteQueue(w http.ResponseWriter, r *http.Request) {
 	var req DeleteQueueRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -176,7 +176,7 @@ func (s *Service) DeleteQueue(w http.ResponseWriter, r *http.Request) {
 // ListQueues handles the ListQueues action.
 func (s *Service) ListQueues(w http.ResponseWriter, r *http.Request) {
 	var req ListQueuesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -197,7 +197,7 @@ func (s *Service) ListQueues(w http.ResponseWriter, r *http.Request) {
 // GetQueueURL handles the GetQueueURL action.
 func (s *Service) GetQueueURL(w http.ResponseWriter, r *http.Request) {
 	var req GetQueueURLRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -231,7 +231,7 @@ func (s *Service) GetQueueURL(w http.ResponseWriter, r *http.Request) {
 // SendMessage handles the SendMessage action.
 func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	var req SendMessageRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -273,7 +273,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 // SendMessageBatch handles the SendMessageBatch action.
 func (s *Service) SendMessageBatch(w http.ResponseWriter, r *http.Request) {
 	var req SendMessageBatchRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -371,7 +371,7 @@ func (s *Service) batchEntryError(id string, err error) BatchResultErrorEntry {
 // ReceiveMessage handles the ReceiveMessage action.
 func (s *Service) ReceiveMessage(w http.ResponseWriter, r *http.Request) {
 	var req ReceiveMessageRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -433,7 +433,7 @@ func convertMessagesToResponse(messages []*Message) []MessageResponse {
 // DeleteMessage handles the DeleteMessage action.
 func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	var req DeleteMessageRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -470,7 +470,7 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 // DeleteMessageBatch handles the DeleteMessageBatch action.
 func (s *Service) DeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
 	var req DeleteMessageBatchRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -544,7 +544,7 @@ func (s *Service) processDeleteBatchEntries(ctx context.Context, queueURL string
 // ChangeMessageVisibility handles the ChangeMessageVisibility action.
 func (s *Service) ChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
 	var req ChangeMessageVisibilityRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -581,7 +581,7 @@ func (s *Service) ChangeMessageVisibility(w http.ResponseWriter, r *http.Request
 // ChangeMessageVisibilityBatch handles the ChangeMessageVisibilityBatch action.
 func (s *Service) ChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
 	var req ChangeMessageVisibilityBatchRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -619,7 +619,7 @@ func (s *Service) ChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Re
 // PurgeQueue handles the PurgeQueue action.
 func (s *Service) PurgeQueue(w http.ResponseWriter, r *http.Request) {
 	var req PurgeQueueRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -650,7 +650,7 @@ func (s *Service) PurgeQueue(w http.ResponseWriter, r *http.Request) {
 // GetQueueAttributes handles the GetQueueAttributes action.
 func (s *Service) GetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	var req GetQueueAttributesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -684,7 +684,7 @@ func (s *Service) GetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 // SetQueueAttributes handles the SetQueueAttributes action.
 func (s *Service) SetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	var req SetQueueAttributesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -710,24 +710,6 @@ func (s *Service) SetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, struct{}{})
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

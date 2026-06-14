@@ -3,12 +3,12 @@ package sagemaker
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Error codes for SageMaker handlers.
@@ -52,7 +52,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateNotebookInstance handles the CreateNotebookInstance action.
 func (s *Service) CreateNotebookInstance(w http.ResponseWriter, r *http.Request) {
 	var req CreateNotebookInstanceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -91,7 +91,7 @@ func (s *Service) CreateNotebookInstance(w http.ResponseWriter, r *http.Request)
 // DeleteNotebookInstance handles the DeleteNotebookInstance action.
 func (s *Service) DeleteNotebookInstance(w http.ResponseWriter, r *http.Request) {
 	var req DeleteNotebookInstanceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -115,7 +115,7 @@ func (s *Service) DeleteNotebookInstance(w http.ResponseWriter, r *http.Request)
 // DescribeNotebookInstance handles the DescribeNotebookInstance action.
 func (s *Service) DescribeNotebookInstance(w http.ResponseWriter, r *http.Request) {
 	var req DescribeNotebookInstanceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -155,7 +155,7 @@ func (s *Service) DescribeNotebookInstance(w http.ResponseWriter, r *http.Reques
 // ListNotebookInstances handles the ListNotebookInstances action.
 func (s *Service) ListNotebookInstances(w http.ResponseWriter, r *http.Request) {
 	var req ListNotebookInstancesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -191,7 +191,7 @@ func (s *Service) ListNotebookInstances(w http.ResponseWriter, r *http.Request) 
 // CreateTrainingJob handles the CreateTrainingJob action.
 func (s *Service) CreateTrainingJob(w http.ResponseWriter, r *http.Request) {
 	var req CreateTrainingJobRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -224,7 +224,7 @@ func (s *Service) CreateTrainingJob(w http.ResponseWriter, r *http.Request) {
 // DescribeTrainingJob handles the DescribeTrainingJob action.
 func (s *Service) DescribeTrainingJob(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTrainingJobRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -274,7 +274,7 @@ func (s *Service) DescribeTrainingJob(w http.ResponseWriter, r *http.Request) {
 // CreateModel handles the CreateModel action.
 func (s *Service) CreateModel(w http.ResponseWriter, r *http.Request) {
 	var req CreateModelRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -307,7 +307,7 @@ func (s *Service) CreateModel(w http.ResponseWriter, r *http.Request) {
 // DeleteModel handles the DeleteModel action.
 func (s *Service) DeleteModel(w http.ResponseWriter, r *http.Request) {
 	var req DeleteModelRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -331,7 +331,7 @@ func (s *Service) DeleteModel(w http.ResponseWriter, r *http.Request) {
 // CreateEndpoint handles the CreateEndpoint action.
 func (s *Service) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 	var req CreateEndpointRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -364,7 +364,7 @@ func (s *Service) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 // DeleteEndpoint handles the DeleteEndpoint action.
 func (s *Service) DeleteEndpoint(w http.ResponseWriter, r *http.Request) {
 	var req DeleteEndpointRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -388,7 +388,7 @@ func (s *Service) DeleteEndpoint(w http.ResponseWriter, r *http.Request) {
 // DescribeEndpoint handles the DescribeEndpoint action.
 func (s *Service) DescribeEndpoint(w http.ResponseWriter, r *http.Request) {
 	var req DescribeEndpointRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errValidationException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -416,24 +416,6 @@ func (s *Service) DescribeEndpoint(w http.ResponseWriter, r *http.Request) {
 		LastModifiedTime:   float64(endpoint.LastModifiedTime.Unix()),
 		FailureReason:      endpoint.FailureReason,
 	})
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

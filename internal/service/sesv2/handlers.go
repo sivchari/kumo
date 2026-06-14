@@ -3,19 +3,19 @@ package sesv2
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateEmailIdentity handles the CreateEmailIdentity operation.
 func (s *Service) CreateEmailIdentity(w http.ResponseWriter, r *http.Request) {
 	var req CreateEmailIdentityRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -143,7 +143,7 @@ func (s *Service) DeleteEmailIdentity(w http.ResponseWriter, r *http.Request) {
 // CreateConfigurationSet handles the CreateConfigurationSet operation.
 func (s *Service) CreateConfigurationSet(w http.ResponseWriter, r *http.Request) {
 	var req CreateConfigurationSetRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -260,7 +260,7 @@ func (s *Service) DeleteConfigurationSet(w http.ResponseWriter, r *http.Request)
 // CreateEmailTemplate handles the CreateEmailTemplate operation.
 func (s *Service) CreateEmailTemplate(w http.ResponseWriter, r *http.Request) {
 	var req CreateEmailTemplateRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -332,7 +332,7 @@ func (s *Service) UpdateEmailTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateEmailTemplateRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -419,7 +419,7 @@ func (s *Service) ListEmailTemplates(w http.ResponseWriter, r *http.Request) {
 // SendBulkEmail handles the SendBulkEmail operation.
 func (s *Service) SendBulkEmail(w http.ResponseWriter, r *http.Request) {
 	var req SendBulkEmailRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -450,7 +450,7 @@ func (s *Service) SendBulkEmail(w http.ResponseWriter, r *http.Request) {
 // SendEmail handles the SendEmail operation.
 func (s *Service) SendEmail(w http.ResponseWriter, r *http.Request) {
 	var req SendEmailRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -490,24 +490,6 @@ func (s *Service) GetSentEmails(w http.ResponseWriter, r *http.Request) {
 }
 
 // Helper functions.
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {

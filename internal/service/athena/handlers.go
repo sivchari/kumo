@@ -3,12 +3,12 @@ package athena
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Error codes for Athena handlers.
@@ -20,7 +20,7 @@ const (
 // StartQueryExecution handles the StartQueryExecution action.
 func (s *Service) StartQueryExecution(w http.ResponseWriter, r *http.Request) {
 	var req StartQueryExecutionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeAthenaError(w, errInvalidRequestException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -47,7 +47,7 @@ func (s *Service) StartQueryExecution(w http.ResponseWriter, r *http.Request) {
 // StopQueryExecution handles the StopQueryExecution action.
 func (s *Service) StopQueryExecution(w http.ResponseWriter, r *http.Request) {
 	var req StopQueryExecutionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeAthenaError(w, errInvalidRequestException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -71,7 +71,7 @@ func (s *Service) StopQueryExecution(w http.ResponseWriter, r *http.Request) {
 // GetQueryExecution handles the GetQueryExecution action.
 func (s *Service) GetQueryExecution(w http.ResponseWriter, r *http.Request) {
 	var req GetQueryExecutionRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeAthenaError(w, errInvalidRequestException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -98,7 +98,7 @@ func (s *Service) GetQueryExecution(w http.ResponseWriter, r *http.Request) {
 // GetQueryResults handles the GetQueryResults action.
 func (s *Service) GetQueryResults(w http.ResponseWriter, r *http.Request) {
 	var req GetQueryResultsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeAthenaError(w, errInvalidRequestException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -126,7 +126,7 @@ func (s *Service) GetQueryResults(w http.ResponseWriter, r *http.Request) {
 // ListQueryExecutions handles the ListQueryExecutions action.
 func (s *Service) ListQueryExecutions(w http.ResponseWriter, r *http.Request) {
 	var req ListQueryExecutionsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeAthenaError(w, errInvalidRequestException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -148,7 +148,7 @@ func (s *Service) ListQueryExecutions(w http.ResponseWriter, r *http.Request) {
 // CreateWorkGroup handles the CreateWorkGroup action.
 func (s *Service) CreateWorkGroup(w http.ResponseWriter, r *http.Request) {
 	var req CreateWorkGroupRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeAthenaError(w, errInvalidRequestException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -172,7 +172,7 @@ func (s *Service) CreateWorkGroup(w http.ResponseWriter, r *http.Request) {
 // DeleteWorkGroup handles the DeleteWorkGroup action.
 func (s *Service) DeleteWorkGroup(w http.ResponseWriter, r *http.Request) {
 	var req DeleteWorkGroupRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeAthenaError(w, errInvalidRequestException, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -344,24 +344,6 @@ func convertResultSetToOutput(rs *ResultSet) *ResultSetOutput {
 	}
 
 	return output
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

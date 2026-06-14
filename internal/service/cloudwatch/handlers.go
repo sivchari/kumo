@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sivchari/kumo/internal/server"
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Error codes for CloudWatch.
@@ -26,7 +26,7 @@ const (
 // PutMetricData handles the PutMetricData action.
 func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricDataRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -57,7 +57,7 @@ func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 // GetMetricData handles the GetMetricData action.
 func (s *Service) GetMetricData(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricDataRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -85,7 +85,7 @@ func (s *Service) GetMetricData(w http.ResponseWriter, r *http.Request) {
 // GetMetricStatistics handles the GetMetricStatistics action.
 func (s *Service) GetMetricStatistics(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricStatisticsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -119,7 +119,7 @@ func (s *Service) GetMetricStatistics(w http.ResponseWriter, r *http.Request) {
 // ListMetrics handles the ListMetrics action.
 func (s *Service) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	var req ListMetricsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -142,7 +142,7 @@ func (s *Service) ListMetrics(w http.ResponseWriter, r *http.Request) {
 // PutMetricAlarm handles the PutMetricAlarm action.
 func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricAlarmRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -189,7 +189,7 @@ func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 // DeleteAlarms handles the DeleteAlarms action.
 func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAlarmsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -218,7 +218,7 @@ func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 // DescribeAlarms handles the DescribeAlarms action.
 func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 	var req DescribeAlarmsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -245,7 +245,7 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 // SetAlarmState handles the SetAlarmState action via JSON protocol.
 func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 	var req SetAlarmStateRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -269,7 +269,7 @@ func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 // ListTagsForResource returns the tags attached to a CloudWatch resource.
 func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsForResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -305,7 +305,7 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 // TagResource attaches tags to a CloudWatch resource.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -332,7 +332,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource removes tags from a CloudWatch resource.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -404,24 +404,6 @@ func handleCloudWatchError(w http.ResponseWriter, err error) {
 	}
 
 	writeCloudWatchError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

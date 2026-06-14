@@ -4,17 +4,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateTable handles the CreateTable action.
 func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 	var req CreateTableRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -54,7 +55,7 @@ func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 // DeleteTable handles the DeleteTable action.
 func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 	var req DeleteTableRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -88,7 +89,7 @@ func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 // ListTables handles the ListTables action.
 func (s *Service) ListTables(w http.ResponseWriter, r *http.Request) {
 	var req ListTablesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -110,7 +111,7 @@ func (s *Service) ListTables(w http.ResponseWriter, r *http.Request) {
 // DescribeTable handles the DescribeTable action.
 func (s *Service) DescribeTable(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTableRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -144,7 +145,7 @@ func (s *Service) DescribeTable(w http.ResponseWriter, r *http.Request) {
 // PutItem handles the PutItem action.
 func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 	var req PutItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -194,7 +195,7 @@ func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 // GetItem handles the GetItem action.
 func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 	var req GetItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -236,7 +237,7 @@ func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 // DeleteItem handles the DeleteItem action.
 func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	var req DeleteItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -286,7 +287,7 @@ func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 // UpdateItem handles the UpdateItem action.
 func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	var req UpdateItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -348,7 +349,7 @@ func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 // Query handles the Query action.
 func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 	var req QueryRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -406,7 +407,7 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 // Scan handles the Scan action.
 func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 	var req ScanRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -533,24 +534,6 @@ func lsiToDescription(table *Table, lsi *LocalSecondaryIndex) LocalSecondaryInde
 	}
 }
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
@@ -573,7 +556,7 @@ func writeDynamoDBError(w http.ResponseWriter, code, message string, status int)
 // UpdateTimeToLive handles the UpdateTimeToLive action.
 func (s *Service) UpdateTimeToLive(w http.ResponseWriter, r *http.Request) {
 	var req UpdateTimeToLiveRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -606,7 +589,7 @@ func (s *Service) UpdateTimeToLive(w http.ResponseWriter, r *http.Request) {
 // DescribeTimeToLive handles the DescribeTimeToLive action.
 func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTimeToLiveRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -648,7 +631,7 @@ func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 // TransactWriteItems handles the TransactWriteItems action.
 func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 	var req TransactWriteItemsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -698,7 +681,7 @@ func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 // TransactGetItems handles the TransactGetItems action.
 func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 	var req TransactGetItemsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -777,7 +760,7 @@ func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Re
 // BatchWriteItem handles the BatchWriteItem action.
 func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 	var req BatchWriteItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -820,7 +803,7 @@ func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 // BatchGetItem handles the BatchGetItem action.
 func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 	var req BatchGetItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -946,7 +929,7 @@ func convertAttributeUpdates(req *UpdateItemRequest) {
 // UnknownOperationException and destroy fails.
 func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
 	var req UpdateTableRequest
-	if err := readJSONRequest(r, &req); err != nil || req.TableName == "" {
+	if err := service.ReadJSONRequest(r, &req); err != nil || req.TableName == "" {
 		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
 
 		return
@@ -967,7 +950,7 @@ func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
 // ListTagsOfResource returns the tags for a DynamoDB resource.
 func (s *Service) ListTagsOfResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsOfResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -986,7 +969,7 @@ func (s *Service) ListTagsOfResource(w http.ResponseWriter, r *http.Request) {
 // TagResource adds tags to a DynamoDB resource.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -1004,7 +987,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource removes tags from a DynamoDB resource.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -1024,7 +1007,7 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 // match AWS semantics that terraform refresh paths depend on.
 func (s *Service) DescribeContinuousBackups(w http.ResponseWriter, r *http.Request) {
 	var req DescribeContinuousBackupsRequest
-	if err := readJSONRequest(r, &req); err != nil || req.TableName == "" {
+	if err := service.ReadJSONRequest(r, &req); err != nil || req.TableName == "" {
 		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
 
 		return

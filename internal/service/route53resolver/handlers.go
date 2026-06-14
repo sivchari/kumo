@@ -3,12 +3,12 @@ package route53resolver
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 // CreateResolverEndpoint handles the CreateResolverEndpoint action.
 func (s *Service) CreateResolverEndpoint(w http.ResponseWriter, r *http.Request) {
 	var req CreateResolverEndpointRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -52,7 +52,7 @@ func (s *Service) CreateResolverEndpoint(w http.ResponseWriter, r *http.Request)
 // GetResolverEndpoint handles the GetResolverEndpoint action.
 func (s *Service) GetResolverEndpoint(w http.ResponseWriter, r *http.Request) {
 	var req GetResolverEndpointRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -79,7 +79,7 @@ func (s *Service) GetResolverEndpoint(w http.ResponseWriter, r *http.Request) {
 // DeleteResolverEndpoint handles the DeleteResolverEndpoint action.
 func (s *Service) DeleteResolverEndpoint(w http.ResponseWriter, r *http.Request) {
 	var req DeleteResolverEndpointRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -106,7 +106,7 @@ func (s *Service) DeleteResolverEndpoint(w http.ResponseWriter, r *http.Request)
 // ListResolverEndpoints handles the ListResolverEndpoints action.
 func (s *Service) ListResolverEndpoints(w http.ResponseWriter, r *http.Request) {
 	var req ListResolverEndpointsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -134,7 +134,7 @@ func (s *Service) ListResolverEndpoints(w http.ResponseWriter, r *http.Request) 
 // CreateResolverRule handles the CreateResolverRule action.
 func (s *Service) CreateResolverRule(w http.ResponseWriter, r *http.Request) {
 	var req CreateResolverRuleRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -173,7 +173,7 @@ func (s *Service) CreateResolverRule(w http.ResponseWriter, r *http.Request) {
 // GetResolverRule handles the GetResolverRule action.
 func (s *Service) GetResolverRule(w http.ResponseWriter, r *http.Request) {
 	var req GetResolverRuleRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -200,7 +200,7 @@ func (s *Service) GetResolverRule(w http.ResponseWriter, r *http.Request) {
 // DeleteResolverRule handles the DeleteResolverRule action.
 func (s *Service) DeleteResolverRule(w http.ResponseWriter, r *http.Request) {
 	var req DeleteResolverRuleRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -227,7 +227,7 @@ func (s *Service) DeleteResolverRule(w http.ResponseWriter, r *http.Request) {
 // ListResolverRules handles the ListResolverRules action.
 func (s *Service) ListResolverRules(w http.ResponseWriter, r *http.Request) {
 	var req ListResolverRulesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -255,7 +255,7 @@ func (s *Service) ListResolverRules(w http.ResponseWriter, r *http.Request) {
 // AssociateResolverRule handles the AssociateResolverRule action.
 func (s *Service) AssociateResolverRule(w http.ResponseWriter, r *http.Request) {
 	var req AssociateResolverRuleRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -288,7 +288,7 @@ func (s *Service) AssociateResolverRule(w http.ResponseWriter, r *http.Request) 
 // DisassociateResolverRule handles the DisassociateResolverRule action.
 func (s *Service) DisassociateResolverRule(w http.ResponseWriter, r *http.Request) {
 	var req DisassociateResolverRuleRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -321,7 +321,7 @@ func (s *Service) DisassociateResolverRule(w http.ResponseWriter, r *http.Reques
 // ListResolverRuleAssociations handles the ListResolverRuleAssociations action.
 func (s *Service) ListResolverRuleAssociations(w http.ResponseWriter, r *http.Request) {
 	var req ListResolverRuleAssociationsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeResolverError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -458,24 +458,6 @@ func handleResolverError(w http.ResponseWriter, err error) {
 	}
 
 	writeResolverError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.

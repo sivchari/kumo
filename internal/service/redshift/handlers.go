@@ -2,15 +2,15 @@
 package redshift
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const redshiftXMLNS = "http://redshift.amazonaws.com/doc/2012-12-01/"
@@ -42,7 +42,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateCluster handles the CreateCluster action.
 func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 	var req CreateClusterInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -71,7 +71,7 @@ func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 // DeleteCluster handles the DeleteCluster action.
 func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 	var req DeleteClusterInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -100,7 +100,7 @@ func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 // DescribeClusters handles the DescribeClusters action.
 func (s *Service) DescribeClusters(w http.ResponseWriter, r *http.Request) {
 	var req DescribeClustersInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -129,7 +129,7 @@ func (s *Service) DescribeClusters(w http.ResponseWriter, r *http.Request) {
 // ModifyCluster handles the ModifyCluster action.
 func (s *Service) ModifyCluster(w http.ResponseWriter, r *http.Request) {
 	var req ModifyClusterInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -158,7 +158,7 @@ func (s *Service) ModifyCluster(w http.ResponseWriter, r *http.Request) {
 // CreateClusterSnapshot handles the CreateClusterSnapshot action.
 func (s *Service) CreateClusterSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req CreateClusterSnapshotInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -193,7 +193,7 @@ func (s *Service) CreateClusterSnapshot(w http.ResponseWriter, r *http.Request) 
 // DeleteClusterSnapshot handles the DeleteClusterSnapshot action.
 func (s *Service) DeleteClusterSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req DeleteClusterSnapshotInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -222,7 +222,7 @@ func (s *Service) DeleteClusterSnapshot(w http.ResponseWriter, r *http.Request) 
 // DescribeClusterSnapshots handles the DescribeClusterSnapshots action.
 func (s *Service) DescribeClusterSnapshots(w http.ResponseWriter, r *http.Request) {
 	var req DescribeClusterSnapshotsInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -259,23 +259,6 @@ func extractAction(r *http.Request) string {
 	}
 
 	return r.URL.Query().Get("Action")
-}
-
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 func writeXMLResponse(w http.ResponseWriter, v any) {
