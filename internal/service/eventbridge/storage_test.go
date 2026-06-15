@@ -492,3 +492,93 @@ func TestPutEvents_APIDestinationCrossRegion(t *testing.T) {
 		t.Fatal("did not receive dispatched event within timeout (silent drop)")
 	}
 }
+
+// TestPutEvents_APIDestinationPathParameters verifies that "*" wildcards in an
+// API destination's InvocationEndpoint are substituted with the target's
+// PathParameterValues, in order, at delivery time. AWS EventBridge expands
+// path parameters into the endpoint; without it the literal "*" is sent and the
+// target returns 404.
+//
+//nolint:funlen // End-to-end test with setup, dispatch, and assertion.
+func TestPutEvents_APIDestinationPathParameters(t *testing.T) {
+	t.Parallel()
+
+	received := make(chan string, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case received <- r.URL.Path:
+		default:
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	s := NewMemoryStorage()
+	ctx := context.Background()
+
+	conn, err := s.CreateConnection(ctx, &CreateConnectionRequest{
+		Name:              "test-conn",
+		AuthorizationType: "API_KEY",
+		AuthParameters: AuthParameters{
+			APIKeyAuthParameters: &APIKeyAuthParameters{
+				APIKeyName:  "X-Api-Key",
+				APIKeyValue: "secret",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection: %v", err)
+	}
+
+	dest, err := s.CreateAPIDestination(ctx, &CreateAPIDestinationRequest{
+		Name:               "test-dest",
+		ConnectionArn:      conn.Arn,
+		InvocationEndpoint: server.URL + "/webhook/events/*/*",
+		HTTPMethod:         http.MethodPost,
+	})
+	if err != nil {
+		t.Fatalf("CreateAPIDestination: %v", err)
+	}
+
+	if _, err := s.PutRule(ctx, &PutRuleRequest{
+		Name:         "test-rule",
+		EventPattern: `{"source":["my.test"]}`,
+		State:        "ENABLED",
+	}); err != nil {
+		t.Fatalf("PutRule: %v", err)
+	}
+
+	if _, err := s.PutTargets(ctx, "", "test-rule", []TargetInput{
+		{
+			ID:  "target-1",
+			Arn: dest.Arn,
+			HTTPParameters: &HTTPParameters{
+				PathParameterValues: []string{
+					"bpo.v1.DocumentReceiverService",
+					"SubscribeSendGridInboundParseWebhook",
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("PutTargets: %v", err)
+	}
+
+	if _, err := s.PutEvents(ctx, []PutEventsRequestEntry{
+		{Source: "my.test", DetailType: "TestEvent", Detail: `{"hello":"world"}`},
+	}); err != nil {
+		t.Fatalf("PutEvents: %v", err)
+	}
+
+	const wantPath = "/webhook/events/bpo.v1.DocumentReceiverService/SubscribeSendGridInboundParseWebhook"
+
+	select {
+	case gotPath := <-received:
+		if gotPath != wantPath {
+			t.Errorf("request path = %q, want %q", gotPath, wantPath)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not receive dispatched event within timeout")
+	}
+}

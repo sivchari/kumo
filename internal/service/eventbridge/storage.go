@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -834,7 +835,7 @@ func (s *MemoryStorage) deliverToHTTP(dest *APIDestination, target *Target, payl
 		return
 	}
 
-	endpoint := dest.InvocationEndpoint
+	endpoint := expandEndpointPathParameters(dest.InvocationEndpoint, target.HTTPParameters)
 	method := dest.HTTPMethod
 
 	if method == "" {
@@ -971,6 +972,22 @@ func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
 		"function", functionName,
 		"status", resp.StatusCode,
 	)
+}
+
+// expandEndpointPathParameters replaces each "*" wildcard in the invocation
+// endpoint with the corresponding value from PathParameterValues, in order.
+// AWS EventBridge substitutes path parameters into the endpoint at delivery
+// time; without this, the literal "*" would be sent and the target would 404.
+func expandEndpointPathParameters(endpoint string, params *HTTPParameters) string {
+	if params == nil {
+		return endpoint
+	}
+
+	for _, value := range params.PathParameterValues {
+		endpoint = strings.Replace(endpoint, "*", url.PathEscape(value), 1)
+	}
+
+	return endpoint
 }
 
 // applyHTTPParameters applies HTTP parameters from a target to an HTTP request.
