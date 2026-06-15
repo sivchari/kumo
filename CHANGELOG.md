@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.25.2](https://github.com/sivchari/kumo/compare/v0.25.1...v0.25.2) - 2026-06-15
+- fix(dynamodb): fail closed on unparseable FilterExpression and implement IN by @wakame1367 in https://github.com/sivchari/kumo/pull/808
+- fix(dynamodb): fail closed on KeyConditionExpression and implement attribute_type by @sivchari in https://github.com/sivchari/kumo/pull/810
+- refactor(dynamodb): simplify storage/expression functions to drop complexity nolints by @sivchari in https://github.com/sivchari/kumo/pull/811
+- refactor: simplify service handlers to drop complexity nolints by @sivchari in https://github.com/sivchari/kumo/pull/812
+- refactor: consolidate duplicated readJSONRequest into service.ReadJSONRequest by @sivchari in https://github.com/sivchari/kumo/pull/813
+- refactor: consolidate writeJSONResponse into service.WriteJSONResponse by @sivchari in https://github.com/sivchari/kumo/pull/814
+- refactor: share identical ServiceError via service.CodedError alias by @sivchari in https://github.com/sivchari/kumo/pull/815
+- fix(eventbridge): expand InvocationEndpoint path parameters on API destination delivery by @sivchari in https://github.com/sivchari/kumo/pull/817
+- refactor: consolidate JSON-protocol writeError into service.WriteJSONError by @sivchari in https://github.com/sivchari/kumo/pull/818
+- fix(json): emit lowercase "message" in error responses for 4 services by @sivchari in https://github.com/sivchari/kumo/pull/819
+- release v0.25.2 by @sivchari in https://github.com/sivchari/kumo/pull/820
+
 ## [v0.25.1](https://github.com/sivchari/kumo/compare/v0.25.0...v0.25.1) - 2026-06-11
 - feat(readme): auto-generate Supported Services catalog from service metadata by @sivchari in https://github.com/sivchari/kumo/pull/801
 - fix(ci): improve govulncheck output parsing with JSON and reachability filter by @sivchari in https://github.com/sivchari/kumo/pull/805
