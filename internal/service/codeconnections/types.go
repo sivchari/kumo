@@ -2,6 +2,8 @@ package codeconnections
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // ConnectionStatus represents the status of a connection.
@@ -322,12 +324,4 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a CodeConnections service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError

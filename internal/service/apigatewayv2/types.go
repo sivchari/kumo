@@ -1,6 +1,10 @@
 package apigatewayv2
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // API represents an API Gateway v2 API (HTTP or WebSocket).
 type API struct {
@@ -308,12 +312,4 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a service error with an AWS error code.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError

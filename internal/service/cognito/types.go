@@ -2,6 +2,8 @@ package cognito
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // UserPoolStatus represents the status of a user pool.
@@ -627,15 +629,7 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a Cognito service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError
 
 // MfaConfig represents the stored MFA configuration for a user pool.
 type MfaConfig struct {

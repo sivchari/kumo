@@ -1,6 +1,10 @@
 package kinesis
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // StreamStatus represents the status of a Kinesis stream.
 type StreamStatus string
@@ -314,12 +318,4 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a service-level error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError

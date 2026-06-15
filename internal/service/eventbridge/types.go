@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // EventBusState represents the state of an event bus.
@@ -530,15 +532,7 @@ type HTTPParameters struct {
 }
 
 // ServiceError represents a service-level error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError
 
 // Tag represents an EventBridge resource tag.
 type Tag struct {

@@ -2,6 +2,8 @@ package globalaccelerator
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // AcceleratorStatus represents the status of an accelerator.
@@ -428,12 +430,4 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a Global Accelerator service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError

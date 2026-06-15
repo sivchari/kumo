@@ -2,6 +2,8 @@ package kms
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // KeyState represents the state of a KMS key.
@@ -377,15 +379,7 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a KMS service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError
 
 // GetKeyPolicyRequest is the request for GetKeyPolicy.
 type GetKeyPolicyRequest struct {
