@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Default values.
@@ -510,13 +512,7 @@ func writeKMSResponse(w http.ResponseWriter, resp any) {
 
 // writeKMSError writes an error response.
 func writeKMSError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(&ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }
 
 // handleKMSError handles KMS errors.

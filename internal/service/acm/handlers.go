@@ -1,7 +1,6 @@
 package acm
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -265,13 +264,7 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeJSON, code, message, status)
 }
 
 // handleStorageError handles storage errors and writes appropriate response.

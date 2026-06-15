@@ -2,12 +2,9 @@
 package ecs
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
-
-	"github.com/google/uuid"
 
 	"github.com/sivchari/kumo/internal/service"
 )
@@ -448,11 +445,5 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 
 // writeECSError writes an ECS error response in JSON format.
 func writeECSError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"__type":  code,
-		"message": message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }

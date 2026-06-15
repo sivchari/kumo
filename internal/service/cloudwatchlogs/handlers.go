@@ -1,7 +1,6 @@
 package cloudwatchlogs
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -359,11 +358,5 @@ func writeEmptyResponse(w http.ResponseWriter) {
 
 // writeLogsError writes a CloudWatch Logs error response in JSON format.
 func writeLogsError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }

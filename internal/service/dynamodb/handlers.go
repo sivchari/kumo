@@ -541,13 +541,7 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 
 // writeDynamoDBError writes a DynamoDB error response in JSON format.
 func writeDynamoDBError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
 // UpdateTimeToLive handles the UpdateTimeToLive action.
