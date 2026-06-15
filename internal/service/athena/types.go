@@ -397,7 +397,7 @@ type DeleteWorkGroupResponse struct{}
 // ErrorResponse represents an Athena error response.
 type ErrorResponse struct {
 	Type    string `json:"__type"`
-	Message string `json:"Message"`
+	Message string `json:"message"`
 }
 
 // ServiceError represents an Athena service error.

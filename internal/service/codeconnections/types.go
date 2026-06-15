@@ -320,7 +320,7 @@ type UntagResourceResponse struct{}
 // ErrorResponse represents a CodeConnections error response.
 type ErrorResponse struct {
 	Type    string `json:"__type"`
-	Message string `json:"Message"`
+	Message string `json:"message"`
 }
 
 // ServiceError represents a CodeConnections service error.

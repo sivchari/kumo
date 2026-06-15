@@ -252,7 +252,7 @@ type GetRandomPasswordResponse struct {
 // ErrorResponse represents a Secrets Manager error response.
 type ErrorResponse struct {
 	Type    string `json:"__type"`
-	Message string `json:"Message"`
+	Message string `json:"message"`
 }
 
 // SecretError represents a Secrets Manager error.
