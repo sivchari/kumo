@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -18,14 +19,7 @@ const (
 )
 
 // ServiceError represents a Glacier service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-func (e *ServiceError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
+type ServiceError = service.CodedError
 
 // Storage defines the Glacier storage interface.
 type Storage interface {

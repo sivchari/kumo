@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -22,14 +23,7 @@ const (
 )
 
 // ServiceError represents an EBS service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-func (e *ServiceError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
+type ServiceError = service.CodedError
 
 // Storage defines the EBS storage interface.
 type Storage interface {

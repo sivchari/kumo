@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -15,14 +16,7 @@ const (
 )
 
 // ServiceError represents a MemoryDB service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-func (e *ServiceError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
+type ServiceError = service.CodedError
 
 const (
 	errClusterNotFound = "ClusterNotFoundFault"
