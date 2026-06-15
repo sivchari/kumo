@@ -427,10 +427,7 @@ func (s *Service) UpdateSecret(w http.ResponseWriter, r *http.Request) {
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponse(w, service.ContentTypeAmzJSON11, v)
 }
 
 // writeSecretsManagerError writes a Secrets Manager error response in JSON format.
