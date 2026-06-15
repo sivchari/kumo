@@ -2,4 +2,4 @@
 package kumo
 
 // Version is the current version of kumo.
-const Version = "0.25.1"
+const Version = "0.25.2"
