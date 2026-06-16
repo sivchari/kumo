@@ -556,8 +556,8 @@ func TestPutEvents_APIDestinationPathParameters(t *testing.T) {
 			Arn: dest.Arn,
 			HTTPParameters: &HTTPParameters{
 				PathParameterValues: []string{
-					"bpo.v1.DocumentReceiverService",
-					"SubscribeSendGridInboundParseWebhook",
+					"test.v1.TestService",
+					"TestWebhook",
 				},
 			},
 		},
@@ -571,7 +571,7 @@ func TestPutEvents_APIDestinationPathParameters(t *testing.T) {
 		t.Fatalf("PutEvents: %v", err)
 	}
 
-	const wantPath = "/webhook/events/bpo.v1.DocumentReceiverService/SubscribeSendGridInboundParseWebhook"
+	wantPath := "/webhook/events/test.v1.TestService/TestWebhook"
 
 	select {
 	case gotPath := <-received:
