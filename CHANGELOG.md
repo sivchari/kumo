@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.25.3](https://github.com/sivchari/kumo/compare/v0.25.2...v0.25.3) - 2026-06-18
+- fix testcase by @sivchari in https://github.com/sivchari/kumo/pull/821
+- fix(s3): externalize object bodies from snapshot to bound persistence memory by @sivchari in https://github.com/sivchari/kumo/pull/823
+- release v0.25.3 by @sivchari in https://github.com/sivchari/kumo/pull/824
+
 ## [v0.25.2](https://github.com/sivchari/kumo/compare/v0.25.1...v0.25.2) - 2026-06-15
 - fix(dynamodb): fail closed on unparseable FilterExpression and implement IN by @wakame1367 in https://github.com/sivchari/kumo/pull/808
 - fix(dynamodb): fail closed on KeyConditionExpression and implement attribute_type by @sivchari in https://github.com/sivchari/kumo/pull/810
