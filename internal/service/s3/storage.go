@@ -186,10 +186,21 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	return s
 }
 
-// MarshalJSON serializes the storage state to JSON.
+// MarshalJSON serializes the storage metadata to JSON. Object bodies are NOT
+// inlined: when persistence is enabled they are written to the blob store first
+// and the snapshot carries only a content reference per object (see blob.go and
+// Object.MarshalJSON). This keeps the whole-store marshal small and bounds its
+// peak memory, which is what stops the snapshot path from driving the process
+// into the OOM killer as the dataset grows.
 func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if s.dataDir != "" {
+		if err := s.persistBodiesLocked(); err != nil {
+			return nil, err
+		}
+	}
 
 	type Alias MemoryStorage
 
@@ -201,7 +212,8 @@ func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	return data, nil
 }
 
-// UnmarshalJSON restores the storage state from JSON.
+// UnmarshalJSON restores the storage metadata from JSON and, when persistence is
+// enabled, fills each object body from the blob store.
 func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -217,6 +229,103 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	if s.Buckets == nil {
 		s.Buckets = make(map[string]*MemoryBucket)
 	}
+
+	if s.dataDir != "" {
+		if err := s.loadBodiesLocked(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// persistBodiesLocked writes every object body to the blob store and prunes
+// orphaned blobs. The caller must hold at least the read lock; bodies are only
+// read (never mutated), so snapshotting never blocks concurrent reads.
+func (s *MemoryStorage) persistBodiesLocked() error {
+	referenced := make(map[string]struct{})
+
+	for _, b := range s.Buckets {
+		for _, obj := range b.Objects {
+			if err := s.persistObjectBody(obj, referenced); err != nil {
+				return err
+			}
+		}
+
+		for _, versions := range b.Versions {
+			for _, obj := range versions {
+				if err := s.persistObjectBody(obj, referenced); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	gcBlobs(s.dataDir, referenced)
+
+	return nil
+}
+
+// persistObjectBody writes one object's body to the blob store, recording its
+// reference in referenced (the live set used to GC orphans). Empty bodies carry
+// no blob: an empty or delete-marker object round-trips with a nil body.
+func (s *MemoryStorage) persistObjectBody(obj *Object, referenced map[string]struct{}) error {
+	if len(obj.Body) == 0 {
+		return nil
+	}
+
+	ref := obj.effectiveRef()
+	referenced[ref] = struct{}{}
+
+	return writeBlob(s.dataDir, ref, obj.Body)
+}
+
+// loadBodiesLocked fills each object's body from the blob store. The caller must
+// hold the write lock.
+func (s *MemoryStorage) loadBodiesLocked() error {
+	for _, b := range s.Buckets {
+		for _, obj := range b.Objects {
+			if err := s.loadObjectBody(obj); err != nil {
+				return err
+			}
+		}
+
+		for _, versions := range b.Versions {
+			for _, obj := range versions {
+				if err := s.loadObjectBody(obj); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// loadObjectBody populates one object's body from its blob. An object carrying a
+// legacy inline body (bodyRef empty, Body already set by an older snapshot) is
+// left untouched and gets a freshly computed ref so the next save migrates it to
+// a blob. The current-version object is shared by pointer between Objects and
+// Versions, so this may be called twice on it; the second call is a no-op.
+func (s *MemoryStorage) loadObjectBody(obj *Object) error {
+	if obj.bodyRef == "" {
+		if len(obj.Body) > 0 {
+			obj.bodyRef = bodyRefOf(obj.Body)
+		}
+
+		return nil
+	}
+
+	if len(obj.Body) > 0 {
+		return nil
+	}
+
+	data, err := readBlob(s.dataDir, obj.bodyRef)
+	if err != nil {
+		return err
+	}
+
+	obj.Body = data
 
 	return nil
 }
@@ -338,6 +447,7 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 	obj := &Object{
 		Key:          key,
 		Body:         data,
+		bodyRef:      bodyRefOf(data),
 		ETag:         fmt.Sprintf("%q", etag),
 		Size:         int64(len(data)),
 		LastModified: time.Now(),
@@ -1100,6 +1210,7 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 	obj := &Object{
 		Key:          key,
 		Body:         combinedBody,
+		bodyRef:      bodyRefOf(combinedBody),
 		ETag:         etag,
 		Size:         int64(len(combinedBody)),
 		LastModified: time.Now(),

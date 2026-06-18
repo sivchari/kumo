@@ -2,7 +2,9 @@
 package s3
 
 import (
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"time"
 )
 
@@ -43,6 +45,75 @@ type Object struct {
 	IsDeleteMarker       bool
 	ServerSideEncryption string
 	SSEKMSKeyID          string
+
+	// bodyRef is the content-address of Body in the on-disk blob store. It is
+	// computed once when the object is created (or loaded) and is persistence
+	// metadata only: it is never read on the request path. Keeping it on the
+	// object lets the snapshot emit a reference instead of the raw body, so the
+	// whole-store marshal no longer carries every body inline.
+	bodyRef string
+}
+
+// effectiveRef returns the blob content-address for this object's body, falling
+// back to hashing the body if bodyRef was not pre-computed (e.g. an object
+// loaded from a legacy inline snapshot before its first re-save). It is a pure
+// read, safe to call while only holding the storage read lock.
+func (o *Object) effectiveRef() string {
+	if o.bodyRef != "" {
+		return o.bodyRef
+	}
+
+	if len(o.Body) == 0 {
+		return ""
+	}
+
+	return bodyRefOf(o.Body)
+}
+
+// MarshalJSON serializes the object for the metadata snapshot, dropping the raw
+// Body and emitting a content reference (bodyRef) instead. The body itself is
+// persisted separately as a blob file (see blob.go); excluding it here is what
+// keeps the whole-store snapshot small and bounds its peak memory.
+func (o *Object) MarshalJSON() ([]byte, error) {
+	type alias Object
+
+	data, err := json.Marshal(&struct {
+		*alias
+		Body    []byte `json:"-"`
+		BodyRef string `json:"bodyRef,omitempty"`
+	}{
+		alias:   (*alias)(o),
+		BodyRef: o.effectiveRef(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal object: %w", err)
+	}
+
+	return data, nil
+}
+
+// UnmarshalJSON restores an object from the metadata snapshot. It reads the
+// content reference (bodyRef) into the unexported field; the body is filled
+// from the blob store afterwards by MemoryStorage.UnmarshalJSON. For backward
+// compatibility it also accepts a legacy inline Body (base64) written by older
+// snapshots, which is migrated to a blob on the next save.
+func (o *Object) UnmarshalJSON(data []byte) error {
+	type alias Object
+
+	aux := &struct {
+		*alias
+		Body    []byte `json:"Body"` //nolint:tagliatelle // legacy snapshots wrote the body under the PascalCase "Body" key
+		BodyRef string `json:"bodyRef"`
+	}{alias: (*alias)(o)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return fmt.Errorf("failed to unmarshal object: %w", err)
+	}
+
+	o.Body = aux.Body
+	o.bodyRef = aux.BodyRef
+
+	return nil
 }
 
 // Tagging represents the XML structure for S3 object tagging.
