@@ -31,6 +31,7 @@ type handlerFunc func(http.ResponseWriter, *http.Request)
 func (s *Service) getActionHandlers() map[string]handlerFunc {
 	return map[string]handlerFunc{
 		"CreateUserPool":         s.CreateUserPool,
+		"UpdateUserPool":         s.UpdateUserPool,
 		"DescribeUserPool":       s.DescribeUserPool,
 		"ListUserPools":          s.ListUserPools,
 		"DeleteUserPool":         s.DeleteUserPool,
@@ -95,6 +96,25 @@ func (s *Service) CreateUserPool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, resp)
+}
+
+// UpdateUserPool handles the UpdateUserPool API. The real AWS response is an
+// empty document; Terraform reads the result back with DescribeUserPool.
+func (s *Service) UpdateUserPool(w http.ResponseWriter, r *http.Request) {
+	var req UpdateUserPoolRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if _, err := s.storage.UpdateUserPool(r.Context(), &req); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &UpdateUserPoolResponse{})
 }
 
 // DescribeUserPool handles the DescribeUserPool API.
@@ -512,7 +532,7 @@ func userPoolToOutput(pool *UserPool) *UserPoolOutput {
 		AliasAttributes:             []string{},
 		MfaConfiguration:            mfa,
 		LambdaConfig:                lambdaConfigToOutputOrEmpty(pool.LambdaConfig),
-		AdminCreateUserConfig:       defaultAdminCreateUserConfig(),
+		AdminCreateUserConfig:       adminCreateUserConfigToOutput(pool.AdminCreateUserConfig),
 		AccountRecoverySetting:      defaultAccountRecoverySetting(),
 		VerificationMessageTemplate: defaultVerificationMessageTemplate(),
 		SchemaAttributes:            defaultSchemaAttributes(),
@@ -589,6 +609,17 @@ func lambdaConfigToOutputOrEmpty(config *LambdaConfig) *LambdaConfigOutput {
 // config (allow-only false, no template).
 func defaultAdminCreateUserConfig() *AdminCreateUserConfigOutput {
 	return &AdminCreateUserConfigOutput{AllowAdminCreateUserOnly: false}
+}
+
+// adminCreateUserConfigToOutput echoes the pool's stored admin-create-user
+// config so DescribeUserPool reflects the configured value; it falls back to
+// the AWS default when the pool has none.
+func adminCreateUserConfigToOutput(config *AdminCreateUserConfig) *AdminCreateUserConfigOutput {
+	if config == nil {
+		return defaultAdminCreateUserConfig()
+	}
+
+	return &AdminCreateUserConfigOutput{AllowAdminCreateUserOnly: config.AllowAdminCreateUserOnly}
 }
 
 // defaultAccountRecoverySetting returns the AWS-default recovery setting

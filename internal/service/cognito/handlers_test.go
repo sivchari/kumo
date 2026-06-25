@@ -200,3 +200,108 @@ func TestAdminSetUserPassword_Errors(t *testing.T) {
 		})
 	}
 }
+
+// describeUserPool reads a pool back through the DescribeUserPool dispatcher and
+// returns its wire output.
+func describeUserPool(t *testing.T, svc *Service, poolID string) *UserPoolOutput {
+	t.Helper()
+
+	w := dispatchCognitoAction(t, svc, "DescribeUserPool", `{"UserPoolId":"`+poolID+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("DescribeUserPool status: got %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+
+	var resp DescribeUserPoolResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode DescribeUserPool: %v", err)
+	}
+
+	return resp.UserPool
+}
+
+// TestCreateUserPool_AdminCreateUserConfigEchoed verifies the stored
+// admin-create-user config is echoed by DescribeUserPool instead of the AWS
+// default. Without this, terraform-provider-aws sees drift on
+// allow_admin_create_user_only and calls UpdateUserPool every plan
+// (docs/idp-parity 14).
+func TestCreateUserPool_AdminCreateUserConfigEchoed(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store)
+
+	pool, err := store.CreateUserPool(t.Context(), &CreateUserPoolRequest{
+		Region:                "us-east-1",
+		PoolName:              "echo-pool",
+		AdminCreateUserConfig: &AdminCreateUserConfigInput{AllowAdminCreateUserOnly: true},
+	})
+	if err != nil {
+		t.Fatalf("CreateUserPool: %v", err)
+	}
+
+	out := describeUserPool(t, svc, pool.ID)
+	if out.AdminCreateUserConfig == nil || !out.AdminCreateUserConfig.AllowAdminCreateUserOnly {
+		t.Errorf("AdminCreateUserConfig: got %+v, want AllowAdminCreateUserOnly=true", out.AdminCreateUserConfig)
+	}
+}
+
+// TestUpdateUserPool_AppliesChanges verifies UpdateUserPool mutates the stored
+// pool in place, returns an empty document, and that the change is visible on a
+// subsequent DescribeUserPool round-trip.
+func TestUpdateUserPool_AppliesChanges(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store)
+
+	pool, err := store.CreateUserPool(t.Context(), &CreateUserPoolRequest{Region: "us-east-1", PoolName: "upd-pool"})
+	if err != nil {
+		t.Fatalf("CreateUserPool: %v", err)
+	}
+
+	if before := describeUserPool(t, svc, pool.ID); before.AdminCreateUserConfig.AllowAdminCreateUserOnly {
+		t.Fatalf("precondition: AllowAdminCreateUserOnly already true")
+	}
+
+	w := dispatchCognitoAction(t, svc, "UpdateUserPool",
+		`{"UserPoolId":"`+pool.ID+`","MfaConfiguration":"OPTIONAL","AdminCreateUserConfig":{"AllowAdminCreateUserOnly":true}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+
+	if got := strings.TrimSpace(w.Body.String()); got != "{}" {
+		t.Errorf("body: got %q, want %q", got, "{}")
+	}
+
+	after := describeUserPool(t, svc, pool.ID)
+	if after.AdminCreateUserConfig == nil || !after.AdminCreateUserConfig.AllowAdminCreateUserOnly {
+		t.Errorf("AdminCreateUserConfig: got %+v, want AllowAdminCreateUserOnly=true", after.AdminCreateUserConfig)
+	}
+
+	if after.MfaConfiguration != "OPTIONAL" {
+		t.Errorf("MfaConfiguration: got %q, want OPTIONAL", after.MfaConfiguration)
+	}
+}
+
+// TestUpdateUserPool_NotFound verifies updating a missing pool returns
+// ResourceNotFoundException.
+func TestUpdateUserPool_NotFound(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store)
+
+	w := dispatchCognitoAction(t, svc, "UpdateUserPool", `{"UserPoolId":"us-east-1_missing"}`)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d, want 404 (body=%s)", w.Code, w.Body.String())
+	}
+
+	var resp ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+
+	if resp.Type != "ResourceNotFoundException" {
+		t.Errorf("__type: got %q, want ResourceNotFoundException", resp.Type)
+	}
+}

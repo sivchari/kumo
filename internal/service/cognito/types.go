@@ -54,18 +54,27 @@ const (
 
 // UserPool represents a Cognito user pool.
 type UserPool struct {
-	ID                 string
-	Name               string
-	Status             UserPoolStatus
-	CreationDate       time.Time
-	LastModifiedDate   time.Time
-	Policies           *UserPoolPolicies
-	LambdaConfig       *LambdaConfig
-	AutoVerifiedAttrs  []string
-	UsernameAttributes []string
-	MFAConfiguration   string
-	EmailConfiguration *EmailConfiguration
-	SigningKey         *signingKey // RSA key pair used to sign and publish JWTs (lazily generated)
+	ID                    string
+	Name                  string
+	Status                UserPoolStatus
+	CreationDate          time.Time
+	LastModifiedDate      time.Time
+	Policies              *UserPoolPolicies
+	LambdaConfig          *LambdaConfig
+	AutoVerifiedAttrs     []string
+	UsernameAttributes    []string
+	MFAConfiguration      string
+	EmailConfiguration    *EmailConfiguration
+	AdminCreateUserConfig *AdminCreateUserConfig
+	SigningKey            *signingKey // RSA key pair used to sign and publish JWTs (lazily generated)
+}
+
+// AdminCreateUserConfig represents the admin-create-user configuration of a
+// user pool. Stored so DescribeUserPool echoes the configured value instead of
+// the AWS default, which otherwise makes terraform-provider-aws detect drift on
+// allow_admin_create_user_only and call UpdateUserPool on every plan.
+type AdminCreateUserConfig struct {
+	AllowAdminCreateUserOnly bool
 }
 
 // signingKeyJSON is the on-disk representation of a signingKey: the kid plus
@@ -174,15 +183,39 @@ type MFAOption struct {
 
 // CreateUserPoolRequest is the request for CreateUserPool.
 type CreateUserPoolRequest struct {
-	PoolName               string                   `json:"PoolName"`
-	Policies               *UserPoolPoliciesInput   `json:"Policies,omitempty"`
-	LambdaConfig           *LambdaConfigInput       `json:"LambdaConfig,omitempty"`
-	AutoVerifiedAttributes []string                 `json:"AutoVerifiedAttributes,omitempty"`
-	UsernameAttributes     []string                 `json:"UsernameAttributes,omitempty"`
-	MfaConfiguration       string                   `json:"MfaConfiguration,omitempty"`
-	EmailConfiguration     *EmailConfigurationInput `json:"EmailConfiguration,omitempty"`
-	Region                 string                   `json:"-"`
+	PoolName               string                      `json:"PoolName"`
+	Policies               *UserPoolPoliciesInput      `json:"Policies,omitempty"`
+	LambdaConfig           *LambdaConfigInput          `json:"LambdaConfig,omitempty"`
+	AutoVerifiedAttributes []string                    `json:"AutoVerifiedAttributes,omitempty"`
+	UsernameAttributes     []string                    `json:"UsernameAttributes,omitempty"`
+	MfaConfiguration       string                      `json:"MfaConfiguration,omitempty"`
+	EmailConfiguration     *EmailConfigurationInput    `json:"EmailConfiguration,omitempty"`
+	AdminCreateUserConfig  *AdminCreateUserConfigInput `json:"AdminCreateUserConfig,omitempty"`
+	Region                 string                      `json:"-"`
 }
+
+// AdminCreateUserConfigInput represents the admin-create-user configuration in
+// CreateUserPool / UpdateUserPool requests.
+type AdminCreateUserConfigInput struct {
+	AllowAdminCreateUserOnly bool `json:"AllowAdminCreateUserOnly,omitempty"`
+}
+
+// UpdateUserPoolRequest is the request for UpdateUserPool. UserPoolId selects
+// the pool; the remaining fields mirror the mutable subset of CreateUserPool.
+type UpdateUserPoolRequest struct {
+	UserPoolID             string                      `json:"UserPoolId"`
+	Policies               *UserPoolPoliciesInput      `json:"Policies,omitempty"`
+	LambdaConfig           *LambdaConfigInput          `json:"LambdaConfig,omitempty"`
+	AutoVerifiedAttributes []string                    `json:"AutoVerifiedAttributes,omitempty"`
+	UsernameAttributes     []string                    `json:"UsernameAttributes,omitempty"`
+	MfaConfiguration       string                      `json:"MfaConfiguration,omitempty"`
+	EmailConfiguration     *EmailConfigurationInput    `json:"EmailConfiguration,omitempty"`
+	AdminCreateUserConfig  *AdminCreateUserConfigInput `json:"AdminCreateUserConfig,omitempty"`
+}
+
+// UpdateUserPoolResponse is the response for UpdateUserPool. AWS returns an
+// empty document, so the struct has no fields.
+type UpdateUserPoolResponse struct{}
 
 // UserPoolPoliciesInput represents user pool policies in requests.
 type UserPoolPoliciesInput struct {

@@ -498,3 +498,58 @@ func TestCognito_DeleteUserPool(t *testing.T) {
 		t.Fatal("expected error for deleted user pool")
 	}
 }
+
+// TestCognito_UpdateUserPool verifies that admin_create_user_config set at
+// create time round-trips, and that UpdateUserPool applies a subsequent change
+// visible on DescribeUserPool. This is the flow that previously made
+// terraform-provider-aws call UpdateUserPool and fail with InvalidAction
+// (docs/idp-parity 14). It is declared last so the pool it creates does not
+// perturb TestCognito_ListUserPools, whose golden enumerates all pools created
+// by earlier cognito tests.
+func TestCognito_UpdateUserPool(t *testing.T) {
+	client := newCognitoClient(t)
+	ctx := t.Context()
+
+	createOutput, err := client.CreateUserPool(ctx, &cognitoidentityprovider.CreateUserPoolInput{
+		PoolName: aws.String("update-user-pool"),
+		AdminCreateUserConfig: &types.AdminCreateUserConfigType{
+			AllowAdminCreateUserOnly: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userPoolID := *createOutput.UserPool.Id
+
+	// admin_create_user_config set at create time must round-trip, otherwise
+	// the provider sees drift and plans an update.
+	if createOutput.UserPool.AdminCreateUserConfig == nil ||
+		!createOutput.UserPool.AdminCreateUserConfig.AllowAdminCreateUserOnly {
+		t.Fatalf("create AllowAdminCreateUserOnly: got %+v, want true", createOutput.UserPool.AdminCreateUserConfig)
+	}
+
+	// Update flips the flag and sets an auto-verified attribute.
+	if _, err := client.UpdateUserPool(ctx, &cognitoidentityprovider.UpdateUserPoolInput{
+		UserPoolId:             aws.String(userPoolID),
+		AutoVerifiedAttributes: []types.VerifiedAttributeType{types.VerifiedAttributeTypeEmail},
+		AdminCreateUserConfig: &types.AdminCreateUserConfigType{
+			AllowAdminCreateUserOnly: false,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	describeOutput, err := client.DescribeUserPool(ctx, &cognitoidentityprovider.DescribeUserPoolInput{
+		UserPoolId: aws.String(userPoolID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if describeOutput.UserPool.AdminCreateUserConfig.AllowAdminCreateUserOnly {
+		t.Errorf("after update AllowAdminCreateUserOnly: got true, want false")
+	}
+
+	golden.New(t, golden.WithIgnoreFields("Id", "Arn", "CreationDate", "LastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+}

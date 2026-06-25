@@ -38,6 +38,7 @@ const defaultMfaConfiguration = "OFF"
 type Storage interface {
 	// User Pool operations.
 	CreateUserPool(ctx context.Context, req *CreateUserPoolRequest) (*UserPool, error)
+	UpdateUserPool(ctx context.Context, req *UpdateUserPoolRequest) (*UserPool, error)
 	GetUserPool(ctx context.Context, userPoolID string) (*UserPool, error)
 	ListUserPools(ctx context.Context, maxResults int32, nextToken string) ([]*UserPool, string, error)
 	DeleteUserPool(ctx context.Context, userPoolID string) error
@@ -248,8 +249,70 @@ func (s *MemoryStorage) CreateUserPool(_ context.Context, req *CreateUserPoolReq
 		}
 	}
 
+	pool.AdminCreateUserConfig = convertAdminCreateUserConfigInput(req.AdminCreateUserConfig)
+
 	s.UserPools[poolID] = pool
 	s.Users[poolID] = make(map[string]*User)
+
+	s.saveLocked()
+
+	return pool, nil
+}
+
+// UpdateUserPool applies the mutable fields of req to an existing pool in place.
+// Only non-nil/non-empty fields overwrite; the pool ID and CreationDate are
+// preserved. Returns ResourceNotFoundException if the pool does not exist.
+func (s *MemoryStorage) UpdateUserPool(_ context.Context, req *UpdateUserPoolRequest) (*UserPool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pool, ok := s.UserPools[req.UserPoolID]
+	if !ok {
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	if req.Policies != nil && req.Policies.PasswordPolicy != nil {
+		pool.Policies = &UserPoolPolicies{
+			PasswordPolicy: &PasswordPolicy{
+				MinimumLength:                 req.Policies.PasswordPolicy.MinimumLength,
+				RequireUppercase:              req.Policies.PasswordPolicy.RequireUppercase,
+				RequireLowercase:              req.Policies.PasswordPolicy.RequireLowercase,
+				RequireNumbers:                req.Policies.PasswordPolicy.RequireNumbers,
+				RequireSymbols:                req.Policies.PasswordPolicy.RequireSymbols,
+				TemporaryPasswordValidityDays: req.Policies.PasswordPolicy.TemporaryPasswordValidityDays,
+			},
+		}
+	}
+
+	if req.LambdaConfig != nil {
+		pool.LambdaConfig = convertLambdaConfigInputToLambdaConfig(req.LambdaConfig)
+	}
+
+	if req.AutoVerifiedAttributes != nil {
+		pool.AutoVerifiedAttrs = req.AutoVerifiedAttributes
+	}
+
+	if req.UsernameAttributes != nil {
+		pool.UsernameAttributes = req.UsernameAttributes
+	}
+
+	if req.MfaConfiguration != "" {
+		pool.MFAConfiguration = req.MfaConfiguration
+	}
+
+	if req.EmailConfiguration != nil {
+		pool.EmailConfiguration = &EmailConfiguration{
+			SourceArn:           req.EmailConfiguration.SourceArn,
+			ReplyToEmailAddress: req.EmailConfiguration.ReplyToEmailAddress,
+			EmailSendingAccount: req.EmailConfiguration.EmailSendingAccount,
+		}
+	}
+
+	if req.AdminCreateUserConfig != nil {
+		pool.AdminCreateUserConfig = convertAdminCreateUserConfigInput(req.AdminCreateUserConfig)
+	}
+
+	pool.LastModifiedDate = time.Now()
 
 	s.saveLocked()
 
@@ -856,4 +919,12 @@ func convertLambdaConfigInputToLambdaConfig(input *LambdaConfigInput) *LambdaCon
 		PreTokenGeneration:      input.PreTokenGeneration,
 		UserMigration:           input.UserMigration,
 	}
+}
+
+func convertAdminCreateUserConfigInput(input *AdminCreateUserConfigInput) *AdminCreateUserConfig {
+	if input == nil {
+		return nil
+	}
+
+	return &AdminCreateUserConfig{AllowAdminCreateUserOnly: input.AllowAdminCreateUserOnly}
 }
