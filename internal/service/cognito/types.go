@@ -565,6 +565,17 @@ type AdminDeleteUserRequest struct {
 // AdminDeleteUserResponse is the response for AdminDeleteUser.
 type AdminDeleteUserResponse struct{}
 
+// AdminSetUserPasswordRequest is the request for AdminSetUserPassword.
+type AdminSetUserPasswordRequest struct {
+	UserPoolID string `json:"UserPoolId"`
+	Username   string `json:"Username"`
+	Password   string `json:"Password"`
+	Permanent  bool   `json:"Permanent"`
+}
+
+// AdminSetUserPasswordResponse is the response for AdminSetUserPassword.
+type AdminSetUserPasswordResponse struct{}
+
 // ListUsersRequest is the request for ListUsers.
 type ListUsersRequest struct {
 	UserPoolID      string   `json:"UserPoolId"`

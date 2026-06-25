@@ -165,6 +165,86 @@ func TestCognito_AdminCreateAndGetUser(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_get", getUserOutput)
 }
 
+func TestCognito_AdminSetUserPassword(t *testing.T) {
+	client := newCognitoClient(t)
+	ctx := t.Context()
+
+	// Create user pool.
+	poolOutput, err := client.CreateUserPool(ctx, &cognitoidentityprovider.CreateUserPoolInput{
+		PoolName: aws.String("test-set-password-pool"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userPoolID := *poolOutput.UserPool.Id
+
+	// Create user pool client (admin auth flow, as seed.sh uses).
+	clientOutput, err := client.CreateUserPoolClient(ctx, &cognitoidentityprovider.CreateUserPoolClientInput{
+		UserPoolId: aws.String(userPoolID),
+		ClientName: aws.String("set-password-client"),
+		ExplicitAuthFlows: []types.ExplicitAuthFlowsType{
+			types.ExplicitAuthFlowsTypeAllowAdminUserPasswordAuth,
+			types.ExplicitAuthFlowsTypeAllowUserPasswordAuth,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clientID := *clientOutput.UserPoolClient.ClientId
+
+	// Admin create user (starts in FORCE_CHANGE_PASSWORD).
+	_, err = client.AdminCreateUser(ctx, &cognitoidentityprovider.AdminCreateUserInput{
+		UserPoolId:        aws.String(userPoolID),
+		Username:          aws.String("setpwduser"),
+		TemporaryPassword: aws.String("TempPass123!"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Admin set user password with --permanent (confirms the user).
+	setOutput, err := client.AdminSetUserPassword(ctx, &cognitoidentityprovider.AdminSetUserPasswordInput{
+		UserPoolId: aws.String(userPoolID),
+		Username:   aws.String("setpwduser"),
+		Password:   aws.String("PermPass456!"),
+		Permanent:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_set", setOutput)
+
+	// Admin get user must report CONFIRMED (UserStatus is asserted, not ignored).
+	getOutput, err := client.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
+		UserPoolId: aws.String(userPoolID),
+		Username:   aws.String("setpwduser"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_get", getOutput)
+
+	// The set password must authenticate via AdminInitiateAuth (signed JWTs).
+	authOutput, err := client.AdminInitiateAuth(ctx, &cognitoidentityprovider.AdminInitiateAuthInput{
+		UserPoolId: aws.String(userPoolID),
+		ClientId:   aws.String(clientID),
+		AuthFlow:   types.AuthFlowTypeAdminUserPasswordAuth,
+		AuthParameters: map[string]string{
+			"USERNAME": "setpwduser",
+			"PASSWORD": "PermPass456!",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("AccessToken", "IdToken", "RefreshToken", "NewDeviceMetadata", "ResultMetadata")).Assert(t.Name()+"_auth", authOutput)
+}
+
 func TestCognito_ListUsers(t *testing.T) {
 	client := newCognitoClient(t)
 	ctx := t.Context()

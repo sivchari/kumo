@@ -52,6 +52,7 @@ type Storage interface {
 	AdminCreateUser(ctx context.Context, req *AdminCreateUserRequest) (*User, error)
 	AdminGetUser(ctx context.Context, userPoolID, username string) (*User, error)
 	AdminDeleteUser(ctx context.Context, userPoolID, username string) error
+	AdminSetUserPassword(ctx context.Context, req *AdminSetUserPasswordRequest) error
 	ListUsers(ctx context.Context, userPoolID string, limit int32, paginationToken string) ([]*User, string, error)
 
 	// Authentication operations.
@@ -493,6 +494,43 @@ func (s *MemoryStorage) AdminDeleteUser(_ context.Context, userPoolID, username 
 	}
 
 	delete(users, username)
+
+	s.saveLocked()
+
+	return nil
+}
+
+// AdminSetUserPassword sets a user's password and transitions the user status.
+// Permanent=true confirms the user (CONFIRMED) so AdminInitiateAuth can issue
+// signed JWTs; Permanent=false marks the user RESET_REQUIRED so the next sign-in
+// must change the password. Strict password-policy validation is out of scope
+// for the emulator; only an empty password is rejected.
+func (s *MemoryStorage) AdminSetUserPassword(_ context.Context, req *AdminSetUserPasswordRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	users, ok := s.Users[req.UserPoolID]
+	if !ok {
+		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	user, ok := users[req.Username]
+	if !ok {
+		return &ServiceError{Code: errUserNotFound, Message: "User not found"}
+	}
+
+	if req.Password == "" {
+		return &ServiceError{Code: errInvalidParameter, Message: "password cannot be empty"}
+	}
+
+	user.Password = req.Password
+	if req.Permanent {
+		user.UserStatus = UserStatusConfirmed
+	} else {
+		user.UserStatus = UserStatusResetRequired
+	}
+
+	user.UserLastModified = time.Now()
 
 	s.saveLocked()
 

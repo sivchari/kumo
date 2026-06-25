@@ -41,6 +41,7 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"AdminCreateUser":        s.AdminCreateUser,
 		"AdminGetUser":           s.AdminGetUser,
 		"AdminDeleteUser":        s.AdminDeleteUser,
+		"AdminSetUserPassword":   s.AdminSetUserPassword,
 		"ListUsers":              s.ListUsers,
 		"SignUp":                 s.SignUp,
 		"ConfirmSignUp":          s.ConfirmSignUp,
@@ -308,6 +309,26 @@ func (s *Service) AdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, &AdminDeleteUserResponse{})
+}
+
+// AdminSetUserPassword handles the AdminSetUserPassword API. It sets the user's
+// password and, when Permanent is true, transitions the user to CONFIRMED so
+// AdminInitiateAuth can issue signed JWTs. The response is an empty body.
+func (s *Service) AdminSetUserPassword(w http.ResponseWriter, r *http.Request) {
+	var req AdminSetUserPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AdminSetUserPassword(r.Context(), &req); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &AdminSetUserPasswordResponse{})
 }
 
 // ListUsers handles the ListUsers API.
