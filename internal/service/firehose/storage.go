@@ -23,6 +23,9 @@ type Storage interface {
 	PutRecord(ctx context.Context, streamName string, record Record) (string, error)
 	PutRecordBatch(ctx context.Context, streamName string, records []Record) ([]PutRecordBatchResponseEntry, int32, error)
 	UpdateDestination(ctx context.Context, input *UpdateDestinationInput) error
+	ListTagsForDeliveryStream(ctx context.Context, name string) ([]Tag, error)
+	TagDeliveryStream(ctx context.Context, name string, tags []Tag) error
+	UntagDeliveryStream(ctx context.Context, name string, tagKeys []string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -50,8 +53,9 @@ type MemoryStorage struct {
 
 // StreamData holds a delivery stream and its records.
 type StreamData struct {
-	Stream  *DeliveryStream `json:"stream"`
-	Records []StoredRecord  `json:"records"`
+	Stream  *DeliveryStream   `json:"stream"`
+	Records []StoredRecord    `json:"records"`
+	Tags    map[string]string `json:"tags,omitempty"`
 }
 
 // StoredRecord holds a stored record.
@@ -150,11 +154,26 @@ func (s *MemoryStorage) CreateDeliveryStream(_ context.Context, input *CreateDel
 	s.Streams[input.DeliveryStreamName] = &StreamData{
 		Stream:  stream,
 		Records: make([]StoredRecord, 0),
+		Tags:    tagsToMap(input.Tags),
 	}
 
 	s.saveLocked()
 
 	return stream, nil
+}
+
+// tagsToMap converts a slice of tags to a key-value map.
+func tagsToMap(tags []Tag) map[string]string {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	m := make(map[string]string, len(tags))
+	for _, t := range tags {
+		m[t.Key] = t.Value
+	}
+
+	return m
 }
 
 func (s *MemoryStorage) buildDeliveryStream(input *CreateDeliveryStreamInput) *DeliveryStream {
@@ -535,4 +554,80 @@ func (s *MemoryStorage) applyExtendedS3Update(desc *ExtendedS3DestinationDescrip
 	if update.S3BackupMode != "" {
 		desc.S3BackupMode = update.S3BackupMode
 	}
+}
+
+// ListTagsForDeliveryStream returns the tags of a delivery stream, sorted by key.
+func (s *MemoryStorage) ListTagsForDeliveryStream(_ context.Context, name string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, exists := s.Streams[name]
+	if !exists {
+		return nil, &Error{
+			Code:    errResourceNotFound,
+			Message: fmt.Sprintf("Delivery stream %s not found", name),
+		}
+	}
+
+	keys := make([]string, 0, len(data.Tags))
+	for k := range data.Tags {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	tags := make([]Tag, 0, len(keys))
+	for _, k := range keys {
+		tags = append(tags, Tag{Key: k, Value: data.Tags[k]})
+	}
+
+	return tags, nil
+}
+
+// TagDeliveryStream adds or overwrites tags on a delivery stream by key.
+func (s *MemoryStorage) TagDeliveryStream(_ context.Context, name string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.Streams[name]
+	if !exists {
+		return &Error{
+			Code:    errResourceNotFound,
+			Message: fmt.Sprintf("Delivery stream %s not found", name),
+		}
+	}
+
+	if data.Tags == nil {
+		data.Tags = make(map[string]string, len(tags))
+	}
+
+	for _, t := range tags {
+		data.Tags[t.Key] = t.Value
+	}
+
+	s.saveLocked()
+
+	return nil
+}
+
+// UntagDeliveryStream removes tags from a delivery stream by key.
+func (s *MemoryStorage) UntagDeliveryStream(_ context.Context, name string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.Streams[name]
+	if !exists {
+		return &Error{
+			Code:    errResourceNotFound,
+			Message: fmt.Sprintf("Delivery stream %s not found", name),
+		}
+	}
+
+	for _, k := range tagKeys {
+		delete(data.Tags, k)
+	}
+
+	s.saveLocked()
+
+	return nil
 }
