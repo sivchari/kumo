@@ -305,3 +305,48 @@ func TestUpdateUserPool_NotFound(t *testing.T) {
 		t.Errorf("__type: got %q, want ResourceNotFoundException", resp.Type)
 	}
 }
+
+// TestAdminGetUser_ReturnsSubAttribute guards that AdminGetUser surfaces the
+// user's stable sub as a "sub" UserAttribute equal to user.Sub (the JWT "sub"
+// claim source). The example seed reads sub from here to key DynamoDB
+// permission rows; without it the authorizer's lookup misses and denies.
+func TestAdminGetUser_ReturnsSubAttribute(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store)
+
+	pool, err := store.CreateUserPool(t.Context(), &CreateUserPoolRequest{Region: asupRegion, PoolName: "sub-pool"})
+	if err != nil {
+		t.Fatalf("CreateUserPool: %v", err)
+	}
+
+	user, err := store.AdminCreateUser(t.Context(), &AdminCreateUserRequest{UserPoolID: pool.ID, Username: "sub@example.com"})
+	if err != nil {
+		t.Fatalf("AdminCreateUser: %v", err)
+	}
+
+	gw := dispatchCognitoAction(t, svc, "AdminGetUser",
+		`{"UserPoolId":"`+pool.ID+`","Username":"sub@example.com"}`)
+
+	var resp AdminGetUserResponse
+	if err := json.Unmarshal(gw.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode AdminGetUser: %v", err)
+	}
+
+	sub := ""
+
+	for _, a := range resp.UserAttributes {
+		if a.Name == "sub" {
+			sub = a.Value
+		}
+	}
+
+	if sub == "" {
+		t.Fatalf("AdminGetUser returned no sub attribute: %+v", resp.UserAttributes)
+	}
+
+	if sub != user.Sub {
+		t.Errorf("AdminGetUser sub = %q, want %q (must equal the JWT sub claim)", sub, user.Sub)
+	}
+}

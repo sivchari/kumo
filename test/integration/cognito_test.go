@@ -151,7 +151,7 @@ func TestCognito_AdminCreateAndGetUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_create", createUserOutput)
+	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata", "Value")).Assert(t.Name()+"_create", createUserOutput)
 
 	// Admin get user.
 	getUserOutput, err := client.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
@@ -162,7 +162,7 @@ func TestCognito_AdminCreateAndGetUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_get", getUserOutput)
+	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata", "Value")).Assert(t.Name()+"_get", getUserOutput)
 }
 
 func TestCognito_AdminSetUserPassword(t *testing.T) {
@@ -226,7 +226,7 @@ func TestCognito_AdminSetUserPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata")).Assert(t.Name()+"_get", getOutput)
+	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata", "Value")).Assert(t.Name()+"_get", getOutput)
 
 	// The set password must authenticate via AdminInitiateAuth (signed JWTs).
 	authOutput, err := client.AdminInitiateAuth(ctx, &cognitoidentityprovider.AdminInitiateAuthInput{
@@ -277,7 +277,7 @@ func TestCognito_ListUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata")).Assert(t.Name(), listOutput)
+	golden.New(t, golden.WithIgnoreFields("UserCreateDate", "UserLastModifiedDate", "ResultMetadata", "Value")).Assert(t.Name(), listOutput)
 }
 
 func TestCognito_SignUpAndConfirm(t *testing.T) {

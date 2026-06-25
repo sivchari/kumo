@@ -305,7 +305,7 @@ func (s *Service) AdminGetUser(w http.ResponseWriter, r *http.Request) {
 
 	resp := &AdminGetUserResponse{
 		Username:             user.Username,
-		UserAttributes:       convertAttributes(user.Attributes),
+		UserAttributes:       userAttributesOutput(user),
 		UserCreateDate:       float64(user.UserCreateDate.Unix()),
 		UserLastModifiedDate: float64(user.UserLastModified.Unix()),
 		Enabled:              user.Enabled,
@@ -714,12 +714,36 @@ func userPoolClientToOutput(client *UserPoolClient) *UserPoolClientOutput {
 func userToOutput(user *User) *UserOutput {
 	return &UserOutput{
 		Username:             user.Username,
-		Attributes:           convertAttributes(user.Attributes),
+		Attributes:           userAttributesOutput(user),
 		UserCreateDate:       float64(user.UserCreateDate.Unix()),
 		UserLastModifiedDate: float64(user.UserLastModified.Unix()),
 		Enabled:              user.Enabled,
 		UserStatus:           string(user.UserStatus),
 	}
+}
+
+// subAttributeName is the Cognito user attribute carrying the immutable sub.
+const subAttributeName = "sub"
+
+// userAttributesOutput returns the user's attributes for an API response with
+// the immutable "sub" attribute included, as real Cognito does. Tooling reads
+// sub from AdminGetUser / ListUsers UserAttributes (e.g. the example seed keys
+// DynamoDB permission rows by it), and it must equal the JWT "sub" claim
+// (user.Sub).
+func userAttributesOutput(user *User) []UserAttributeOutput {
+	attrs := convertAttributes(user.Attributes)
+
+	if user.Sub == "" {
+		return attrs
+	}
+
+	for _, a := range attrs {
+		if a.Name == subAttributeName {
+			return attrs
+		}
+	}
+
+	return append([]UserAttributeOutput{{Name: subAttributeName, Value: user.Sub}}, attrs...)
 }
 
 // convertAttributes converts UserAttribute slice to UserAttributeOutput slice.
