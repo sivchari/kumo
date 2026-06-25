@@ -17,6 +17,7 @@ type Distribution struct {
 	DistributionConfig     *DistributionConfig
 	ActiveTrustedSigners   *ActiveTrustedSigners
 	ActiveTrustedKeyGroups *ActiveTrustedKeyGroups
+	Tags                   map[string]string
 }
 
 // DistributionConfig represents CloudFront distribution configuration.
@@ -495,6 +496,36 @@ type CreateDistributionRequest struct {
 	ViewerCertificate    *ViewerCertificateXML    `xml:"ViewerCertificate,omitempty"`
 	HTTPVersion          string                   `xml:"HttpVersion,omitempty"`
 	IsIPV6Enabled        bool                     `xml:"IsIPV6Enabled,omitempty"`
+}
+
+// DistributionConfigWithTags wraps a DistributionConfig and its Tags for the
+// CreateDistributionWithTags operation (POST /2020-05-31/distribution?WithTags).
+// The inner config reuses CreateDistributionRequest so all parsing logic is shared.
+type DistributionConfigWithTags struct {
+	XMLName            xml.Name                  `xml:"DistributionConfigWithTags"`
+	DistributionConfig CreateDistributionRequest `xml:"DistributionConfig"`
+	Tags               *Tags                     `xml:"Tags,omitempty"`
+}
+
+// Tags represents a CloudFront tag set. It is reused as the nested
+// element of CreateDistributionWithTags, as the TagResource request body, and
+// as the ListTagsForResource response body (with Xmlns set).
+type Tags struct {
+	XMLName xml.Name `xml:"Tags"`
+	Xmlns   string   `xml:"xmlns,attr,omitempty"`
+	Items   []Tag    `xml:"Items>Tag,omitempty"`
+}
+
+// Tag represents a single CloudFront tag.
+type Tag struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value,omitempty"`
+}
+
+// TagKeysBody is the UntagResource request body (root <TagKeys>).
+type TagKeysBody struct {
+	XMLName xml.Name `xml:"TagKeys"`
+	Items   []string `xml:"Items>Key"`
 }
 
 // InvalidationXML represents an invalidation in XML format.
