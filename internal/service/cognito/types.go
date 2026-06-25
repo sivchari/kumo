@@ -65,6 +65,29 @@ type UserPool struct {
 	UsernameAttributes []string
 	MFAConfiguration   string
 	EmailConfiguration *EmailConfiguration
+	SigningKey         *signingKey // RSA key pair used to sign and publish JWTs (lazily generated)
+}
+
+// signingKeyJSON is the on-disk representation of a signingKey: the kid plus
+// the PKCS#8 DER of the private key (encoding/json renders []byte as base64).
+type signingKeyJSON struct {
+	KeyID string `json:"kid"`
+	DER   []byte `json:"der"`
+}
+
+// jwkSet is a JWK Set as published at /{userPoolId}/.well-known/jwks.json.
+type jwkSet struct {
+	Keys []jwk `json:"keys"`
+}
+
+// jwk is a single RSA public key in JWK form.
+type jwk struct {
+	Kty string `json:"kty"`
+	Use string `json:"use"`
+	Alg string `json:"alg"`
+	Kid string `json:"kid"`
+	N   string `json:"n"`
+	E   string `json:"e"`
 }
 
 // UserPoolPolicies represents user pool policies.
@@ -127,6 +150,7 @@ type UserPoolClient struct {
 type User struct {
 	Username         string
 	UserPoolID       string
+	Sub              string // stable UUID used as the JWT "sub" claim
 	Attributes       []UserAttribute
 	UserCreateDate   time.Time
 	UserLastModified time.Time
@@ -591,6 +615,24 @@ type InitiateAuthRequest struct {
 
 // InitiateAuthResponse is the response for InitiateAuth.
 type InitiateAuthResponse struct {
+	ChallengeName        string                `json:"ChallengeName,omitempty"`
+	Session              string                `json:"Session,omitempty"`
+	ChallengeParameters  map[string]string     `json:"ChallengeParameters,omitempty"`
+	AuthenticationResult *AuthenticationResult `json:"AuthenticationResult,omitempty"`
+}
+
+// AdminInitiateAuthRequest is the request for AdminInitiateAuth.
+type AdminInitiateAuthRequest struct {
+	UserPoolID     string            `json:"UserPoolId"`
+	ClientID       string            `json:"ClientId"`
+	AuthFlow       string            `json:"AuthFlow"`
+	AuthParameters map[string]string `json:"AuthParameters,omitempty"`
+}
+
+// AdminInitiateAuthResponse is the response for AdminInitiateAuth. It mirrors
+// InitiateAuthResponse: the admin variant differs only in the auth flow, not
+// the response shape.
+type AdminInitiateAuthResponse struct {
 	ChallengeName        string                `json:"ChallengeName,omitempty"`
 	Session              string                `json:"Session,omitempty"`
 	ChallengeParameters  map[string]string     `json:"ChallengeParameters,omitempty"`

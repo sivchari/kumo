@@ -32,12 +32,24 @@ type executeAPIDispatch func(w http.ResponseWriter, r *http.Request, apiID, invo
 // handler. It returns false when the service does not own urlID.
 type functionURLDispatch func(w http.ResponseWriter, r *http.Request, urlID string) bool
 
+// wellKnownJWKSSuffix is the fixed tail of a per-pool JWKS path
+// (/{id}/.well-known/jwks.json). Such routes go on a dedicated mux because
+// their pattern formally collides with S3's wildcard routes in the main mux:
+// GET implies HEAD, so GET /{id}/.well-known/jwks.json overlaps S3's explicit
+// HEAD /{bucket}/{key...} with neither pattern more specific — which makes the
+// shared http.ServeMux panic at registration.
+//
+// JWKS is published unsigned, so it cannot live on a SigV4 scope router: a
+// token verifier fetches it with a plain GET and never signs.
+const wellKnownJWKSSuffix = "/.well-known/jwks.json"
+
 // Router is the HTTP router for kumo.
 type Router struct {
 	mux                 *http.ServeMux
 	routes              []Route
 	prefixRouters       map[string]*http.ServeMux // Separate routers for services with prefixes
 	scopeRouters        map[string]*http.ServeMux // Routers keyed by SigV4 signing name
+	wellKnownMux        *http.ServeMux            // Dedicated mux for /{id}/.well-known/jwks.json
 	executeAPIHandlers  []executeAPIDispatch
 	functionURLHandlers []functionURLDispatch
 	logger              *slog.Logger
@@ -124,6 +136,19 @@ func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
 		Handler: handler,
 	})
 
+	// Well-known JWKS routes go on a dedicated mux, isolated from the S3
+	// wildcard routes they would otherwise conflict with in the main mux.
+	if isWellKnownJWKSPath(pattern) {
+		if r.wellKnownMux == nil {
+			r.wellKnownMux = http.NewServeMux()
+		}
+
+		r.wellKnownMux.HandleFunc(method+" "+pattern, r.wrapHandler(method, pattern, handler))
+		r.logger.Debug("registered well-known route", "method", method, "pattern", pattern)
+
+		return
+	}
+
 	// Check if this is a prefixed route (e.g., /lambda/...)
 	// Routes with specific prefixes are registered in separate ServeMux instances
 	// to avoid conflicts with wildcard routes like /{bucket}/{key...}
@@ -165,6 +190,21 @@ func extractRoutePrefix(pattern string) string {
 	}
 
 	return ""
+}
+
+// isWellKnownJWKSPath reports whether path (or a route pattern) has the exact
+// shape /{id}/.well-known/jwks.json — three segments, the last two literal.
+// Deeper paths such as /{bucket}/key/.well-known/jwks.json are not matched, so
+// only an object stored at a bucket's literal .well-known/jwks.json key is an
+// (irreducible) collision with a real JWKS request.
+func isWellKnownJWKSPath(path string) bool {
+	if !strings.HasSuffix(path, wellKnownJWKSSuffix) {
+		return false
+	}
+
+	id := strings.TrimSuffix(path, wellKnownJWKSSuffix)
+
+	return len(id) > 1 && id[0] == '/' && !strings.Contains(id[1:], "/")
 }
 
 // hasPathPrefix reports whether path starts with prefix on a path
@@ -258,6 +298,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"healthy"}`))
+
+		return
+	}
+
+	// Per-pool JWKS lives on a dedicated mux (see wellKnownJWKSSuffix). It is
+	// dispatched here, before S3 virtual-host rewriting, because a JWKS request
+	// arrives on the plain host rather than a bucket vhost.
+	if r.wellKnownMux != nil && isWellKnownJWKSPath(req.URL.Path) {
+		r.wellKnownMux.ServeHTTP(w, req)
 
 		return
 	}

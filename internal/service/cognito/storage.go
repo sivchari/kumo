@@ -3,6 +3,7 @@ package cognito
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -56,7 +57,15 @@ type Storage interface {
 	// Authentication operations.
 	SignUp(ctx context.Context, req *SignUpRequest) (*User, error)
 	ConfirmSignUp(ctx context.Context, clientID, username, code string) error
-	InitiateAuth(ctx context.Context, req *InitiateAuthRequest) (*InitiateAuthResponse, error)
+	// Authenticate verifies the username/password for the client and returns
+	// the resolved user, pool, and client. It ensures the pool has a signing
+	// key and the user has a stable sub. Token signing is done by the caller
+	// (the handler), which knows the request host needed for the issuer.
+	Authenticate(ctx context.Context, clientID, username, password string) (*AuthContext, error)
+
+	// SigningPublicKey returns the pool's RSA public key and key id for JWKS
+	// publication, lazily generating the signing key on first use.
+	SigningPublicKey(ctx context.Context, userPoolID string) (*rsa.PublicKey, string, error)
 
 	// MFA configuration operations.
 	GetUserPoolMfaConfig(ctx context.Context, userPoolID string) (*MfaConfig, error)
@@ -428,6 +437,7 @@ func (s *MemoryStorage) AdminCreateUser(_ context.Context, req *AdminCreateUserR
 	user := &User{
 		Username:         req.Username,
 		UserPoolID:       req.UserPoolID,
+		Sub:              uuid.New().String(),
 		UserCreateDate:   now,
 		UserLastModified: now,
 		Enabled:          true,
@@ -543,6 +553,7 @@ func (s *MemoryStorage) SignUp(_ context.Context, req *SignUpRequest) (*User, er
 	user := &User{
 		Username:         req.Username,
 		UserPoolID:       userPoolID,
+		Sub:              userSubFromAttributes(req.UserAttributes),
 		UserCreateDate:   now,
 		UserLastModified: now,
 		Enabled:          true,
@@ -608,29 +619,33 @@ func (s *MemoryStorage) ConfirmSignUp(_ context.Context, clientID, username, cod
 	return nil
 }
 
-// InitiateAuth initiates authentication.
-func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest) (*InitiateAuthResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// AuthContext carries the entities resolved by a successful password
+// authentication. The handler uses these to sign the JWTs.
+type AuthContext struct {
+	User   *User
+	Pool   *UserPool
+	Client *UserPoolClient
+}
 
-	var userPoolID string
+// Authenticate verifies the username/password for the client and returns the
+// resolved user, pool, and client, ensuring the pool has a signing key and the
+// user has a stable sub. It takes the write lock because it may lazily mint the
+// signing key or backfill the sub for state created before this feature.
+func (s *MemoryStorage) Authenticate(_ context.Context, clientID, username, password string) (*AuthContext, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	for _, client := range s.UserPoolClients {
-		if client.ClientID == req.ClientID {
-			userPoolID = client.UserPoolID
-
-			break
-		}
-	}
-
-	if userPoolID == "" {
+	client, ok := s.UserPoolClients[clientID]
+	if !ok {
 		return nil, &ServiceError{Code: errInvalidParameter, Message: msgInvalidClientID}
 	}
 
-	username := req.AuthParameters["USERNAME"]
-	password := req.AuthParameters["PASSWORD"]
+	pool, ok := s.UserPools[client.UserPoolID]
+	if !ok {
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
 
-	user, ok := s.Users[userPoolID][username]
+	user, ok := s.Users[client.UserPoolID][username]
 	if !ok {
 		return nil, &ServiceError{Code: errUserNotFound, Message: msgUserNotFound}
 	}
@@ -643,19 +658,54 @@ func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest
 		return nil, &ServiceError{Code: errNotAuthorized, Message: "User is not confirmed"}
 	}
 
-	accessToken := generateToken()
-	idToken := generateToken()
-	refreshToken := generateToken()
+	if err := ensureSigningKey(pool); err != nil {
+		return nil, err
+	}
 
-	return &InitiateAuthResponse{
-		AuthenticationResult: &AuthenticationResult{
-			AccessToken:  accessToken,
-			ExpiresIn:    3600,
-			TokenType:    "Bearer",
-			RefreshToken: refreshToken,
-			IDToken:      idToken,
-		},
-	}, nil
+	if user.Sub == "" {
+		user.Sub = uuid.New().String()
+	}
+
+	s.saveLocked()
+
+	return &AuthContext{User: user, Pool: pool, Client: client}, nil
+}
+
+// ensureSigningKey lazily generates the pool's RSA signing key on first use.
+// Callers must hold the write lock.
+func ensureSigningKey(pool *UserPool) error {
+	if pool.SigningKey != nil {
+		return nil
+	}
+
+	key, err := newSigningKey()
+	if err != nil {
+		return err
+	}
+
+	pool.SigningKey = key
+
+	return nil
+}
+
+// SigningPublicKey returns the pool's RSA public key and key id for JWKS
+// publication, lazily generating the signing key on first use.
+func (s *MemoryStorage) SigningPublicKey(_ context.Context, userPoolID string) (*rsa.PublicKey, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pool, ok := s.UserPools[userPoolID]
+	if !ok {
+		return nil, "", &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	if err := ensureSigningKey(pool); err != nil {
+		return nil, "", err
+	}
+
+	s.saveLocked()
+
+	return &pool.SigningKey.PrivateKey.PublicKey, pool.SigningKey.KeyID, nil
 }
 
 // GetUserPoolByClientID retrieves a user pool by client ID.
@@ -703,6 +753,18 @@ func generateToken() string {
 	_, _ = rand.Read(b)
 
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// userSubFromAttributes returns the explicit "sub" attribute if present,
+// otherwise a fresh stable UUID for the user's JWT "sub" claim.
+func userSubFromAttributes(attrs []UserAttributeInput) string {
+	for _, attr := range attrs {
+		if attr.Name == attrNameSub {
+			return attr.Value
+		}
+	}
+
+	return uuid.New().String()
 }
 
 // GetUserPoolMfaConfig retrieves the MFA configuration for a user pool.

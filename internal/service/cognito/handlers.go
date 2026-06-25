@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -15,6 +16,13 @@ import (
 // attributeDataTypeString is the Cognito schema AttributeDataType value for
 // a string-typed standard attribute (sub, name, email, ...).
 const attributeDataTypeString = "String"
+
+// Standard Cognito user attribute names. Cognito maps these attributes into
+// the ID token under the same names, so they double as JWT claim names.
+const (
+	attrNameSub   = "sub"
+	attrNameEmail = "email"
+)
 
 // handlerFunc is a type alias for handler functions.
 type handlerFunc func(http.ResponseWriter, *http.Request)
@@ -37,6 +45,7 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"SignUp":                 s.SignUp,
 		"ConfirmSignUp":          s.ConfirmSignUp,
 		"InitiateAuth":           s.InitiateAuth,
+		"AdminInitiateAuth":      s.AdminInitiateAuth,
 		"GetUserPoolMfaConfig":   s.GetUserPoolMfaConfig,
 		"SetUserPoolMfaConfig":   s.SetUserPoolMfaConfig,
 	}
@@ -343,19 +352,9 @@ func (s *Service) SignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userSub := uuid.New().String()
-
-	for _, attr := range user.Attributes {
-		if attr.Name == "sub" {
-			userSub = attr.Value
-
-			break
-		}
-	}
-
 	resp := &SignUpResponse{
 		UserConfirmed: user.UserStatus == UserStatusConfirmed,
-		UserSub:       userSub,
+		UserSub:       user.Sub,
 	}
 
 	writeResponse(w, resp)
@@ -377,21 +376,94 @@ func (s *Service) ConfirmSignUp(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, &ConfirmSignUpResponse{})
 }
 
-// InitiateAuth handles the InitiateAuth API.
+// InitiateAuth handles the InitiateAuth API. It returns RS256-signed JWTs for
+// the ID and access tokens; the refresh token stays an opaque value.
 func (s *Service) InitiateAuth(w http.ResponseWriter, r *http.Request) {
 	var req InitiateAuthRequest
 	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
-	resp, err := s.storage.InitiateAuth(r.Context(), &req)
+	authCtx, err := s.storage.Authenticate(r.Context(), req.ClientID, req.AuthParameters["USERNAME"], req.AuthParameters["PASSWORD"])
 	if err != nil {
 		handleError(w, err)
 
 		return
 	}
 
-	writeResponse(w, resp)
+	result, err := signTokens(r, authCtx)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &InitiateAuthResponse{AuthenticationResult: result})
+}
+
+// AdminInitiateAuth handles the AdminInitiateAuth API. It shares the token
+// issuance path with InitiateAuth; only the auth flow is administrator-driven.
+func (s *Service) AdminInitiateAuth(w http.ResponseWriter, r *http.Request) {
+	var req AdminInitiateAuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	authCtx, err := s.storage.Authenticate(r.Context(), req.ClientID, req.AuthParameters["USERNAME"], req.AuthParameters["PASSWORD"])
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	result, err := signTokens(r, authCtx)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &AdminInitiateAuthResponse{AuthenticationResult: result})
+}
+
+// signTokens issues the signed ID/access tokens for an authenticated user. The
+// issuer is derived from the request host so it matches the host the Authorizer
+// uses to fetch JWKS. The refresh token stays an opaque value.
+func signTokens(r *http.Request, authCtx *AuthContext) (*AuthenticationResult, error) {
+	issuer := buildIssuer(r, authCtx.Pool.ID)
+
+	idToken, accessToken, expiresIn, err := issueTokens(authCtx.Pool, authCtx.Client, authCtx.User, issuer, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthenticationResult{
+		AccessToken:  accessToken,
+		ExpiresIn:    expiresIn,
+		TokenType:    "Bearer",
+		RefreshToken: generateToken(),
+		IDToken:      idToken,
+	}, nil
+}
+
+// GetJWKS serves the User Pool's JWK Set at
+// GET /{userPoolId}/.well-known/jwks.json so an Authorizer can verify the
+// RS256-signed tokens kumo issues.
+func (s *Service) GetJWKS(w http.ResponseWriter, r *http.Request) {
+	userPoolID := r.PathValue("userPoolId")
+
+	pub, kid, err := s.storage.SigningPublicKey(r.Context(), userPoolID)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(buildJWKS(pub, kid))
 }
 
 // userPoolToOutput converts a UserPool to UserPoolOutput.
@@ -535,11 +607,11 @@ func defaultUserPoolPolicies() *UserPoolPoliciesOutput {
 // built-in Cognito attributes that exist on every pool).
 func defaultSchemaAttributes() []SchemaAttributeOutput {
 	return []SchemaAttributeOutput{
-		{Name: "sub", AttributeDataType: attributeDataTypeString, Mutable: false, Required: true,
+		{Name: attrNameSub, AttributeDataType: attributeDataTypeString, Mutable: false, Required: true,
 			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "1", MaxLength: "2048"}},
 		{Name: "name", AttributeDataType: attributeDataTypeString, Mutable: true, Required: false,
 			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "0", MaxLength: "2048"}},
-		{Name: "email", AttributeDataType: attributeDataTypeString, Mutable: true, Required: false,
+		{Name: attrNameEmail, AttributeDataType: attributeDataTypeString, Mutable: true, Required: false,
 			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "0", MaxLength: "2048"}},
 	}
 }

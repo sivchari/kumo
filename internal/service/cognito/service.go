@@ -4,6 +4,7 @@ package cognito
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/sivchari/kumo/internal/service"
@@ -33,9 +34,14 @@ func (s *Service) TargetPrefix() string {
 func (s *Service) JSONProtocol() {}
 
 // RegisterRoutes registers routes for REST-based operations.
-func (s *Service) RegisterRoutes(_ service.Router) {
-	// Cognito uses AWS JSON protocol with X-Amz-Target header.
-	// Routes are handled by DispatchAction.
+//
+// Cognito's operations use the AWS JSON protocol over POST / (dispatched by
+// DispatchAction). The only REST route is the per-pool JWKS endpoint. Its path
+// formally overlaps S3's wildcard /{bucket}/{key...}, but Go 1.22+ ServeMux
+// prefers the more specific pattern (the literal .well-known/jwks.json suffix),
+// so JWKS wins; router_test.go guards this.
+func (s *Service) RegisterRoutes(r service.Router) {
+	r.HandleFunc(http.MethodGet, "/{userPoolId}/.well-known/jwks.json", s.GetJWKS)
 }
 
 // Compile-time check that Service implements io.Closer.
