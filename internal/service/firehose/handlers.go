@@ -17,13 +17,16 @@ type handlerFunc func(http.ResponseWriter, *http.Request)
 // getActionHandlers returns a map of action names to handler functions.
 func (s *Service) getActionHandlers() map[string]handlerFunc {
 	return map[string]handlerFunc{
-		"CreateDeliveryStream":   s.CreateDeliveryStream,
-		"DeleteDeliveryStream":   s.DeleteDeliveryStream,
-		"DescribeDeliveryStream": s.DescribeDeliveryStream,
-		"ListDeliveryStreams":    s.ListDeliveryStreams,
-		"PutRecord":              s.PutRecord,
-		"PutRecordBatch":         s.PutRecordBatch,
-		"UpdateDestination":      s.UpdateDestination,
+		"CreateDeliveryStream":      s.CreateDeliveryStream,
+		"DeleteDeliveryStream":      s.DeleteDeliveryStream,
+		"DescribeDeliveryStream":    s.DescribeDeliveryStream,
+		"ListDeliveryStreams":       s.ListDeliveryStreams,
+		"PutRecord":                 s.PutRecord,
+		"PutRecordBatch":            s.PutRecordBatch,
+		"UpdateDestination":         s.UpdateDestination,
+		"ListTagsForDeliveryStream": s.ListTagsForDeliveryStream,
+		"TagDeliveryStream":         s.TagDeliveryStream,
+		"UntagDeliveryStream":       s.UntagDeliveryStream,
 	}
 }
 
@@ -256,6 +259,94 @@ func (s *Service) UpdateDestination(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, &UpdateDestinationOutput{})
+}
+
+// ListTagsForDeliveryStream handles the ListTagsForDeliveryStream API.
+func (s *Service) ListTagsForDeliveryStream(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForDeliveryStreamInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.DeliveryStreamName == "" {
+		writeError(w, "ValidationException", "DeliveryStreamName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForDeliveryStream(r.Context(), req.DeliveryStreamName)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &ListTagsForDeliveryStreamOutput{
+		Tags:        tags,
+		HasMoreTags: false,
+	})
+}
+
+// TagDeliveryStream handles the TagDeliveryStream API.
+func (s *Service) TagDeliveryStream(w http.ResponseWriter, r *http.Request) {
+	var req TagDeliveryStreamInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.DeliveryStreamName == "" {
+		writeError(w, "ValidationException", "DeliveryStreamName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.Tags) == 0 {
+		writeError(w, "ValidationException", "Tags is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagDeliveryStream(r.Context(), req.DeliveryStreamName, req.Tags); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &TagDeliveryStreamOutput{})
+}
+
+// UntagDeliveryStream handles the UntagDeliveryStream API.
+func (s *Service) UntagDeliveryStream(w http.ResponseWriter, r *http.Request) {
+	var req UntagDeliveryStreamInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.DeliveryStreamName == "" {
+		writeError(w, "ValidationException", "DeliveryStreamName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.TagKeys) == 0 {
+		writeError(w, "ValidationException", "TagKeys is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagDeliveryStream(r.Context(), req.DeliveryStreamName, req.TagKeys); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &UntagDeliveryStreamOutput{})
 }
 
 // writeResponse writes a JSON response.
