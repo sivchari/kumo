@@ -146,6 +146,12 @@ func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if _, ok := r.URL.Query()["object-lock"]; ok {
+		s.GetObjectLockConfiguration(w, r)
+
+		return
+	}
+
 	if handled := s.serveBucketSubresourceStub(w, r); handled {
 		return
 	}
@@ -206,7 +212,6 @@ func bucketSubresourceErrorCode(q map[string][]string) (string, bool) {
 		"cors":              "NoSuchCORSConfiguration",
 		"replication":       "ReplicationConfigurationNotFoundError",
 		"tagging":           "NoSuchTagSet",
-		"object-lock":       "ObjectLockConfigurationNotFoundError",
 		"ownershipControls": "OwnershipControlsNotFoundError",
 	}
 
@@ -1584,6 +1589,8 @@ func toCommonPrefixes(prefixes []string) []CommonPrefix {
 }
 
 // handleBucketPut routes PUT /{bucket} requests based on query parameters.
+//
+//nolint:funlen // It's a straightforward dispatch, and splitting it up would just add indirection.
 func (s *Service) handleBucketPut(w http.ResponseWriter, r *http.Request) {
 	if _, ok := r.URL.Query()["versioning"]; ok {
 		s.PutBucketVersioning(w, r)
@@ -1635,6 +1642,12 @@ func (s *Service) handleBucketPut(w http.ResponseWriter, r *http.Request) {
 
 	if _, ok := r.URL.Query()["lifecycle"]; ok {
 		s.PutBucketLifecycleConfiguration(w, r)
+
+		return
+	}
+
+	if _, ok := r.URL.Query()["object-lock"]; ok {
+		s.PutObjectLockConfiguration(w, r)
 
 		return
 	}

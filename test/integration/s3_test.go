@@ -767,6 +767,72 @@ func TestS3_Versioning_PutAndGetBucketVersioning(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_suspended", result)
 }
 
+// Object Lock Tests
+
+func TestS3_ObjectLock_PutAndGetConfiguration(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucketName := "test-object-lock-config"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucketName),
+		})
+	})
+
+	// Object Lock requires versioning to be enabled on the bucket.
+	_, err = client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+		Bucket: aws.String(bucketName),
+		VersioningConfiguration: &types.VersioningConfiguration{
+			Status: types.BucketVersioningStatusEnabled,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to enable versioning: %v", err)
+	}
+
+	// GET before configuring should fail with ObjectLockConfigurationNotFoundError.
+	_, err = client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err == nil {
+		t.Fatal("expected error for unconfigured object lock, got nil")
+	}
+
+	// Set the bucket default-retention configuration.
+	_, err = client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+		Bucket: aws.String(bucketName),
+		ObjectLockConfiguration: &types.ObjectLockConfiguration{
+			ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+			Rule: &types.ObjectLockRule{
+				DefaultRetention: &types.DefaultRetention{
+					Mode: types.ObjectLockRetentionModeCompliance,
+					Days: aws.Int32(365),
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to put object lock configuration: %v", err)
+	}
+
+	// Verify the configuration roundtrips.
+	result, err := client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("failed to get object lock configuration: %v", err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_configured", result)
+}
+
 func TestS3_Versioning_PutObjectWithVersioning(t *testing.T) {
 	client := newS3Client(t)
 	ctx := t.Context()
