@@ -153,6 +153,7 @@ const (
 	subresourceCORS              = "cors"
 	subresourceNotification      = "notification"
 	subresourceTagging           = "tagging"
+	subresourceObjectLock        = "object-lock"
 )
 
 // subresourceHandler pairs a bucket query-parameter key with the handler that
@@ -178,6 +179,7 @@ var bucketGetSubresources = []subresourceHandler{
 	{subresourceCORS, (*Service).GetBucketCors},
 	{subresourceNotification, (*Service).GetBucketNotificationConfiguration},
 	{subresourceTagging, (*Service).GetBucketTagging},
+	{subresourceObjectLock, (*Service).GetObjectLockConfiguration},
 }
 
 // bucketPutSubresources maps a PUT query-parameter key to its handler, in the
@@ -193,6 +195,7 @@ var bucketPutSubresources = []subresourceHandler{
 	{subresourceWebsite, (*Service).PutBucketWebsite},
 	{subresourceLifecycle, (*Service).PutBucketLifecycleConfiguration},
 	{subresourceTagging, (*Service).PutBucketTagging},
+	{subresourceObjectLock, (*Service).PutObjectLockConfiguration},
 }
 
 // bucketDeleteSubresources maps a DELETE query-parameter key to its handler, in
@@ -288,7 +291,6 @@ func bucketSubresourceErrorCode(q map[string][]string) (string, bool) {
 	mapping := map[string]string{
 		"cors":              "NoSuchCORSConfiguration",
 		"replication":       "ReplicationConfigurationNotFoundError",
-		"object-lock":       "ObjectLockConfigurationNotFoundError",
 		"ownershipControls": "OwnershipControlsNotFoundError",
 	}
 
