@@ -2,6 +2,7 @@
 package apigateway
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -25,10 +26,20 @@ func init() {
 	service.Register(svc)
 }
 
+// LambdaInvoker is the subset of the Lambda service the API Gateway needs to
+// run a REQUEST authorizer: a synchronous, in-process function invoke. The
+// server injects an implementation after registration via SetLambdaInvoker (see
+// internal/server/apigateway_lambda_wiring.go), avoiding a direct dependency on
+// the lambda package and the import cycle it would create.
+type LambdaInvoker interface {
+	InvokeSync(ctx context.Context, fn string, payload []byte) ([]byte, error)
+}
+
 // Service implements the API Gateway service.
 type Service struct {
 	storage Storage
 	baseURL string
+	invoker LambdaInvoker
 }
 
 // New creates a new API Gateway service.
@@ -36,6 +47,12 @@ func New(storage Storage) *Service {
 	return &Service{
 		storage: storage,
 	}
+}
+
+// SetLambdaInvoker injects the Lambda invoker used by REQUEST authorizers. It
+// is called once during server wiring, before any request is served.
+func (s *Service) SetLambdaInvoker(invoker LambdaInvoker) {
+	s.invoker = invoker
 }
 
 // Name returns the service name.
@@ -83,6 +100,12 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/stages", s.GetStages)
 		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/stages/{stageName}", s.GetStage)
 		r.HandleFunc("DELETE", prefix+"/restapis/{restApiId}/stages/{stageName}", s.DeleteStage)
+
+		// Authorizer routes.
+		r.HandleFunc("POST", prefix+"/restapis/{restApiId}/authorizers", s.CreateAuthorizer)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/authorizers", s.GetAuthorizers)
+		r.HandleFunc("GET", prefix+"/restapis/{restApiId}/authorizers/{authorizerId}", s.GetAuthorizer)
+		r.HandleFunc("DELETE", prefix+"/restapis/{restApiId}/authorizers/{authorizerId}", s.DeleteAuthorizer)
 	}
 }
 

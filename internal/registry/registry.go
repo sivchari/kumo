@@ -85,5 +85,6 @@ import (
 	_ "github.com/sivchari/kumo/internal/service/sqs"
 	_ "github.com/sivchari/kumo/internal/service/ssm"
 	_ "github.com/sivchari/kumo/internal/service/sts"
+	_ "github.com/sivchari/kumo/internal/service/verifiedpermissions"
 	_ "github.com/sivchari/kumo/internal/service/xray"
 )

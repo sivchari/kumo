@@ -266,6 +266,140 @@ func TestFirehose_UpdateDestination(t *testing.T) {
 	}
 }
 
+func TestFirehose_ListTagsForDeliveryStream(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	client := createFirehoseClient(t)
+
+	streamName := "list-tags-test-stream"
+
+	// Create delivery stream with tags (Terraform supplies them on create).
+	_, err := client.CreateDeliveryStream(ctx, &firehose.CreateDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+		DeliveryStreamType: types.DeliveryStreamTypeDirectPut,
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("local")},
+			{Key: aws.String("app"), Value: aws.String("idp")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List tags (this is what Terraform calls right after create).
+	result, err := client.ListTagsForDeliveryStream(ctx, &firehose.ListTagsForDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), result)
+
+	// Clean up.
+	_, err = client.DeleteDeliveryStream(ctx, &firehose.DeleteDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFirehose_TagDeliveryStream(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	client := createFirehoseClient(t)
+
+	streamName := "tag-test-stream"
+
+	// Create delivery stream.
+	_, err := client.CreateDeliveryStream(ctx, &firehose.CreateDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+		DeliveryStreamType: types.DeliveryStreamTypeDirectPut,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Tag the delivery stream.
+	_, err = client.TagDeliveryStream(ctx, &firehose.TagDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("local")},
+			{Key: aws.String("team"), Value: aws.String("sec")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify the tags are readable back.
+	result, err := client.ListTagsForDeliveryStream(ctx, &firehose.ListTagsForDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), result)
+
+	// Clean up.
+	_, err = client.DeleteDeliveryStream(ctx, &firehose.DeleteDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFirehose_UntagDeliveryStream(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	client := createFirehoseClient(t)
+
+	streamName := "untag-test-stream"
+
+	// Create delivery stream with tags.
+	_, err := client.CreateDeliveryStream(ctx, &firehose.CreateDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+		DeliveryStreamType: types.DeliveryStreamTypeDirectPut,
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("local")},
+			{Key: aws.String("team"), Value: aws.String("sec")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove one tag.
+	_, err = client.UntagDeliveryStream(ctx, &firehose.UntagDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+		TagKeys:            []string{"team"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify only the remaining tag is returned.
+	result, err := client.ListTagsForDeliveryStream(ctx, &firehose.ListTagsForDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), result)
+
+	// Clean up.
+	_, err = client.DeleteDeliveryStream(ctx, &firehose.DeleteDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func createFirehoseClient(t *testing.T) *firehose.Client {
 	t.Helper()
 

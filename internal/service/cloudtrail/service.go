@@ -26,6 +26,12 @@ func (s *Service) Name() string {
 	return "cloudtrail"
 }
 
+// Storage returns the underlying storage. Used by cross-service wiring
+// (wireCloudTrailToS3) to install the S3 log delivery target.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
 // TargetPrefix returns the X-Amz-Target prefix.
 func (s *Service) TargetPrefix() string {
 	return "CloudTrail_20131101"

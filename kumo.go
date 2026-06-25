@@ -34,6 +34,7 @@ type Server struct {
 func NewServer() *Server {
 	cfg := server.DefaultConfig()
 	cfg.LogLevel = 100 // Suppress all logs in test mode.
+	cfg.Version = Version
 	internalSrv := server.New(cfg)
 
 	ts := httptest.NewServer(internalSrv.Handler())

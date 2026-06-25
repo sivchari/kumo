@@ -67,12 +67,26 @@ type MemoryStorage struct {
 	mu      sync.RWMutex     `json:"-"`
 	Pipes   map[string]*Pipe `json:"pipes"` // keyed by name
 	dataDir string
+
+	// publisher is the installed EventBridge target (nil until wiring runs).
+	publisher EventPublisher
+	// runCtx is the parent context for all per-pipe poller goroutines;
+	// cancelled by Close.
+	runCtx    context.Context //nolint:containedctx // intentional: scopes poller goroutines to storage lifetime
+	runCancel context.CancelFunc
+	// pollers maps a running pipe name to its poller cancel func.
+	pollers map[string]context.CancelFunc
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	s := &MemoryStorage{
-		Pipes: make(map[string]*Pipe),
+		Pipes:     make(map[string]*Pipe),
+		runCtx:    ctx,
+		runCancel: cancel,
+		pollers:   make(map[string]context.CancelFunc),
 	}
 	for _, o := range opts {
 		o(s)
@@ -129,8 +143,13 @@ func (m *MemoryStorage) saveLocked() {
 	storage.ScheduleSave(m.dataDir, "pipes", m.MarshalJSON)
 }
 
-// Close saves the storage state to disk if persistence is enabled.
+// Close stops all poller goroutines, then saves the storage state to disk if
+// persistence is enabled.
 func (m *MemoryStorage) Close() error {
+	if m.runCancel != nil {
+		m.runCancel()
+	}
+
 	if m.dataDir == "" {
 		return nil
 	}
@@ -220,6 +239,7 @@ func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pi
 	m.Pipes[req.Name] = pipe
 
 	m.saveLocked()
+	m.startPollerLocked(pipe)
 
 	return pipe, nil
 }
@@ -309,6 +329,10 @@ func (m *MemoryStorage) UpdatePipe(_ context.Context, req *UpdatePipeInput) (*Pi
 
 	m.saveLocked()
 
+	// Refresh the poller so it picks up any source/target/state changes.
+	m.stopPollerLocked(pipe.Name)
+	m.startPollerLocked(pipe)
+
 	return pipe, nil
 }
 
@@ -324,6 +348,9 @@ func (m *MemoryStorage) DeletePipe(_ context.Context, name string) (*Pipe, error
 			Message: fmt.Sprintf("Pipe %s does not exist", name),
 		}
 	}
+
+	// Stop the poller before removing the pipe.
+	m.stopPollerLocked(name)
 
 	// Update state to deleting.
 	pipe.CurrentState = CurrentStateDeleting
@@ -432,6 +459,7 @@ func (m *MemoryStorage) StartPipe(_ context.Context, name string) (*Pipe, error)
 	pipe.LastModifiedTime = AWSTimestamp{Time: time.Now()}
 
 	m.saveLocked()
+	m.startPollerLocked(pipe)
 
 	return pipe, nil
 }
@@ -462,6 +490,7 @@ func (m *MemoryStorage) StopPipe(_ context.Context, name string) (*Pipe, error) 
 	pipe.LastModifiedTime = AWSTimestamp{Time: time.Now()}
 
 	m.saveLocked()
+	m.stopPollerLocked(name)
 
 	return pipe, nil
 }

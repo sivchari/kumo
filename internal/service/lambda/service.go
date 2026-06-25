@@ -19,25 +19,64 @@ func init() {
 		opts = append(opts, WithDataDir(dir))
 	}
 
-	service.Register(New(NewMemoryStorage(defaultBaseURL, opts...), defaultBaseURL))
+	var svcOpts []ServiceOption
+	// KUMO_LAMBDA_EXECUTOR=process makes kumo run provided.* bootstraps as child
+	// processes connected to its own Runtime API (LocalStack's docker-executor
+	// equivalent, in-process). Off by default: kumo does not execute uploaded code
+	// unless explicitly opted in.
+	if os.Getenv("KUMO_LAMBDA_EXECUTOR") == "process" {
+		svcOpts = append(svcOpts, WithProcessExecutor(runtimeAPIHostFromEnv()))
+	}
+
+	service.Register(New(NewMemoryStorage(defaultBaseURL, opts...), defaultBaseURL, svcOpts...))
+}
+
+// runtimeAPIHostFromEnv returns the host:port a launched bootstrap uses to reach
+// kumo's Runtime API. The process runs in the same container, so loopback plus
+// the configured port (KUMO_PORT, default 4566) is used.
+func runtimeAPIHostFromEnv() string {
+	port := os.Getenv("KUMO_PORT")
+	if port == "" {
+		port = "4566"
+	}
+
+	return "127.0.0.1:" + port
 }
 
 // Service implements the Lambda service.
 type Service struct {
-	storage Storage
-	baseURL string
-	broker  *runtimeBroker
-	async   *asyncDispatcher
+	storage  Storage
+	baseURL  string
+	broker   *runtimeBroker
+	async    *asyncDispatcher
+	executor *processExecutor // nil unless KUMO_LAMBDA_EXECUTOR=process
+}
+
+// ServiceOption configures a Service at construction.
+type ServiceOption func(*Service)
+
+// WithProcessExecutor enables running provided.* bootstraps as child processes,
+// pointed at kumo's Runtime API on runtimeAPIHost (host:port).
+func WithProcessExecutor(runtimeAPIHost string) ServiceOption {
+	return func(s *Service) {
+		s.executor = newProcessExecutor(s.broker, runtimeAPIHost)
+	}
 }
 
 // New creates a new Lambda service.
-func New(storage Storage, baseURL string) *Service {
-	return &Service{
+func New(storage Storage, baseURL string, opts ...ServiceOption) *Service {
+	s := &Service{
 		storage: storage,
 		baseURL: baseURL,
 		broker:  newRuntimeBroker(),
 		async:   newAsyncDispatcher(),
 	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s
 }
 
 // Name returns the service name.
@@ -87,10 +126,14 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/init/error", s.RuntimeInitError)
 }
 
-// Close stops the async dispatcher and saves the storage state if
-// persistence is enabled.
+// Close stops the async dispatcher, kills any process-executor bootstraps, and
+// saves the storage state if persistence is enabled.
 func (s *Service) Close() error {
 	s.async.close()
+
+	if s.executor != nil {
+		s.executor.close()
+	}
 
 	if c, ok := s.storage.(io.Closer); ok {
 		if err := c.Close(); err != nil {

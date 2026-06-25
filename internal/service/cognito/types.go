@@ -54,17 +54,49 @@ const (
 
 // UserPool represents a Cognito user pool.
 type UserPool struct {
-	ID                 string
-	Name               string
-	Status             UserPoolStatus
-	CreationDate       time.Time
-	LastModifiedDate   time.Time
-	Policies           *UserPoolPolicies
-	LambdaConfig       *LambdaConfig
-	AutoVerifiedAttrs  []string
-	UsernameAttributes []string
-	MFAConfiguration   string
-	EmailConfiguration *EmailConfiguration
+	ID                    string
+	Name                  string
+	Status                UserPoolStatus
+	CreationDate          time.Time
+	LastModifiedDate      time.Time
+	Policies              *UserPoolPolicies
+	LambdaConfig          *LambdaConfig
+	AutoVerifiedAttrs     []string
+	UsernameAttributes    []string
+	MFAConfiguration      string
+	EmailConfiguration    *EmailConfiguration
+	AdminCreateUserConfig *AdminCreateUserConfig
+	SigningKey            *signingKey // RSA key pair used to sign and publish JWTs (lazily generated)
+}
+
+// AdminCreateUserConfig represents the admin-create-user configuration of a
+// user pool. Stored so DescribeUserPool echoes the configured value instead of
+// the AWS default, which otherwise makes terraform-provider-aws detect drift on
+// allow_admin_create_user_only and call UpdateUserPool on every plan.
+type AdminCreateUserConfig struct {
+	AllowAdminCreateUserOnly bool
+}
+
+// signingKeyJSON is the on-disk representation of a signingKey: the kid plus
+// the PKCS#8 DER of the private key (encoding/json renders []byte as base64).
+type signingKeyJSON struct {
+	KeyID string `json:"kid"`
+	DER   []byte `json:"der"`
+}
+
+// jwkSet is a JWK Set as published at /{userPoolId}/.well-known/jwks.json.
+type jwkSet struct {
+	Keys []jwk `json:"keys"`
+}
+
+// jwk is a single RSA public key in JWK form.
+type jwk struct {
+	Kty string `json:"kty"`
+	Use string `json:"use"`
+	Alg string `json:"alg"`
+	Kid string `json:"kid"`
+	N   string `json:"n"`
+	E   string `json:"e"`
 }
 
 // UserPoolPolicies represents user pool policies.
@@ -127,6 +159,7 @@ type UserPoolClient struct {
 type User struct {
 	Username         string
 	UserPoolID       string
+	Sub              string // stable UUID used as the JWT "sub" claim
 	Attributes       []UserAttribute
 	UserCreateDate   time.Time
 	UserLastModified time.Time
@@ -150,15 +183,39 @@ type MFAOption struct {
 
 // CreateUserPoolRequest is the request for CreateUserPool.
 type CreateUserPoolRequest struct {
-	PoolName               string                   `json:"PoolName"`
-	Policies               *UserPoolPoliciesInput   `json:"Policies,omitempty"`
-	LambdaConfig           *LambdaConfigInput       `json:"LambdaConfig,omitempty"`
-	AutoVerifiedAttributes []string                 `json:"AutoVerifiedAttributes,omitempty"`
-	UsernameAttributes     []string                 `json:"UsernameAttributes,omitempty"`
-	MfaConfiguration       string                   `json:"MfaConfiguration,omitempty"`
-	EmailConfiguration     *EmailConfigurationInput `json:"EmailConfiguration,omitempty"`
-	Region                 string                   `json:"-"`
+	PoolName               string                      `json:"PoolName"`
+	Policies               *UserPoolPoliciesInput      `json:"Policies,omitempty"`
+	LambdaConfig           *LambdaConfigInput          `json:"LambdaConfig,omitempty"`
+	AutoVerifiedAttributes []string                    `json:"AutoVerifiedAttributes,omitempty"`
+	UsernameAttributes     []string                    `json:"UsernameAttributes,omitempty"`
+	MfaConfiguration       string                      `json:"MfaConfiguration,omitempty"`
+	EmailConfiguration     *EmailConfigurationInput    `json:"EmailConfiguration,omitempty"`
+	AdminCreateUserConfig  *AdminCreateUserConfigInput `json:"AdminCreateUserConfig,omitempty"`
+	Region                 string                      `json:"-"`
 }
+
+// AdminCreateUserConfigInput represents the admin-create-user configuration in
+// CreateUserPool / UpdateUserPool requests.
+type AdminCreateUserConfigInput struct {
+	AllowAdminCreateUserOnly bool `json:"AllowAdminCreateUserOnly,omitempty"`
+}
+
+// UpdateUserPoolRequest is the request for UpdateUserPool. UserPoolId selects
+// the pool; the remaining fields mirror the mutable subset of CreateUserPool.
+type UpdateUserPoolRequest struct {
+	UserPoolID             string                      `json:"UserPoolId"`
+	Policies               *UserPoolPoliciesInput      `json:"Policies,omitempty"`
+	LambdaConfig           *LambdaConfigInput          `json:"LambdaConfig,omitempty"`
+	AutoVerifiedAttributes []string                    `json:"AutoVerifiedAttributes,omitempty"`
+	UsernameAttributes     []string                    `json:"UsernameAttributes,omitempty"`
+	MfaConfiguration       string                      `json:"MfaConfiguration,omitempty"`
+	EmailConfiguration     *EmailConfigurationInput    `json:"EmailConfiguration,omitempty"`
+	AdminCreateUserConfig  *AdminCreateUserConfigInput `json:"AdminCreateUserConfig,omitempty"`
+}
+
+// UpdateUserPoolResponse is the response for UpdateUserPool. AWS returns an
+// empty document, so the struct has no fields.
+type UpdateUserPoolResponse struct{}
 
 // UserPoolPoliciesInput represents user pool policies in requests.
 type UserPoolPoliciesInput struct {
@@ -541,6 +598,17 @@ type AdminDeleteUserRequest struct {
 // AdminDeleteUserResponse is the response for AdminDeleteUser.
 type AdminDeleteUserResponse struct{}
 
+// AdminSetUserPasswordRequest is the request for AdminSetUserPassword.
+type AdminSetUserPasswordRequest struct {
+	UserPoolID string `json:"UserPoolId"`
+	Username   string `json:"Username"`
+	Password   string `json:"Password"`
+	Permanent  bool   `json:"Permanent"`
+}
+
+// AdminSetUserPasswordResponse is the response for AdminSetUserPassword.
+type AdminSetUserPasswordResponse struct{}
+
 // ListUsersRequest is the request for ListUsers.
 type ListUsersRequest struct {
 	UserPoolID      string   `json:"UserPoolId"`
@@ -591,6 +659,24 @@ type InitiateAuthRequest struct {
 
 // InitiateAuthResponse is the response for InitiateAuth.
 type InitiateAuthResponse struct {
+	ChallengeName        string                `json:"ChallengeName,omitempty"`
+	Session              string                `json:"Session,omitempty"`
+	ChallengeParameters  map[string]string     `json:"ChallengeParameters,omitempty"`
+	AuthenticationResult *AuthenticationResult `json:"AuthenticationResult,omitempty"`
+}
+
+// AdminInitiateAuthRequest is the request for AdminInitiateAuth.
+type AdminInitiateAuthRequest struct {
+	UserPoolID     string            `json:"UserPoolId"`
+	ClientID       string            `json:"ClientId"`
+	AuthFlow       string            `json:"AuthFlow"`
+	AuthParameters map[string]string `json:"AuthParameters,omitempty"`
+}
+
+// AdminInitiateAuthResponse is the response for AdminInitiateAuth. It mirrors
+// InitiateAuthResponse: the admin variant differs only in the auth flow, not
+// the response shape.
+type AdminInitiateAuthResponse struct {
 	ChallengeName        string                `json:"ChallengeName,omitempty"`
 	Session              string                `json:"Session,omitempty"`
 	ChallengeParameters  map[string]string     `json:"ChallengeParameters,omitempty"`

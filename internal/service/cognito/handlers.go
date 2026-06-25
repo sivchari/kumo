@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -19,6 +20,7 @@ type handlerFunc func(http.ResponseWriter, *http.Request)
 func (s *Service) getActionHandlers() map[string]handlerFunc {
 	return map[string]handlerFunc{
 		"CreateUserPool":         s.CreateUserPool,
+		"UpdateUserPool":         s.UpdateUserPool,
 		"DescribeUserPool":       s.DescribeUserPool,
 		"ListUserPools":          s.ListUserPools,
 		"DeleteUserPool":         s.DeleteUserPool,
@@ -29,10 +31,12 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"AdminCreateUser":        s.AdminCreateUser,
 		"AdminGetUser":           s.AdminGetUser,
 		"AdminDeleteUser":        s.AdminDeleteUser,
+		"AdminSetUserPassword":   s.AdminSetUserPassword,
 		"ListUsers":              s.ListUsers,
 		"SignUp":                 s.SignUp,
 		"ConfirmSignUp":          s.ConfirmSignUp,
 		"InitiateAuth":           s.InitiateAuth,
+		"AdminInitiateAuth":      s.AdminInitiateAuth,
 		"GetUserPoolMfaConfig":   s.GetUserPoolMfaConfig,
 		"SetUserPoolMfaConfig":   s.SetUserPoolMfaConfig,
 	}
@@ -83,6 +87,25 @@ func (s *Service) CreateUserPool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, resp)
+}
+
+// UpdateUserPool handles the UpdateUserPool API. The real AWS response is an
+// empty document; Terraform reads the result back with DescribeUserPool.
+func (s *Service) UpdateUserPool(w http.ResponseWriter, r *http.Request) {
+	var req UpdateUserPoolRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if _, err := s.storage.UpdateUserPool(r.Context(), &req); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &UpdateUserPoolResponse{})
 }
 
 // DescribeUserPool handles the DescribeUserPool API.
@@ -291,7 +314,7 @@ func (s *Service) AdminGetUser(w http.ResponseWriter, r *http.Request) {
 
 	resp := &AdminGetUserResponse{
 		Username:             user.Username,
-		UserAttributes:       convertAttributes(user.Attributes),
+		UserAttributes:       userAttributesOutput(user),
 		UserCreateDate:       float64(user.UserCreateDate.Unix()),
 		UserLastModifiedDate: float64(user.UserLastModified.Unix()),
 		Enabled:              user.Enabled,
@@ -317,6 +340,26 @@ func (s *Service) AdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, &AdminDeleteUserResponse{})
+}
+
+// AdminSetUserPassword handles the AdminSetUserPassword API. It sets the user's
+// password and, when Permanent is true, transitions the user to CONFIRMED so
+// AdminInitiateAuth can issue signed JWTs. The response is an empty body.
+func (s *Service) AdminSetUserPassword(w http.ResponseWriter, r *http.Request) {
+	var req AdminSetUserPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AdminSetUserPassword(r.Context(), &req); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &AdminSetUserPasswordResponse{})
 }
 
 // ListUsers handles the ListUsers API.
@@ -365,20 +408,9 @@ func (s *Service) SignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user sub from attributes.
-	userSub := uuid.New().String()
-
-	for _, attr := range user.Attributes {
-		if attr.Name == "sub" {
-			userSub = attr.Value
-
-			break
-		}
-	}
-
 	resp := &SignUpResponse{
 		UserConfirmed: user.UserStatus == UserStatusConfirmed,
-		UserSub:       userSub,
+		UserSub:       user.Sub,
 	}
 
 	writeResponse(w, resp)
@@ -402,7 +434,8 @@ func (s *Service) ConfirmSignUp(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, &ConfirmSignUpResponse{})
 }
 
-// InitiateAuth handles the InitiateAuth API.
+// InitiateAuth handles the InitiateAuth API. It returns RS256-signed JWTs for
+// the ID and access tokens; the refresh token stays an opaque value.
 func (s *Service) InitiateAuth(w http.ResponseWriter, r *http.Request) {
 	var req InitiateAuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -411,14 +444,86 @@ func (s *Service) InitiateAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := s.storage.InitiateAuth(r.Context(), &req)
+	authCtx, err := s.storage.Authenticate(r.Context(), req.ClientID, req.AuthParameters["USERNAME"], req.AuthParameters["PASSWORD"])
 	if err != nil {
 		handleError(w, err)
 
 		return
 	}
 
-	writeResponse(w, resp)
+	result, err := signTokens(r, authCtx)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &InitiateAuthResponse{AuthenticationResult: result})
+}
+
+// AdminInitiateAuth handles the AdminInitiateAuth API. It shares the token
+// issuance path with InitiateAuth; only the auth flow is administrator-driven.
+func (s *Service) AdminInitiateAuth(w http.ResponseWriter, r *http.Request) {
+	var req AdminInitiateAuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	authCtx, err := s.storage.Authenticate(r.Context(), req.ClientID, req.AuthParameters["USERNAME"], req.AuthParameters["PASSWORD"])
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	result, err := signTokens(r, authCtx)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &AdminInitiateAuthResponse{AuthenticationResult: result})
+}
+
+// signTokens issues the signed ID/access tokens for an authenticated user. The
+// issuer is derived from the request host so it matches the host the Authorizer
+// uses to fetch JWKS. The refresh token stays an opaque value.
+func signTokens(r *http.Request, authCtx *AuthContext) (*AuthenticationResult, error) {
+	issuer := buildIssuer(r, authCtx.Pool.ID)
+
+	idToken, accessToken, expiresIn, err := issueTokens(authCtx.Pool, authCtx.Client, authCtx.User, issuer, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthenticationResult{
+		AccessToken:  accessToken,
+		ExpiresIn:    expiresIn,
+		TokenType:    "Bearer",
+		RefreshToken: generateToken(),
+		IDToken:      idToken,
+	}, nil
+}
+
+// GetJWKS serves the User Pool's JWK Set at
+// GET /{userPoolId}/.well-known/jwks.json so an Authorizer can verify the
+// RS256-signed tokens kumo issues.
+func (s *Service) GetJWKS(w http.ResponseWriter, r *http.Request) {
+	userPoolID := r.PathValue("userPoolId")
+
+	pub, kid, err := s.storage.SigningPublicKey(r.Context(), userPoolID)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(buildJWKS(pub, kid))
 }
 
 // userPoolToOutput converts a UserPool to UserPoolOutput.
@@ -446,7 +551,7 @@ func userPoolToOutput(pool *UserPool) *UserPoolOutput {
 		AliasAttributes:             []string{},
 		MfaConfiguration:            mfa,
 		LambdaConfig:                lambdaConfigToOutputOrEmpty(pool.LambdaConfig),
-		AdminCreateUserConfig:       defaultAdminCreateUserConfig(),
+		AdminCreateUserConfig:       adminCreateUserConfigToOutput(pool.AdminCreateUserConfig),
 		AccountRecoverySetting:      defaultAccountRecoverySetting(),
 		VerificationMessageTemplate: defaultVerificationMessageTemplate(),
 		SchemaAttributes:            defaultSchemaAttributes(),
@@ -523,6 +628,17 @@ func lambdaConfigToOutputOrEmpty(config *LambdaConfig) *LambdaConfigOutput {
 // config (allow-only false, no template).
 func defaultAdminCreateUserConfig() *AdminCreateUserConfigOutput {
 	return &AdminCreateUserConfigOutput{AllowAdminCreateUserOnly: false}
+}
+
+// adminCreateUserConfigToOutput echoes the pool's stored admin-create-user
+// config so DescribeUserPool reflects the configured value; it falls back to
+// the AWS default when the pool has none.
+func adminCreateUserConfigToOutput(config *AdminCreateUserConfig) *AdminCreateUserConfigOutput {
+	if config == nil {
+		return defaultAdminCreateUserConfig()
+	}
+
+	return &AdminCreateUserConfigOutput{AllowAdminCreateUserOnly: config.AllowAdminCreateUserOnly}
 }
 
 // defaultAccountRecoverySetting returns the AWS-default recovery setting
@@ -617,12 +733,36 @@ func userPoolClientToOutput(client *UserPoolClient) *UserPoolClientOutput {
 func userToOutput(user *User) *UserOutput {
 	return &UserOutput{
 		Username:             user.Username,
-		Attributes:           convertAttributes(user.Attributes),
+		Attributes:           userAttributesOutput(user),
 		UserCreateDate:       float64(user.UserCreateDate.Unix()),
 		UserLastModifiedDate: float64(user.UserLastModified.Unix()),
 		Enabled:              user.Enabled,
 		UserStatus:           string(user.UserStatus),
 	}
+}
+
+// subAttributeName is the Cognito user attribute carrying the immutable sub.
+const subAttributeName = "sub"
+
+// userAttributesOutput returns the user's attributes for an API response with
+// the immutable "sub" attribute included, as real Cognito does. Tooling reads
+// sub from AdminGetUser / ListUsers UserAttributes (e.g. the example seed keys
+// DynamoDB permission rows by it), and it must equal the JWT "sub" claim
+// (user.Sub).
+func userAttributesOutput(user *User) []UserAttributeOutput {
+	attrs := convertAttributes(user.Attributes)
+
+	if user.Sub == "" {
+		return attrs
+	}
+
+	for _, a := range attrs {
+		if a.Name == subAttributeName {
+			return attrs
+		}
+	}
+
+	return append([]UserAttributeOutput{{Name: subAttributeName, Value: user.Sub}}, attrs...)
 }
 
 // convertAttributes converts UserAttribute slice to UserAttributeOutput slice.

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,6 +28,7 @@ type Config struct {
 	Port     int
 	LogLevel slog.Level
 	InitDir  string // Directory containing init scripts to execute on startup
+	Version  string // kumo version, reported by the LocalStack-compatible /_localstack/health endpoint
 }
 
 // DefaultConfig returns the default server configuration.
@@ -80,6 +82,7 @@ type Server struct {
 	cborDispatcher  *CBORProtocolDispatcher
 	logger          *slog.Logger
 	server          *http.Server
+	capturer        *managementEventCapturer
 }
 
 // New creates a new server with the given configuration.
@@ -103,6 +106,7 @@ func New(config Config) *Server {
 		queryDispatcher: queryDispatcher,
 		cborDispatcher:  cborDispatcher,
 		logger:          logger,
+		capturer:        newManagementEventCapturer(),
 	}
 
 	// Auto-register services from global registry
@@ -114,6 +118,16 @@ func New(config Config) *Server {
 	wireSNStoSQS(registry)
 	wireS3toSQS(registry)
 	wireCloudWatchToSNS(registry)
+	wireAPIGatewayToLambda(registry)
+	wireFirehoseToS3(registry)
+	wirePipesToEventBridge(registry)
+	wireCloudTrailToS3(registry)
+
+	// Feed the registered service names into the LocalStack-compatible health
+	// endpoint. Sorted so the response is deterministic across restarts.
+	healthServices := registry.Names()
+	sort.Strings(healthServices)
+	router.SetLocalStackHealth(healthServices, config.Version)
 
 	// Register unified protocol dispatcher for POST /
 	hasJSONServices := len(jsonDispatcher.handlers) > 0
@@ -142,12 +156,14 @@ func (s *Server) unifiedDispatcher(w http.ResponseWriter, r *http.Request) {
 	// Query protocol uses form-urlencoded.
 	if mediaType == "application/x-www-form-urlencoded" {
 		s.queryDispatcher.ServeHTTP(w, r)
+		s.capturer.record(r, true)
 
 		return
 	}
 
 	// Default to JSON protocol.
 	s.jsonDispatcher.ServeHTTP(w, r)
+	s.capturer.record(r, false)
 }
 
 // Registry returns the service registry.

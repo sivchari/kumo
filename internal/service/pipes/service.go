@@ -37,6 +37,12 @@ func (s *Service) Name() string {
 	return "pipes"
 }
 
+// Storage returns the underlying storage. Used by cross-service wiring
+// (wirePipesToEventBridge) to install the EventBridge publish target.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
 // RegisterRoutes registers the Pipes routes.
 func (s *Service) RegisterRoutes(r service.Router) {
 	// Pipe CRUD operations.

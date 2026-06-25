@@ -61,6 +61,10 @@ linters:
       - path: internal/service/secretsmanager/types\.go
         linters:
           - tagliatelle
+      # AWS Verified Permissions error envelope uses the __type field.
+      - path: internal/service/verifiedpermissions/types\.go
+        linters:
+          - tagliatelle
       # AWS SNS API requires PascalCase JSON field names.
       - path: internal/service/sns/types\.go
         linters:

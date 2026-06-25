@@ -148,6 +148,10 @@ func (s *Service) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.executor != nil {
+		s.executor.stop(functionName)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -301,15 +305,30 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 	async := invocationType == "Event"
 
 	// Resolution order: a handler polling the Runtime API wins, then a
-	// configured InvokeEndpoint, otherwise there is nothing to execute.
+	// configured InvokeEndpoint, then the process executor (if enabled) launches
+	// the bootstrap, otherwise there is nothing to execute.
 	switch {
 	case s.broker.registered(functionName):
 		s.invokeViaRuntime(w, r, functionName, payload, async)
 	case fn.InvokeEndpoint != "":
 		s.invokeViaEndpoint(w, r, functionName, fn.InvokeEndpoint, payload, async)
+	case s.executor != nil && s.executor.supports(fn):
+		s.invokeViaProcess(w, r, fn, payload, async)
 	default:
 		s.invokeNoBackend(w, functionName, async)
 	}
+}
+
+// invokeViaProcess launches the function's bootstrap (if not already running)
+// via the process executor, then dispatches through the Runtime API broker.
+func (s *Service) invokeViaProcess(w http.ResponseWriter, r *http.Request, fn *Function, payload []byte, async bool) {
+	if err := s.executor.ensureRunning(fn); err != nil {
+		writeFunctionError(w, ErrServiceException, "process executor: "+err.Error(), http.StatusBadGateway)
+
+		return
+	}
+
+	s.invokeViaRuntime(w, r, fn.FunctionName, payload, async)
 }
 
 // invokeViaRuntime dispatches to a handler connected through the Runtime API.
@@ -449,6 +468,77 @@ func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoin
 	} else {
 		_, _ = w.Write(respBody)
 	}
+}
+
+// InvokeSync invokes function fn synchronously and returns its response
+// payload. It exists for in-process, service-to-service calls — such as the
+// API Gateway REQUEST authorizer step — that need the function's result
+// without going through the HTTP invoke handler.
+//
+// The resolution order mirrors Invoke: a handler polling the Runtime API wins,
+// then a configured InvokeEndpoint, otherwise there is no execution backend and
+// an error is returned. A Runtime API handler that signals a function error
+// still has its payload returned (the error envelope), leaving interpretation
+// to the caller; only transport-level failures surface as a Go error.
+func (s *Service) InvokeSync(ctx context.Context, fn string, payload []byte) ([]byte, error) {
+	f, err := s.storage.GetFunction(ctx, fn)
+	if err != nil {
+		return nil, fmt.Errorf("get function %s: %w", fn, err)
+	}
+
+	switch {
+	case s.broker.registered(fn):
+		res, err := s.broker.invoke(ctx, fn, payload, false)
+		if err != nil {
+			return nil, fmt.Errorf("runtime invoke %s: %w", fn, err)
+		}
+
+		return res.payload, nil
+	case f.InvokeEndpoint != "":
+		return s.invokeEndpointSync(ctx, f.InvokeEndpoint, payload)
+	case s.executor != nil && s.executor.supports(f):
+		if err := s.executor.ensureRunning(f); err != nil {
+			return nil, fmt.Errorf("process executor %s: %w", fn, err)
+		}
+
+		res, err := s.broker.invoke(ctx, fn, payload, false)
+		if err != nil {
+			return nil, fmt.Errorf("runtime invoke %s: %w", fn, err)
+		}
+
+		return res.payload, nil
+	default:
+		return nil, fmt.Errorf("function %s has no runtime handler or InvokeEndpoint", fn)
+	}
+}
+
+// invokeEndpointSync POSTs payload to a function's configured InvokeEndpoint and
+// returns the response body. A non-2xx status is treated as a failed invocation.
+func (s *Service) invokeEndpointSync(ctx context.Context, endpoint string, payload []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build invoke request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("invoke endpoint: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read invoke response: %w", err)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("invoke endpoint returned status %d", resp.StatusCode)
+	}
+
+	return body, nil
 }
 
 // extractFunctionName extracts function name from URL paths like:

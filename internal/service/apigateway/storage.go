@@ -19,6 +19,7 @@ const (
 	errMethodNotFound     = "NotFoundException"
 	errDeploymentNotFound = "NotFoundException"
 	errStageNotFound      = "NotFoundException"
+	errAuthorizerNotFound = "NotFoundException"
 	errBadRequest         = "BadRequestException"
 )
 
@@ -50,6 +51,11 @@ type Storage interface {
 	GetStage(ctx context.Context, restAPIID, stageName string) (*Stage, error)
 	GetStages(ctx context.Context, restAPIID string) ([]*Stage, error)
 	DeleteStage(ctx context.Context, restAPIID, stageName string) error
+
+	CreateAuthorizer(ctx context.Context, restAPIID string, req *CreateAuthorizerRequest) (*Authorizer, error)
+	GetAuthorizer(ctx context.Context, restAPIID, authorizerID string) (*Authorizer, error)
+	GetAuthorizers(ctx context.Context, restAPIID string) ([]*Authorizer, error)
+	DeleteAuthorizer(ctx context.Context, restAPIID, authorizerID string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -80,7 +86,8 @@ type RestAPIData struct {
 	API         *RestAPI               `json:"api"`
 	Resources   map[string]*Resource   `json:"resources"` // keyed by resource ID
 	Deployments map[string]*Deployment `json:"deployments"`
-	Stages      map[string]*Stage      `json:"stages"` // keyed by stage name
+	Stages      map[string]*Stage      `json:"stages"`      // keyed by stage name
+	Authorizers map[string]*Authorizer `json:"authorizers"` // keyed by authorizer ID
 }
 
 // NewMemoryStorage creates a new in-memory storage.
@@ -129,6 +136,14 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.RestAPIs == nil {
 		s.RestAPIs = make(map[string]*RestAPIData)
+	}
+
+	// Authorizers was added after the first persisted format; initialize it
+	// for REST APIs loaded from older snapshots so handlers never nil-panic.
+	for _, data := range s.RestAPIs {
+		if data.Authorizers == nil {
+			data.Authorizers = make(map[string]*Authorizer)
+		}
 	}
 
 	return nil
@@ -190,6 +205,7 @@ func (s *MemoryStorage) CreateRestAPI(_ context.Context, req *CreateRestAPIReque
 		Resources:   map[string]*Resource{rootResourceID: rootResource},
 		Deployments: make(map[string]*Deployment),
 		Stages:      make(map[string]*Stage),
+		Authorizers: make(map[string]*Authorizer),
 	}
 
 	s.saveLocked()
@@ -371,6 +387,7 @@ func (s *MemoryStorage) PutMethod(_ context.Context, restAPIID, resourceID, http
 	method := Method{
 		HTTPMethod:        httpMethod,
 		AuthorizationType: req.AuthorizationType,
+		AuthorizerID:      req.AuthorizerID,
 		APIKeyRequired:    req.APIKeyRequired,
 		OperationName:     req.OperationName,
 	}
@@ -691,6 +708,94 @@ func (s *MemoryStorage) DeleteStage(_ context.Context, restAPIID, stageName stri
 	}
 
 	delete(data.Stages, stageName)
+
+	s.saveLocked()
+
+	return nil
+}
+
+// CreateAuthorizer creates a new authorizer for a REST API.
+func (s *MemoryStorage) CreateAuthorizer(_ context.Context, restAPIID string, req *CreateAuthorizerRequest) (*Authorizer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.RestAPIs[restAPIID]
+	if !exists {
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+	}
+
+	authorizer := &Authorizer{
+		ID:                           generateID(),
+		RestAPIID:                    restAPIID,
+		Name:                         req.Name,
+		Type:                         req.Type,
+		AuthorizerURI:                req.AuthorizerURI,
+		IdentitySource:               req.IdentitySource,
+		AuthorizerResultTTLInSeconds: req.AuthorizerResultTTLInSeconds,
+	}
+
+	if data.Authorizers == nil {
+		data.Authorizers = make(map[string]*Authorizer)
+	}
+
+	data.Authorizers[authorizer.ID] = authorizer
+
+	s.saveLocked()
+
+	return authorizer, nil
+}
+
+// GetAuthorizer returns an authorizer by ID.
+func (s *MemoryStorage) GetAuthorizer(_ context.Context, restAPIID, authorizerID string) (*Authorizer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, exists := s.RestAPIs[restAPIID]
+	if !exists {
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+	}
+
+	authorizer, exists := data.Authorizers[authorizerID]
+	if !exists {
+		return nil, &ServiceError{Code: errAuthorizerNotFound, Message: "Invalid authorizer identifier specified"}
+	}
+
+	return authorizer, nil
+}
+
+// GetAuthorizers returns all authorizers for a REST API.
+func (s *MemoryStorage) GetAuthorizers(_ context.Context, restAPIID string) ([]*Authorizer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, exists := s.RestAPIs[restAPIID]
+	if !exists {
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+	}
+
+	authorizers := make([]*Authorizer, 0, len(data.Authorizers))
+	for _, a := range data.Authorizers {
+		authorizers = append(authorizers, a)
+	}
+
+	return authorizers, nil
+}
+
+// DeleteAuthorizer deletes an authorizer.
+func (s *MemoryStorage) DeleteAuthorizer(_ context.Context, restAPIID, authorizerID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.RestAPIs[restAPIID]
+	if !exists {
+		return &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+	}
+
+	if _, exists := data.Authorizers[authorizerID]; !exists {
+		return &ServiceError{Code: errAuthorizerNotFound, Message: "Invalid authorizer identifier specified"}
+	}
+
+	delete(data.Authorizers, authorizerID)
 
 	s.saveLocked()
 

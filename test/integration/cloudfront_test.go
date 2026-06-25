@@ -86,6 +86,78 @@ func TestCloudFront_CreateDistribution(t *testing.T) {
 	}
 }
 
+func TestCloudFront_CreateDistributionWithTags(t *testing.T) {
+	t.Parallel()
+
+	client := newCloudFrontClient(t)
+	ctx := t.Context()
+
+	result, err := client.CreateDistributionWithTags(ctx, &cloudfront.CreateDistributionWithTagsInput{
+		DistributionConfigWithTags: &types.DistributionConfigWithTags{
+			DistributionConfig: &types.DistributionConfig{
+				CallerReference: aws.String("test-create-distribution-with-tags"),
+				Origins: &types.Origins{
+					Quantity: aws.Int32(1),
+					Items: []types.Origin{
+						{
+							Id:         aws.String("myS3Origin"),
+							DomainName: aws.String("mybucket.s3.amazonaws.com"),
+							S3OriginConfig: &types.S3OriginConfig{
+								OriginAccessIdentity: aws.String(""),
+							},
+						},
+					},
+				},
+				DefaultCacheBehavior: &types.DefaultCacheBehavior{
+					TargetOriginId:       aws.String("myS3Origin"),
+					ViewerProtocolPolicy: types.ViewerProtocolPolicyAllowAll,
+					CachePolicyId:        aws.String("658327ea-f89d-4fab-a63d-7e88639e58f6"),
+				},
+				Comment: aws.String("Test distribution with tags"),
+				Enabled: aws.Bool(true),
+			},
+			Tags: &types.Tags{
+				Items: []types.Tag{
+					{Key: aws.String("env"), Value: aws.String("local")},
+					{Key: aws.String("team"), Value: aws.String("idp")},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteDistribution(context.Background(), &cloudfront.DeleteDistributionInput{
+			Id:      result.Distribution.Id,
+			IfMatch: result.ETag,
+		})
+	})
+
+	golden.New(t, golden.WithIgnoreFields(
+		"Id",
+		"ARN",
+		"DomainName",
+		"LastModifiedTime",
+		"ETag",
+		"Location",
+		"ResultMetadata",
+	)).Assert(t.Name()+"_create", result)
+
+	// Tags applied at creation must be readable back via ListTagsForResource.
+	tagsResult, err := client.ListTagsForResource(ctx, &cloudfront.ListTagsForResourceInput{
+		Resource: result.Distribution.ARN,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"ResultMetadata",
+	)).Assert(t.Name()+"_tags", tagsResult)
+}
+
 func TestCloudFront_GetDistribution(t *testing.T) {
 	t.Parallel()
 
@@ -437,4 +509,72 @@ func TestCloudFront_GetInvalidation(t *testing.T) {
 		"CreateTime",
 		"ResultMetadata",
 	)).Assert(t.Name(), getResult)
+}
+
+// TestCloudFront_CreateDistribution_CachePolicyNoSigning provisions a
+// CachePolicy-based distribution without trusted signers/key groups but with
+// CachedMethods, mirroring the migrated IdP frontend distribution. It guards
+// the DefaultCacheBehavior response shape the Terraform AWS provider flattens
+// (docs/idp-parity 11): the response must always carry TrustedSigners and
+// TrustedKeyGroups (Enabled=false), and must preserve CachedMethods.
+func TestCloudFront_CreateDistribution_CachePolicyNoSigning(t *testing.T) {
+	t.Parallel()
+
+	client := newCloudFrontClient(t)
+	ctx := t.Context()
+
+	result, err := client.CreateDistribution(ctx, &cloudfront.CreateDistributionInput{
+		DistributionConfig: &types.DistributionConfig{
+			CallerReference: aws.String("test-cache-policy-no-signing"),
+			Origins: &types.Origins{
+				Quantity: aws.Int32(1),
+				Items: []types.Origin{
+					{
+						Id:         aws.String("myS3Origin"),
+						DomainName: aws.String("mybucket.s3.amazonaws.com"),
+						S3OriginConfig: &types.S3OriginConfig{
+							OriginAccessIdentity: aws.String(""),
+						},
+					},
+				},
+			},
+			DefaultCacheBehavior: &types.DefaultCacheBehavior{
+				TargetOriginId:       aws.String("myS3Origin"),
+				ViewerProtocolPolicy: types.ViewerProtocolPolicyRedirectToHttps,
+				CachePolicyId:        aws.String("658327ea-f89d-4fab-a63d-7e88639e58f6"),
+				AllowedMethods: &types.AllowedMethods{
+					Quantity: aws.Int32(2),
+					Items:    []types.Method{types.MethodGet, types.MethodHead},
+					CachedMethods: &types.CachedMethods{
+						Quantity: aws.Int32(2),
+						Items:    []types.Method{types.MethodGet, types.MethodHead},
+					},
+				},
+			},
+			Comment: aws.String("Test distribution cache policy no signing"),
+			Enabled: aws.Bool(true),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"Id",
+		"ARN",
+		"DomainName",
+		"LastModifiedTime",
+		"ETag",
+		"Location",
+		"ResultMetadata",
+	)).Assert(t.Name(), result)
+
+	// Clean up.
+	_, err = client.DeleteDistribution(ctx, &cloudfront.DeleteDistributionInput{
+		Id:      result.Distribution.Id,
+		IfMatch: result.ETag,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

@@ -29,6 +29,12 @@ func (s *Service) Name() string {
 	return "firehose"
 }
 
+// Storage returns the underlying storage. Used by cross-service wiring
+// (e.g. wireFirehoseToS3) to install the S3 delivery target.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
 // TargetPrefix returns the X-Amz-Target prefix.
 func (s *Service) TargetPrefix() string {
 	return "Firehose_20150804"

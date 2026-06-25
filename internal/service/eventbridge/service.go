@@ -29,6 +29,12 @@ func (s *Service) Name() string {
 	return "events"
 }
 
+// Storage returns the underlying storage. Used by cross-service wiring
+// (wirePipesToEventBridge) to publish events in-process.
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
 // TargetPrefix returns the X-Amz-Target prefix.
 func (s *Service) TargetPrefix() string {
 	return "AWSEvents"

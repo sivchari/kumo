@@ -3,6 +3,7 @@ package cognito
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -32,6 +33,7 @@ const defaultMfaConfiguration = "OFF"
 type Storage interface {
 	// User Pool operations.
 	CreateUserPool(ctx context.Context, req *CreateUserPoolRequest) (*UserPool, error)
+	UpdateUserPool(ctx context.Context, req *UpdateUserPoolRequest) (*UserPool, error)
 	GetUserPool(ctx context.Context, userPoolID string) (*UserPool, error)
 	ListUserPools(ctx context.Context, maxResults int32, nextToken string) ([]*UserPool, string, error)
 	DeleteUserPool(ctx context.Context, userPoolID string) error
@@ -46,12 +48,21 @@ type Storage interface {
 	AdminCreateUser(ctx context.Context, req *AdminCreateUserRequest) (*User, error)
 	AdminGetUser(ctx context.Context, userPoolID, username string) (*User, error)
 	AdminDeleteUser(ctx context.Context, userPoolID, username string) error
+	AdminSetUserPassword(ctx context.Context, req *AdminSetUserPasswordRequest) error
 	ListUsers(ctx context.Context, userPoolID string, limit int32, paginationToken string) ([]*User, string, error)
 
 	// Authentication operations.
 	SignUp(ctx context.Context, req *SignUpRequest) (*User, error)
 	ConfirmSignUp(ctx context.Context, clientID, username, code string) error
-	InitiateAuth(ctx context.Context, req *InitiateAuthRequest) (*InitiateAuthResponse, error)
+	// Authenticate verifies the username/password for the client and returns
+	// the resolved user, pool, and client. It ensures the pool has a signing
+	// key and the user has a stable sub. Token signing is done by the caller
+	// (the handler), which knows the request host needed for the issuer.
+	Authenticate(ctx context.Context, clientID, username, password string) (*AuthContext, error)
+
+	// SigningPublicKey returns the pool's RSA public key and key id for JWKS
+	// publication, lazily generating the signing key on first use.
+	SigningPublicKey(ctx context.Context, userPoolID string) (*rsa.PublicKey, string, error)
 
 	// MFA configuration operations.
 	GetUserPoolMfaConfig(ctx context.Context, userPoolID string) (*MfaConfig, error)
@@ -233,8 +244,70 @@ func (s *MemoryStorage) CreateUserPool(_ context.Context, req *CreateUserPoolReq
 		}
 	}
 
+	pool.AdminCreateUserConfig = convertAdminCreateUserConfigInput(req.AdminCreateUserConfig)
+
 	s.UserPools[poolID] = pool
 	s.Users[poolID] = make(map[string]*User)
+
+	s.saveLocked()
+
+	return pool, nil
+}
+
+// UpdateUserPool applies the mutable fields of req to an existing pool in place.
+// Only non-nil/non-empty fields overwrite; the pool ID and CreationDate are
+// preserved. Returns ResourceNotFoundException if the pool does not exist.
+func (s *MemoryStorage) UpdateUserPool(_ context.Context, req *UpdateUserPoolRequest) (*UserPool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pool, ok := s.UserPools[req.UserPoolID]
+	if !ok {
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	if req.Policies != nil && req.Policies.PasswordPolicy != nil {
+		pool.Policies = &UserPoolPolicies{
+			PasswordPolicy: &PasswordPolicy{
+				MinimumLength:                 req.Policies.PasswordPolicy.MinimumLength,
+				RequireUppercase:              req.Policies.PasswordPolicy.RequireUppercase,
+				RequireLowercase:              req.Policies.PasswordPolicy.RequireLowercase,
+				RequireNumbers:                req.Policies.PasswordPolicy.RequireNumbers,
+				RequireSymbols:                req.Policies.PasswordPolicy.RequireSymbols,
+				TemporaryPasswordValidityDays: req.Policies.PasswordPolicy.TemporaryPasswordValidityDays,
+			},
+		}
+	}
+
+	if req.LambdaConfig != nil {
+		pool.LambdaConfig = convertLambdaConfigInputToLambdaConfig(req.LambdaConfig)
+	}
+
+	if req.AutoVerifiedAttributes != nil {
+		pool.AutoVerifiedAttrs = req.AutoVerifiedAttributes
+	}
+
+	if req.UsernameAttributes != nil {
+		pool.UsernameAttributes = req.UsernameAttributes
+	}
+
+	if req.MfaConfiguration != "" {
+		pool.MFAConfiguration = req.MfaConfiguration
+	}
+
+	if req.EmailConfiguration != nil {
+		pool.EmailConfiguration = &EmailConfiguration{
+			SourceArn:           req.EmailConfiguration.SourceArn,
+			ReplyToEmailAddress: req.EmailConfiguration.ReplyToEmailAddress,
+			EmailSendingAccount: req.EmailConfiguration.EmailSendingAccount,
+		}
+	}
+
+	if req.AdminCreateUserConfig != nil {
+		pool.AdminCreateUserConfig = convertAdminCreateUserConfigInput(req.AdminCreateUserConfig)
+	}
+
+	pool.LastModifiedDate = time.Now()
 
 	s.saveLocked()
 
@@ -426,6 +499,7 @@ func (s *MemoryStorage) AdminCreateUser(_ context.Context, req *AdminCreateUserR
 	user := &User{
 		Username:         req.Username,
 		UserPoolID:       req.UserPoolID,
+		Sub:              uuid.New().String(),
 		UserCreateDate:   now,
 		UserLastModified: now,
 		Enabled:          true,
@@ -487,6 +561,43 @@ func (s *MemoryStorage) AdminDeleteUser(_ context.Context, userPoolID, username 
 	return nil
 }
 
+// AdminSetUserPassword sets a user's password and transitions the user status.
+// Permanent=true confirms the user (CONFIRMED) so AdminInitiateAuth can issue
+// signed JWTs; Permanent=false marks the user RESET_REQUIRED so the next sign-in
+// must change the password. Strict password-policy validation is out of scope
+// for the emulator; only an empty password is rejected.
+func (s *MemoryStorage) AdminSetUserPassword(_ context.Context, req *AdminSetUserPasswordRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	users, ok := s.Users[req.UserPoolID]
+	if !ok {
+		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	user, ok := users[req.Username]
+	if !ok {
+		return &ServiceError{Code: errUserNotFound, Message: "User not found"}
+	}
+
+	if req.Password == "" {
+		return &ServiceError{Code: errInvalidParameter, Message: "password cannot be empty"}
+	}
+
+	user.Password = req.Password
+	if req.Permanent {
+		user.UserStatus = UserStatusConfirmed
+	} else {
+		user.UserStatus = UserStatusResetRequired
+	}
+
+	user.UserLastModified = time.Now()
+
+	s.saveLocked()
+
+	return nil
+}
+
 // ListUsers lists users in a user pool.
 func (s *MemoryStorage) ListUsers(_ context.Context, userPoolID string, limit int32, _ string) ([]*User, string, error) {
 	s.mu.RLock()
@@ -542,6 +653,7 @@ func (s *MemoryStorage) SignUp(_ context.Context, req *SignUpRequest) (*User, er
 	user := &User{
 		Username:         req.Username,
 		UserPoolID:       userPoolID,
+		Sub:              userSubFromAttributes(req.UserAttributes),
 		UserCreateDate:   now,
 		UserLastModified: now,
 		Enabled:          true,
@@ -609,30 +721,33 @@ func (s *MemoryStorage) ConfirmSignUp(_ context.Context, clientID, username, cod
 	return nil
 }
 
-// InitiateAuth initiates authentication.
-func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest) (*InitiateAuthResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// AuthContext carries the entities resolved by a successful password
+// authentication. The handler uses these to sign the JWTs.
+type AuthContext struct {
+	User   *User
+	Pool   *UserPool
+	Client *UserPoolClient
+}
 
-	// Find user pool by client ID.
-	var userPoolID string
+// Authenticate verifies the username/password for the client and returns the
+// resolved user, pool, and client, ensuring the pool has a signing key and the
+// user has a stable sub. It takes the write lock because it may lazily mint the
+// signing key or backfill the sub for state created before this feature.
+func (s *MemoryStorage) Authenticate(_ context.Context, clientID, username, password string) (*AuthContext, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	for _, client := range s.UserPoolClients {
-		if client.ClientID == req.ClientID {
-			userPoolID = client.UserPoolID
-
-			break
-		}
-	}
-
-	if userPoolID == "" {
+	client, ok := s.UserPoolClients[clientID]
+	if !ok {
 		return nil, &ServiceError{Code: errInvalidParameter, Message: "Invalid client ID"}
 	}
 
-	username := req.AuthParameters["USERNAME"]
-	password := req.AuthParameters["PASSWORD"]
+	pool, ok := s.UserPools[client.UserPoolID]
+	if !ok {
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
 
-	user, ok := s.Users[userPoolID][username]
+	user, ok := s.Users[client.UserPoolID][username]
 	if !ok {
 		return nil, &ServiceError{Code: errUserNotFound, Message: "User not found"}
 	}
@@ -645,20 +760,54 @@ func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest
 		return nil, &ServiceError{Code: errNotAuthorized, Message: "User is not confirmed"}
 	}
 
-	// Generate tokens.
-	accessToken := generateToken()
-	idToken := generateToken()
-	refreshToken := generateToken()
+	if err := ensureSigningKey(pool); err != nil {
+		return nil, err
+	}
 
-	return &InitiateAuthResponse{
-		AuthenticationResult: &AuthenticationResult{
-			AccessToken:  accessToken,
-			ExpiresIn:    3600,
-			TokenType:    "Bearer",
-			RefreshToken: refreshToken,
-			IDToken:      idToken,
-		},
-	}, nil
+	if user.Sub == "" {
+		user.Sub = uuid.New().String()
+	}
+
+	s.saveLocked()
+
+	return &AuthContext{User: user, Pool: pool, Client: client}, nil
+}
+
+// ensureSigningKey lazily generates the pool's RSA signing key on first use.
+// Callers must hold the write lock.
+func ensureSigningKey(pool *UserPool) error {
+	if pool.SigningKey != nil {
+		return nil
+	}
+
+	key, err := newSigningKey()
+	if err != nil {
+		return err
+	}
+
+	pool.SigningKey = key
+
+	return nil
+}
+
+// SigningPublicKey returns the pool's RSA public key and key id for JWKS
+// publication, lazily generating the signing key on first use.
+func (s *MemoryStorage) SigningPublicKey(_ context.Context, userPoolID string) (*rsa.PublicKey, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pool, ok := s.UserPools[userPoolID]
+	if !ok {
+		return nil, "", &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	if err := ensureSigningKey(pool); err != nil {
+		return nil, "", err
+	}
+
+	s.saveLocked()
+
+	return &pool.SigningKey.PrivateKey.PublicKey, pool.SigningKey.KeyID, nil
 }
 
 // GetUserPoolByClientID retrieves a user pool by client ID.
@@ -706,6 +855,18 @@ func generateToken() string {
 	_, _ = rand.Read(b)
 
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// userSubFromAttributes returns the explicit "sub" attribute if present,
+// otherwise a fresh stable UUID for the user's JWT "sub" claim.
+func userSubFromAttributes(attrs []UserAttributeInput) string {
+	for _, attr := range attrs {
+		if attr.Name == "sub" {
+			return attr.Value
+		}
+	}
+
+	return uuid.New().String()
 }
 
 // GetUserPoolMfaConfig retrieves the MFA configuration for a user pool.
@@ -759,4 +920,12 @@ func convertLambdaConfigInputToLambdaConfig(input *LambdaConfigInput) *LambdaCon
 		PreTokenGeneration:      input.PreTokenGeneration,
 		UserMigration:           input.UserMigration,
 	}
+}
+
+func convertAdminCreateUserConfigInput(input *AdminCreateUserConfigInput) *AdminCreateUserConfig {
+	if input == nil {
+		return nil
+	}
+
+	return &AdminCreateUserConfig{AllowAdminCreateUserOnly: input.AllowAdminCreateUserOnly}
 }

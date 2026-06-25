@@ -67,7 +67,7 @@ func Dispatch(w http.ResponseWriter, r *http.Request, t Target, req *Request) {
 // invokeLambda builds the proxy event, invokes the Lambda, and writes the
 // unwrapped response.
 func invokeLambda(w http.ResponseWriter, r *http.Request, t Target, req *Request) {
-	name := lambdaFunctionNameFromURI(t.URI)
+	name := LambdaFunctionNameFromURI(t.URI)
 	if name == "" {
 		writeError(w, http.StatusInternalServerError)
 
@@ -245,7 +245,7 @@ func forwardHTTP(w http.ResponseWriter, r *http.Request, uri string) {
 	_, _ = w.Write(body)
 }
 
-// lambdaFunctionNameFromURI extracts the Lambda function name from an
+// LambdaFunctionNameFromURI extracts the Lambda function name from an
 // AWS_PROXY integration URI. It accepts both the v1 REST form
 //
 //	arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambdaArn}/invocations
@@ -253,7 +253,10 @@ func forwardHTTP(w http.ResponseWriter, r *http.Request, uri string) {
 // and the v2 HTTP API form, which is the bare Lambda function ARN
 //
 //	arn:aws:lambda:{region}:{account}:function:{name}[:qualifier]
-func lambdaFunctionNameFromURI(uri string) string {
+//
+// The same URI shape is used by API Gateway authorizerUri, so the API Gateway
+// service reuses this to resolve a REQUEST authorizer's target function.
+func LambdaFunctionNameFromURI(uri string) string {
 	const (
 		marker = "/functions/"
 		suffix = "/invocations"

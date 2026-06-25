@@ -156,10 +156,20 @@ type DeadLetterConfig struct {
 // TargetParameters contains target configuration.
 // This is simplified - AWS has many target types with different parameters.
 type TargetParameters struct {
-	InputTemplate            string                  `json:"InputTemplate,omitempty"`
-	LambdaFunctionParameters *LambdaTargetParameters `json:"LambdaFunctionParameters,omitempty"`
-	SqsQueueParameters       *SqsTargetParameters    `json:"SqsQueueParameters,omitempty"`
-	EcsTaskParameters        *EcsTargetParameters    `json:"EcsTaskParameters,omitempty"`
+	InputTemplate                 string                       `json:"InputTemplate,omitempty"`
+	LambdaFunctionParameters      *LambdaTargetParameters      `json:"LambdaFunctionParameters,omitempty"`
+	SqsQueueParameters            *SqsTargetParameters         `json:"SqsQueueParameters,omitempty"`
+	EcsTaskParameters             *EcsTargetParameters         `json:"EcsTaskParameters,omitempty"`
+	EventBridgeEventBusParameters *EventBridgeTargetParameters `json:"EventBridgeEventBusParameters,omitempty"`
+}
+
+// EventBridgeTargetParameters contains parameters for an EventBridge event bus
+// target. Source/DetailType are stamped onto the events the pipe publishes so
+// downstream rules can match on them.
+type EventBridgeTargetParameters struct {
+	DetailType string   `json:"DetailType,omitempty"`
+	Source     string   `json:"Source,omitempty"`
+	Resources  []string `json:"Resources,omitempty"`
 }
 
 // LambdaTargetParameters contains Lambda target parameters.

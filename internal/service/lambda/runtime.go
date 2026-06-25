@@ -62,6 +62,16 @@ func (b *runtimeBroker) registered(fn string) bool {
 	return ok
 }
 
+// deregister drops a function's runtime state so a later invoke re-establishes
+// it. The process executor calls this when a launched bootstrap exits, so the
+// next invoke relaunches rather than blocking on a dead handler.
+func (b *runtimeBroker) deregister(fn string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	delete(b.funcs, fn)
+}
+
 // get returns (creating if needed) the per-function runtime state.
 func (b *runtimeBroker) get(fn string) *funcRuntime {
 	b.mu.Lock()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -22,6 +23,11 @@ type Storage interface {
 	CreateInvalidation(ctx context.Context, distributionID string, batch *CreateInvalidationRequest) (*Invalidation, error)
 	GetInvalidation(ctx context.Context, distributionID, invalidationID string) (*Invalidation, error)
 	ListInvalidations(ctx context.Context, distributionID, marker string, maxItems int) ([]*Invalidation, string, error)
+
+	// Tagging operations, keyed by distribution ARN.
+	TagResource(ctx context.Context, arn string, tags map[string]string) error
+	UntagResource(ctx context.Context, arn string, keys []string) error
+	ListTags(ctx context.Context, arn string) (map[string]string, error)
 
 	// Signed URL building blocks.
 	CreatePublicKey(ctx context.Context, cfg *PublicKeyConfig) (*PublicKey, error)
@@ -144,6 +150,12 @@ func (s *MemoryStorage) Close() error {
 	return nil
 }
 
+// Distribution deployment statuses.
+const (
+	statusInProgress = "InProgress"
+	statusDeployed   = "Deployed"
+)
+
 // Error represents a CloudFront error.
 type Error struct {
 	Code    string
@@ -177,7 +189,7 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 	dist := &Distribution{
 		ID:               id,
 		ARN:              fmt.Sprintf("arn:aws:cloudfront::000000000000:distribution/%s", id),
-		Status:           "InProgress",
+		Status:           statusInProgress,
 		LastModifiedTime: now,
 		DomainName:       fmt.Sprintf("%s.cloudfront.net", id),
 		ETag:             etag,
@@ -206,9 +218,13 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 }
 
 // GetDistribution retrieves a distribution by ID.
+//
+// A newly created distribution starts as InProgress; the first read marks it
+// Deployed so that Terraform's wait_for_deployment poller completes instead of
+// timing out.
 func (s *MemoryStorage) GetDistribution(_ context.Context, id string) (*Distribution, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	dist, exists := s.Distributions[id]
 	if !exists {
@@ -216,6 +232,12 @@ func (s *MemoryStorage) GetDistribution(_ context.Context, id string) (*Distribu
 			Code:    errDistributionNotFound,
 			Message: fmt.Sprintf("The distribution with id %s does not exist", id),
 		}
+	}
+
+	if dist.Status == statusInProgress {
+		dist.Status = statusDeployed
+
+		s.saveLocked()
 	}
 
 	return dist, nil
@@ -290,7 +312,7 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 	newETag := generateETag()
 	dist.ETag = newETag
 	dist.LastModifiedTime = time.Now()
-	dist.Status = "InProgress"
+	dist.Status = statusInProgress
 	dist.DistributionConfig = &DistributionConfig{
 		CallerReference:      config.CallerReference,
 		Comment:              config.Comment,
@@ -465,6 +487,83 @@ func (s *MemoryStorage) ListInvalidations(_ context.Context, distributionID, mar
 	}
 
 	return result, nextMarker, nil
+}
+
+// findByARN returns the distribution matching the given ARN. The caller must
+// hold s.mu.
+func (s *MemoryStorage) findByARN(arn string) (*Distribution, bool) {
+	for _, d := range s.Distributions {
+		if d.ARN == arn {
+			return d, true
+		}
+	}
+
+	return nil, false
+}
+
+// TagResource adds or overwrites tags on the distribution identified by ARN.
+func (s *MemoryStorage) TagResource(_ context.Context, arn string, tags map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dist, ok := s.findByARN(arn)
+	if !ok {
+		return &Error{
+			Code:    errDistributionNotFound,
+			Message: fmt.Sprintf("The resource %s does not exist", arn),
+		}
+	}
+
+	if dist.Tags == nil {
+		dist.Tags = make(map[string]string)
+	}
+
+	maps.Copy(dist.Tags, tags)
+
+	s.saveLocked()
+
+	return nil
+}
+
+// UntagResource removes the given tag keys from the distribution identified by ARN.
+func (s *MemoryStorage) UntagResource(_ context.Context, arn string, keys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dist, ok := s.findByARN(arn)
+	if !ok {
+		return &Error{
+			Code:    errDistributionNotFound,
+			Message: fmt.Sprintf("The resource %s does not exist", arn),
+		}
+	}
+
+	for _, k := range keys {
+		delete(dist.Tags, k)
+	}
+
+	s.saveLocked()
+
+	return nil
+}
+
+// ListTags returns a copy of the tags on the distribution identified by ARN.
+func (s *MemoryStorage) ListTags(_ context.Context, arn string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	dist, ok := s.findByARN(arn)
+	if !ok {
+		return nil, &Error{
+			Code:    errDistributionNotFound,
+			Message: fmt.Sprintf("The resource %s does not exist", arn),
+		}
+	}
+
+	out := make(map[string]string, len(dist.Tags))
+	maps.Copy(out, dist.Tags)
+
+	return out, nil
 }
 
 // Helper functions.

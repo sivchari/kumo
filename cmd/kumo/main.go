@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sivchari/kumo"
 	kumocli "github.com/sivchari/kumo/cli"
 	_ "github.com/sivchari/kumo/internal/registry" // Register all services via init().
 	"github.com/sivchari/kumo/internal/server"
@@ -19,6 +20,7 @@ func main() {
 	// Docker uses `kumo --host 0.0.0.0 --port 4566`, so we accept these flags.
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		cfg := server.DefaultConfig()
+		cfg.Version = kumo.Version
 
 		if host, _ := cmd.Flags().GetString("host"); host != "" {
 			cfg.Host = host

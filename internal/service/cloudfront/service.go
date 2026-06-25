@@ -53,6 +53,10 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("POST", "/2020-05-31/distribution/{id}/invalidation", s.CreateInvalidation)
 	r.Handle("GET", "/2020-05-31/distribution/{id}/invalidation/{invalidationId}", s.GetInvalidation)
 
+	// Tagging operations (TagResource/UntagResource dispatched by ?Operation).
+	r.Handle("POST", "/2020-05-31/tagging", s.Tagging)
+	r.Handle("GET", "/2020-05-31/tagging", s.ListTagsForResource)
+
 	// PublicKey + KeyGroup — building blocks for signed URL / signed cookie verification.
 	r.Handle("POST", "/2020-05-31/public-key", s.CreatePublicKey)
 	r.Handle("GET", "/2020-05-31/public-key", s.ListPublicKeys)

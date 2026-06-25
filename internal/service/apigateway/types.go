@@ -1,6 +1,7 @@
 package apigateway
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/sivchari/kumo/internal/service"
@@ -40,9 +41,22 @@ type Resource struct {
 type Method struct {
 	HTTPMethod        string       `json:"httpMethod"`
 	AuthorizationType string       `json:"authorizationType,omitempty"`
+	AuthorizerID      string       `json:"authorizerId,omitempty"`
 	APIKeyRequired    bool         `json:"apiKeyRequired,omitempty"`
 	OperationName     string       `json:"operationName,omitempty"`
 	MethodIntegration *Integration `json:"methodIntegration,omitempty"`
+}
+
+// Authorizer represents an API Gateway authorizer. Only the fields kumo needs
+// to run a REQUEST-type Lambda authorizer are modeled.
+type Authorizer struct {
+	ID                           string `json:"id"`
+	RestAPIID                    string `json:"-"` // internal: owning REST API
+	Name                         string `json:"name"`
+	Type                         string `json:"type"` // "REQUEST" | "TOKEN"
+	AuthorizerURI                string `json:"authorizerUri,omitempty"`
+	IdentitySource               string `json:"identitySource,omitempty"`
+	AuthorizerResultTTLInSeconds int32  `json:"authorizerResultTtlInSeconds,omitempty"`
 }
 
 // Integration represents an API Gateway integration.
@@ -129,6 +143,7 @@ type ResourceResponse struct {
 type MethodOutput struct {
 	HTTPMethod        string             `json:"httpMethod,omitempty"`
 	AuthorizationType string             `json:"authorizationType,omitempty"`
+	AuthorizerID      string             `json:"authorizerId,omitempty"`
 	APIKeyRequired    bool               `json:"apiKeyRequired,omitempty"`
 	OperationName     string             `json:"operationName,omitempty"`
 	MethodIntegration *IntegrationOutput `json:"methodIntegration,omitempty"`
@@ -159,8 +174,78 @@ type GetResourcesResponse struct {
 // PutMethodRequest represents a PutMethod request.
 type PutMethodRequest struct {
 	AuthorizationType string `json:"authorizationType"`
+	AuthorizerID      string `json:"authorizerId,omitempty"`
 	APIKeyRequired    bool   `json:"apiKeyRequired,omitempty"`
 	OperationName     string `json:"operationName,omitempty"`
+}
+
+// CreateAuthorizerRequest represents a CreateAuthorizer request.
+type CreateAuthorizerRequest struct {
+	Name                         string `json:"name"`
+	Type                         string `json:"type"`
+	AuthorizerURI                string `json:"authorizerUri,omitempty"`
+	IdentitySource               string `json:"identitySource,omitempty"`
+	AuthorizerResultTTLInSeconds int32  `json:"authorizerResultTtlInSeconds,omitempty"`
+}
+
+// AuthorizerResponse represents an Authorizer response.
+type AuthorizerResponse struct {
+	ID                           string `json:"id"`
+	Name                         string `json:"name"`
+	Type                         string `json:"type"`
+	AuthorizerURI                string `json:"authorizerUri,omitempty"`
+	IdentitySource               string `json:"identitySource,omitempty"`
+	AuthorizerResultTTLInSeconds int32  `json:"authorizerResultTtlInSeconds,omitempty"`
+}
+
+// GetAuthorizersResponse represents a GetAuthorizers response.
+type GetAuthorizersResponse struct {
+	Items    []AuthorizerResponse `json:"item,omitempty"`
+	Position string               `json:"position,omitempty"`
+}
+
+// AuthorizerEvent is the REQUEST-type Lambda authorizer input event
+// (API Gateway v1 format).
+type AuthorizerEvent struct {
+	Type                  string               `json:"type"`
+	MethodArn             string               `json:"methodArn"`
+	Resource              string               `json:"resource"`
+	Path                  string               `json:"path"`
+	HTTPMethod            string               `json:"httpMethod"`
+	Headers               map[string]string    `json:"headers"`
+	QueryStringParameters map[string]string    `json:"queryStringParameters"`
+	PathParameters        map[string]string    `json:"pathParameters"`
+	RequestContext        AuthorizerRequestCtx `json:"requestContext"`
+}
+
+// AuthorizerRequestCtx is the requestContext block of an authorizer event.
+type AuthorizerRequestCtx struct {
+	APIID        string `json:"apiId"`
+	Stage        string `json:"stage"`
+	HTTPMethod   string `json:"httpMethod"`
+	ResourcePath string `json:"resourcePath"`
+}
+
+// AuthorizerOutput is the REQUEST-type authorizer response: a principal plus an
+// IAM policy document. The policy fields use AWS IAM PascalCase keys.
+type AuthorizerOutput struct {
+	PrincipalID    string         `json:"principalId"`
+	PolicyDocument PolicyDocument `json:"policyDocument"`
+	Context        map[string]any `json:"context,omitempty"`
+}
+
+// PolicyDocument is an IAM policy document.
+type PolicyDocument struct {
+	Version   string            `json:"Version"`
+	Statement []PolicyStatement `json:"Statement"`
+}
+
+// PolicyStatement is a single IAM policy statement. Resource may be a string or
+// an array of strings, so it is kept raw and normalized during evaluation.
+type PolicyStatement struct {
+	Action   json.RawMessage `json:"Action"`
+	Effect   string          `json:"Effect"`
+	Resource json.RawMessage `json:"Resource"`
 }
 
 // PutIntegrationRequest represents a PutIntegration request.

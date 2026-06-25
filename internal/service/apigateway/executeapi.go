@@ -40,6 +40,16 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 		return true
 	}
 
+	// CUSTOM methods run a REQUEST-type Lambda authorizer before the
+	// integration; only an Allow lets the request continue.
+	if resolved.method.AuthorizationType == authTypeCustom {
+		if status := s.authorize(r, apiID, stage, &resolved); status != 0 {
+			writeExecuteError(w, status, authorizerErrorMessage(status))
+
+			return true
+		}
+	}
+
 	execapi.Dispatch(w, r,
 		execapi.Target{
 			Type: resolved.method.MethodIntegration.Type,
@@ -103,6 +113,18 @@ func executeErrorMessage(status int) string {
 		return "Internal server error"
 	default:
 		return "Missing Authentication Token"
+	}
+}
+
+// authorizerErrorMessage maps an authorizer rejection status to its AWS message.
+func authorizerErrorMessage(status int) string {
+	switch status {
+	case http.StatusUnauthorized:
+		return "Unauthorized"
+	case http.StatusInternalServerError:
+		return "Internal server error"
+	default:
+		return "User is not authorized to access this resource"
 	}
 }
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,20 @@ import (
 // localhostHost is the loopback host label used by kumo virtual-hosted URLs.
 const localhostHost = "localhost"
 
+const (
+	// localStackEdition mirrors the "edition" field LocalStack reports in its
+	// health response. kumo is the open-source-equivalent surface, so "community".
+	localStackEdition = "community"
+	// localStackServiceStatus is the per-service status reported by the health
+	// endpoint. Every registered service is always reachable in kumo, so all
+	// services report "available" (LocalStack's ready state).
+	localStackServiceStatus = "available"
+)
+
+// localStackHealthFallback is served when no service list has been wired in
+// (e.g. a Router built directly in a test); keeps the endpoint valid JSON.
+var localStackHealthFallback = []byte(`{"services":{},"edition":"community"}`)
+
 // Route represents a registered HTTP route.
 type Route struct {
 	Method  string
@@ -26,13 +41,26 @@ type Route struct {
 // false when apiID is not owned by the handler.
 type executeAPIDispatch func(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
 
+// wellKnownJWKSSuffix is the fixed tail of a per-pool JWKS path
+// (/{id}/.well-known/jwks.json). Such routes go on a dedicated mux because
+// their pattern formally collides with S3's wildcard routes in the main mux:
+// GET implies HEAD, so GET /{id}/.well-known/jwks.json overlaps S3's explicit
+// HEAD /{bucket}/{key...} with neither pattern more specific — which makes the
+// shared http.ServeMux panic at registration.
+const wellKnownJWKSSuffix = "/.well-known/jwks.json"
+
 // Router is the HTTP router for kumo.
 type Router struct {
 	mux                *http.ServeMux
 	routes             []Route
 	prefixRouters      map[string]*http.ServeMux // Separate routers for services with prefixes
+	wellKnownMux       *http.ServeMux            // Dedicated mux for /{id}/.well-known/jwks.json
 	executeAPIHandlers []executeAPIDispatch
 	logger             *slog.Logger
+
+	// localstackHealthBody is the pre-rendered JSON for the LocalStack-compatible
+	// /_localstack/health endpoint, built once after service registration.
+	localstackHealthBody []byte
 }
 
 // AddExecuteAPIHandler registers a handler for virtual-hosted execute-api
@@ -53,6 +81,38 @@ func NewRouter(logger *slog.Logger) *Router {
 	return r
 }
 
+// SetLocalStackHealth pre-renders the /_localstack/health response body from the
+// registered service names. kumo is a LocalStack-compatible emulator, so tooling
+// that probes LocalStack's health endpoint (e.g. the example verify.sh)
+// works unchanged. Each service maps to "available"; version echoes the kumo
+// build version. The body is rendered once because the service set is fixed
+// after registration.
+func (r *Router) SetLocalStackHealth(services []string, version string) {
+	resp := struct {
+		Services map[string]string `json:"services"`
+		Edition  string            `json:"edition"`
+		Version  string            `json:"version"`
+	}{
+		Services: make(map[string]string, len(services)),
+		Edition:  localStackEdition,
+		Version:  version,
+	}
+
+	for _, name := range services {
+		resp.Services[name] = localStackServiceStatus
+	}
+
+	body, err := json.Marshal(resp)
+	if err != nil {
+		// Unreachable: the response holds only strings. Keep the endpoint valid.
+		r.localstackHealthBody = localStackHealthFallback
+
+		return
+	}
+
+	r.localstackHealthBody = body
+}
+
 // Handle registers a handler for the given method and pattern.
 func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
 	r.routes = append(r.routes, Route{
@@ -60,6 +120,19 @@ func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
 		Pattern: pattern,
 		Handler: handler,
 	})
+
+	// Well-known JWKS routes go on a dedicated mux, isolated from the S3
+	// wildcard routes they would otherwise conflict with in the main mux.
+	if isWellKnownJWKSPath(pattern) {
+		if r.wellKnownMux == nil {
+			r.wellKnownMux = http.NewServeMux()
+		}
+
+		r.wellKnownMux.HandleFunc(method+" "+pattern, r.wrapHandler(method, pattern, handler))
+		r.logger.Debug("registered well-known route", "method", method, "pattern", pattern)
+
+		return
+	}
 
 	// Check if this is a prefixed route (e.g., /lambda/...)
 	// Routes with specific prefixes are registered in separate ServeMux instances
@@ -102,6 +175,21 @@ func extractRoutePrefix(pattern string) string {
 	}
 
 	return ""
+}
+
+// isWellKnownJWKSPath reports whether path (or a route pattern) has the exact
+// shape /{id}/.well-known/jwks.json — three segments, the last two literal.
+// Deeper paths such as /{bucket}/key/.well-known/jwks.json are not matched, so
+// only an object stored at a bucket's literal .well-known/jwks.json key is an
+// (irreducible) collision with a real JWKS request.
+func isWellKnownJWKSPath(path string) bool {
+	if !strings.HasSuffix(path, wellKnownJWKSSuffix) {
+		return false
+	}
+
+	id := strings.TrimSuffix(path, wellKnownJWKSSuffix)
+
+	return len(id) > 1 && id[0] == '/' && !strings.Contains(id[1:], "/")
 }
 
 // hasPathPrefix reports whether path starts with prefix on a path
@@ -186,12 +274,45 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 }
 
 // ServeHTTP implements http.Handler.
-func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// Handle health endpoint before ServeMux to avoid route conflicts.
-	if req.URL.Path == "/health" {
+// serveHealth answers kumo's native /health probe and the LocalStack-compatible
+// /_localstack/health endpoint. It returns true when the request was a health
+// probe and a response has already been written, so ServeHTTP can stop.
+func (r *Router) serveHealth(w http.ResponseWriter, req *http.Request) bool {
+	switch req.URL.Path {
+	case "/health":
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"healthy"}`))
+
+		return true
+	case "/_localstack/health":
+		body := r.localstackHealthBody
+		if body == nil {
+			body = localStackHealthFallback
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Health probes are answered before ServeMux to avoid colliding with S3's
+	// catch-all wildcard routes (/health and /_localstack are not service prefixes).
+	if r.serveHealth(w, req) {
+		return
+	}
+
+	// Per-pool JWKS lives on a dedicated mux (see wellKnownJWKSSuffix). It is
+	// dispatched here, before S3 virtual-host rewriting, because a JWKS request
+	// arrives on the plain host rather than a bucket vhost.
+	if r.wellKnownMux != nil && isWellKnownJWKSPath(req.URL.Path) {
+		r.wellKnownMux.ServeHTTP(w, req)
 
 		return
 	}
@@ -200,16 +321,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// {apiId}.execute-api.<host>/{stage}/{path}. Dispatch to the service
 	// that owns apiID (API Gateway v1 or v2).
 	if apiID, ok := extractExecuteAPIHost(req.Host); ok {
-		for _, h := range r.executeAPIHandlers {
-			if h(w, req, apiID, req.URL.Path) {
-				return
-			}
-		}
+		r.dispatchExecuteAPI(w, req, apiID, req.URL.Path)
 
-		// No service owns this API id: real API Gateway answers 403.
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"message":"Forbidden"}`))
+		return
+	}
+
+	// Path-style execute-api: LocalStack's edge URL form
+	// /_aws/execute-api/{apiId}/{stage}/{path}. Handled here, before the
+	// prefix routers, because /_aws is a registered prefix (for /_aws/ses)
+	// and would otherwise shadow this. The e2e example scripts and the
+	// terraform `api_invoke_url` output both use this form.
+	if apiID, invokePath, ok := extractExecuteAPIPath(req.URL.Path); ok {
+		r.dispatchExecuteAPI(w, req, apiID, invokePath)
 
 		return
 	}
@@ -304,6 +427,46 @@ func extractExecuteAPIHost(host string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// executeAPIPathPrefix is LocalStack's path-style execute-api edge prefix.
+const executeAPIPathPrefix = "/_aws/execute-api/"
+
+// extractExecuteAPIPath recognises the path-style execute-api invoke URL
+// /_aws/execute-api/{apiId}/{stage}/{path} and returns the API id and the
+// invoke path "/{stage}/{path}" (the form HandleExecuteAPI expects). The
+// remainder after the api id is the invoke path; a request with only the api
+// id yields "/" so the resolver answers Missing Authentication Token.
+func extractExecuteAPIPath(path string) (string, string, bool) {
+	if !strings.HasPrefix(path, executeAPIPathPrefix) {
+		return "", "", false
+	}
+
+	apiID, after, found := strings.Cut(strings.TrimPrefix(path, executeAPIPathPrefix), "/")
+	if apiID == "" {
+		return "", "", false
+	}
+
+	if !found {
+		return apiID, "/", true
+	}
+
+	return apiID, "/" + after, true
+}
+
+// dispatchExecuteAPI routes a deployed-API invocation to the service that owns
+// apiID (API Gateway v1 or v2). invokePath is "/{stage}/{path}". When no
+// registered handler owns the id, real API Gateway answers 403.
+func (r *Router) dispatchExecuteAPI(w http.ResponseWriter, req *http.Request, apiID, invokePath string) {
+	for _, h := range r.executeAPIHandlers {
+		if h(w, req, apiID, invokePath) {
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"message":"Forbidden"}`))
 }
 
 // extractBucketFromHost recognises AWS S3 virtual-hosted-style hosts

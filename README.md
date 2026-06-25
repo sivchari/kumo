@@ -19,7 +19,7 @@
 - **AWS SDK v2 compatible** - Works seamlessly with Go AWS SDK v2
 - **Optional data persistence** - Survive restarts with `KUMO_DATA_DIR`
 
-## Supported Services (81 services)
+## Supported Services (82 services)
 
 <!-- BEGIN SERVICES: auto-generated from each service's Meta(); run `make readme` to update. Do not edit by hand. -->
 ### Storage
@@ -81,6 +81,7 @@
 | STS | Security token service |
 | Secrets Manager | Secret storage |
 | Security Lake | Security data lake |
+| Verified Permissions | Fine-grained authorization (Cedar) |
 
 ### Monitoring & Logging
 | Service | Description |
