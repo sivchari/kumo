@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,13 +157,15 @@ func (m *MemoryStorage) CreateTrail(_ context.Context, req *CreateTrailRequest) 
 		return nil, &Error{Code: errValidationError, Message: "S3 bucket name is required"}
 	}
 
-	if _, exists := m.Trails[req.Name]; exists {
+	key := normalizeTrailName(req.Name)
+
+	if _, exists := m.Trails[key]; exists {
 		return nil, &Error{Code: errTrailAlreadyExists, Message: "Trail already exists"}
 	}
 
 	trail := &Trail{
-		Name:                       req.Name,
-		TrailARN:                   generateTrailARN(m.region, m.accountID, req.Name),
+		Name:                       key,
+		TrailARN:                   generateTrailARN(m.region, m.accountID, key),
 		S3BucketName:               req.S3BucketName,
 		S3KeyPrefix:                req.S3KeyPrefix,
 		IncludeGlobalServiceEvents: true,
@@ -195,7 +198,7 @@ func (m *MemoryStorage) CreateTrail(_ context.Context, req *CreateTrailRequest) 
 		trail.IsOrganizationTrail = *req.IsOrganizationTrail
 	}
 
-	m.Trails[req.Name] = trail
+	m.Trails[key] = trail
 
 	m.saveLocked()
 
@@ -206,6 +209,8 @@ func (m *MemoryStorage) CreateTrail(_ context.Context, req *CreateTrailRequest) 
 func (m *MemoryStorage) DeleteTrail(_ context.Context, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	name = normalizeTrailName(name)
 
 	if _, exists := m.Trails[name]; !exists {
 		return &Error{Code: errTrailNotFound, Message: msgTrailNotFound}
@@ -222,6 +227,8 @@ func (m *MemoryStorage) DeleteTrail(_ context.Context, name string) error {
 func (m *MemoryStorage) GetTrail(_ context.Context, name string) (*Trail, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	name = normalizeTrailName(name)
 
 	trail, exists := m.Trails[name]
 	if !exists {
@@ -248,7 +255,7 @@ func (m *MemoryStorage) DescribeTrails(_ context.Context, names []string) ([]*Tr
 	result := make([]*Trail, 0, len(names))
 
 	for _, name := range names {
-		if trail, exists := m.Trails[name]; exists {
+		if trail, exists := m.Trails[normalizeTrailName(name)]; exists {
 			result = append(result, trail)
 		}
 	}
@@ -260,6 +267,8 @@ func (m *MemoryStorage) DescribeTrails(_ context.Context, names []string) ([]*Tr
 func (m *MemoryStorage) StartLogging(_ context.Context, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	name = normalizeTrailName(name)
 
 	trail, exists := m.Trails[name]
 	if !exists {
@@ -277,6 +286,8 @@ func (m *MemoryStorage) StartLogging(_ context.Context, name string) error {
 func (m *MemoryStorage) StopLogging(_ context.Context, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	name = normalizeTrailName(name)
 
 	trail, exists := m.Trails[name]
 	if !exists {
@@ -301,6 +312,8 @@ func (m *MemoryStorage) GetTrailStatus(_ context.Context, name string) (*Trail, 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	name = normalizeTrailName(name)
+
 	trail, exists := m.Trails[name]
 	if !exists {
 		return nil, &Error{Code: errTrailNotFound, Message: msgTrailNotFound}
@@ -310,6 +323,18 @@ func (m *MemoryStorage) GetTrailStatus(_ context.Context, name string) (*Trail, 
 }
 
 // Helper functions.
+
+// normalizeTrailName normalizes both a short name and an ARN to the short name.
+// If the input is in the form "arn:aws:cloudtrail:<region>:<account>:trail/<name>"
+// it returns the trailing <name>; otherwise it returns the input as-is.
+// Real CloudTrail accepts either form for Name, so kumo treats them as aliases.
+func normalizeTrailName(name string) string {
+	if i := strings.LastIndex(name, ":trail/"); i >= 0 {
+		return name[i+len(":trail/"):]
+	}
+
+	return name
+}
 
 func generateTrailARN(region, accountID, trailName string) string {
 	return "arn:aws:cloudtrail:" + region + ":" + accountID + ":trail/" + trailName

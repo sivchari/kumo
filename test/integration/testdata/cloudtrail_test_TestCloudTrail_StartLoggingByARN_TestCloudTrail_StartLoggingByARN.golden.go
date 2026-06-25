@@ -1,0 +1,20 @@
+{
+  "IsLogging": true,
+  "LatestCloudWatchLogsDeliveryError": null,
+  "LatestCloudWatchLogsDeliveryTime": null,
+  "LatestDeliveryAttemptSucceeded": null,
+  "LatestDeliveryAttemptTime": null,
+  "LatestDeliveryError": null,
+  "LatestDeliveryTime": null,
+  "LatestDigestDeliveryError": null,
+  "LatestDigestDeliveryTime": null,
+  "LatestNotificationAttemptSucceeded": null,
+  "LatestNotificationAttemptTime": null,
+  "LatestNotificationError": null,
+  "LatestNotificationTime": null,
+  "StartLoggingTime": null,
+  "StopLoggingTime": null,
+  "TimeLoggingStarted": null,
+  "TimeLoggingStopped": null,
+  "ResultMetadata": {}
+}
