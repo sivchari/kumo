@@ -235,6 +235,47 @@ func TestCloudTrail_StartAndStopLogging(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("StartLoggingTime", "StopLoggingTime", "LatestDeliveryTime", "LatestNotificationTime", "LatestCloudWatchLogsDeliveryTime", "LatestDigestDeliveryTime", "ResultMetadata")).Assert(t.Name()+"_stopped", statusOutput)
 }
 
+func TestCloudTrail_StartLoggingByARN(t *testing.T) {
+	client := newCloudTrailClient(t)
+	ctx := t.Context()
+
+	trailName := "test-trail-arn-alias"
+	bucketName := "test-bucket"
+
+	// Create trail with the short name, as Terraform's CreateTrail does.
+	createOutput, err := client.CreateTrail(ctx, &cloudtrail.CreateTrailInput{
+		Name:         aws.String(trailName),
+		S3BucketName: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTrail(context.Background(), &cloudtrail.DeleteTrailInput{
+			Name: aws.String(trailName),
+		})
+	})
+
+	// Start logging using the ARN, as Terraform does (it holds the ARN as resource ID).
+	_, err = client.StartLogging(ctx, &cloudtrail.StartLoggingInput{
+		Name: createOutput.TrailARN,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify logging started, referenced by the short name.
+	statusOutput, err := client.GetTrailStatus(ctx, &cloudtrail.GetTrailStatusInput{
+		Name: aws.String(trailName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("StartLoggingTime", "LatestDeliveryTime", "LatestNotificationTime", "LatestCloudWatchLogsDeliveryTime", "LatestDigestDeliveryTime", "ResultMetadata")).Assert(t.Name(), statusOutput)
+}
+
 func TestCloudTrail_LookupEvents(t *testing.T) {
 	client := newCloudTrailClient(t)
 	ctx := t.Context()
