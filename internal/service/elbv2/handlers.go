@@ -62,7 +62,7 @@ func (s *Service) CreateLoadBalancer(w http.ResponseWriter, r *http.Request) {
 func readCreateLoadBalancerRequest(r *http.Request, req *CreateLoadBalancerRequest) error {
 	if strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			return err
+			return fmt.Errorf("parse create load balancer form: %w", err)
 		}
 
 		req.Name = r.Form.Get("Name")
@@ -182,7 +182,7 @@ func (s *Service) CreateTargetGroup(w http.ResponseWriter, r *http.Request) {
 func readCreateTargetGroupRequest(r *http.Request, req *CreateTargetGroupRequest) error {
 	if strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			return err
+			return fmt.Errorf("parse create target group form: %w", err)
 		}
 
 		applyCreateTargetGroupForm(r.Form, req)
@@ -222,6 +222,7 @@ func applyCreateTargetGroupFormSupplement(form map[string][]string, req *CreateT
 	if req.Matcher == nil {
 		req.Matcher = matcherFromForm(form)
 	}
+
 	if len(req.Tags) == 0 {
 		req.Tags = parseELBTagPairsFromForm(form)
 	}
@@ -233,7 +234,7 @@ func matcherFromForm(form map[string][]string) *Matcher {
 		return nil
 	}
 
-	return &Matcher{HttpCode: httpCode}
+	return &Matcher{HTTPCode: httpCode}
 }
 
 func firstELBFormValue(form map[string][]string, key string) string {
@@ -465,7 +466,7 @@ func (s *Service) CreateListener(w http.ResponseWriter, r *http.Request) {
 func readCreateListenerRequest(r *http.Request, req *CreateListenerRequest) error {
 	if strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			return err
+			return fmt.Errorf("parse create listener form: %w", err)
 		}
 
 		req.LoadBalancerArn = r.Form.Get("LoadBalancerArn")
@@ -1128,6 +1129,7 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 // DescribeTags returns tag descriptions for requested ResourceArns.
 func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
 	arns := collectResourceArns(r)
+
 	tagsByARN, err := s.storage.DescribeTags(r.Context(), arns)
 	if err != nil {
 		handleELBError(w, err)
@@ -1232,6 +1234,7 @@ func readAddTagsRequest(r *http.Request) ([]string, map[string]string, error) {
 	if err := r.ParseForm(); err == nil {
 		arns := parseELBMemberListFromForm(r.Form, "ResourceArns")
 		tags := parseELBTagPairsFromForm(r.Form)
+
 		if len(arns) > 0 || len(tags) > 0 {
 			return arns, tags, nil
 		}
@@ -1249,6 +1252,7 @@ func readRemoveTagsRequest(r *http.Request) ([]string, []string, error) {
 	if err := r.ParseForm(); err == nil {
 		arns := parseELBMemberListFromForm(r.Form, "ResourceArns")
 		keys := parseELBMemberListFromForm(r.Form, "TagKeys")
+
 		if len(arns) > 0 || len(keys) > 0 {
 			return arns, keys, nil
 		}
@@ -1263,22 +1267,22 @@ func readRemoveTagsRequest(r *http.Request) ([]string, []string, error) {
 }
 
 type describeTagsJSONRequest struct {
-	ResourceArns []string `json:"ResourceArns"`
+	ResourceArns []string `json:"ResourceArns"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
 }
 
 type addTagsJSONRequest struct {
-	ResourceArns []string      `json:"ResourceArns"`
-	Tags         []tagJSONPair `json:"Tags"`
+	ResourceArns []string      `json:"ResourceArns"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
+	Tags         []tagJSONPair `json:"Tags"`         //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
 }
 
 type removeTagsJSONRequest struct {
-	ResourceArns []string `json:"ResourceArns"`
-	TagKeys      []string `json:"TagKeys"`
+	ResourceArns []string `json:"ResourceArns"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
+	TagKeys      []string `json:"TagKeys"`      //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
 }
 
 type tagJSONPair struct {
-	Key   string `json:"Key"`
-	Value string `json:"Value"`
+	Key   string `json:"Key"`   //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
+	Value string `json:"Value"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
 }
 
 type tagPairAcc struct {
@@ -1294,6 +1298,7 @@ func parseELBTagPairsFromForm(form map[string][]string) map[string]string {
 	}
 
 	out := make(map[string]string)
+
 	for _, entry := range byIdx {
 		if entry.key != "" {
 			out[entry.key] = entry.value
@@ -1335,6 +1340,7 @@ func applyELBTagPairFormEntry(byIdx map[int]*tagPairAcc, key string, values []st
 
 func jsonTagsToMap(tags []tagJSONPair) map[string]string {
 	out := make(map[string]string, len(tags))
+
 	for _, tag := range tags {
 		if tag.Key != "" {
 			out[tag.Key] = tag.Value
@@ -1415,7 +1421,7 @@ func xmlMatcher(httpCode string) *XMLMatcher {
 		return nil
 	}
 
-	return &XMLMatcher{HttpCode: httpCode}
+	return &XMLMatcher{HTTPCode: httpCode}
 }
 
 // convertActionToXML serialises an Action for the wire. The legacy
