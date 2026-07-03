@@ -14,6 +14,7 @@ type LogGroup struct {
 	KmsKeyID          string
 	DataProtection    string
 	LogGroupClass     string
+	Tags              map[string]string
 }
 
 // LogStream represents a log stream in CloudWatch Logs.
@@ -47,6 +48,45 @@ type CreateLogGroupRequest struct {
 	KmsKeyID      string            `json:"kmsKeyId,omitempty"`
 	Tags          map[string]string `json:"tags,omitempty"`
 	LogGroupClass string            `json:"logGroupClass,omitempty"`
+}
+
+// ListTagsLogGroupRequest is the request for ListTagsLogGroup.
+type ListTagsLogGroupRequest struct {
+	LogGroupName string `json:"logGroupName"`
+}
+
+// ListTagsForResourceRequest is the request for ListTagsForResource.
+type ListTagsForResourceRequest struct {
+	ResourceARN string `json:"resourceArn"`
+}
+
+// TagsResponse is the response for tag listing.
+type TagsResponse struct {
+	Tags map[string]string `json:"tags"`
+}
+
+// TagLogGroupRequest is the request for TagLogGroup.
+type TagLogGroupRequest struct {
+	LogGroupName string            `json:"logGroupName"`
+	Tags         map[string]string `json:"tags"`
+}
+
+// TagResourceRequest is the request for TagResource.
+type TagResourceRequest struct {
+	ResourceARN string            `json:"resourceArn"`
+	Tags        map[string]string `json:"tags"`
+}
+
+// UntagLogGroupRequest is the request for UntagLogGroup.
+type UntagLogGroupRequest struct {
+	LogGroupName string   `json:"logGroupName"`
+	Tags         []string `json:"tags"`
+}
+
+// UntagResourceRequest is the request for UntagResource.
+type UntagResourceRequest struct {
+	ResourceARN string   `json:"resourceArn"`
+	TagKeys     []string `json:"tagKeys"`
 }
 
 // DeleteLogGroupRequest is the request for DeleteLogGroup.
