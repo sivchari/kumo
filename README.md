@@ -213,6 +213,20 @@ volumes:
   kumo-data:
 ```
 
+### AWS ECS/Fargate
+
+Terraform for running kumo on AWS is available under `infra/terraform/aws`.
+It creates an ECS/Fargate service behind an ALB and mounts EFS at `KUMO_DATA_DIR=/data` for
+persistent emulator state.
+
+```bash
+terraform -chdir=infra/terraform/aws init
+terraform -chdir=infra/terraform/aws plan \
+  -var='vpc_id=vpc-...' \
+  -var='alb_subnet_ids=["subnet-private-a","subnet-private-c"]' \
+  -var='private_subnet_ids=["subnet-private-a","subnet-private-c"]'
+```
+
 ## Usage Examples
 
 ### S3

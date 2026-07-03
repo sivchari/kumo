@@ -15,6 +15,10 @@ coverage.html
 
 # Dependency directories
 vendor/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
 
 # IDE
 .idea/
