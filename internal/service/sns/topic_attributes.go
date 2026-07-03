@@ -8,6 +8,8 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // flexString accepts a JSON string, number, or boolean and stores its
@@ -70,7 +72,7 @@ const defaultTopicPolicy = `{"Version":"2012-10-17","Id":"__default_policy_ID","
 // subsequent SetTopicAttributes is even tried.
 func (s *Service) SetTopicAttributes(w http.ResponseWriter, r *http.Request) {
 	var req setTopicAttributesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -106,7 +108,7 @@ func (s *Service) SetTopicAttributes(w http.ResponseWriter, r *http.Request) {
 // reads on every refresh.
 func (s *Service) GetTopicAttributes(w http.ResponseWriter, r *http.Request) {
 	var req getTopicAttributesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return

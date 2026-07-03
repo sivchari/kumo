@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Error codes for CodeConnections.
 const (
@@ -75,12 +79,17 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Connections:     make(map[string]*Connection),
 		Hosts:           make(map[string]*Host),
 		RepositoryLinks: make(map[string]*RepositoryLink),
 		accountID:       "000000000000",
-		region:          "us-east-1",
+		region:          region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -136,6 +145,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "codeconnections", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -175,6 +193,8 @@ func (s *MemoryStorage) CreateConnection(_ context.Context, name, providerType, 
 
 	s.Connections[connectionArn] = conn
 
+	s.saveLocked()
+
 	return conn, nil
 }
 
@@ -207,6 +227,8 @@ func (s *MemoryStorage) DeleteConnection(_ context.Context, connectionArn string
 	}
 
 	delete(s.Connections, connectionArn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -267,6 +289,8 @@ func (s *MemoryStorage) CreateHost(_ context.Context, name, providerType, provid
 
 	s.Hosts[hostArn] = host
 
+	s.saveLocked()
+
 	return host, nil
 }
 
@@ -309,6 +333,8 @@ func (s *MemoryStorage) DeleteHost(_ context.Context, hostArn string) error {
 	}
 
 	delete(s.Hosts, hostArn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -356,6 +382,8 @@ func (s *MemoryStorage) UpdateHost(_ context.Context, hostArn, providerEndpoint 
 		host.VpcConfiguration = vpcConfig
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -395,6 +423,8 @@ func (s *MemoryStorage) CreateRepositoryLink(_ context.Context, connectionArn, o
 
 	s.RepositoryLinks[repositoryLinkID] = repoLink
 
+	s.saveLocked()
+
 	return repoLink, nil
 }
 
@@ -427,6 +457,8 @@ func (s *MemoryStorage) DeleteRepositoryLink(_ context.Context, repositoryLinkID
 	}
 
 	delete(s.RepositoryLinks, repositoryLinkID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -483,6 +515,8 @@ func (s *MemoryStorage) UpdateRepositoryLink(_ context.Context, repositoryLinkID
 	if encryptionKeyArn != "" {
 		repoLink.EncryptionKeyArn = encryptionKeyArn
 	}
+
+	s.saveLocked()
 
 	return repoLink, nil
 }
@@ -559,6 +593,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags 
 		tagMap[tag.Key] = tag.Value
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -595,6 +631,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tag
 	for _, key := range tagKeys {
 		delete(tagMap, key)
 	}
+
+	s.saveLocked()
 
 	return nil
 }

@@ -2,6 +2,8 @@ package athena
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // QueryExecutionState represents the state of a query execution.
@@ -395,16 +397,8 @@ type DeleteWorkGroupResponse struct{}
 // ErrorResponse represents an Athena error response.
 type ErrorResponse struct {
 	Type    string `json:"__type"`
-	Message string `json:"Message"`
+	Message string `json:"message"`
 }
 
 // ServiceError represents an Athena service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError

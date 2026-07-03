@@ -42,7 +42,7 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create-table",
 		Short: "Create a DynamoDB table",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := newAWSConfig(cmd.Context())
 			if err != nil {
 				return err
@@ -58,6 +58,17 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 
 			if billingMode != "" {
 				input.BillingMode = ddbTypes.BillingMode(billingMode)
+			}
+
+			// StringArray keeps only the first of several space-separated values
+			// (e.g. --key-schema <pk> <sk>), so route the rest back by their key.
+			for _, arg := range args {
+				switch kv := parseKV(arg); {
+				case kv["KeyType"] != "":
+					keySchema = append(keySchema, arg)
+				case kv["AttributeType"] != "":
+					attrDefs = append(attrDefs, arg)
+				}
 			}
 
 			input.AttributeDefinitions = parseAttributeDefinitions(attrDefs)

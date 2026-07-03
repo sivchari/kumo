@@ -7,7 +7,12 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
+
+// Validation result values.
+const validationResultOK = "OK"
 
 // handlerFunc is a type alias for handler functions.
 type handlerFunc func(http.ResponseWriter, *http.Request)
@@ -27,8 +32,7 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"SendTaskSuccess":      s.SendTaskSuccess,
 		"SendTaskFailure":      s.SendTaskFailure,
 		"SendTaskHeartbeat":    s.SendTaskHeartbeat,
-		// Tag + validation stubs — see definition_stub.go.
-		// Required by terraform-provider-aws plan/apply of aws_sfn_state_machine.
+		// Tag, validation, version and alias operations.
 		"ValidateStateMachineDefinition": s.ValidateStateMachineDefinition,
 		"ListStateMachineVersions":       s.ListStateMachineVersions,
 		"ListStateMachineAliases":        s.ListStateMachineAliases,
@@ -355,13 +359,7 @@ func writeResponse(w http.ResponseWriter, resp any) {
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(&ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
 // handleError handles service errors.
@@ -407,4 +405,124 @@ func (s *Service) SendTaskFailure(w http.ResponseWriter, _ *http.Request) {
 // Since kumo does not manage task tokens, it always returns InvalidToken.
 func (s *Service) SendTaskHeartbeat(w http.ResponseWriter, _ *http.Request) {
 	writeError(w, "InvalidToken", "Invalid token", http.StatusBadRequest)
+}
+
+// ValidateStateMachineDefinition reports the supplied definition as valid.
+//
+// terraform-provider-aws calls ValidateStateMachineDefinition during the
+// plan phase of every aws_sfn_state_machine, before issuing CreateStateMachine.
+// Without it, `tofu plan` fails with InvalidAction and the resource never
+// reaches the create path.
+//
+// Definitions are not statically validated in kumo; this returns OK
+// so the apply pipeline proceeds and CreateStateMachine does the real
+// shape check.
+func (s *Service) ValidateStateMachineDefinition(w http.ResponseWriter, _ *http.Request) {
+	writeResponse(w, ValidateStateMachineDefinitionResponse{
+		Result:      validationResultOK,
+		Diagnostics: []validateDiagnostic{},
+	})
+}
+
+// ListTagsForResource returns tags for a state machine.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceArn)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &ListTagsForResourceResponse{Tags: tags})
+}
+
+// TagResource adds tags to a state machine.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceArn, req.Tags); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &TagResourceResponse{})
+}
+
+// UntagResource removes tags from a state machine.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceArn, req.TagKeys); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &UntagResourceResponse{})
+}
+
+// ListStateMachineVersions lists versions for a state machine.
+//
+// Versions are not modeled in storage. terraform-provider-aws calls this
+// on every refresh; the StateMachineVersions field must be present even
+// when empty.
+func (s *Service) ListStateMachineVersions(w http.ResponseWriter, r *http.Request) {
+	var req ListStateMachineVersionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	versions, nextToken, err := s.storage.ListStateMachineVersions(r.Context(), req.StateMachineArn, req.MaxResults, req.NextToken)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &ListStateMachineVersionsResponse{
+		StateMachineVersions: versions,
+		NextToken:            nextToken,
+	})
+}
+
+// ListStateMachineAliases lists aliases for a state machine.
+func (s *Service) ListStateMachineAliases(w http.ResponseWriter, r *http.Request) {
+	var req ListStateMachineAliasesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	aliases, nextToken, err := s.storage.ListStateMachineAliases(r.Context(), req.StateMachineArn, req.MaxResults, req.NextToken)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &ListStateMachineAliasesResponse{
+		StateMachineAliases: aliases,
+		NextToken:           nextToken,
+	})
 }

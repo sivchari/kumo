@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ const (
 	statusActive   = "ACTIVE"
 	statusDeleting = "DELETING"
 
+	defaultRegion       = "us-east-1"
 	defaultKafkaVersion = "3.6.0"
 	defaultInstanceType = "kafka.m5.large"
 	defaultVolumeSize   = 100
@@ -67,9 +69,14 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Clusters:  make(map[string]*ClusterInfo),
-		region:    "us-east-1",
+		region:    region,
 		accountID: "123456789012",
 	}
 	for _, o := range opts {
@@ -118,6 +125,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "kafka", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -129,6 +145,25 @@ func (s *MemoryStorage) Close() error {
 	}
 
 	return nil
+}
+
+// applyBrokerNodeDefaults fills in default values for the broker node group info.
+func applyBrokerNodeDefaults(info *BrokerNodeGroupInfo) {
+	if info == nil {
+		return
+	}
+
+	if info.InstanceType == "" {
+		info.InstanceType = defaultInstanceType
+	}
+
+	if info.StorageInfo == nil {
+		info.StorageInfo = &StorageInfo{
+			EBSStorageInfo: &EBSStorageInfo{
+				VolumeSize: defaultVolumeSize,
+			},
+		}
+	}
 }
 
 // CreateCluster creates a new MSK cluster.
@@ -159,18 +194,7 @@ func (s *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 		numberOfBrokerNodes = 3
 	}
 
-	brokerNodeGroupInfo := req.BrokerNodeGroupInfo
-	if brokerNodeGroupInfo != nil && brokerNodeGroupInfo.InstanceType == "" {
-		brokerNodeGroupInfo.InstanceType = defaultInstanceType
-	}
-
-	if brokerNodeGroupInfo != nil && brokerNodeGroupInfo.StorageInfo == nil {
-		brokerNodeGroupInfo.StorageInfo = &StorageInfo{
-			EBSStorageInfo: &EBSStorageInfo{
-				VolumeSize: defaultVolumeSize,
-			},
-		}
-	}
+	applyBrokerNodeDefaults(req.BrokerNodeGroupInfo)
 
 	cluster := &ClusterInfo{
 		ClusterArn:     clusterArn,
@@ -182,12 +206,14 @@ func (s *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 			KafkaVersion: kafkaVersion,
 		},
 		NumberOfBrokerNodes: numberOfBrokerNodes,
-		BrokerNodeGroupInfo: brokerNodeGroupInfo,
+		BrokerNodeGroupInfo: req.BrokerNodeGroupInfo,
 		EncryptionInfo:      req.EncryptionInfo,
 		Tags:                req.Tags,
 	}
 
 	s.Clusters[clusterArn] = cluster
+
+	s.saveLocked()
 
 	return &CreateClusterResponse{
 		ClusterArn:  clusterArn,
@@ -228,6 +254,8 @@ func (s *MemoryStorage) DeleteCluster(_ context.Context, clusterArn string) (*De
 	cluster.State = statusDeleting
 
 	delete(s.Clusters, clusterArn)
+
+	s.saveLocked()
 
 	return &DeleteClusterResponse{
 		ClusterArn: clusterArn,
@@ -299,6 +327,8 @@ func (s *MemoryStorage) UpdateClusterConfiguration(_ context.Context, clusterArn
 
 	// Update version.
 	cluster.CurrentVersion = "K2" + uuid.New().String()[:8]
+
+	s.saveLocked()
 
 	operationArn := fmt.Sprintf("arn:aws:kafka:%s:%s:cluster-operation/%s/%s",
 		s.region, s.accountID, cluster.ClusterName, uuid.New().String())

@@ -280,7 +280,7 @@ type ListResolverRuleAssociationsResponse struct {
 // ErrorResponse represents a Route 53 Resolver error response.
 type ErrorResponse struct {
 	Type    string `json:"__type"`
-	Message string `json:"Message"`
+	Message string `json:"message"`
 }
 
 // ResolverError represents a Route 53 Resolver error.

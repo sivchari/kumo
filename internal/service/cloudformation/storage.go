@@ -99,6 +99,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "cloudformation", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -148,6 +157,8 @@ func (m *MemoryStorage) CreateStack(_ context.Context, req *CreateStackRequest) 
 
 	m.Stacks[req.StackName] = stack
 
+	m.saveLocked()
+
 	return stack, nil
 }
 
@@ -167,6 +178,8 @@ func (m *MemoryStorage) DeleteStack(_ context.Context, stackName string) error {
 
 	// Keep the stack for ListStacks but prevent DescribeStacks from returning it.
 	delete(m.Stacks, stackName)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -239,6 +252,8 @@ func (m *MemoryStorage) UpdateStack(_ context.Context, req *UpdateStackRequest) 
 
 	// Re-parse resources from new template.
 	stack.Resources = parseTemplateResources(req.TemplateBody, stack.StackID, stack.StackName)
+
+	m.saveLocked()
 
 	return stack, nil
 }

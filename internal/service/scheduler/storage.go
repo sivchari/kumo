@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -69,10 +70,15 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	ms := &MemoryStorage{
 		Schedules:      make(map[string]*Schedule),
 		ScheduleGroups: make(map[string]*ScheduleGroup),
-		region:         defaultRegion,
+		region:         region,
 		accountID:      defaultAccountID,
 	}
 
@@ -87,7 +93,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	// Create default schedule group.
 	ms.ScheduleGroups[defaultGroupName] = &ScheduleGroup{
 		Name:         defaultGroupName,
-		ARN:          generateScheduleGroupARN(defaultRegion, defaultAccountID, defaultGroupName),
+		ARN:          generateScheduleGroupARN(ms.region, defaultAccountID, defaultGroupName),
 		State:        ScheduleGroupStateActive,
 		CreationDate: time.Now(),
 	}
@@ -132,6 +138,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "scheduler", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -199,6 +214,8 @@ func (m *MemoryStorage) CreateSchedule(_ context.Context, name string, req *Crea
 
 	m.Schedules[key] = schedule
 
+	m.saveLocked()
+
 	return schedule, nil
 }
 
@@ -260,6 +277,8 @@ func (m *MemoryStorage) UpdateSchedule(_ context.Context, name string, req *Upda
 		schedule.EndDate = nil
 	}
 
+	m.saveLocked()
+
 	return schedule, nil
 }
 
@@ -276,6 +295,8 @@ func (m *MemoryStorage) DeleteSchedule(_ context.Context, name, groupName string
 	}
 
 	delete(m.Schedules, key)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -323,6 +344,8 @@ func (m *MemoryStorage) CreateScheduleGroup(_ context.Context, name string, _ *C
 
 	m.ScheduleGroups[name] = group
 
+	m.saveLocked()
+
 	return group, nil
 }
 
@@ -360,6 +383,8 @@ func (m *MemoryStorage) DeleteScheduleGroup(_ context.Context, name string) erro
 	}
 
 	delete(m.ScheduleGroups, name)
+
+	m.saveLocked()
 
 	return nil
 }

@@ -1,19 +1,16 @@
 package xray
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 
-	"github.com/google/uuid"
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // PutTraceSegments handles the PutTraceSegments operation.
 func (s *Service) PutTraceSegments(w http.ResponseWriter, r *http.Request) {
 	var req PutTraceSegmentsInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -40,7 +37,7 @@ func (s *Service) PutTraceSegments(w http.ResponseWriter, r *http.Request) {
 // GetTraceSummaries handles the GetTraceSummaries operation.
 func (s *Service) GetTraceSummaries(w http.ResponseWriter, r *http.Request) {
 	var req GetTraceSummariesInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -94,7 +91,7 @@ func (s *Service) GetTraceSummaries(w http.ResponseWriter, r *http.Request) {
 // BatchGetTraces handles the BatchGetTraces operation.
 func (s *Service) BatchGetTraces(w http.ResponseWriter, r *http.Request) {
 	var req BatchGetTracesInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -142,7 +139,7 @@ func (s *Service) BatchGetTraces(w http.ResponseWriter, r *http.Request) {
 // GetServiceGraph handles the GetServiceGraph operation.
 func (s *Service) GetServiceGraph(w http.ResponseWriter, r *http.Request) {
 	var req GetServiceGraphInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -171,7 +168,7 @@ func (s *Service) GetServiceGraph(w http.ResponseWriter, r *http.Request) {
 // CreateGroup handles the CreateGroup operation.
 func (s *Service) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	var req CreateGroupInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -203,7 +200,7 @@ func (s *Service) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // DeleteGroup handles the DeleteGroup operation.
 func (s *Service) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	var req DeleteGroupInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -226,44 +223,14 @@ func (s *Service) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions.
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-
-	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
-	}
+	service.WriteJSONResponse(w, service.ContentTypeJSON, v)
 }
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeJSON, code, message, status)
 }
 
 // handleStorageError handles storage errors and writes appropriate response.

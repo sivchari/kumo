@@ -6,20 +6,41 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/sivchari/kumo/internal/storage"
 )
 
+// Default values.
+const defaultRegion = "us-east-1"
+
 // Storage defines the Lambda storage interface.
 type Storage interface {
 	CreateFunction(ctx context.Context, req *CreateFunctionRequest) (*Function, error)
 	GetFunction(ctx context.Context, name string) (*Function, error)
+	GetFunctionByARN(ctx context.Context, arn string) (*Function, error)
 	DeleteFunction(ctx context.Context, name string) error
 	ListFunctions(ctx context.Context, marker string, maxItems int) ([]*Function, string, error)
 	UpdateFunctionCode(ctx context.Context, name string, req *UpdateFunctionCodeRequest) (*Function, error)
 	UpdateFunctionConfiguration(ctx context.Context, name string, req *UpdateFunctionConfigurationRequest) (*Function, error)
+
+	// Tag operations
+	ListTags(ctx context.Context, arn string) (map[string]string, error)
+	TagResource(ctx context.Context, arn string, tags map[string]string) error
+	UntagResource(ctx context.Context, arn string, tagKeys []string) error
+
+	// Permission operations
+	AddPermission(ctx context.Context, functionName string, stmt *PolicyStatement) error
+	RemovePermission(ctx context.Context, functionName, statementID string) error
+	GetPolicy(ctx context.Context, functionName string) (*ResourcePolicy, error)
+
+	// Read-only accessors
+	ListVersionsByFunction(ctx context.Context, functionName string) (*Function, error)
+	ListAliases(ctx context.Context, functionName string) error
+	ListFunctionEventInvokeConfigs(ctx context.Context, functionName string) error
+	GetFunctionCodeSigningConfig(ctx context.Context, functionName string) (string, error)
 
 	// EventSourceMapping operations
 	CreateEventSourceMapping(ctx context.Context, req *CreateEventSourceMappingRequest) (*EventSourceMapping, error)
@@ -58,11 +79,16 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Functions:           make(map[string]*Function),
 		EventSourceMappings: make(map[string]*EventSourceMapping),
 		baseURL:             baseURL,
-		region:              "us-east-1",
+		region:              region,
 		accountID:           "000000000000",
 	}
 	for _, o := range opts {
@@ -115,6 +141,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "lambda", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -142,6 +177,8 @@ func (s *MemoryStorage) CreateFunction(_ context.Context, req *CreateFunctionReq
 
 	fn := s.buildFunction(req)
 	s.Functions[req.FunctionName] = fn
+
+	s.saveLocked()
 
 	return fn, nil
 }
@@ -188,6 +225,7 @@ func (s *MemoryStorage) buildFunction(req *CreateFunctionRequest) *Function {
 		PackageType:    packageType,
 		Architectures:  architectures,
 		Environment:    req.Environment,
+		Tags:           req.Tags,
 		InvokeEndpoint: req.InvokeEndpoint,
 		Code: &FunctionCode{
 			ZipFile:         req.Code.ZipFile,
@@ -228,6 +266,8 @@ func (s *MemoryStorage) DeleteFunction(_ context.Context, name string) error {
 	}
 
 	delete(s.Functions, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -317,6 +357,8 @@ func (s *MemoryStorage) UpdateFunctionCode(_ context.Context, name string, req *
 
 	fn.LastModified = time.Now().UTC()
 
+	s.saveLocked()
+
 	return fn, nil
 }
 
@@ -367,7 +409,253 @@ func (s *MemoryStorage) UpdateFunctionConfiguration(_ context.Context, name stri
 
 	fn.LastModified = time.Now().UTC()
 
+	s.saveLocked()
+
 	return fn, nil
+}
+
+// GetFunctionByARN retrieves a Lambda function by its ARN.
+func (s *MemoryStorage) GetFunctionByARN(_ context.Context, arn string) (*Function, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			return fn, nil
+		}
+	}
+
+	return nil, &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// AddPermission adds a statement to a function's resource policy.
+func (s *MemoryStorage) AddPermission(_ context.Context, functionName string, stmt *PolicyStatement) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	if fn.Policy == nil {
+		fn.Policy = &ResourcePolicy{
+			Version: "2012-10-17",
+			ID:      policyID(functionName),
+		}
+	}
+
+	// Check for duplicate statement ID.
+	for _, existing := range fn.Policy.Statements {
+		if existing.Sid == stmt.Sid {
+			return &FunctionError{
+				Type:    ErrResourceConflict,
+				Message: fmt.Sprintf("The statement id (%s) provided already exists. Please provide a new statement id, or remove the existing statement.", stmt.Sid),
+			}
+		}
+	}
+
+	fn.Policy.Statements = append(fn.Policy.Statements, stmt)
+
+	s.saveLocked()
+
+	return nil
+}
+
+// RemovePermission removes a statement from a function's resource policy.
+func (s *MemoryStorage) RemovePermission(_ context.Context, functionName, statementID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	if fn.Policy == nil {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: "No policy is associated with the given resource.",
+		}
+	}
+
+	for i, stmt := range fn.Policy.Statements {
+		if stmt.Sid == statementID {
+			fn.Policy.Statements = append(fn.Policy.Statements[:i], fn.Policy.Statements[i+1:]...)
+
+			s.saveLocked()
+
+			return nil
+		}
+	}
+
+	return &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Statement %s is not found in resource policy.", statementID),
+	}
+}
+
+// GetPolicy returns the resource policy for a function.
+func (s *MemoryStorage) GetPolicy(_ context.Context, functionName string) (*ResourcePolicy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return nil, &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return fn.Policy, nil
+}
+
+// ListTags returns the tags for a function identified by its ARN.
+func (s *MemoryStorage) ListTags(_ context.Context, arn string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			tags := fn.Tags
+			if tags == nil {
+				tags = make(map[string]string)
+			}
+
+			return tags, nil
+		}
+	}
+
+	return nil, &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// TagResource adds or overwrites tags on a function identified by its ARN.
+func (s *MemoryStorage) TagResource(_ context.Context, arn string, tags map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			if fn.Tags == nil {
+				fn.Tags = make(map[string]string)
+			}
+
+			for k, v := range tags {
+				fn.Tags[k] = v
+			}
+
+			s.saveLocked()
+
+			return nil
+		}
+	}
+
+	return &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// UntagResource removes tags from a function identified by its ARN.
+func (s *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, fn := range s.Functions {
+		if fn.FunctionArn == arn {
+			if fn.Tags == nil {
+				return nil
+			}
+
+			for _, key := range tagKeys {
+				delete(fn.Tags, key)
+			}
+
+			s.saveLocked()
+
+			return nil
+		}
+	}
+
+	return &FunctionError{
+		Type:    ErrResourceNotFound,
+		Message: fmt.Sprintf("Function not found: %s", arn),
+	}
+}
+
+// ListVersionsByFunction returns the function for version listing.
+func (s *MemoryStorage) ListVersionsByFunction(_ context.Context, functionName string) (*Function, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	fn, exists := s.Functions[functionName]
+	if !exists {
+		return nil, &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return fn, nil
+}
+
+// ListAliases validates the function exists for alias listing.
+func (s *MemoryStorage) ListAliases(_ context.Context, functionName string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.Functions[functionName]; !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return nil
+}
+
+// ListFunctionEventInvokeConfigs validates the function exists for event invoke config listing.
+func (s *MemoryStorage) ListFunctionEventInvokeConfigs(_ context.Context, functionName string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.Functions[functionName]; !exists {
+		return &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	return nil
+}
+
+// GetFunctionCodeSigningConfig returns the code signing config ARN for a function.
+func (s *MemoryStorage) GetFunctionCodeSigningConfig(_ context.Context, functionName string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.Functions[functionName]; !exists {
+		return "", &FunctionError{
+			Type:    ErrResourceNotFound,
+			Message: fmt.Sprintf("Function not found: %s", functionName),
+		}
+	}
+
+	// Code signing is not modeled; return the function name only.
+	return functionName, nil
 }
 
 // CreateEventSourceMapping creates a new event source mapping.
@@ -417,6 +705,8 @@ func (s *MemoryStorage) CreateEventSourceMapping(_ context.Context, req *CreateE
 
 	s.EventSourceMappings[mappingUUID] = mapping
 
+	s.saveLocked()
+
 	return mapping, nil
 }
 
@@ -453,6 +743,8 @@ func (s *MemoryStorage) DeleteEventSourceMapping(_ context.Context, uuid string)
 	mapping.State = "Deleting"
 
 	delete(s.EventSourceMappings, uuid)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -556,6 +848,8 @@ func (s *MemoryStorage) UpdateEventSourceMapping(_ context.Context, uuid string,
 	}
 
 	mapping.LastModified = toUnixTimestamp(time.Now().UTC())
+
+	s.saveLocked()
 
 	return mapping, nil
 }

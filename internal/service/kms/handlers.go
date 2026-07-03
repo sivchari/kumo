@@ -8,7 +8,12 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
+
+// Default values.
+const defaultKeyPolicyName = "default"
 
 // handlerFunc is a type alias for handler functions.
 type handlerFunc func(http.ResponseWriter, *http.Request)
@@ -25,11 +30,13 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"Encrypt":             s.Encrypt,
 		"Decrypt":             s.Decrypt,
 		"GenerateDataKey":     s.GenerateDataKey,
+		"Sign":                s.Sign,
+		"Verify":              s.Verify,
+		"GetPublicKey":        s.GetPublicKey,
 		"CreateAlias":         s.CreateAlias,
 		"DeleteAlias":         s.DeleteAlias,
 		"ListAliases":         s.ListAliases,
-		// Key policy + tag stubs — see policy_tag_stubs.go.
-		// Required by terraform-provider-aws after CreateKey.
+		// Key policy + tag operations.
 		"GetKeyPolicy":         s.GetKeyPolicy,
 		"PutKeyPolicy":         s.PutKeyPolicy,
 		"ListKeyPolicies":      s.ListKeyPolicies,
@@ -292,6 +299,102 @@ func (s *Service) GenerateDataKey(w http.ResponseWriter, r *http.Request) {
 	writeKMSResponse(w, resp)
 }
 
+// Sign handles the Sign API.
+func (s *Service) Sign(w http.ResponseWriter, r *http.Request) {
+	var req SignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	messageType := MessageType(req.MessageType)
+	if messageType == "" {
+		messageType = MessageTypeRaw
+	}
+
+	signature, key, err := s.storage.Sign(r.Context(), req.KeyID, req.Message, SigningAlgorithm(req.SigningAlgorithm), messageType)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &SignResponse{
+		KeyID:            key.Arn,
+		Signature:        signature,
+		SigningAlgorithm: req.SigningAlgorithm,
+	})
+}
+
+// Verify handles the Verify API.
+func (s *Service) Verify(w http.ResponseWriter, r *http.Request) {
+	var req VerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	messageType := MessageType(req.MessageType)
+	if messageType == "" {
+		messageType = MessageTypeRaw
+	}
+
+	valid, key, err := s.storage.Verify(r.Context(), req.KeyID, req.Message, req.Signature, SigningAlgorithm(req.SigningAlgorithm), messageType)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	// AWS returns KMSInvalidSignatureException when the signature does not match.
+	if !valid {
+		writeKMSError(w, errInvalidSignature, "The signature was not generated for the specified message, signing algorithm, and key.", http.StatusBadRequest)
+
+		return
+	}
+
+	writeKMSResponse(w, &VerifyResponse{
+		KeyID:            key.Arn,
+		SignatureValid:   valid,
+		SigningAlgorithm: req.SigningAlgorithm,
+	})
+}
+
+// GetPublicKey handles the GetPublicKey API.
+func (s *Service) GetPublicKey(w http.ResponseWriter, r *http.Request) {
+	var req GetPublicKeyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	der, key, err := s.storage.GetPublicKey(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	resp := &GetPublicKeyResponse{
+		KeyID:                 key.Arn,
+		PublicKey:             der,
+		CustomerMasterKeySpec: string(key.KeySpec),
+		KeySpec:               string(key.KeySpec),
+		KeyUsage:              string(key.KeyUsage),
+	}
+
+	if key.KeyUsage == KeyUsageSignVerify {
+		resp.SigningAlgorithms = signingAlgorithmsForSpec(key.KeySpec)
+	} else {
+		resp.EncryptionAlgorithms = encryptionAlgorithmsForSpec(key.KeySpec)
+	}
+
+	writeKMSResponse(w, resp)
+}
+
 // CreateAlias handles the CreateAlias API.
 func (s *Service) CreateAlias(w http.ResponseWriter, r *http.Request) {
 	var req CreateAliasRequest
@@ -381,8 +484,13 @@ func keyToMetadata(key *Key) *KeyMetadata {
 		MultiRegion:  key.MultiRegion,
 	}
 
-	if key.KeyUsage == KeyUsageEncryptDecrypt {
-		metadata.EncryptionAlgorithms = []string{"SYMMETRIC_DEFAULT"}
+	switch {
+	case isAsymmetricSpec(key.KeySpec) && key.KeyUsage == KeyUsageSignVerify:
+		metadata.SigningAlgorithms = signingAlgorithmsForSpec(key.KeySpec)
+	case isAsymmetricSpec(key.KeySpec):
+		metadata.EncryptionAlgorithms = encryptionAlgorithmsForSpec(key.KeySpec)
+	case key.KeyUsage == KeyUsageEncryptDecrypt:
+		metadata.EncryptionAlgorithms = []string{string(EncryptionAlgorithmSymmetricDefault)}
 	}
 
 	if key.DeletionDate != nil {
@@ -404,13 +512,7 @@ func writeKMSResponse(w http.ResponseWriter, resp any) {
 
 // writeKMSError writes an error response.
 func writeKMSError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(&ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }
 
 // handleKMSError handles KMS errors.
@@ -436,4 +538,146 @@ func getErrorStatus(code string) int {
 	default:
 		return http.StatusBadRequest
 	}
+}
+
+// GetKeyPolicy handles the GetKeyPolicy API.
+func (s *Service) GetKeyPolicy(w http.ResponseWriter, r *http.Request) {
+	var req GetKeyPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	policy, err := s.storage.GetKeyPolicy(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &GetKeyPolicyResponse{
+		Policy:     policy,
+		PolicyName: defaultKeyPolicyName,
+	})
+}
+
+// PutKeyPolicy handles the PutKeyPolicy API.
+func (s *Service) PutKeyPolicy(w http.ResponseWriter, r *http.Request) {
+	var req PutKeyPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.PutKeyPolicy(r.Context(), req.KeyID, req.Policy); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &PutKeyPolicyResponse{})
+}
+
+// ListKeyPolicies handles the ListKeyPolicies API.
+// AWS always returns a single policy named "default".
+func (s *Service) ListKeyPolicies(w http.ResponseWriter, r *http.Request) {
+	var req ListKeyPoliciesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	// Verify the key exists.
+	if _, err := s.storage.GetKey(r.Context(), req.KeyID); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &ListKeyPoliciesResponse{
+		PolicyNames: []string{defaultKeyPolicyName},
+		Truncated:   false,
+	})
+}
+
+// ListResourceTags handles the ListResourceTags API.
+func (s *Service) ListResourceTags(w http.ResponseWriter, r *http.Request) {
+	var req ListResourceTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListResourceTags(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &ListResourceTagsResponse{
+		Tags:      tags,
+		Truncated: false,
+	})
+}
+
+// TagResource handles the TagResource API.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.KeyID, req.Tags); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &TagResourceResponse{})
+}
+
+// UntagResource handles the UntagResource API.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.KeyID, req.TagKeys); err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &UntagResourceResponse{})
+}
+
+// GetKeyRotationStatus handles the GetKeyRotationStatus API.
+func (s *Service) GetKeyRotationStatus(w http.ResponseWriter, r *http.Request) {
+	var req GetKeyRotationStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	rotationEnabled, err := s.storage.GetKeyRotationStatus(r.Context(), req.KeyID)
+	if err != nil {
+		handleKMSError(w, err)
+
+		return
+	}
+
+	writeKMSResponse(w, &GetKeyRotationStatusResponse{
+		KeyRotationEnabled: rotationEnabled,
+	})
 }

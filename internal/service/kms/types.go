@@ -2,6 +2,8 @@ package kms
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // KeyState represents the state of a KMS key.
@@ -45,6 +47,41 @@ const (
 	KeySpecHMAC512          KeySpec = "HMAC_512"
 )
 
+// SigningAlgorithm represents a signing algorithm spec.
+type SigningAlgorithm string
+
+// Signing algorithms.
+const (
+	SigningAlgorithmRSASSAPSSSha256      SigningAlgorithm = "RSASSA_PSS_SHA_256"
+	SigningAlgorithmRSASSAPSSSha384      SigningAlgorithm = "RSASSA_PSS_SHA_384"
+	SigningAlgorithmRSASSAPSSSha512      SigningAlgorithm = "RSASSA_PSS_SHA_512"
+	SigningAlgorithmRSASSAPKCS1V15Sha256 SigningAlgorithm = "RSASSA_PKCS1_V1_5_SHA_256"
+	SigningAlgorithmRSASSAPKCS1V15Sha384 SigningAlgorithm = "RSASSA_PKCS1_V1_5_SHA_384"
+	SigningAlgorithmRSASSAPKCS1V15Sha512 SigningAlgorithm = "RSASSA_PKCS1_V1_5_SHA_512"
+	SigningAlgorithmECDSASha256          SigningAlgorithm = "ECDSA_SHA_256"
+	SigningAlgorithmECDSASha384          SigningAlgorithm = "ECDSA_SHA_384"
+	SigningAlgorithmECDSASha512          SigningAlgorithm = "ECDSA_SHA_512"
+)
+
+// EncryptionAlgorithm represents an encryption algorithm spec.
+type EncryptionAlgorithm string
+
+// Encryption algorithms.
+const (
+	EncryptionAlgorithmSymmetricDefault EncryptionAlgorithm = "SYMMETRIC_DEFAULT"
+	EncryptionAlgorithmRSAESOAEPSha1    EncryptionAlgorithm = "RSAES_OAEP_SHA_1"
+	EncryptionAlgorithmRSAESOAEPSha256  EncryptionAlgorithm = "RSAES_OAEP_SHA_256"
+)
+
+// MessageType represents whether a Sign/Verify message is RAW or a DIGEST.
+type MessageType string
+
+// Message types.
+const (
+	MessageTypeRaw    MessageType = "RAW"
+	MessageTypeDigest MessageType = "DIGEST"
+)
+
 // KeyManager represents who manages the key material.
 type KeyManager string
 
@@ -75,8 +112,11 @@ type Key struct {
 	PendingDeletionWindow int32
 	Tags                  map[string]string
 	Policy                string // IAM key policy document
-	// Simulated key material for encryption/decryption.
+	// Simulated key material for symmetric encryption/decryption (AES-GCM).
 	KeyMaterial []byte
+	// AsymmetricKey holds the PKCS#8 DER-encoded private key for asymmetric
+	// (RSA/ECC) keys used by Sign/Verify/GetPublicKey. Nil for symmetric keys.
+	AsymmetricKey []byte
 }
 
 // MultiRegionConfig represents multi-region key configuration.
@@ -339,47 +379,137 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a KMS service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
+type ServiceError = service.CodedError
 
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
-
-// getKeyPolicyRequest is the wire shape of GetKeyPolicy.
-type getKeyPolicyRequest struct {
+// GetKeyPolicyRequest is the request for GetKeyPolicy.
+type GetKeyPolicyRequest struct {
 	KeyID      string `json:"KeyId"`
 	PolicyName string `json:"PolicyName,omitempty"`
 }
 
-// putKeyPolicyRequest is the wire shape of PutKeyPolicy.
-type putKeyPolicyRequest struct {
-	KeyID      string `json:"KeyId"`
-	Policy     string `json:"Policy"`
-	PolicyName string `json:"PolicyName,omitempty"`
-}
-
-// getKeyPolicyResponse is the wire shape of GetKeyPolicy.
-type getKeyPolicyResponse struct {
+// GetKeyPolicyResponse is the response for GetKeyPolicy.
+type GetKeyPolicyResponse struct {
 	Policy     string `json:"Policy"`
 	PolicyName string `json:"PolicyName"`
 }
 
-// listKeyPoliciesResponse is the wire shape of ListKeyPolicies.
-type listKeyPoliciesResponse struct {
+// PutKeyPolicyRequest is the request for PutKeyPolicy.
+type PutKeyPolicyRequest struct {
+	KeyID                          string `json:"KeyId"`
+	Policy                         string `json:"Policy"`
+	PolicyName                     string `json:"PolicyName,omitempty"`
+	BypassPolicyLockoutSafetyCheck bool   `json:"BypassPolicyLockoutSafetyCheck,omitempty"`
+}
+
+// PutKeyPolicyResponse is the response for PutKeyPolicy.
+type PutKeyPolicyResponse struct{}
+
+// ListKeyPoliciesRequest is the request for ListKeyPolicies.
+type ListKeyPoliciesRequest struct {
+	KeyID  string `json:"KeyId"`
+	Limit  int32  `json:"Limit,omitempty"`
+	Marker string `json:"Marker,omitempty"`
+}
+
+// ListKeyPoliciesResponse is the response for ListKeyPolicies.
+type ListKeyPoliciesResponse struct {
 	PolicyNames []string `json:"PolicyNames"`
+	NextMarker  string   `json:"NextMarker,omitempty"`
+	Truncated   bool     `json:"Truncated"`
 }
 
-// listResourceTagsResponse mirrors AWS — the Tags field must be present
-// even when empty so terraform-provider-aws can parse it.
-type listResourceTagsResponse struct {
-	Tags []map[string]string `json:"Tags"`
+// ListResourceTagsRequest is the request for ListResourceTags.
+type ListResourceTagsRequest struct {
+	KeyID  string `json:"KeyId"`
+	Limit  int32  `json:"Limit,omitempty"`
+	Marker string `json:"Marker,omitempty"`
 }
 
-// getKeyRotationStatusResponse is the wire shape of GetKeyRotationStatus.
-type getKeyRotationStatusResponse struct {
+// ListResourceTagsResponse is the response for ListResourceTags.
+// The Tags field must be present even when empty so terraform-provider-aws
+// can parse it.
+type ListResourceTagsResponse struct {
+	Tags       []Tag  `json:"Tags"`
+	NextMarker string `json:"NextMarker,omitempty"`
+	Truncated  bool   `json:"Truncated"`
+}
+
+// TagResourceRequest is the request for TagResource.
+type TagResourceRequest struct {
+	KeyID string `json:"KeyId"`
+	Tags  []Tag  `json:"Tags"`
+}
+
+// TagResourceResponse is the response for TagResource.
+type TagResourceResponse struct{}
+
+// UntagResourceRequest is the request for UntagResource.
+type UntagResourceRequest struct {
+	KeyID   string   `json:"KeyId"`
+	TagKeys []string `json:"TagKeys"`
+}
+
+// UntagResourceResponse is the response for UntagResource.
+type UntagResourceResponse struct{}
+
+// GetKeyRotationStatusRequest is the request for GetKeyRotationStatus.
+type GetKeyRotationStatusRequest struct {
+	KeyID string `json:"KeyId"`
+}
+
+// GetKeyRotationStatusResponse is the response for GetKeyRotationStatus.
+type GetKeyRotationStatusResponse struct {
 	KeyRotationEnabled bool `json:"KeyRotationEnabled"`
+}
+
+// SignRequest is the request for Sign.
+type SignRequest struct {
+	KeyID            string   `json:"KeyId"`
+	Message          []byte   `json:"Message"`
+	MessageType      string   `json:"MessageType,omitempty"`
+	SigningAlgorithm string   `json:"SigningAlgorithm"`
+	GrantTokens      []string `json:"GrantTokens,omitempty"`
+	DryRun           bool     `json:"DryRun,omitempty"`
+}
+
+// SignResponse is the response for Sign.
+type SignResponse struct {
+	KeyID            string `json:"KeyId"`
+	Signature        []byte `json:"Signature"`
+	SigningAlgorithm string `json:"SigningAlgorithm"`
+}
+
+// VerifyRequest is the request for Verify.
+type VerifyRequest struct {
+	KeyID            string   `json:"KeyId"`
+	Message          []byte   `json:"Message"`
+	Signature        []byte   `json:"Signature"`
+	MessageType      string   `json:"MessageType,omitempty"`
+	SigningAlgorithm string   `json:"SigningAlgorithm"`
+	GrantTokens      []string `json:"GrantTokens,omitempty"`
+	DryRun           bool     `json:"DryRun,omitempty"`
+}
+
+// VerifyResponse is the response for Verify.
+type VerifyResponse struct {
+	KeyID            string `json:"KeyId"`
+	SignatureValid   bool   `json:"SignatureValid"`
+	SigningAlgorithm string `json:"SigningAlgorithm"`
+}
+
+// GetPublicKeyRequest is the request for GetPublicKey.
+type GetPublicKeyRequest struct {
+	KeyID       string   `json:"KeyId"`
+	GrantTokens []string `json:"GrantTokens,omitempty"`
+}
+
+// GetPublicKeyResponse is the response for GetPublicKey.
+type GetPublicKeyResponse struct {
+	KeyID                 string   `json:"KeyId"`
+	PublicKey             []byte   `json:"PublicKey"`
+	CustomerMasterKeySpec string   `json:"CustomerMasterKeySpec,omitempty"`
+	KeySpec               string   `json:"KeySpec,omitempty"`
+	KeyUsage              string   `json:"KeyUsage,omitempty"`
+	EncryptionAlgorithms  []string `json:"EncryptionAlgorithms,omitempty"`
+	SigningAlgorithms     []string `json:"SigningAlgorithms,omitempty"`
 }

@@ -198,12 +198,12 @@ func TestUploadPartCopy_RoundTripsThroughComplete(t *testing.T) {
 		t.Fatalf("CreateMultipartUpload: %v", err)
 	}
 
-	p1, err := store.UploadPartCopy(ctx, "dst", "joined", upload.UploadID, 1, "src", "blob", &CopyRange{Start: 0, End: 4})
+	p1, err := store.UploadPartCopy(ctx, "dst", "joined", upload.UploadID, 1, "src", "blob", "", &CopyRange{Start: 0, End: 4})
 	if err != nil {
 		t.Fatalf("UploadPartCopy 1: %v", err)
 	}
 
-	p2, err := store.UploadPartCopy(ctx, "dst", "joined", upload.UploadID, 2, "src", "blob", &CopyRange{Start: 5, End: 9})
+	p2, err := store.UploadPartCopy(ctx, "dst", "joined", upload.UploadID, 2, "src", "blob", "", &CopyRange{Start: 5, End: 9})
 	if err != nil {
 		t.Fatalf("UploadPartCopy 2: %v", err)
 	}

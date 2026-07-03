@@ -14,6 +14,26 @@ type Service interface {
 	RegisterRoutes(r Router)
 }
 
+// Meta describes a service for documentation generation (e.g. the README
+// service catalog). It carries the human-facing presentation of a service,
+// distinct from the protocol-level identifiers used for routing.
+type Meta struct {
+	// Display is the human-readable service name, e.g. "DynamoDB Streams".
+	Display string
+	// Category is the catalog section the service belongs to, e.g. "Storage".
+	Category string
+	// Description is a one-line summary shown next to the service.
+	Description string
+}
+
+// Describer is an optional interface for services that expose documentation
+// metadata. The README generator (cmd/readme-gen) and its verifying test
+// (internal/catalog) require every registered service to implement it.
+type Describer interface {
+	// Meta returns the service's documentation metadata.
+	Meta() Meta
+}
+
 // Router is the interface for registering HTTP routes.
 type Router interface {
 	// Handle registers a handler for the given method and pattern.
@@ -27,6 +47,17 @@ type Router interface {
 type Handler interface {
 	// ServeHTTP handles the HTTP request.
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+// ExecuteAPIHandler is an optional interface for services that expose a
+// deployed API invoke surface (execute-api). The router dispatches
+// virtual-hosted execute-api requests ({apiId}.execute-api.<host>) to it.
+type ExecuteAPIHandler interface {
+	// HandleExecuteAPI handles an invocation for apiID. invokePath is the
+	// request path after the host, e.g. "/dev/items" (including the stage
+	// segment). It returns false when apiID is not managed by this service,
+	// so the router can try another handler.
+	HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
 }
 
 // JSONProtocolService is an optional interface for services using AWS JSON 1.0 protocol.

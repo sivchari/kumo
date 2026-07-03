@@ -22,6 +22,17 @@ type Storage interface {
 	CreateInvalidation(ctx context.Context, distributionID string, batch *CreateInvalidationRequest) (*Invalidation, error)
 	GetInvalidation(ctx context.Context, distributionID, invalidationID string) (*Invalidation, error)
 	ListInvalidations(ctx context.Context, distributionID, marker string, maxItems int) ([]*Invalidation, string, error)
+
+	// Signed URL building blocks.
+	CreatePublicKey(ctx context.Context, cfg *PublicKeyConfig) (*PublicKey, error)
+	GetPublicKey(ctx context.Context, id string) (*PublicKey, error)
+	ListPublicKeys(ctx context.Context) []*PublicKey
+	DeletePublicKey(ctx context.Context, id string) error
+
+	CreateKeyGroup(ctx context.Context, cfg *KeyGroupConfig) (*KeyGroup, error)
+	GetKeyGroup(ctx context.Context, id string) (*KeyGroup, error)
+	ListKeyGroups(ctx context.Context) []*KeyGroup
+	DeleteKeyGroup(ctx context.Context, id string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -45,6 +56,7 @@ type MemoryStorage struct {
 	mu            sync.RWMutex                        `json:"-"`
 	Distributions map[string]*Distribution            `json:"distributions"`
 	Invalidations map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
+	signing       signingStore
 	dataDir       string
 }
 
@@ -53,6 +65,10 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Distributions: make(map[string]*Distribution),
 		Invalidations: make(map[string]map[string]*Invalidation),
+		signing: signingStore{
+			PublicKeys: make(map[string]*PublicKey),
+			KeyGroups:  make(map[string]*KeyGroup),
+		},
 	}
 	for _, o := range opts {
 		o(s)
@@ -101,7 +117,18 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Invalidations = make(map[string]map[string]*Invalidation)
 	}
 
+	s.ensureSigningInit()
+
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "cloudfront", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -172,6 +199,8 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 	}
 
 	s.Distributions[id] = dist
+
+	s.saveLocked()
 
 	return dist, nil
 }
@@ -276,6 +305,8 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 		ViewerCertificate:    convertViewerCertificateFromXML(config.ViewerCertificate),
 	}
 
+	s.saveLocked()
+
 	return dist, nil
 }
 
@@ -302,6 +333,8 @@ func (s *MemoryStorage) DeleteDistribution(_ context.Context, id, etag string) e
 
 	delete(s.Distributions, id)
 	delete(s.Invalidations, id)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -339,6 +372,8 @@ func (s *MemoryStorage) CreateInvalidation(_ context.Context, distributionID str
 	}
 
 	s.Invalidations[distributionID][id] = inv
+
+	s.saveLocked()
 
 	return inv, nil
 }

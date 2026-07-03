@@ -9,6 +9,8 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+const defaultBaseURL = "http://localhost:4566"
+
 // Service is the Step Functions service.
 type Service struct {
 	storage Storage
@@ -49,6 +51,8 @@ func init() {
 		opts = append(opts, WithDataDir(dir))
 	}
 
+	opts = append(opts, WithBaseURL(defaultBaseURL))
+
 	service.Register(New(NewMemoryStorage(opts...)))
 }
 
@@ -61,4 +65,13 @@ func (s *Service) Close() error {
 	}
 
 	return nil
+}
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Step Functions",
+		Category:    "Application Integration",
+		Description: "Workflow orchestration",
+	}
 }

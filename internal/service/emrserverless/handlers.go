@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateApplication handles the CreateApplication API operation.
@@ -430,15 +432,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	resp := &ErrorResponse{
-		Type:    code,
-		Message: message,
-	}
-
-	json.NewEncoder(w).Encode(resp) //nolint:errcheck,gosec // best effort error handling
+	service.WriteJSONError(w, service.ContentTypeJSON, code, message, status)
 }
 
 // handleError handles storage errors and writes an appropriate HTTP response.

@@ -19,118 +19,124 @@
 - **AWS SDK v2 compatible** - Works seamlessly with Go AWS SDK v2
 - **Optional data persistence** - Survive restarts with `KUMO_DATA_DIR`
 
-## Supported Services (76 services)
+## Supported Services (81 services)
 
+<!-- BEGIN SERVICES: auto-generated from each service's Meta(); run `make readme` to update. Do not edit by hand. -->
 ### Storage
 | Service | Description |
 |---------|-------------|
+| DynamoDB | NoSQL database |
+| DynamoDB Streams | DynamoDB change data capture |
+| EBS | Block storage |
+| ElastiCache | In-memory caching |
+| Glacier | Archive storage |
+| MemoryDB | Redis-compatible database |
 | S3 | Object storage |
 | S3 Control | S3 account-level operations |
 | S3 Tables | S3 table buckets |
-| DynamoDB | NoSQL database |
-| ElastiCache | In-memory caching |
-| MemoryDB | Redis-compatible database |
-| Glacier | Archive storage |
-| EBS | Block storage |
 
 ### Compute
 | Service | Description |
 |---------|-------------|
-| Lambda | Serverless functions |
 | Batch | Batch computing |
 | EC2 | Virtual machines |
 | Elastic Beanstalk | Application deployment |
+| Lambda | Serverless functions |
 
 ### Container
 | Service | Description |
 |---------|-------------|
-| ECS | Container orchestration |
 | ECR | Container registry |
+| ECS | Container orchestration |
 | EKS | Kubernetes service |
 
 ### Database
 | Service | Description |
 |---------|-------------|
-| RDS | Relational database service |
+| DocumentDB | MongoDB-compatible database |
 | Neptune | Graph database |
+| RDS | Relational database service |
 | Redshift | Data warehousing |
 
 ### Messaging & Integration
 | Service | Description |
 |---------|-------------|
-| SQS | Message queuing |
-| SNS | Pub/Sub messaging |
 | EventBridge | Event bus |
-| Kinesis | Real-time streaming |
 | Firehose | Data delivery |
+| Kinesis | Real-time streaming |
 | MQ | Message broker (ActiveMQ/RabbitMQ) |
-| Pipes | Event-driven integration |
 | MSK (Kafka) | Managed streaming for Kafka |
+| Pipes | Event-driven integration |
+| SNS | Pub/Sub messaging |
+| SQS | Message queuing |
 
 ### Security & Identity
 | Service | Description |
 |---------|-------------|
-| IAM | Identity and access management |
-| KMS | Key management |
-| Secrets Manager | Secret storage |
 | ACM | Certificate management |
 | Cognito | User authentication |
-| Security Lake | Security data lake |
-| STS | Security token service |
+| IAM | Identity and access management |
+| KMS | Key management |
 | Macie | Data security and privacy |
+| STS | Security token service |
+| Secrets Manager | Secret storage |
+| Security Lake | Security data lake |
 
 ### Monitoring & Logging
 | Service | Description |
 |---------|-------------|
+| CloudTrail | API audit logging |
 | CloudWatch | Metrics and alarms |
 | CloudWatch Logs | Log management |
 | X-Ray | Distributed tracing |
-| CloudTrail | API audit logging |
 
 ### Networking & Content Delivery
 | Service | Description |
 |---------|-------------|
+| API Gateway | API management (REST API) |
+| API Gateway v2 | API management (HTTP/WebSocket API) |
+| App Mesh | Service mesh |
 | CloudFront | CDN |
+| ELBv2 | Load balancing |
 | Global Accelerator | Network acceleration |
-| API Gateway | API management |
+| Location | Location-based services |
 | Route 53 | DNS service |
 | Route 53 Resolver | DNS resolver |
-| ELBv2 | Load balancing |
-| App Mesh | Service mesh |
-| Location | Location-based services |
 
 ### Application Integration
 | Service | Description |
 |---------|-------------|
-| Step Functions | Workflow orchestration |
-| AppSync | GraphQL API |
-| SES v2 | Email service |
-| Pinpoint SMS Voice v2 | SMS messaging |
-| Scheduler | Task scheduling |
 | Amplify | Full-stack application hosting |
+| AppSync | GraphQL API |
+| Pinpoint SMS Voice v2 | SMS messaging |
+| SES | Email service |
+| SES v2 | Email service (v2 API) |
+| Scheduler | Task scheduling |
+| Step Functions | Workflow orchestration |
 
 ### Management & Configuration
 | Service | Description |
 |---------|-------------|
-| SSM | Systems Manager |
-| Config | Resource configuration |
-| CloudFormation | Infrastructure as code |
-| Organizations | Multi-account management |
-| Service Quotas | Service limit management |
-| CodeConnections | Source code connections |
 | Backup | Centralized backup service |
+| Cloud Control API | Unified CRUD API for cloud resources |
+| CloudFormation | Infrastructure as code |
+| CodeConnections | Source code connections |
+| Config | Resource configuration |
+| Organizations | Multi-account management |
+| SSM | Systems Manager |
+| Service Quotas | Service limit management |
 
 ### Analytics & ML
 | Service | Description |
 |---------|-------------|
 | Athena | SQL query service |
-| Glue | ETL service |
 | Comprehend | NLP service |
-| Rekognition | Image/video analysis |
-| SageMaker | Machine learning |
-| Forecast | Time-series forecasting |
 | Data Exchange | Data marketplace |
 | Entity Resolution | Entity matching |
+| Forecast | Time-series forecasting |
+| Glue | ETL service |
+| Rekognition | Image/video analysis |
+| SageMaker | Machine learning |
 
 ### Developer Tools
 | Service | Description |
@@ -148,6 +154,7 @@
 | FinSpace | Financial data management |
 | GameLift | Game server hosting |
 | Resilience Hub | Application resilience |
+<!-- END SERVICES -->
 
 ## Quick Start
 

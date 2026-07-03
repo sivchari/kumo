@@ -1,0 +1,19 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.go"
+      run: make lint
+    test:
+      glob: "*.go"
+      run: make test
+
+pre-push:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.go"
+      run: make lint
+    test:
+      glob: "*.go"
+      run: make test

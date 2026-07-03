@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -62,9 +63,14 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Trails:    make(map[string]*Trail),
-		region:    defaultRegion,
+		region:    region,
 		accountID: defaultAccountID,
 	}
 	for _, o := range opts {
@@ -111,6 +117,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "cloudtrail", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -180,6 +195,8 @@ func (m *MemoryStorage) CreateTrail(_ context.Context, req *CreateTrailRequest) 
 
 	m.Trails[req.Name] = trail
 
+	m.saveLocked()
+
 	return trail, nil
 }
 
@@ -193,6 +210,8 @@ func (m *MemoryStorage) DeleteTrail(_ context.Context, name string) error {
 	}
 
 	delete(m.Trails, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -249,6 +268,8 @@ func (m *MemoryStorage) StartLogging(_ context.Context, name string) error {
 
 	trail.IsLogging = true
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -263,6 +284,8 @@ func (m *MemoryStorage) StopLogging(_ context.Context, name string) error {
 	}
 
 	trail.IsLogging = false
+
+	m.saveLocked()
 
 	return nil
 }

@@ -4,17 +4,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateTable handles the CreateTable action.
 func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 	var req CreateTableRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -54,7 +55,7 @@ func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 // DeleteTable handles the DeleteTable action.
 func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 	var req DeleteTableRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -88,7 +89,7 @@ func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 // ListTables handles the ListTables action.
 func (s *Service) ListTables(w http.ResponseWriter, r *http.Request) {
 	var req ListTablesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -110,7 +111,7 @@ func (s *Service) ListTables(w http.ResponseWriter, r *http.Request) {
 // DescribeTable handles the DescribeTable action.
 func (s *Service) DescribeTable(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTableRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -144,7 +145,7 @@ func (s *Service) DescribeTable(w http.ResponseWriter, r *http.Request) {
 // PutItem handles the PutItem action.
 func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 	var req PutItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -194,7 +195,7 @@ func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 // GetItem handles the GetItem action.
 func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 	var req GetItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -226,6 +227,8 @@ func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	item = projectItemForExpression(item, req.ProjectionExpression, req.ExpressionAttributeNames)
+
 	writeJSONResponse(w, GetItemResponse{
 		Item: item,
 	})
@@ -234,7 +237,7 @@ func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 // DeleteItem handles the DeleteItem action.
 func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	var req DeleteItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -284,7 +287,7 @@ func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 // UpdateItem handles the UpdateItem action.
 func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	var req UpdateItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -346,7 +349,7 @@ func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 // Query handles the Query action.
 func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 	var req QueryRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -357,6 +360,9 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// Convert legacy KeyConditions to KeyConditionExpression if needed.
+	applyLegacyKeyConditions(&req)
 
 	scanForward := true
 	if req.ScanIndexForward != nil {
@@ -388,6 +394,8 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	items = projectItemsForExpression(items, req.ProjectionExpression, req.ExpressionAttributeNames)
+
 	writeJSONResponse(w, QueryResponse{
 		Items:            items,
 		Count:            len(items),
@@ -399,7 +407,7 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 // Scan handles the Scan action.
 func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 	var req ScanRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -419,6 +427,8 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 		req.ExpressionAttributeValues,
 		req.Limit,
 		req.ExclusiveStartKey,
+		req.Segment,
+		req.TotalSegments,
 	)
 	if err != nil {
 		var tErr *TableError
@@ -433,6 +443,8 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	items = projectItemsForExpression(items, req.ProjectionExpression, req.ExpressionAttributeNames)
+
 	writeJSONResponse(w, ScanResponse{
 		Items:            items,
 		Count:            len(items),
@@ -442,8 +454,6 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 }
 
 // tableToDescription converts a Table to TableDescription.
-//
-//nolint:funlen // Struct initialization with GSI/LSI conversion requires many statements.
 func tableToDescription(table *Table) TableDescription {
 	desc := TableDescription{
 		TableName:                 table.Name,
@@ -479,84 +489,65 @@ func tableToDescription(table *Table) TableDescription {
 		}
 	}
 
-	for _, gsi := range table.GlobalSecondaryIndexes {
-		gsiDesc := GlobalSecondaryIndexDescription{
-			IndexName:      gsi.IndexName,
-			KeySchema:      gsi.KeySchema,
-			Projection:     gsi.Projection,
-			IndexStatus:    "ACTIVE",
-			IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, gsi.IndexName),
-			ItemCount:      table.ItemCount,
-			IndexSizeBytes: table.TableSizeBytes,
-		}
-
-		if gsi.ProvisionedThroughput != nil {
-			gsiDesc.ProvisionedThroughput = &ProvisionedThroughputDescription{
-				ReadCapacityUnits:  gsi.ProvisionedThroughput.ReadCapacityUnits,
-				WriteCapacityUnits: gsi.ProvisionedThroughput.WriteCapacityUnits,
-			}
-		}
-
-		desc.GlobalSecondaryIndexes = append(desc.GlobalSecondaryIndexes, gsiDesc)
+	for i := range table.GlobalSecondaryIndexes {
+		desc.GlobalSecondaryIndexes = append(desc.GlobalSecondaryIndexes, gsiToDescription(table, &table.GlobalSecondaryIndexes[i]))
 	}
 
-	for _, lsi := range table.LocalSecondaryIndexes {
-		lsiDesc := LocalSecondaryIndexDescription{
-			IndexName:      lsi.IndexName,
-			KeySchema:      lsi.KeySchema,
-			Projection:     lsi.Projection,
-			IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, lsi.IndexName),
-			ItemCount:      table.ItemCount,
-			IndexSizeBytes: table.TableSizeBytes,
-		}
-
-		desc.LocalSecondaryIndexes = append(desc.LocalSecondaryIndexes, lsiDesc)
+	for i := range table.LocalSecondaryIndexes {
+		desc.LocalSecondaryIndexes = append(desc.LocalSecondaryIndexes, lsiToDescription(table, &table.LocalSecondaryIndexes[i]))
 	}
 
 	return desc
 }
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
+// gsiToDescription converts a stored GSI to its API description form.
+func gsiToDescription(table *Table, gsi *GlobalSecondaryIndex) GlobalSecondaryIndexDescription {
+	desc := GlobalSecondaryIndexDescription{
+		IndexName:      gsi.IndexName,
+		KeySchema:      gsi.KeySchema,
+		Projection:     gsi.Projection,
+		IndexStatus:    "ACTIVE",
+		IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, gsi.IndexName),
+		ItemCount:      table.ItemCount,
+		IndexSizeBytes: table.TableSizeBytes,
 	}
 
-	if len(body) == 0 {
-		return nil
+	if gsi.ProvisionedThroughput != nil {
+		desc.ProvisionedThroughput = &ProvisionedThroughputDescription{
+			ReadCapacityUnits:  gsi.ProvisionedThroughput.ReadCapacityUnits,
+			WriteCapacityUnits: gsi.ProvisionedThroughput.WriteCapacityUnits,
+		}
 	}
 
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
+	return desc
+}
 
-	return nil
+// lsiToDescription converts a stored LSI to its API description form.
+func lsiToDescription(table *Table, lsi *LocalSecondaryIndex) LocalSecondaryIndexDescription {
+	return LocalSecondaryIndexDescription{
+		IndexName:      lsi.IndexName,
+		KeySchema:      lsi.KeySchema,
+		Projection:     lsi.Projection,
+		IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, lsi.IndexName),
+		ItemCount:      table.ItemCount,
+		IndexSizeBytes: table.TableSizeBytes,
+	}
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponse(w, service.ContentTypeAmzJSON10, v)
 }
 
 // writeDynamoDBError writes a DynamoDB error response in JSON format.
 func writeDynamoDBError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
 // UpdateTimeToLive handles the UpdateTimeToLive action.
 func (s *Service) UpdateTimeToLive(w http.ResponseWriter, r *http.Request) {
 	var req UpdateTimeToLiveRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -589,7 +580,7 @@ func (s *Service) UpdateTimeToLive(w http.ResponseWriter, r *http.Request) {
 // DescribeTimeToLive handles the DescribeTimeToLive action.
 func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTimeToLiveRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -631,7 +622,7 @@ func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 // TransactWriteItems handles the TransactWriteItems action.
 func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 	var req TransactWriteItemsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -681,7 +672,7 @@ func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 // TransactGetItems handles the TransactGetItems action.
 func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 	var req TransactGetItemsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -714,7 +705,16 @@ func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responses := make([]TransactGetItemResponse, len(items))
+
 	for i, item := range items {
+		if req.TransactItems[i].Get != nil {
+			item = projectItemForExpression(
+				item,
+				req.TransactItems[i].Get.ProjectionExpression,
+				req.TransactItems[i].Get.ExpressionAttributeNames,
+			)
+		}
+
 		responses[i] = TransactGetItemResponse{Item: item}
 	}
 
@@ -724,24 +724,22 @@ func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 // actionHandlers returns a map of action names to handler functions.
 func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
 	return map[string]func(http.ResponseWriter, *http.Request){
-		"CreateTable":        s.CreateTable,
-		"DeleteTable":        s.DeleteTable,
-		"ListTables":         s.ListTables,
-		"DescribeTable":      s.DescribeTable,
-		"PutItem":            s.PutItem,
-		"GetItem":            s.GetItem,
-		"DeleteItem":         s.DeleteItem,
-		"UpdateItem":         s.UpdateItem,
-		"Query":              s.Query,
-		"Scan":               s.Scan,
-		"UpdateTimeToLive":   s.UpdateTimeToLive,
-		"DescribeTimeToLive": s.DescribeTimeToLive,
-		"TransactWriteItems": s.TransactWriteItems,
-		"TransactGetItems":   s.TransactGetItems,
-		"BatchWriteItem":     s.BatchWriteItem,
-		"BatchGetItem":       s.BatchGetItem,
-		// Stubs — see tag_backup_stubs.go.
-		// Required for terraform / pulumi / CDK refresh and destroy paths.
+		"CreateTable":               s.CreateTable,
+		"DeleteTable":               s.DeleteTable,
+		"ListTables":                s.ListTables,
+		"DescribeTable":             s.DescribeTable,
+		"PutItem":                   s.PutItem,
+		"GetItem":                   s.GetItem,
+		"DeleteItem":                s.DeleteItem,
+		"UpdateItem":                s.UpdateItem,
+		"Query":                     s.Query,
+		"Scan":                      s.Scan,
+		"UpdateTimeToLive":          s.UpdateTimeToLive,
+		"DescribeTimeToLive":        s.DescribeTimeToLive,
+		"TransactWriteItems":        s.TransactWriteItems,
+		"TransactGetItems":          s.TransactGetItems,
+		"BatchWriteItem":            s.BatchWriteItem,
+		"BatchGetItem":              s.BatchGetItem,
 		"UpdateTable":               s.UpdateTable,
 		"ListTagsOfResource":        s.ListTagsOfResource,
 		"TagResource":               s.TagResource,
@@ -753,7 +751,7 @@ func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Re
 // BatchWriteItem handles the BatchWriteItem action.
 func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 	var req BatchWriteItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -796,7 +794,7 @@ func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 // BatchGetItem handles the BatchGetItem action.
 func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 	var req BatchGetItemRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -831,6 +829,16 @@ func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
 
 		return
+	}
+
+	for tableName, keysAndAttributes := range req.RequestItems {
+		if items, ok := responses[tableName]; ok {
+			responses[tableName] = projectItemsForExpression(
+				items,
+				keysAndAttributes.ProjectionExpression,
+				keysAndAttributes.ExpressionAttributeNames,
+			)
+		}
 	}
 
 	writeJSONResponse(w, BatchGetItemResponse{Responses: responses})
@@ -903,4 +911,183 @@ func convertAttributeUpdates(req *UpdateItemRequest) {
 	}
 
 	req.UpdateExpression = strings.Join(parts, " ")
+}
+
+// UpdateTable is a no-op that returns the current table description.
+//
+// terraform-provider-aws calls UpdateTable during terraform destroy to
+// remove GSIs before deleting the table. Without this handler, kumo returns
+// UnknownOperationException and destroy fails.
+func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
+	var req UpdateTableRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil || req.TableName == "" {
+		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	table, err := s.storage.DescribeTable(r.Context(), req.TableName)
+	if err != nil {
+		writeDynamoDBError(w, "ResourceNotFoundException", "Table not found: "+req.TableName, http.StatusBadRequest)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeTableResponse{
+		Table: tableToDescription(table),
+	})
+}
+
+// ListTagsOfResource returns the tags for a DynamoDB resource.
+func (s *Service) ListTagsOfResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsOfResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsOfResource(r.Context(), req.ResourceArn)
+	if err != nil {
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, ListTagsOfResourceResponse{Tags: tags})
+}
+
+// TagResource adds tags to a DynamoDB resource.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceArn, req.Tags); err != nil {
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// UntagResource removes tags from a DynamoDB resource.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceArn, req.TagKeys); err != nil {
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// DescribeContinuousBackups reports continuous backups as DISABLED for any
+// existing table, returning TableNotFoundException for missing tables to
+// match AWS semantics that terraform refresh paths depend on.
+func (s *Service) DescribeContinuousBackups(w http.ResponseWriter, r *http.Request) {
+	var req DescribeContinuousBackupsRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil || req.TableName == "" {
+		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	desc, err := s.storage.DescribeContinuousBackups(r.Context(), req.TableName)
+	if err != nil {
+		var tErr *TableError
+		if errors.As(err, &tErr) {
+			writeDynamoDBError(w, tErr.Code, tErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeContinuousBackupsResponse{
+		ContinuousBackupsDescription: *desc,
+	})
+}
+
+// applyLegacyKeyConditions converts legacy KeyConditions to
+// KeyConditionExpression + ExpressionAttributeValues when needed.
+func applyLegacyKeyConditions(req *QueryRequest) {
+	if req.KeyConditionExpression != "" || len(req.KeyConditions) == 0 {
+		return
+	}
+
+	expr, vals := convertKeyConditionsToExpression(req.KeyConditions)
+	req.KeyConditionExpression = expr
+
+	if req.ExpressionAttributeValues == nil {
+		req.ExpressionAttributeValues = vals
+
+		return
+	}
+
+	for k := range vals {
+		req.ExpressionAttributeValues[k] = vals[k]
+	}
+}
+
+// comparisonOperatorFormats maps legacy ComparisonOperator values to
+// format strings for KeyConditionExpression conversion.
+var comparisonOperatorFormats = map[string]string{
+	"EQ":          "%s = %s",
+	"LE":          "%s <= %s",
+	"LT":          "%s < %s",
+	"GE":          "%s >= %s",
+	"GT":          "%s > %s",
+	"BEGINS_WITH": "begins_with(%s, %s)",
+}
+
+// convertKeyConditionsToExpression converts legacy KeyConditions (v1 API) to
+// a KeyConditionExpression string and synthetic ExpressionAttributeValues.
+// Supported operators: EQ, LE, LT, GE, GT, BEGINS_WITH, BETWEEN.
+func convertKeyConditionsToExpression(conditions map[string]KeyCondition) (string, map[string]AttributeValue) {
+	exprValues := make(map[string]AttributeValue)
+
+	var parts []string
+
+	idx := 0
+
+	for attrName := range conditions {
+		cond := conditions[attrName]
+		placeholder := fmt.Sprintf(":kcv%d", idx)
+		idx++
+
+		if format, ok := comparisonOperatorFormats[cond.ComparisonOperator]; ok {
+			if len(cond.AttributeValueList) < 1 {
+				continue
+			}
+
+			exprValues[placeholder] = cond.AttributeValueList[0]
+
+			parts = append(parts, fmt.Sprintf(format, attrName, placeholder))
+		} else if cond.ComparisonOperator == "BETWEEN" && len(cond.AttributeValueList) >= 2 {
+			placeholder2 := fmt.Sprintf(":kcv%d", idx)
+			idx++
+
+			exprValues[placeholder] = cond.AttributeValueList[0]
+			exprValues[placeholder2] = cond.AttributeValueList[1]
+
+			parts = append(parts, fmt.Sprintf("%s BETWEEN %s AND %s", attrName, placeholder, placeholder2))
+		}
+	}
+
+	return strings.Join(parts, " AND "), exprValues
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // EventBusState represents the state of an event bus.
@@ -49,14 +51,21 @@ type Rule struct {
 	LastModified       time.Time `json:"lastModified"`
 }
 
+// InputTransformer represents an input transformer for a target.
+type InputTransformer struct {
+	InputPathsMap map[string]string `json:"inputPathsMap,omitempty"`
+	InputTemplate string            `json:"inputTemplate"`
+}
+
 // Target represents a rule target.
 type Target struct {
-	ID             string          `json:"id"`
-	Arn            string          `json:"arn"`
-	RoleArn        string          `json:"roleArn,omitempty"`
-	Input          string          `json:"input,omitempty"`
-	InputPath      string          `json:"inputPath,omitempty"`
-	HTTPParameters *HTTPParameters `json:"httpParameters,omitempty"`
+	ID               string            `json:"id"`
+	Arn              string            `json:"arn"`
+	RoleArn          string            `json:"roleArn,omitempty"`
+	Input            string            `json:"input,omitempty"`
+	InputPath        string            `json:"inputPath,omitempty"`
+	InputTransformer *InputTransformer `json:"inputTransformer,omitempty"`
+	HTTPParameters   *HTTPParameters   `json:"httpParameters,omitempty"`
 }
 
 // EpochTime wraps time.Time to support JSON unmarshalling from both
@@ -237,14 +246,21 @@ type ListRulesResponse struct {
 	NextToken string       `json:"NextToken,omitempty"`
 }
 
+// InputTransformerInput represents an input transformer in API requests.
+type InputTransformerInput struct {
+	InputPathsMap map[string]string `json:"InputPathsMap,omitempty"`
+	InputTemplate string            `json:"InputTemplate"`
+}
+
 // TargetInput represents a target in API requests.
 type TargetInput struct {
-	ID             string          `json:"Id"`
-	Arn            string          `json:"Arn"`
-	RoleArn        string          `json:"RoleArn,omitempty"`
-	Input          string          `json:"Input,omitempty"`
-	InputPath      string          `json:"InputPath,omitempty"`
-	HTTPParameters *HTTPParameters `json:"HttpParameters,omitempty"`
+	ID               string                 `json:"Id"`
+	Arn              string                 `json:"Arn"`
+	RoleArn          string                 `json:"RoleArn,omitempty"`
+	Input            string                 `json:"Input,omitempty"`
+	InputPath        string                 `json:"InputPath,omitempty"`
+	InputTransformer *InputTransformerInput `json:"InputTransformer,omitempty"`
+	HTTPParameters   *HTTPParameters        `json:"HttpParameters,omitempty"`
 }
 
 // PutTargetsRequest is the request for PutTargets.
@@ -307,14 +323,21 @@ type ListTargetsByRuleRequest struct {
 	NextToken    string `json:"NextToken,omitempty"`
 }
 
+// InputTransformerOutput represents an input transformer in API responses.
+type InputTransformerOutput struct {
+	InputPathsMap map[string]string `json:"InputPathsMap,omitempty"`
+	InputTemplate string            `json:"InputTemplate,omitempty"`
+}
+
 // TargetOutput represents a target in API responses.
 type TargetOutput struct {
-	ID             string          `json:"Id,omitempty"`
-	Arn            string          `json:"Arn,omitempty"`
-	RoleArn        string          `json:"RoleArn,omitempty"`
-	Input          string          `json:"Input,omitempty"`
-	InputPath      string          `json:"InputPath,omitempty"`
-	HTTPParameters *HTTPParameters `json:"HttpParameters,omitempty"`
+	ID               string                  `json:"Id,omitempty"`
+	Arn              string                  `json:"Arn,omitempty"`
+	RoleArn          string                  `json:"RoleArn,omitempty"`
+	Input            string                  `json:"Input,omitempty"`
+	InputPath        string                  `json:"InputPath,omitempty"`
+	InputTransformer *InputTransformerOutput `json:"InputTransformer,omitempty"`
+	HTTPParameters   *HTTPParameters         `json:"HttpParameters,omitempty"`
 }
 
 // ListTargetsByRuleResponse is the response for ListTargetsByRule.
@@ -509,19 +532,38 @@ type HTTPParameters struct {
 }
 
 // ServiceError represents a service-level error.
-type ServiceError struct {
-	Code    string
-	Message string
+type ServiceError = service.CodedError
+
+// Tag represents an EventBridge resource tag.
+type Tag struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
 }
 
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
+// ListTagsForResourceRequest is the request for ListTagsForResource.
+type ListTagsForResourceRequest struct {
+	ResourceARN string `json:"ResourceARN"`
 }
 
-// listTagsForResourceResponse mirrors the AWS shape: a `Tags` array that
-// must be present even when empty. terraform-provider-aws fails to parse
-// missing-Tags responses.
-type listTagsForResourceResponse struct {
-	Tags []map[string]string `json:"Tags"`
+// ListTagsForResourceResponse is the response for ListTagsForResource.
+type ListTagsForResourceResponse struct {
+	Tags []Tag `json:"Tags"`
 }
+
+// TagResourceRequest is the request for TagResource.
+type TagResourceRequest struct {
+	ResourceARN string `json:"ResourceARN"`
+	Tags        []Tag  `json:"Tags"`
+}
+
+// TagResourceResponse is the response for TagResource.
+type TagResourceResponse struct{}
+
+// UntagResourceRequest is the request for UntagResource.
+type UntagResourceRequest struct {
+	ResourceARN string   `json:"ResourceARN"`
+	TagKeys     []string `json:"TagKeys"`
+}
+
+// UntagResourceResponse is the response for UntagResource.
+type UntagResourceResponse struct{}

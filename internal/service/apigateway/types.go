@@ -1,6 +1,10 @@
 package apigateway
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // RestAPI represents an API Gateway REST API.
 type RestAPI struct {
@@ -228,12 +232,4 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError

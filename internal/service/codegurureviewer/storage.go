@@ -119,6 +119,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "codeguru-reviewer", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -157,6 +166,8 @@ func (m *MemoryStorage) AssociateRepository(input *AssociateRepositoryInput) *Re
 	}
 
 	m.Associations[arn] = assoc
+
+	m.saveLocked()
 
 	return assoc
 }
@@ -213,6 +224,8 @@ func (m *MemoryStorage) DisassociateRepository(arn string) (*RepositoryAssociati
 
 	delete(m.Associations, arn)
 
+	m.saveLocked()
+
 	return assoc, nil
 }
 
@@ -267,6 +280,8 @@ func (m *MemoryStorage) CreateCodeReview(input *CreateCodeReviewInput) (*CodeRev
 	}
 
 	m.CodeReviews[arn] = review
+
+	m.saveLocked()
 
 	return review, nil
 }
@@ -327,6 +342,8 @@ func (m *MemoryStorage) PutRecommendationFeedback(input *PutRecommendationFeedba
 	}
 
 	m.Feedback[input.CodeReviewArn][input.RecommendationID] = fb
+
+	m.saveLocked()
 
 	return nil
 }

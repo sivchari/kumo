@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -26,10 +27,12 @@ const (
 
 // Default values.
 const (
+	defaultRegion           = "us-east-1"
 	defaultShardCount       = 1
 	defaultRetentionHours   = 24
 	maxRecordsPerGet        = 10000
 	shardIteratorExpiration = 5 * time.Minute
+	maxHashKeyString        = "340282366920938463463374607431768211455"
 )
 
 // Storage defines the Kinesis storage interface.
@@ -100,10 +103,15 @@ type shardIteratorData struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Streams:        make(map[string]*StreamData),
 		shardIterators: make(map[string]*shardIteratorData),
-		region:         "us-east-1",
+		region:         region,
 		accountID:      "000000000000",
 	}
 	for _, o := range opts {
@@ -154,6 +162,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "kinesis", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -227,6 +244,8 @@ func (s *MemoryStorage) CreateStream(_ context.Context, req *CreateStreamRequest
 		Shards: shards,
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -240,6 +259,8 @@ func (s *MemoryStorage) DeleteStream(_ context.Context, streamName string) error
 	}
 
 	delete(s.Streams, streamName)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -381,10 +402,16 @@ func (s *MemoryStorage) PutRecord(_ context.Context, streamName string, data []b
 		return "", "", &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
 	}
 
+	if !isValidPartitionKey(partitionKey) {
+		return "", "", &ServiceError{Code: errInvalidArgument, Message: "Invalid PartitionKey"}
+	}
+
 	// Determine shard based on hash key.
 	hashKey := explicitHashKey
 	if hashKey == "" {
 		hashKey = computeHashKey(partitionKey)
+	} else if !isValidExplicitHashKey(hashKey) {
+		return "", "", &ServiceError{Code: errInvalidArgument, Message: "Invalid ExplicitHashKey"}
 	}
 
 	shardID := s.findShardForHashKey(sd, hashKey)
@@ -402,6 +429,8 @@ func (s *MemoryStorage) PutRecord(_ context.Context, streamName string, data []b
 
 	sd.Shards[shardID].Records = append(sd.Shards[shardID].Records, record)
 
+	s.saveLocked()
+
 	return shardID, seqNum, nil
 }
 
@@ -418,35 +447,7 @@ func (s *MemoryStorage) PutRecords(_ context.Context, streamName string, records
 	results := make([]PutRecordsResultEntry, len(records))
 
 	for i, entry := range records {
-		hashKey := entry.ExplicitHashKey
-		if hashKey == "" {
-			hashKey = computeHashKey(entry.PartitionKey)
-		}
-
-		shardID := s.findShardForHashKey(sd, hashKey)
-		if shardID == "" {
-			results[i] = PutRecordsResultEntry{
-				ErrorCode:    errInvalidArgument,
-				ErrorMessage: "Could not determine shard for partition key",
-			}
-
-			continue
-		}
-
-		seqNum := s.nextSequenceNumber()
-		record := &Record{
-			Data:                        entry.Data,
-			PartitionKey:                entry.PartitionKey,
-			SequenceNumber:              seqNum,
-			ApproximateArrivalTimestamp: time.Now(),
-		}
-
-		sd.Shards[shardID].Records = append(sd.Shards[shardID].Records, record)
-
-		results[i] = PutRecordsResultEntry{
-			ShardID:        shardID,
-			SequenceNumber: seqNum,
-		}
+		results[i] = s.putRecordsEntry(sd, entry)
 	}
 
 	var failedCount int32
@@ -457,7 +458,46 @@ func (s *MemoryStorage) PutRecords(_ context.Context, streamName string, records
 		}
 	}
 
+	s.saveLocked()
+
 	return results, failedCount, nil
+}
+
+func (s *MemoryStorage) putRecordsEntry(sd *StreamData, entry PutRecordsRequestEntry) PutRecordsResultEntry {
+	if !isValidPartitionKey(entry.PartitionKey) {
+		return newPutRecordsFailure("Invalid PartitionKey")
+	}
+
+	hashKey := entry.ExplicitHashKey
+	if hashKey == "" {
+		hashKey = computeHashKey(entry.PartitionKey)
+	} else if !isValidExplicitHashKey(hashKey) {
+		return newPutRecordsFailure("Invalid ExplicitHashKey")
+	}
+
+	shardID := s.findShardForHashKey(sd, hashKey)
+	if shardID == "" {
+		return newPutRecordsFailure("Could not determine shard for partition key")
+	}
+
+	seqNum := s.nextSequenceNumber()
+	record := &Record{
+		Data:                        entry.Data,
+		PartitionKey:                entry.PartitionKey,
+		SequenceNumber:              seqNum,
+		ApproximateArrivalTimestamp: time.Now(),
+	}
+
+	sd.Shards[shardID].Records = append(sd.Shards[shardID].Records, record)
+
+	return PutRecordsResultEntry{
+		ShardID:        shardID,
+		SequenceNumber: seqNum,
+	}
+}
+
+func newPutRecordsFailure(message string) PutRecordsResultEntry {
+	return PutRecordsResultEntry{ErrorCode: errInvalidArgument, ErrorMessage: message}
 }
 
 // GetShardIterator gets a shard iterator.
@@ -499,6 +539,8 @@ func (s *MemoryStorage) GetShardIterator(_ context.Context, streamName, shardID,
 		position:   position,
 		expiresAt:  time.Now().Add(shardIteratorExpiration),
 	}
+
+	s.saveLocked()
 
 	return encodedIterator, nil
 }
@@ -551,6 +593,8 @@ func (s *MemoryStorage) GetRecords(_ context.Context, shardIterator string, limi
 		position:   endPos,
 		expiresAt:  time.Now().Add(shardIteratorExpiration),
 	}
+
+	s.saveLocked()
 
 	return records, nextIterator, 0, nil
 }
@@ -607,9 +651,31 @@ func computeHashKey(partitionKey string) string {
 	return hashInt.String()
 }
 
+func isValidPartitionKey(partitionKey string) bool {
+	return partitionKey != "" && len(partitionKey) <= 256
+}
+
+func isValidExplicitHashKey(hashKey string) bool {
+	for _, r := range hashKey {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	hashKeyBig := new(big.Int)
+	if _, ok := hashKeyBig.SetString(hashKey, 10); !ok {
+		return false
+	}
+
+	maxHashKey := new(big.Int)
+	maxHashKey.SetString(maxHashKeyString, 10)
+
+	return hashKeyBig.Cmp(maxHashKey) <= 0
+}
+
 func calculateHashKeyRanges(shardCount int32) []HashKeyRange {
 	maxHashKey := new(big.Int)
-	maxHashKey.SetString("340282366920938463463374607431768211455", 10) // 2^128 - 1
+	maxHashKey.SetString(maxHashKeyString, 10) // 2^128 - 1
 
 	ranges := make([]HashKeyRange, shardCount)
 	shardSize := new(big.Int).Div(maxHashKey, big.NewInt(int64(shardCount)))

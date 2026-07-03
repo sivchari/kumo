@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -49,14 +50,21 @@ type MemoryStorage struct {
 	mu                sync.RWMutex                 `json:"-"`
 	CacheClusters     map[string]*CacheCluster     `json:"cacheClusters"`
 	ReplicationGroups map[string]*ReplicationGroup `json:"replicationGroups"`
+	region            string
 	dataDir           string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		CacheClusters:     make(map[string]*CacheCluster),
 		ReplicationGroups: make(map[string]*ReplicationGroup),
+		region:            region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -108,6 +116,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "elasticache", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -136,6 +153,8 @@ func (m *MemoryStorage) CreateCacheCluster(_ context.Context, input *CreateCache
 	cluster := m.buildCacheCluster(input)
 	m.CacheClusters[input.CacheClusterID] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -147,7 +166,7 @@ func (m *MemoryStorage) buildCacheCluster(input *CreateCacheClusterInput) *Cache
 
 	az := input.PreferredAvailabilityZone
 	if az == "" {
-		az = defaultRegion + "a"
+		az = m.region + "a"
 	}
 
 	port := input.Port
@@ -175,7 +194,7 @@ func (m *MemoryStorage) buildCacheCluster(input *CreateCacheClusterInput) *Cache
 		CacheNodes:                 m.buildCacheNodes(numNodes, az, port, now),
 		SecurityGroups:             buildSecurityGroups(input.SecurityGroupIDs),
 		ConfigurationEndpoint: &Endpoint{
-			Address: fmt.Sprintf("%s.%s.cfg.%s.cache.amazonaws.com", input.CacheClusterID, generateID(), defaultRegion),
+			Address: fmt.Sprintf("%s.%s.cfg.%s.cache.amazonaws.com", input.CacheClusterID, generateID(), m.region),
 			Port:    port,
 		},
 	}
@@ -195,7 +214,7 @@ func (m *MemoryStorage) buildCacheNodes(numNodes int32, az string, port int32, c
 			CustomerAvailabilityZone: az,
 			ParameterGroupStatus:     "in-sync",
 			Endpoint: &Endpoint{
-				Address: fmt.Sprintf("%s.%s.%s.cache.amazonaws.com", nodeID, generateID(), defaultRegion),
+				Address: fmt.Sprintf("%s.%s.%s.cache.amazonaws.com", nodeID, generateID(), m.region),
 				Port:    port,
 			},
 		})
@@ -220,6 +239,8 @@ func (m *MemoryStorage) DeleteCacheCluster(_ context.Context, clusterID string) 
 	cluster.CacheClusterStatus = CacheClusterStatusDeleting
 
 	delete(m.CacheClusters, clusterID)
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -275,6 +296,8 @@ func (m *MemoryStorage) ModifyCacheCluster(_ context.Context, input *ModifyCache
 
 	applyCacheClusterModifications(cluster, input)
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -327,6 +350,8 @@ func (m *MemoryStorage) CreateReplicationGroup(_ context.Context, input *CreateR
 	group := m.buildReplicationGroup(input)
 	m.ReplicationGroups[input.ReplicationGroupID] = group
 
+	m.saveLocked()
+
 	return group, nil
 }
 
@@ -355,7 +380,7 @@ func (m *MemoryStorage) buildReplicationGroup(input *CreateReplicationGroupInput
 		AutoMinorVersionUpgrade:    input.AutoMinorVersionUpgrade,
 		PreferredMaintenanceWindow: input.PreferredMaintenanceWindow,
 		ConfigurationEndpoint: &Endpoint{
-			Address: fmt.Sprintf("%s.%s.clustercfg.%s.cache.amazonaws.com", input.ReplicationGroupID, generateID(), defaultRegion),
+			Address: fmt.Sprintf("%s.%s.clustercfg.%s.cache.amazonaws.com", input.ReplicationGroupID, generateID(), m.region),
 			Port:    port,
 		},
 		NodeGroups: m.buildNodeGroups(input, port),
@@ -380,11 +405,11 @@ func (m *MemoryStorage) buildNodeGroups(input *CreateReplicationGroupInput, port
 			NodeGroupID: groupID,
 			Status:      ReplicationGroupStatusAvailable,
 			PrimaryEndpoint: &Endpoint{
-				Address: fmt.Sprintf("%s-%s.%s.%s.cache.amazonaws.com", input.ReplicationGroupID, groupID, generateID(), defaultRegion),
+				Address: fmt.Sprintf("%s-%s.%s.%s.cache.amazonaws.com", input.ReplicationGroupID, groupID, generateID(), m.region),
 				Port:    port,
 			},
 			ReaderEndpoint: &Endpoint{
-				Address: fmt.Sprintf("%s-%s-ro.%s.%s.cache.amazonaws.com", input.ReplicationGroupID, groupID, generateID(), defaultRegion),
+				Address: fmt.Sprintf("%s-%s-ro.%s.%s.cache.amazonaws.com", input.ReplicationGroupID, groupID, generateID(), m.region),
 				Port:    port,
 			},
 			NodeGroupMembers: m.buildNodeGroupMembers(input.ReplicationGroupID, groupID, replicas, port),
@@ -412,10 +437,10 @@ func (m *MemoryStorage) buildNodeGroupMembers(rgID, ngID string, replicas, port 
 		members = append(members, NodeGroupMember{
 			CacheClusterID:            clusterID,
 			CacheNodeID:               nodeID,
-			PreferredAvailabilityZone: defaultRegion + "a",
+			PreferredAvailabilityZone: m.region + "a",
 			CurrentRole:               role,
 			ReadEndpoint: &Endpoint{
-				Address: fmt.Sprintf("%s.%s.%s.cache.amazonaws.com", clusterID, generateID(), defaultRegion),
+				Address: fmt.Sprintf("%s.%s.%s.cache.amazonaws.com", clusterID, generateID(), m.region),
 				Port:    port,
 			},
 		})
@@ -440,6 +465,8 @@ func (m *MemoryStorage) DeleteReplicationGroup(_ context.Context, groupID string
 	group.Status = ReplicationGroupStatusDeleting
 
 	delete(m.ReplicationGroups, groupID)
+
+	m.saveLocked()
 
 	return group, nil
 }
@@ -472,11 +499,11 @@ func (m *MemoryStorage) DescribeReplicationGroups(_ context.Context, groupID str
 // Helper functions.
 
 func (m *MemoryStorage) cacheClusterArn(clusterID string) string {
-	return fmt.Sprintf("arn:aws:elasticache:%s:%s:cluster:%s", defaultRegion, defaultAccountID, clusterID)
+	return fmt.Sprintf("arn:aws:elasticache:%s:%s:cluster:%s", m.region, defaultAccountID, clusterID)
 }
 
 func (m *MemoryStorage) replicationGroupArn(groupID string) string {
-	return fmt.Sprintf("arn:aws:elasticache:%s:%s:replicationgroup:%s", defaultRegion, defaultAccountID, groupID)
+	return fmt.Sprintf("arn:aws:elasticache:%s:%s:replicationgroup:%s", m.region, defaultAccountID, groupID)
 }
 
 func (m *MemoryStorage) getDefaultPort(engine string) int32 {

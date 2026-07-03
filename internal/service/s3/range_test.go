@@ -45,6 +45,14 @@ func TestParseByteRange(t *testing.T) {
 	}
 }
 
+func TestParseByteRangeRejectsSuffixRangeForEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	if start, end, ok := parseByteRange("bytes=-1", 0); ok {
+		t.Fatalf("got (%d, %d, true), want unsatisfiable", start, end)
+	}
+}
+
 // rangeCase pins one Range scenario for the HTTP-layer table test.
 type rangeCase struct {
 	name        string

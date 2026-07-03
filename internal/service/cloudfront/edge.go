@@ -268,6 +268,10 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !s.checkEdgeSigning(w, r, dist) {
+		return
+	}
+
 	originURL, ok := edgeOriginURL(dist, r.PathValue("path"), r.URL.RawQuery)
 	if !ok {
 		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
@@ -640,7 +644,7 @@ func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
 		full = customOriginURL(&o, path)
 	default:
 		// No config block — assume HTTPS to the bare DomainName.
-		full = "https://" + o.DomainName + o.OriginPath + "/" + path
+		full = schemeHTTPS + "://" + o.DomainName + o.OriginPath + "/" + path
 	}
 
 	if rawQuery != "" {
@@ -676,19 +680,19 @@ func selectOrigin(dist *Distribution) (Origin, bool) {
 
 // customOriginURL builds the URL for an HTTP(S) custom origin.
 func customOriginURL(o *Origin, path string) string {
-	scheme := "https"
+	scheme := schemeHTTPS
 	host := o.DomainName
 
 	if o.CustomOriginConfig != nil {
 		switch o.CustomOriginConfig.OriginProtocolPolicy {
 		case "http-only":
-			scheme = "http"
+			scheme = schemeHTTP
 
 			if o.CustomOriginConfig.HTTPPort > 0 && o.CustomOriginConfig.HTTPPort != 80 {
 				host = o.DomainName + ":" + strconv.Itoa(o.CustomOriginConfig.HTTPPort)
 			}
 		case "https-only", "match-viewer":
-			scheme = "https"
+			scheme = schemeHTTPS
 		}
 	}
 

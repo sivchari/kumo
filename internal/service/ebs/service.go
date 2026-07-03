@@ -57,3 +57,12 @@ func init() {
 
 	service.Register(New(NewMemoryStorage(opts...)))
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "EBS",
+		Category:    "Storage",
+		Description: "Block storage",
+	}
+}

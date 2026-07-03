@@ -1,15 +1,14 @@
 package sns
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const snsXMLNS = "http://sns.amazonaws.com/doc/2010-03-31/"
@@ -25,7 +24,7 @@ const (
 // CreateTopic handles the CreateTopic action.
 func (s *Service) CreateTopic(w http.ResponseWriter, r *http.Request) {
 	var req CreateTopicRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -65,7 +64,7 @@ func (s *Service) CreateTopic(w http.ResponseWriter, r *http.Request) {
 // DeleteTopic handles the DeleteTopic action.
 func (s *Service) DeleteTopic(w http.ResponseWriter, r *http.Request) {
 	var req DeleteTopicRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -108,7 +107,7 @@ func (s *Service) DeleteTopic(w http.ResponseWriter, r *http.Request) {
 // ListTopics handles the ListTopics action.
 func (s *Service) ListTopics(w http.ResponseWriter, r *http.Request) {
 	var req ListTopicsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -145,7 +144,7 @@ func (s *Service) ListTopics(w http.ResponseWriter, r *http.Request) {
 // Subscribe handles the Subscribe action.
 func (s *Service) Subscribe(w http.ResponseWriter, r *http.Request) {
 	var req SubscribeRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -196,7 +195,7 @@ func (s *Service) Subscribe(w http.ResponseWriter, r *http.Request) {
 // Unsubscribe handles the Unsubscribe action.
 func (s *Service) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	var req UnsubscribeRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -239,7 +238,7 @@ func (s *Service) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 // Publish handles the Publish action.
 func (s *Service) Publish(w http.ResponseWriter, r *http.Request) {
 	var req PublishRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -295,7 +294,7 @@ func (s *Service) Publish(w http.ResponseWriter, r *http.Request) {
 // ListSubscriptions handles the ListSubscriptions action.
 func (s *Service) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	var req ListSubscriptionsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -327,7 +326,7 @@ func (s *Service) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 // ListSubscriptionsByTopic handles the ListSubscriptionsByTopic action.
 func (s *Service) ListSubscriptionsByTopic(w http.ResponseWriter, r *http.Request) {
 	var req ListSubscriptionsByTopicRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -389,24 +388,6 @@ func convertSubscriptionsToXMLMembers(subscriptions []*Subscription) []XMLSubscr
 	}
 
 	return members
-}
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 // writeXMLResponse writes an XML response with HTTP 200 OK.

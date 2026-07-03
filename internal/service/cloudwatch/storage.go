@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -16,6 +17,14 @@ import (
 // defaultAccountID is the default AWS account ID used in the emulator.
 const defaultAccountID = "000000000000"
 
+// defaultRegion is the default AWS region used in the emulator.
+const defaultRegion = "us-east-1"
+
+// SNSPublisher is an interface for publishing alarm action notifications to SNS topics.
+type SNSPublisher interface {
+	Publish(ctx context.Context, topicARN, message, subject string) error
+}
+
 // Storage defines the CloudWatch storage interface.
 type Storage interface {
 	PutMetricData(ctx context.Context, namespace string, metricData []MetricDatum) error
@@ -26,6 +35,9 @@ type Storage interface {
 	DeleteAlarms(ctx context.Context, alarmNames []string) error
 	DescribeAlarms(ctx context.Context, req *DescribeAlarmsRequest) (*DescribeAlarmsResult, error)
 	SetAlarmState(ctx context.Context, alarmName, stateValue, stateReason string) error
+	TagResource(ctx context.Context, resourceARN string, tags []Tag) error
+	UntagResource(ctx context.Context, resourceARN string, tagKeys []string) error
+	ListTagsForResource(ctx context.Context, resourceARN string) ([]Tag, error)
 }
 
 // MetricKey uniquely identifies a metric.
@@ -61,19 +73,29 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu      sync.RWMutex                `json:"-"`
-	Metrics map[MetricKey]*StoredMetric `json:"metrics"`
-	Alarms  map[string]*Alarm           `json:"alarms"`
-	baseURL string
-	dataDir string
+	mu           sync.RWMutex                `json:"-"`
+	Metrics      map[MetricKey]*StoredMetric `json:"metrics"`
+	Alarms       map[string]*Alarm           `json:"alarms"`
+	Tags         map[string][]Tag            `json:"tags"`
+	baseURL      string
+	region       string
+	dataDir      string
+	snsPublisher SNSPublisher `json:"-"`
 }
 
 // NewMemoryStorage creates a new in-memory CloudWatch storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Metrics: make(map[MetricKey]*StoredMetric),
 		Alarms:  make(map[string]*Alarm),
+		Tags:    make(map[string][]Tag),
 		baseURL: baseURL,
+		region:  region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -109,6 +131,7 @@ func stringToMetricKey(s string) MetricKey {
 type marshalableStorage struct {
 	Metrics map[string]*StoredMetric `json:"metrics"`
 	Alarms  map[string]*Alarm        `json:"alarms"`
+	Tags    map[string][]Tag         `json:"tags"`
 }
 
 // MarshalJSON serializes the storage state to JSON.
@@ -119,6 +142,7 @@ func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	m := &marshalableStorage{
 		Metrics: make(map[string]*StoredMetric, len(s.Metrics)),
 		Alarms:  s.Alarms,
+		Tags:    s.Tags,
 	}
 
 	for k, v := range s.Metrics {
@@ -156,7 +180,22 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Alarms = make(map[string]*Alarm)
 	}
 
+	s.Tags = m.Tags
+
+	if s.Tags == nil {
+		s.Tags = make(map[string][]Tag)
+	}
+
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "monitoring", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -170,6 +209,11 @@ func (s *MemoryStorage) Close() error {
 	}
 
 	return nil
+}
+
+// SetSNSPublisher sets the SNS publisher for alarm action notifications.
+func (s *MemoryStorage) SetSNSPublisher(publisher SNSPublisher) {
+	s.snsPublisher = publisher
 }
 
 // PutMetricData stores metric data.
@@ -199,6 +243,8 @@ func (s *MemoryStorage) PutMetricData(_ context.Context, namespace string, metri
 
 		s.appendDatapoints(metric, datum, timestamp)
 	}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -416,6 +462,8 @@ func (s *MemoryStorage) PutMetricAlarm(_ context.Context, req *PutMetricAlarmReq
 
 	s.Alarms[req.AlarmName] = alarm
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -437,27 +485,126 @@ func (s *MemoryStorage) DeleteAlarms(_ context.Context, alarmNames []string) err
 		delete(s.Alarms, name)
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
-// SetAlarmState sets the state of an alarm.
-func (s *MemoryStorage) SetAlarmState(_ context.Context, alarmName, stateValue, stateReason string) error {
+// SetAlarmState sets the state of an alarm and fires the corresponding
+// alarm actions (AlarmActions for ALARM, OKActions for OK) by publishing
+// a notification message to each SNS topic ARN listed in the action list.
+func (s *MemoryStorage) SetAlarmState(ctx context.Context, alarmName, stateValue, stateReason string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	alarm, exists := s.Alarms[alarmName]
 	if !exists {
+		s.mu.Unlock()
+
 		return &Error{
 			Code:    "ResourceNotFound",
 			Message: fmt.Sprintf("Alarm %s does not exist", alarmName),
 		}
 	}
 
+	previousState := alarm.StateValue
 	alarm.StateValue = stateValue
 	alarm.StateReason = stateReason
 	alarm.StateUpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
+	// Determine which actions to fire based on the new state.
+	var actionARNs []string
+
+	if alarm.ActionsEnabled {
+		switch stateValue {
+		case "ALARM":
+			actionARNs = append(actionARNs, alarm.AlarmActions...)
+		case "OK":
+			actionARNs = append(actionARNs, alarm.OKActions...)
+		}
+	}
+
+	// Copy alarm fields needed for the notification while still holding
+	// the lock, then release before performing I/O.
+	notification := s.buildAlarmNotification(alarm, previousState)
+	s.saveLocked()
+	s.mu.Unlock()
+
+	// Publish to each action target (SNS topic ARNs).
+	if s.snsPublisher != nil && len(actionARNs) > 0 {
+		body, err := json.Marshal(notification)
+		if err != nil {
+			return fmt.Errorf("SetAlarmState failed: %w", err)
+		}
+
+		subject := fmt.Sprintf("ALARM: %q in %s", alarmName, s.region)
+
+		for _, arn := range actionARNs {
+			// Best-effort delivery: log but do not fail the SetAlarmState
+			// call if a publish fails (matches AWS behaviour where action
+			// delivery is asynchronous).
+			_ = s.snsPublisher.Publish(ctx, arn, string(body), subject)
+		}
+	}
+
 	return nil
+}
+
+// alarmNotification mirrors the JSON structure AWS CloudWatch sends to
+// SNS action targets when an alarm state changes.
+//
+//nolint:tagliatelle // AWS notification uses PascalCase JSON fields.
+type alarmNotification struct {
+	AlarmName        string                   `json:"AlarmName"`
+	AlarmDescription string                   `json:"AlarmDescription,omitempty"`
+	AWSAccountID     string                   `json:"AWSAccountId"`
+	NewStateValue    string                   `json:"NewStateValue"`
+	NewStateReason   string                   `json:"NewStateReason"`
+	OldStateValue    string                   `json:"OldStateValue"`
+	StateChangeTime  string                   `json:"StateChangeTime"`
+	Region           string                   `json:"Region"`
+	AlarmARN         string                   `json:"AlarmArn"`
+	Trigger          alarmNotificationTrigger `json:"Trigger"`
+}
+
+// alarmNotificationTrigger contains the metric details that triggered the
+// alarm.
+//
+//nolint:tagliatelle // AWS notification uses PascalCase JSON fields.
+type alarmNotificationTrigger struct {
+	MetricName         string      `json:"MetricName"`
+	Namespace          string      `json:"Namespace"`
+	Statistic          string      `json:"Statistic,omitempty"`
+	Dimensions         []Dimension `json:"Dimensions,omitempty"`
+	Period             int32       `json:"Period"`
+	EvaluationPeriods  int32       `json:"EvaluationPeriods"`
+	Threshold          float64     `json:"Threshold"`
+	ComparisonOperator string      `json:"ComparisonOperator"`
+}
+
+// buildAlarmNotification creates an alarm notification message from alarm
+// state. The caller must hold at least a read lock on s.mu.
+func (s *MemoryStorage) buildAlarmNotification(alarm *Alarm, previousState string) *alarmNotification {
+	return &alarmNotification{
+		AlarmName:        alarm.AlarmName,
+		AlarmDescription: alarm.AlarmDescription,
+		AWSAccountID:     defaultAccountID,
+		NewStateValue:    alarm.StateValue,
+		NewStateReason:   alarm.StateReason,
+		OldStateValue:    previousState,
+		StateChangeTime:  alarm.StateUpdatedAt,
+		Region:           s.region,
+		AlarmARN:         alarm.AlarmARN,
+		Trigger: alarmNotificationTrigger{
+			MetricName:         alarm.MetricName,
+			Namespace:          alarm.Namespace,
+			Statistic:          alarm.Statistic,
+			Dimensions:         alarm.Dimensions,
+			Period:             alarm.Period,
+			EvaluationPeriods:  alarm.EvaluationPeriods,
+			Threshold:          alarm.Threshold,
+			ComparisonOperator: alarm.ComparisonOperator,
+		},
+	}
 }
 
 // DescribeAlarms returns information about alarms.
@@ -668,4 +815,77 @@ func (s *MemoryStorage) calculateStatistics(points []MetricDatapoint, statistics
 	}
 
 	return []Datapoint{dp}
+}
+
+// TagResource adds or overwrites tags on a resource identified by its ARN.
+func (s *MemoryStorage) TagResource(_ context.Context, resourceARN string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing := s.Tags[resourceARN]
+	tagMap := make(map[string]string, len(existing)+len(tags))
+
+	for _, tag := range existing {
+		tagMap[tag.Key] = tag.Value
+	}
+
+	for _, tag := range tags {
+		tagMap[tag.Key] = tag.Value
+	}
+
+	merged := make([]Tag, 0, len(tagMap))
+
+	for k, v := range tagMap {
+		merged = append(merged, Tag{Key: k, Value: v})
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Key < merged[j].Key
+	})
+
+	s.Tags[resourceARN] = merged
+
+	s.saveLocked()
+
+	return nil
+}
+
+// UntagResource removes the specified tag keys from a resource.
+func (s *MemoryStorage) UntagResource(_ context.Context, resourceARN string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing := s.Tags[resourceARN]
+
+	keySet := make(map[string]bool, len(tagKeys))
+	for _, key := range tagKeys {
+		keySet[key] = true
+	}
+
+	remaining := make([]Tag, 0, len(existing))
+
+	for _, tag := range existing {
+		if !keySet[tag.Key] {
+			remaining = append(remaining, tag)
+		}
+	}
+
+	s.Tags[resourceARN] = remaining
+
+	s.saveLocked()
+
+	return nil
+}
+
+// ListTagsForResource returns the tags attached to a resource.
+func (s *MemoryStorage) ListTagsForResource(_ context.Context, resourceARN string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tags := s.Tags[resourceARN]
+	if tags == nil {
+		tags = make([]Tag, 0)
+	}
+
+	return tags, nil
 }

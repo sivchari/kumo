@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -22,14 +23,7 @@ const (
 )
 
 // ServiceError represents an EBS service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-func (e *ServiceError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
+type ServiceError = service.CodedError
 
 // Storage defines the EBS storage interface.
 type Storage interface {
@@ -127,6 +121,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "ebs", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -161,6 +164,8 @@ func (m *MemoryStorage) StartSnapshot(_ context.Context, req *StartSnapshotReque
 
 	m.Snapshots[snapshotID] = snapshot
 
+	m.saveLocked()
+
 	return snapshot, nil
 }
 
@@ -178,6 +183,8 @@ func (m *MemoryStorage) CompleteSnapshot(_ context.Context, snapshotID string) (
 	}
 
 	snapshot.Status = "completed"
+
+	m.saveLocked()
 
 	return snapshot, nil
 }
@@ -250,6 +257,8 @@ func (m *MemoryStorage) PutSnapshotBlock(_ context.Context, snapshotID string, b
 		Data:     data,
 		Checksum: checksum,
 	}
+
+	m.saveLocked()
 
 	return nil
 }

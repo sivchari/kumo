@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // GetSubscriptionAttributes returns attributes for a subscription.
@@ -14,7 +16,7 @@ import (
 // aws_sns_topic_subscription resources.
 func (s *Service) GetSubscriptionAttributes(w http.ResponseWriter, r *http.Request) {
 	var req getSubscriptionAttributesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -55,7 +57,7 @@ func (s *Service) GetSubscriptionAttributes(w http.ResponseWriter, r *http.Reque
 // like RawMessageDelivery, FilterPolicy, etc.
 func (s *Service) SetSubscriptionAttributes(w http.ResponseWriter, r *http.Request) {
 	var req setSubscriptionAttributesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return

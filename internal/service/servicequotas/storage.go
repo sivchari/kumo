@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -92,12 +93,17 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage with predefined services and quotas.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Services:      make(map[string]*ServiceInfo),
 		Quotas:        make(map[string]map[string]*ServiceQuota),
 		DefaultQuotas: make(map[string]map[string]*ServiceQuota),
 		Requests:      make(map[string]*QuotaChangeRequest),
-		region:        defaultRegion,
+		region:        region,
 		accountID:     defaultAccountID,
 	}
 
@@ -159,6 +165,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "service-quotas", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -416,6 +431,8 @@ func (m *MemoryStorage) RequestServiceQuotaIncrease(_ context.Context, serviceCo
 	}
 
 	m.Requests[requestID] = request
+
+	m.saveLocked()
 
 	return request, nil
 }

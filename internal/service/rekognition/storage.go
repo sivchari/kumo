@@ -129,6 +129,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "rekognition", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -176,6 +185,8 @@ func (s *MemoryStorage) CreateCollection(_ context.Context, req *CreateCollectio
 
 	s.Collections[req.CollectionID] = collection
 
+	s.saveLocked()
+
 	return &CreateCollectionResponse{
 		CollectionArn:    arn,
 		FaceModelVersion: defaultFaceModelVersion,
@@ -196,6 +207,8 @@ func (s *MemoryStorage) DeleteCollection(_ context.Context, collectionID string)
 	}
 
 	delete(s.Collections, collectionID)
+
+	s.saveLocked()
 
 	return &DeleteCollectionResponse{
 		StatusCode: 200,
@@ -283,6 +296,8 @@ func (s *MemoryStorage) IndexFaces(_ context.Context, req *IndexFacesRequest) (*
 
 	collection.Faces[faceID] = face
 	collection.FaceCount++
+
+	s.saveLocked()
 
 	faceDetail := &FaceDetail{
 		BoundingBox: face.BoundingBox,
@@ -420,6 +435,8 @@ func (s *MemoryStorage) DeleteFaces(_ context.Context, req *DeleteFacesRequest) 
 			deletedFaces = append(deletedFaces, faceID)
 		}
 	}
+
+	s.saveLocked()
 
 	return &DeleteFacesResponse{
 		DeletedFaces: deletedFaces,

@@ -189,6 +189,18 @@ type ChangeTagsForResourceXMLResponse struct {
 	XMLNS   string   `xml:"xmlns,attr"`
 }
 
+// ChangeTagsForResourceRequest is the XML request for ChangeTagsForResource.
+type ChangeTagsForResourceRequest struct {
+	XMLName       xml.Name `xml:"ChangeTagsForResourceRequest"`
+	AddTags       *AddTags `xml:"AddTags,omitempty"`
+	RemoveTagKeys []string `xml:"RemoveTagKeys>Key,omitempty"`
+}
+
+// AddTags wraps the list of tags to add.
+type AddTags struct {
+	Tags []Tag `xml:"Tag"`
+}
+
 // ResourceTagSet is the tag set for a Route53 resource.
 type ResourceTagSet struct {
 	ResourceType string  `xml:"ResourceType"`

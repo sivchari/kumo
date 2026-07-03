@@ -1,0 +1,20 @@
+{
+  "ApiEndpoint": "https://8bfeedf8-5.execute-api.us-east-1.amazonaws.com",
+  "ApiGatewayManaged": null,
+  "ApiId": "8bfeedf8-5",
+  "ApiKeySelectionExpression": null,
+  "CorsConfiguration": null,
+  "CreatedDate": "2026-06-01T06:45:40Z",
+  "Description": "updated description",
+  "DisableExecuteApiEndpoint": null,
+  "DisableSchemaValidation": null,
+  "ImportInfo": null,
+  "IpAddressType": "",
+  "Name": "test-update-http-api",
+  "ProtocolType": "HTTP",
+  "RouteSelectionExpression": "$request.method $request.path",
+  "Tags": null,
+  "Version": null,
+  "Warnings": null,
+  "ResultMetadata": {}
+}

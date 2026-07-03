@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -70,17 +71,24 @@ type MemoryStorage struct {
 	TaskDefFamilies map[string][]string         `json:"taskDefFamilies"`
 	Tasks           map[string]*Task            `json:"tasks"`
 	Services        map[string]*ServiceResource `json:"services"`
+	region          string
 	dataDir         string
 }
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Clusters:        make(map[string]*Cluster),
 		TaskDefinitions: make(map[string]*TaskDefinition),
 		TaskDefFamilies: make(map[string][]string),
 		Tasks:           make(map[string]*Task),
 		Services:        make(map[string]*ServiceResource),
+		region:          region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -144,6 +152,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "ecs", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -165,20 +182,20 @@ func newTimestamp() *Timestamp {
 	return &Timestamp{Time: time.Now()}
 }
 
-func clusterArn(name string) string {
-	return fmt.Sprintf("arn:aws:ecs:%s:%s:cluster/%s", defaultRegion, defaultAccountID, name)
+func (m *MemoryStorage) clusterArn(name string) string {
+	return fmt.Sprintf("arn:aws:ecs:%s:%s:cluster/%s", m.region, defaultAccountID, name)
 }
 
-func taskDefinitionArn(family string, revision int) string {
-	return fmt.Sprintf("arn:aws:ecs:%s:%s:task-definition/%s:%d", defaultRegion, defaultAccountID, family, revision)
+func (m *MemoryStorage) taskDefinitionArn(family string, revision int) string {
+	return fmt.Sprintf("arn:aws:ecs:%s:%s:task-definition/%s:%d", m.region, defaultAccountID, family, revision)
 }
 
-func taskArn(clusterName, taskID string) string {
-	return fmt.Sprintf("arn:aws:ecs:%s:%s:task/%s/%s", defaultRegion, defaultAccountID, clusterName, taskID)
+func (m *MemoryStorage) taskArn(clusterName, taskID string) string {
+	return fmt.Sprintf("arn:aws:ecs:%s:%s:task/%s/%s", m.region, defaultAccountID, clusterName, taskID)
 }
 
-func serviceArn(clusterName, serviceName string) string {
-	return fmt.Sprintf("arn:aws:ecs:%s:%s:service/%s/%s", defaultRegion, defaultAccountID, clusterName, serviceName)
+func (m *MemoryStorage) serviceArn(clusterName, serviceName string) string {
+	return fmt.Sprintf("arn:aws:ecs:%s:%s:service/%s/%s", m.region, defaultAccountID, clusterName, serviceName)
 }
 
 // CreateCluster creates a new ECS cluster.
@@ -191,7 +208,7 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 		name = "default"
 	}
 
-	arn := clusterArn(name)
+	arn := m.clusterArn(name)
 
 	// Check if cluster already exists.
 	if existing, ok := m.Clusters[arn]; ok {
@@ -206,6 +223,8 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 	}
 
 	m.Clusters[arn] = cluster
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -243,6 +262,8 @@ func (m *MemoryStorage) DeleteCluster(_ context.Context, cluster string) (*Clust
 	existing.Status = statusInactive
 
 	delete(m.Clusters, arn)
+
+	m.saveLocked()
 
 	return existing, nil
 }
@@ -306,7 +327,7 @@ func (m *MemoryStorage) RegisterTaskDefinition(_ context.Context, req *RegisterT
 		revision = len(existing) + 1
 	}
 
-	arn := taskDefinitionArn(req.Family, revision)
+	arn := m.taskDefinitionArn(req.Family, revision)
 
 	td := &TaskDefinition{
 		TaskDefinitionArn:       arn,
@@ -325,6 +346,8 @@ func (m *MemoryStorage) RegisterTaskDefinition(_ context.Context, req *RegisterT
 
 	m.TaskDefinitions[arn] = td
 	m.TaskDefFamilies[req.Family] = append(m.TaskDefFamilies[req.Family], arn)
+
+	m.saveLocked()
 
 	return td, nil
 }
@@ -345,6 +368,8 @@ func (m *MemoryStorage) DeregisterTaskDefinition(_ context.Context, taskDefiniti
 	}
 
 	td.Status = statusInactive
+
+	m.saveLocked()
 
 	return td, nil
 }
@@ -378,6 +403,8 @@ func (m *MemoryStorage) RunTask(_ context.Context, req *RunTaskRequest) ([]Task,
 
 	tasks := m.createTasks(clusterArn, td, req, count, launchType)
 	cluster.RunningTasksCount += count
+
+	m.saveLocked()
 
 	return tasks, nil, nil
 }
@@ -434,11 +461,11 @@ func (m *MemoryStorage) createTasks(clusterArn string, td *TaskDefinition, req *
 
 func (m *MemoryStorage) createSingleTask(clusterArn string, td *TaskDefinition, tdArn string, req *RunTaskRequest, launchType string) Task {
 	taskID := generateID()
-	containers := createContainersFromDefinitions(td.ContainerDefinitions)
+	containers := m.createContainersFromDefinitions(td.ContainerDefinitions)
 	clusterName := extractClusterName(clusterArn)
 
 	return Task{
-		TaskArn:           taskArn(clusterName, taskID),
+		TaskArn:           m.taskArn(clusterName, taskID),
 		ClusterArn:        clusterArn,
 		TaskDefinitionArn: tdArn,
 		LastStatus:        statusRunning,
@@ -453,12 +480,12 @@ func (m *MemoryStorage) createSingleTask(clusterArn string, td *TaskDefinition, 
 	}
 }
 
-func createContainersFromDefinitions(defs []ContainerDefinition) []Container {
+func (m *MemoryStorage) createContainersFromDefinitions(defs []ContainerDefinition) []Container {
 	containers := make([]Container, 0, len(defs))
 
 	for i := range defs {
 		containers = append(containers, Container{
-			ContainerArn: fmt.Sprintf("arn:aws:ecs:%s:%s:container/%s", defaultRegion, defaultAccountID, generateID()),
+			ContainerArn: fmt.Sprintf("arn:aws:ecs:%s:%s:container/%s", m.region, defaultAccountID, generateID()),
 			Name:         defs[i].Name,
 			Image:        defs[i].Image,
 			LastStatus:   statusRunning,
@@ -507,6 +534,8 @@ func (m *MemoryStorage) StopTask(_ context.Context, cluster, taskID, reason stri
 	if c, ok := m.Clusters[task.ClusterArn]; ok && c.RunningTasksCount > 0 {
 		c.RunningTasksCount--
 	}
+
+	m.saveLocked()
 
 	return task, nil
 }
@@ -566,7 +595,7 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 	}
 
 	clusterName := extractClusterName(clusterArn)
-	arn := serviceArn(clusterName, req.ServiceName)
+	arn := m.serviceArn(clusterName, req.ServiceName)
 
 	// Check if service already exists.
 	if _, ok := m.Services[arn]; ok {
@@ -610,6 +639,8 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 	m.Services[arn] = svc
 	cluster.ActiveServicesCount++
 
+	m.saveLocked()
+
 	return svc, nil
 }
 
@@ -620,7 +651,7 @@ func (m *MemoryStorage) DeleteService(_ context.Context, cluster, service string
 
 	clusterArn := m.resolveClusterArn(cluster)
 	clusterName := extractClusterName(clusterArn)
-	svcArn := serviceArn(clusterName, service)
+	svcArn := m.serviceArn(clusterName, service)
 
 	// Try to find by ARN or name.
 	svc, ok := m.Services[svcArn]
@@ -653,6 +684,8 @@ func (m *MemoryStorage) DeleteService(_ context.Context, cluster, service string
 		c.ActiveServicesCount--
 	}
 
+	m.saveLocked()
+
 	return svc, nil
 }
 
@@ -663,7 +696,7 @@ func (m *MemoryStorage) UpdateService(_ context.Context, req *UpdateServiceReque
 
 	clusterArn := m.resolveClusterArn(req.Cluster)
 	clusterName := extractClusterName(clusterArn)
-	svcArn := serviceArn(clusterName, req.Service)
+	svcArn := m.serviceArn(clusterName, req.Service)
 
 	// Try to find by ARN or name.
 	svc, ok := m.Services[svcArn]
@@ -693,6 +726,8 @@ func (m *MemoryStorage) UpdateService(_ context.Context, req *UpdateServiceReque
 		svc.Deployments[0].UpdatedAt = newTimestamp()
 	}
 
+	m.saveLocked()
+
 	return svc, nil
 }
 
@@ -700,14 +735,14 @@ func (m *MemoryStorage) UpdateService(_ context.Context, req *UpdateServiceReque
 
 func (m *MemoryStorage) resolveClusterArn(cluster string) string {
 	if cluster == "" {
-		return clusterArn("default")
+		return m.clusterArn("default")
 	}
 
 	if strings.HasPrefix(cluster, "arn:") {
 		return cluster
 	}
 
-	return clusterArn(cluster)
+	return m.clusterArn(cluster)
 }
 
 func (m *MemoryStorage) resolveTaskDefinitionArn(taskDefinition string) string {
@@ -718,7 +753,7 @@ func (m *MemoryStorage) resolveTaskDefinitionArn(taskDefinition string) string {
 	// Try family:revision format.
 	parts := strings.Split(taskDefinition, ":")
 	if len(parts) == 2 {
-		return fmt.Sprintf("arn:aws:ecs:%s:%s:task-definition/%s", defaultRegion, defaultAccountID, taskDefinition)
+		return fmt.Sprintf("arn:aws:ecs:%s:%s:task-definition/%s", m.region, defaultAccountID, taskDefinition)
 	}
 
 	// Try to find latest revision.
@@ -726,7 +761,7 @@ func (m *MemoryStorage) resolveTaskDefinitionArn(taskDefinition string) string {
 		return arns[len(arns)-1]
 	}
 
-	return fmt.Sprintf("arn:aws:ecs:%s:%s:task-definition/%s:1", defaultRegion, defaultAccountID, taskDefinition)
+	return fmt.Sprintf("arn:aws:ecs:%s:%s:task-definition/%s:1", m.region, defaultAccountID, taskDefinition)
 }
 
 func extractClusterName(arn string) string {

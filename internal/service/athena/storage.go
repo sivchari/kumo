@@ -122,6 +122,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "athena", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -186,6 +195,8 @@ func (s *MemoryStorage) StartQueryExecution(_ context.Context, query, workGroup 
 	s.QueryExecutions[queryExecutionID] = qe
 	s.QueryResults[queryExecutionID] = createMockResultSet()
 
+	s.saveLocked()
+
 	return qe, nil
 }
 
@@ -224,6 +235,8 @@ func (s *MemoryStorage) StopQueryExecution(_ context.Context, queryExecutionID s
 		qe.Status.StateChangeReason = "Query was cancelled by user."
 		qe.Status.CompletionDateTime = &now
 	}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -324,6 +337,8 @@ func (s *MemoryStorage) CreateWorkGroup(_ context.Context, name string, configur
 
 	s.WorkGroups[name] = wg
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -369,6 +384,8 @@ func (s *MemoryStorage) DeleteWorkGroup(_ context.Context, name string, recursiv
 	}
 
 	delete(s.WorkGroups, name)
+
+	s.saveLocked()
 
 	return nil
 }

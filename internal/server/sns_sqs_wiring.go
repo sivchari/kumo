@@ -2,12 +2,22 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/sivchari/kumo/internal/service"
+	"github.com/sivchari/kumo/internal/service/s3"
 	"github.com/sivchari/kumo/internal/service/sns"
 	"github.com/sivchari/kumo/internal/service/sqs"
 )
+
+// alarmActionWirer is satisfied by cloudwatch.Service. Using a local
+// interface avoids importing the cloudwatch package directly, which
+// would create an import cycle. The SetSNSPublisher method accepts any
+// and internally asserts it to the cloudwatch.SNSPublisher interface.
+type alarmActionWirer interface {
+	SetSNSPublisher(publisher any)
+}
 
 // wireSNStoSQS connects the SNS service to the SQS service so SNS topic
 // subscriptions with protocol=sqs actually deliver messages into the
@@ -100,4 +110,134 @@ func (p *snsToSQSPublisher) endpointToQueueURL(endpoint string) string {
 	name := parts[5]
 
 	return p.baseURL + "/" + account + "/" + name
+}
+
+// wireS3toSQS connects the S3 service to the SQS service so that
+// S3 bucket notification configurations with QueueConfigurations
+// actually deliver event messages into the target SQS queue.
+//
+// Without this wiring, PutObject silently ignores QueueConfiguration
+// entries because s3.Service.sqsPublisher is nil. The pattern mirrors
+// wireSNStoSQS.
+func wireS3toSQS(registry *service.Registry) {
+	s3Svc, ok := registry.Get("s3")
+	if !ok {
+		return
+	}
+
+	sqsSvc, ok := registry.Get("sqs")
+	if !ok {
+		return
+	}
+
+	s3Typed, ok := s3Svc.(*s3.Service)
+	if !ok {
+		return
+	}
+
+	sqsTyped, ok := sqsSvc.(*sqs.Service)
+	if !ok {
+		return
+	}
+
+	s3Typed.SetSQSPublisher(&s3ToSQSPublisher{
+		storage: sqsTyped.Storage(),
+		baseURL: sqsTyped.BaseURL(),
+	})
+}
+
+// s3ToSQSPublisher adapts the SQS storage layer to the S3
+// SQSPublisher interface. It accepts an SQS ARN in the queueARN
+// argument, translates it to the queue URL the SQS storage layer
+// keys queues by, and sends the message.
+type s3ToSQSPublisher struct {
+	storage sqs.Storage
+	baseURL string
+}
+
+// PublishToSQS delivers an S3 event notification message to an SQS
+// queue identified by its ARN. The message body is the full JSON
+// event notification envelope (Records[]).
+func (p *s3ToSQSPublisher) PublishToSQS(ctx context.Context, queueARN, body string) error {
+	queueURL := p.arnToQueueURL(queueARN)
+
+	_, err := p.storage.SendMessage(ctx, queueURL, body, 0, nil, "", "")
+	if err != nil {
+		return err //nolint:wrapcheck // adapter is a thin pass-through
+	}
+
+	return nil
+}
+
+// arnToQueueURL converts an SQS ARN to the queue URL that the storage
+// layer keys queues by. If the input is already a URL it is returned
+// unchanged.
+func (p *s3ToSQSPublisher) arnToQueueURL(arn string) string {
+	if !strings.HasPrefix(arn, "arn:") {
+		return arn
+	}
+
+	// arn:aws:sqs:<region>:<account>:<name> -> <baseURL>/<account>/<name>
+	parts := strings.Split(arn, ":")
+	if len(parts) < 6 {
+		return arn
+	}
+
+	account := parts[4]
+	name := parts[5]
+
+	return p.baseURL + "/" + account + "/" + name
+}
+
+// wireCloudWatchToSNS connects the CloudWatch service to the SNS service
+// so that alarm actions (AlarmActions, OKActions) actually deliver
+// notification messages to the configured SNS topics when an alarm state
+// changes via SetAlarmState.
+//
+// Without this wiring, SetAlarmState only updates the alarm state in
+// memory and silently ignores the action target ARNs.
+//
+// We use a local interface (alarmActionWirer) rather than importing the
+// cloudwatch package directly, because cloudwatch already imports server
+// for CBOR helpers and a direct import would create a cycle.
+func wireCloudWatchToSNS(registry *service.Registry) {
+	cwSvc, ok := registry.Get("monitoring")
+	if !ok {
+		return
+	}
+
+	snsSvc, ok := registry.Get("sns")
+	if !ok {
+		return
+	}
+
+	cwWirer, ok := cwSvc.(alarmActionWirer)
+	if !ok {
+		return
+	}
+
+	snsTyped, ok := snsSvc.(*sns.Service)
+	if !ok {
+		return
+	}
+
+	cwWirer.SetSNSPublisher(&cloudWatchToSNSPublisher{
+		snsStorage: snsTyped.Storage(),
+	})
+}
+
+// cloudWatchToSNSPublisher adapts the SNS storage Publish method to the
+// CloudWatch SNSPublisher interface.
+type cloudWatchToSNSPublisher struct {
+	snsStorage sns.Storage
+}
+
+// Publish sends a CloudWatch alarm notification to an SNS topic.
+func (p *cloudWatchToSNSPublisher) Publish(ctx context.Context, topicARN, message, subject string) error {
+	_, err := p.snsStorage.Publish(ctx, topicARN, message, subject, "", "", nil)
+	if err != nil {
+		return fmt.Errorf("cloudwatch alarm action publish failed: %w", err)
+	}
+
+	return nil
 }

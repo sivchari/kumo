@@ -3,12 +3,14 @@
 package integration
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
+	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/sivchari/golden"
 )
 
@@ -305,4 +307,70 @@ func TestSFN_ExpressStateMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden.New(t, golden.WithIgnoreFields("StateMachineArn", "CreationDate", "RevisionId", "ResultMetadata")).Assert(t.Name(), describeOutput)
+}
+
+func TestSFN_TagOperations(t *testing.T) {
+	client := newSFNClient(t)
+	ctx := t.Context()
+
+	name := "test-tag-operations"
+	definition := `{"StartAt": "Pass", "States": {"Pass": {"Type": "Pass", "End": true}}}`
+	roleArn := "arn:aws:iam::000000000000:role/test-role"
+
+	// Create state machine.
+	createOutput, err := client.CreateStateMachine(ctx, &sfn.CreateStateMachineInput{
+		Name:       aws.String(name),
+		Definition: aws.String(definition),
+		RoleArn:    aws.String(roleArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	smArn := *createOutput.StateMachineArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteStateMachine(context.Background(), &sfn.DeleteStateMachineInput{
+			StateMachineArn: aws.String(smArn),
+		})
+	})
+
+	// TagResource: add two tags.
+	_, err = client.TagResource(ctx, &sfn.TagResourceInput{
+		ResourceArn: aws.String(smArn),
+		Tags: []sfntypes.Tag{
+			{Key: aws.String("Environment"), Value: aws.String("Test")},
+			{Key: aws.String("Project"), Value: aws.String("kumo")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsForResource: verify tags.
+	listOutput, err := client.ListTagsForResource(ctx, &sfn.ListTagsForResourceInput{
+		ResourceArn: aws.String(smArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_tag", listOutput)
+
+	// UntagResource: remove one tag.
+	_, err = client.UntagResource(ctx, &sfn.UntagResourceInput{
+		ResourceArn: aws.String(smArn),
+		TagKeys:     []string{"Environment"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsForResource: verify remaining tag.
+	listOutput2, err := client.ListTagsForResource(ctx, &sfn.ListTagsForResourceInput{
+		ResourceArn: aws.String(smArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_untag", listOutput2)
 }

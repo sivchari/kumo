@@ -307,8 +307,9 @@ linters:
         linters:
           - tagliatelle
           - wrapcheck
-      # kumo.go uses blank imports to register all AWS services via init().
-      - path: kumo\.go
+      # internal/registry blank-imports every service to register them via
+      # init(); it is the single canonical service list.
+      - path: internal/registry/registry\.go
         linters:
           - revive
   settings:

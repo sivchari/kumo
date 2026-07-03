@@ -94,6 +94,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "codeguru-profiler", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -139,6 +148,8 @@ func (m *MemoryStorage) CreateProfilingGroup(input *CreateProfilingGroupInput) *
 
 	m.Groups[input.ProfilingGroupName] = group
 
+	m.saveLocked()
+
 	return group
 }
 
@@ -171,6 +182,8 @@ func (m *MemoryStorage) UpdateProfilingGroup(name string, input *UpdateProfiling
 
 	group.UpdatedAt = time.Now().UTC()
 
+	m.saveLocked()
+
 	return group, nil
 }
 
@@ -184,6 +197,8 @@ func (m *MemoryStorage) DeleteProfilingGroup(name string) error {
 	}
 
 	delete(m.Groups, name)
+
+	m.saveLocked()
 
 	return nil
 }

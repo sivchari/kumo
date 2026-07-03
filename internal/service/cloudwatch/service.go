@@ -84,7 +84,6 @@ func (s *Service) Actions() []string {
 		"DeleteAlarms",
 		"DescribeAlarms",
 		"SetAlarmState",
-		// Tag stubs — see tag_stubs.go.
 		"ListTagsForResource",
 		"TagResource",
 		"UntagResource",
@@ -114,8 +113,32 @@ func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, ope
 		s.DescribeAlarmsCBOR(w, r)
 	case "SetAlarmState":
 		s.SetAlarmStateCBOR(w, r)
+	case "ListTagsForResource":
+		s.ListTagsForResourceCBOR(w, r)
+	case "TagResource":
+		s.TagResourceCBOR(w, r)
+	case "UntagResource":
+		s.UntagResourceCBOR(w, r)
 	default:
 		server.WriteCBORError(w, "InvalidAction", "The action "+operation+" is not valid", http.StatusBadRequest)
+	}
+}
+
+// Storage returns the CloudWatch storage.
+// This can be used to set up cross-service integration (e.g., CloudWatch alarm actions to SNS).
+func (s *Service) Storage() Storage {
+	return s.storage
+}
+
+// SetSNSPublisher installs the SNS publisher used to deliver alarm
+// action notifications. The argument must satisfy the SNSPublisher
+// interface (Publish method). Accepting any here avoids an import
+// cycle between server and cloudwatch.
+func (s *Service) SetSNSPublisher(publisher any) {
+	if p, ok := publisher.(SNSPublisher); ok {
+		if ms, ok := s.storage.(*MemoryStorage); ok {
+			ms.SetSNSPublisher(p)
+		}
 	}
 }
 
@@ -128,4 +151,13 @@ func (s *Service) Close() error {
 	}
 
 	return nil
+}
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "CloudWatch",
+		Category:    "Monitoring & Logging",
+		Description: "Metrics and alarms",
+	}
 }
