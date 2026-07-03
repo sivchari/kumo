@@ -467,7 +467,7 @@ func matcherFromRequest(req *CreateTargetGroupRequest) string {
 		return ""
 	}
 
-	return req.Matcher.HttpCode
+	return req.Matcher.HTTPCode
 }
 
 // DeleteTargetGroup deletes a target group.
@@ -969,6 +969,7 @@ func (m *MemoryStorage) DescribeTags(_ context.Context, arns []string) (map[stri
 	defer m.mu.RUnlock()
 
 	out := make(map[string]map[string]string, len(arns))
+
 	for _, arn := range arns {
 		tags, err := m.lookupTagsLocked(arn)
 		if err != nil {

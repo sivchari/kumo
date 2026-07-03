@@ -194,7 +194,7 @@ type CreateTargetGroupRequest struct {
 
 // Matcher represents target group health check matcher settings.
 type Matcher struct {
-	HttpCode string `json:"HttpCode,omitempty"`
+	HTTPCode string `json:"HttpCode,omitempty"`
 }
 
 // DeleteTargetGroupRequest represents a DeleteTargetGroup request.
@@ -380,7 +380,7 @@ type XMLTargetGroup struct {
 
 // XMLMatcher represents target group matcher settings.
 type XMLMatcher struct {
-	HttpCode string `xml:"HttpCode,omitempty"`
+	HTTPCode string `xml:"HttpCode,omitempty"`
 }
 
 // XMLLoadBalancerArns contains a list of load balancer ARNs.

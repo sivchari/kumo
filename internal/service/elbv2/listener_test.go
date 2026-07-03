@@ -1,6 +1,7 @@
 package elbv2
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,8 +13,9 @@ func TestCreateListenerParsesDefaultActionsFromQueryForm(t *testing.T) {
 
 	storage := NewMemoryStorage()
 	service := New(storage)
+	ctx := context.TODO()
 
-	lb, err := storage.CreateLoadBalancer(nil, &CreateLoadBalancerRequest{
+	lb, err := storage.CreateLoadBalancer(ctx, &CreateLoadBalancerRequest{
 		Name:           "kumo-local",
 		Type:           "application",
 		Scheme:         "internal",
@@ -24,7 +26,7 @@ func TestCreateListenerParsesDefaultActionsFromQueryForm(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tg, err := storage.CreateTargetGroup(nil, &CreateTargetGroupRequest{
+	tg, err := storage.CreateTargetGroup(ctx, &CreateTargetGroupRequest{
 		Name:       "kumo-local-kumo",
 		Port:       4566,
 		Protocol:   "HTTP",
@@ -43,6 +45,7 @@ func TestCreateListenerParsesDefaultActionsFromQueryForm(t *testing.T) {
 		"&DefaultActions.member.1.TargetGroupArn=" + tg.TargetGroupArn
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 
 	service.CreateListener(rec, req)
@@ -69,6 +72,7 @@ func TestCreateTargetGroupParsesMatcherFromQueryForm(t *testing.T) {
 		"&Matcher.HttpCode=200"
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 
 	service.CreateTargetGroup(rec, req)

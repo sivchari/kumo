@@ -13,6 +13,7 @@ func TestDescribeListenerAttributesReturnsEmptyAttributes(t *testing.T) {
 	service := New(NewMemoryStorage())
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("Action=DescribeListenerAttributes&ListenerArn=arn-listener"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	rec := httptest.NewRecorder()
 
 	service.DescribeListenerAttributes(rec, req)
