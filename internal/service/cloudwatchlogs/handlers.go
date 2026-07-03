@@ -408,43 +408,35 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
 	action := strings.TrimPrefix(target, "Logs_20140328.")
 
-	switch action {
-	case "CreateLogGroup":
-		s.CreateLogGroup(w, r)
-	case "DeleteLogGroup":
-		s.DeleteLogGroup(w, r)
-	case "CreateLogStream":
-		s.CreateLogStream(w, r)
-	case "DeleteLogStream":
-		s.DeleteLogStream(w, r)
-	case "PutLogEvents":
-		s.PutLogEvents(w, r)
-	case "GetLogEvents":
-		s.GetLogEvents(w, r)
-	case "FilterLogEvents":
-		s.FilterLogEvents(w, r)
-	case "DescribeLogGroups":
-		s.DescribeLogGroups(w, r)
-	case "DescribeLogStreams":
-		s.DescribeLogStreams(w, r)
-	case "PutRetentionPolicy":
-		s.PutRetentionPolicy(w, r)
-	case "DeleteRetentionPolicy":
-		s.DeleteRetentionPolicy(w, r)
-	case "ListTagsForResource":
-		s.ListTagsForResource(w, r)
-	case "ListTagsLogGroup":
-		s.ListTagsLogGroup(w, r)
-	case "TagResource":
-		s.TagResource(w, r)
-	case "UntagResource":
-		s.UntagResource(w, r)
-	case "TagLogGroup":
-		s.TagLogGroup(w, r)
-	case "UntagLogGroup":
-		s.UntagLogGroup(w, r)
-	default:
+	handler, ok := s.actionHandlers()[action]
+	if !ok {
 		writeLogsError(w, errInvalidAction, "The action "+action+" is not valid for this web service", http.StatusBadRequest)
+
+		return
+	}
+
+	handler(w, r)
+}
+
+func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
+	return map[string]func(http.ResponseWriter, *http.Request){
+		"CreateLogGroup":        s.CreateLogGroup,
+		"DeleteLogGroup":        s.DeleteLogGroup,
+		"CreateLogStream":       s.CreateLogStream,
+		"DeleteLogStream":       s.DeleteLogStream,
+		"PutLogEvents":          s.PutLogEvents,
+		"GetLogEvents":          s.GetLogEvents,
+		"FilterLogEvents":       s.FilterLogEvents,
+		"DescribeLogGroups":     s.DescribeLogGroups,
+		"DescribeLogStreams":    s.DescribeLogStreams,
+		"PutRetentionPolicy":    s.PutRetentionPolicy,
+		"DeleteRetentionPolicy": s.DeleteRetentionPolicy,
+		"ListTagsForResource":   s.ListTagsForResource,
+		"ListTagsLogGroup":      s.ListTagsLogGroup,
+		"TagResource":           s.TagResource,
+		"UntagResource":         s.UntagResource,
+		"TagLogGroup":           s.TagLogGroup,
+		"UntagLogGroup":         s.UntagLogGroup,
 	}
 }
 

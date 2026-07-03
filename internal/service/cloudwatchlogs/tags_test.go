@@ -27,6 +27,7 @@ func TestLogGroupTagsRoundTrip(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"logGroupName":"/ecs/kumo-local/kumo"}`))
 	req.Header.Set("X-Amz-Target", "Logs_20140328.ListTagsLogGroup")
+
 	rec := httptest.NewRecorder()
 
 	service.DispatchAction(rec, req)
