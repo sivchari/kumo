@@ -23,6 +23,7 @@ type LoadBalancer struct {
 	SecurityGroups        []string
 	IPAddressType         string
 	Attributes            map[string]string
+	Tags                  map[string]string
 }
 
 // LoadBalancerState represents the state of a load balancer.
@@ -59,9 +60,11 @@ type TargetGroup struct {
 	HealthCheckTimeoutSeconds  int
 	HealthyThresholdCount      int
 	UnhealthyThresholdCount    int
+	Matcher                    string
 	TargetType                 string // instance | ip | lambda | alb
 	LoadBalancerArns           []string
 	Attributes                 map[string]string
+	Tags                       map[string]string
 }
 
 // Listener represents an ELB listener.
@@ -72,6 +75,7 @@ type Listener struct {
 	Protocol        string
 	DefaultActions  []Action
 	Rules           []Rule
+	Tags            map[string]string
 }
 
 // Action represents a listener action.
@@ -116,12 +120,13 @@ type TargetDescription struct {
 
 // CreateLoadBalancerRequest represents a CreateLoadBalancer request.
 type CreateLoadBalancerRequest struct {
-	Name           string   `json:"Name"`
-	Subnets        []string `json:"Subnets,omitempty"`
-	SecurityGroups []string `json:"SecurityGroups,omitempty"`
-	Scheme         string   `json:"Scheme,omitempty"`
-	Type           string   `json:"Type,omitempty"`
-	IPAddressType  string   `json:"IpAddressType,omitempty"`
+	Name           string            `json:"Name"`
+	Subnets        []string          `json:"Subnets,omitempty"`
+	SecurityGroups []string          `json:"SecurityGroups,omitempty"`
+	Scheme         string            `json:"Scheme,omitempty"`
+	Type           string            `json:"Type,omitempty"`
+	IPAddressType  string            `json:"IpAddressType,omitempty"`
+	Tags           map[string]string `json:"Tags,omitempty"`
 }
 
 // DeleteLoadBalancerRequest represents a DeleteLoadBalancer request.
@@ -135,21 +140,33 @@ type DescribeLoadBalancersRequest struct {
 	Names            []string `json:"Names,omitempty"`
 }
 
+// DescribeCapacityReservationRequest represents a DescribeCapacityReservation request.
+type DescribeCapacityReservationRequest struct {
+	LoadBalancerArn string `json:"LoadBalancerArn"`
+}
+
 // CreateTargetGroupRequest represents a CreateTargetGroup request.
 type CreateTargetGroupRequest struct {
-	Name                       string `json:"Name"`
-	Protocol                   string `json:"Protocol,omitempty"`
-	Port                       int    `json:"Port,omitempty"`
-	VpcID                      string `json:"VpcId,omitempty"`
-	HealthCheckProtocol        string `json:"HealthCheckProtocol,omitempty"`
-	HealthCheckPort            string `json:"HealthCheckPort,omitempty"`
-	HealthCheckEnabled         bool   `json:"HealthCheckEnabled,omitempty"`
-	HealthCheckPath            string `json:"HealthCheckPath,omitempty"`
-	HealthCheckIntervalSeconds int    `json:"HealthCheckIntervalSeconds,omitempty"`
-	HealthCheckTimeoutSeconds  int    `json:"HealthCheckTimeoutSeconds,omitempty"`
-	HealthyThresholdCount      int    `json:"HealthyThresholdCount,omitempty"`
-	UnhealthyThresholdCount    int    `json:"UnhealthyThresholdCount,omitempty"`
-	TargetType                 string `json:"TargetType,omitempty"`
+	Name                       string            `json:"Name"`
+	Protocol                   string            `json:"Protocol,omitempty"`
+	Port                       int               `json:"Port,omitempty"`
+	VpcID                      string            `json:"VpcId,omitempty"`
+	HealthCheckProtocol        string            `json:"HealthCheckProtocol,omitempty"`
+	HealthCheckPort            string            `json:"HealthCheckPort,omitempty"`
+	HealthCheckEnabled         bool              `json:"HealthCheckEnabled,omitempty"`
+	HealthCheckPath            string            `json:"HealthCheckPath,omitempty"`
+	HealthCheckIntervalSeconds int               `json:"HealthCheckIntervalSeconds,omitempty"`
+	HealthCheckTimeoutSeconds  int               `json:"HealthCheckTimeoutSeconds,omitempty"`
+	HealthyThresholdCount      int               `json:"HealthyThresholdCount,omitempty"`
+	UnhealthyThresholdCount    int               `json:"UnhealthyThresholdCount,omitempty"`
+	Matcher                    *Matcher          `json:"Matcher,omitempty"`
+	TargetType                 string            `json:"TargetType,omitempty"`
+	Tags                       map[string]string `json:"Tags,omitempty"`
+}
+
+// Matcher represents target group health check matcher settings.
+type Matcher struct {
+	HttpCode string `json:"HttpCode,omitempty"`
 }
 
 // DeleteTargetGroupRequest represents a DeleteTargetGroup request.
@@ -227,6 +244,17 @@ type XMLDescribeLoadBalancersResponse struct {
 type XMLDescribeLoadBalancersResult struct {
 	LoadBalancers XMLLoadBalancers `xml:"LoadBalancers"`
 }
+
+// XMLDescribeCapacityReservationResponse is the XML response for DescribeCapacityReservation.
+type XMLDescribeCapacityReservationResponse struct {
+	XMLName          xml.Name                             `xml:"DescribeCapacityReservationResponse"`
+	Xmlns            string                               `xml:"xmlns,attr"`
+	Result           XMLDescribeCapacityReservationResult `xml:"DescribeCapacityReservationResult"`
+	ResponseMetadata XMLResponseMetadata                  `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeCapacityReservationResult is empty because kumo does not model ELB capacity reservations.
+type XMLDescribeCapacityReservationResult struct{}
 
 // XMLLoadBalancers contains a list of load balancers.
 type XMLLoadBalancers struct {
@@ -328,8 +356,14 @@ type XMLTargetGroup struct {
 	HealthCheckTimeoutSeconds  int                 `xml:"HealthCheckTimeoutSeconds"`
 	HealthyThresholdCount      int                 `xml:"HealthyThresholdCount"`
 	UnhealthyThresholdCount    int                 `xml:"UnhealthyThresholdCount"`
+	Matcher                    *XMLMatcher         `xml:"Matcher,omitempty"`
 	TargetType                 string              `xml:"TargetType"`
 	LoadBalancerArns           XMLLoadBalancerArns `xml:"LoadBalancerArns"`
+}
+
+// XMLMatcher represents target group matcher settings.
+type XMLMatcher struct {
+	HttpCode string `xml:"HttpCode,omitempty"`
 }
 
 // XMLLoadBalancerArns contains a list of load balancer ARNs.
@@ -605,6 +639,19 @@ type XMLDescribeLoadBalancerAttributesResponse struct {
 
 // XMLDescribeLoadBalancerAttributesResult contains the requested attributes.
 type XMLDescribeLoadBalancerAttributesResult struct {
+	Attributes XMLAttributePairs `xml:"Attributes"`
+}
+
+// XMLDescribeListenerAttributesResponse is the XML response.
+type XMLDescribeListenerAttributesResponse struct {
+	XMLName          xml.Name                            `xml:"DescribeListenerAttributesResponse"`
+	Xmlns            string                              `xml:"xmlns,attr"`
+	Result           XMLDescribeListenerAttributesResult `xml:"DescribeListenerAttributesResult"`
+	ResponseMetadata XMLResponseMetadata                 `xml:"ResponseMetadata"`
+}
+
+// XMLDescribeListenerAttributesResult contains the requested listener attributes.
+type XMLDescribeListenerAttributesResult struct {
 	Attributes XMLAttributePairs `xml:"Attributes"`
 }
 

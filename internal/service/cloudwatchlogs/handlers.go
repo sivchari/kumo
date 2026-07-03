@@ -293,6 +293,116 @@ func (s *Service) DeleteRetentionPolicy(w http.ResponseWriter, r *http.Request) 
 	writeEmptyResponse(w)
 }
 
+// ListTagsLogGroup handles the ListTagsLogGroup action.
+func (s *Service) ListTagsLogGroup(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsLogGroupRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTags(r.Context(), req.LogGroupName)
+	if err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, TagsResponse{Tags: tags})
+}
+
+// ListTagsForResource handles the ListTagsForResource action.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTags(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, TagsResponse{Tags: tags})
+}
+
+// TagLogGroup handles the TagLogGroup action.
+func (s *Service) TagLogGroup(w http.ResponseWriter, r *http.Request) {
+	var req TagLogGroupRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Tag(r.Context(), req.LogGroupName, req.Tags); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// TagResource handles the TagResource action.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Tag(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// UntagLogGroup handles the UntagLogGroup action.
+func (s *Service) UntagLogGroup(w http.ResponseWriter, r *http.Request) {
+	var req UntagLogGroupRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Untag(r.Context(), req.LogGroupName, req.Tags); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// UntagResource handles the UntagResource action.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Untag(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 // This method implements the JSONProtocolService interface.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
@@ -322,12 +432,18 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.PutRetentionPolicy(w, r)
 	case "DeleteRetentionPolicy":
 		s.DeleteRetentionPolicy(w, r)
-	case "ListTagsForResource", "ListTagsLogGroup",
-		"TagResource", "UntagResource",
-		"TagLogGroup", "UntagLogGroup":
-		// Tags are not modeled; respond as no-op so AWS SDK clients
-		// reading state after CreateLogGroup do not see InvalidAction.
-		writeEmptyResponse(w)
+	case "ListTagsForResource":
+		s.ListTagsForResource(w, r)
+	case "ListTagsLogGroup":
+		s.ListTagsLogGroup(w, r)
+	case "TagResource":
+		s.TagResource(w, r)
+	case "UntagResource":
+		s.UntagResource(w, r)
+	case "TagLogGroup":
+		s.TagLogGroup(w, r)
+	case "UntagLogGroup":
+		s.UntagLogGroup(w, r)
 	default:
 		writeLogsError(w, errInvalidAction, "The action "+action+" is not valid for this web service", http.StatusBadRequest)
 	}

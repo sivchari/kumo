@@ -71,8 +71,11 @@ type Storage interface {
 	// Security Group operations
 	CreateSecurityGroup(ctx context.Context, req *CreateSecurityGroupRequest) (*SecurityGroup, error)
 	DeleteSecurityGroup(ctx context.Context, groupID, groupName string) error
+	DescribeSecurityGroups(ctx context.Context, groupIDs, groupNames []string, filters map[string][]string) ([]*SecurityGroup, error)
 	AuthorizeSecurityGroupIngress(ctx context.Context, groupID, groupName string, permissions []IPPermission) error
 	AuthorizeSecurityGroupEgress(ctx context.Context, groupID string, permissions []IPPermission) error
+	RevokeSecurityGroupIngress(ctx context.Context, groupID, groupName string, permissions []IPPermission) error
+	RevokeSecurityGroupEgress(ctx context.Context, groupID string, permissions []IPPermission) error
 
 	// Key Pair operations
 	CreateKeyPair(ctx context.Context, keyName, keyType string) (*KeyPair, error)
@@ -482,6 +485,60 @@ func (m *MemoryStorage) DeleteSecurityGroup(_ context.Context, groupID, groupNam
 	}
 }
 
+// DescribeSecurityGroups describes security groups by ID, name, or filters.
+func (m *MemoryStorage) DescribeSecurityGroups(_ context.Context, groupIDs, groupNames []string, filters map[string][]string) ([]*SecurityGroup, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	seen := make(map[string]*SecurityGroup)
+
+	if len(groupIDs) == 0 && len(groupNames) == 0 {
+		for id, sg := range m.SecurityGroups {
+			seen[id] = sg
+		}
+	} else {
+		for _, id := range groupIDs {
+			sg, exists := m.SecurityGroups[id]
+			if !exists {
+				return nil, &Error{
+					Code:    "InvalidGroup.NotFound",
+					Message: fmt.Sprintf("The security group '%s' does not exist", id),
+				}
+			}
+
+			seen[id] = sg
+		}
+
+		for _, name := range groupNames {
+			sg := m.findSecurityGroup("", name)
+			if sg == nil {
+				return nil, &Error{
+					Code:    "InvalidGroup.NotFound",
+					Message: fmt.Sprintf("The security group '%s' does not exist", name),
+				}
+			}
+
+			seen[sg.GroupID] = sg
+		}
+	}
+
+	ids := make([]string, 0, len(seen))
+	for id, sg := range seen {
+		if m.matchSecurityGroupFilters(sg, filters) {
+			ids = append(ids, id)
+		}
+	}
+
+	sort.Strings(ids)
+
+	groups := make([]*SecurityGroup, 0, len(ids))
+	for _, id := range ids {
+		groups = append(groups, copySecurityGroup(seen[id]))
+	}
+
+	return groups, nil
+}
+
 // AuthorizeSecurityGroupIngress adds ingress rules to a security group.
 func (m *MemoryStorage) AuthorizeSecurityGroupIngress(_ context.Context, groupID, groupName string, permissions []IPPermission) error {
 	m.mu.Lock()
@@ -514,6 +571,42 @@ func (m *MemoryStorage) AuthorizeSecurityGroupEgress(_ context.Context, groupID 
 	}
 
 	sg.EgressRules = append(sg.EgressRules, permissions...)
+
+	return nil
+}
+
+// RevokeSecurityGroupIngress removes ingress rules from a security group.
+func (m *MemoryStorage) RevokeSecurityGroupIngress(_ context.Context, groupID, groupName string, permissions []IPPermission) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sg := m.findSecurityGroup(groupID, groupName)
+	if sg == nil {
+		return &Error{
+			Code:    "InvalidGroup.NotFound",
+			Message: "The security group does not exist",
+		}
+	}
+
+	sg.IngressRules = removeIPPermissions(sg.IngressRules, permissions)
+
+	return nil
+}
+
+// RevokeSecurityGroupEgress removes egress rules from a security group.
+func (m *MemoryStorage) RevokeSecurityGroupEgress(_ context.Context, groupID string, permissions []IPPermission) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sg, exists := m.SecurityGroups[groupID]
+	if !exists {
+		return &Error{
+			Code:    "InvalidGroup.NotFound",
+			Message: fmt.Sprintf("The security group '%s' does not exist", groupID),
+		}
+	}
+
+	sg.EgressRules = removeIPPermissions(sg.EgressRules, permissions)
 
 	return nil
 }
@@ -704,6 +797,139 @@ func (m *MemoryStorage) findSecurityGroup(groupID, groupName string) *SecurityGr
 	}
 
 	return nil
+}
+
+func (m *MemoryStorage) matchSecurityGroupFilters(sg *SecurityGroup, filters map[string][]string) bool {
+	for name, values := range filters {
+		if len(values) == 0 {
+			continue
+		}
+
+		if !securityGroupFilterMatches(sg, name, values) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func securityGroupFilterMatches(sg *SecurityGroup, name string, values []string) bool {
+	switch {
+	case name == "group-id":
+		return containsString(values, sg.GroupID)
+	case name == "group-name":
+		return containsString(values, sg.GroupName)
+	case name == "description":
+		return containsString(values, sg.Description)
+	case name == "vpc-id":
+		return containsString(values, sg.VpcID)
+	case name == "tag-key":
+		for _, tag := range sg.Tags {
+			if containsString(values, tag.Key) {
+				return true
+			}
+		}
+
+		return false
+	case strings.HasPrefix(name, "tag:"):
+		key := strings.TrimPrefix(name, "tag:")
+		for _, tag := range sg.Tags {
+			if tag.Key == key && containsString(values, tag.Value) {
+				return true
+			}
+		}
+
+		return false
+	default:
+		return true
+	}
+}
+
+func copySecurityGroup(sg *SecurityGroup) *SecurityGroup {
+	if sg == nil {
+		return nil
+	}
+
+	cp := *sg
+	cp.IngressRules = copyIPPermissions(sg.IngressRules)
+	cp.EgressRules = copyIPPermissions(sg.EgressRules)
+	cp.Tags = append([]Tag(nil), sg.Tags...)
+
+	return &cp
+}
+
+func copyIPPermissions(in []IPPermission) []IPPermission {
+	out := make([]IPPermission, len(in))
+	for i, permission := range in {
+		out[i] = permission
+		out[i].IPRanges = append([]IPRange(nil), permission.IPRanges...)
+		out[i].UserIDGroupPairs = append([]UserIDGroupPair(nil), permission.UserIDGroupPairs...)
+	}
+
+	return out
+}
+
+func removeIPPermissions(existing, remove []IPPermission) []IPPermission {
+	if len(existing) == 0 || len(remove) == 0 {
+		return existing
+	}
+
+	out := make([]IPPermission, 0, len(existing))
+	for _, candidate := range existing {
+		if containsIPPermission(remove, candidate) {
+			continue
+		}
+
+		out = append(out, candidate)
+	}
+
+	return out
+}
+
+func containsIPPermission(permissions []IPPermission, want IPPermission) bool {
+	for _, permission := range permissions {
+		if ipPermissionEqual(permission, want) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func ipPermissionEqual(a, b IPPermission) bool {
+	return a.IPProtocol == b.IPProtocol &&
+		a.FromPort == b.FromPort &&
+		a.ToPort == b.ToPort &&
+		ipRangesEqual(a.IPRanges, b.IPRanges) &&
+		userIDGroupPairsEqual(a.UserIDGroupPairs, b.UserIDGroupPairs)
+}
+
+func ipRangesEqual(a, b []IPRange) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func userIDGroupPairsEqual(a, b []UserIDGroupPair) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // resolveSecurityGroups resolves security group IDs and names to GroupIdentifiers.

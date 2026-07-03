@@ -24,7 +24,7 @@ const (
 // CreateLoadBalancer handles the CreateLoadBalancer action.
 func (s *Service) CreateLoadBalancer(w http.ResponseWriter, r *http.Request) {
 	var req CreateLoadBalancerRequest
-	if err := readELBJSONRequest(r, &req); err != nil {
+	if err := readCreateLoadBalancerRequest(r, &req); err != nil {
 		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -52,6 +52,34 @@ func (s *Service) CreateLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		},
 		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
 	})
+}
+
+func readCreateLoadBalancerRequest(r *http.Request, req *CreateLoadBalancerRequest) error {
+	if strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			return err
+		}
+
+		req.Name = r.Form.Get("Name")
+		req.Subnets = parseMemberListFromForm(r.Form, "Subnets")
+		req.SecurityGroups = parseMemberListFromForm(r.Form, "SecurityGroups")
+		req.Scheme = r.Form.Get("Scheme")
+		req.Type = r.Form.Get("Type")
+		req.IPAddressType = r.Form.Get("IpAddressType")
+		req.Tags = parseELBTagPairsFromForm(r.Form)
+
+		return nil
+	}
+
+	if err := readELBJSONRequest(r, req); err != nil {
+		return err
+	}
+
+	if err := r.ParseForm(); err == nil && len(req.Tags) == 0 {
+		req.Tags = parseELBTagPairsFromForm(r.Form)
+	}
+
+	return nil
 }
 
 // DeleteLoadBalancer handles the DeleteLoadBalancer action.
@@ -113,10 +141,32 @@ func (s *Service) DescribeLoadBalancers(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// DescribeCapacityReservation handles the DescribeCapacityReservation action.
+func (s *Service) DescribeCapacityReservation(w http.ResponseWriter, r *http.Request) {
+	var req DescribeCapacityReservationRequest
+	if err := readELBJSONRequest(r, &req); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.LoadBalancerArn == "" {
+		writeELBError(w, errInvalidParameter, "LoadBalancerArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLDescribeCapacityReservationResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLDescribeCapacityReservationResult{},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
 // CreateTargetGroup handles the CreateTargetGroup action.
 func (s *Service) CreateTargetGroup(w http.ResponseWriter, r *http.Request) {
 	var req CreateTargetGroupRequest
-	if err := readELBJSONRequest(r, &req); err != nil {
+	if err := readCreateTargetGroupRequest(r, &req); err != nil {
 		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -144,6 +194,72 @@ func (s *Service) CreateTargetGroup(w http.ResponseWriter, r *http.Request) {
 		},
 		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
 	})
+}
+
+func readCreateTargetGroupRequest(r *http.Request, req *CreateTargetGroupRequest) error {
+	if strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			return err
+		}
+
+		applyCreateTargetGroupForm(r.Form, req)
+
+		return nil
+	}
+
+	if err := readELBJSONRequest(r, req); err != nil {
+		return err
+	}
+
+	if err := r.ParseForm(); err == nil {
+		applyCreateTargetGroupFormSupplement(r.Form, req)
+	}
+
+	return nil
+}
+
+func applyCreateTargetGroupForm(form map[string][]string, req *CreateTargetGroupRequest) {
+	req.Name = firstELBFormValue(form, "Name")
+	req.Protocol = firstELBFormValue(form, "Protocol")
+	req.Port = parseELBFormInt(firstELBFormValue(form, "Port"))
+	req.VpcID = firstELBFormValue(form, "VpcId")
+	req.HealthCheckProtocol = firstELBFormValue(form, "HealthCheckProtocol")
+	req.HealthCheckPort = firstELBFormValue(form, "HealthCheckPort")
+	req.HealthCheckPath = firstELBFormValue(form, "HealthCheckPath")
+	req.HealthCheckIntervalSeconds = parseELBFormInt(firstELBFormValue(form, "HealthCheckIntervalSeconds"))
+	req.HealthCheckTimeoutSeconds = parseELBFormInt(firstELBFormValue(form, "HealthCheckTimeoutSeconds"))
+	req.HealthyThresholdCount = parseELBFormInt(firstELBFormValue(form, "HealthyThresholdCount"))
+	req.UnhealthyThresholdCount = parseELBFormInt(firstELBFormValue(form, "UnhealthyThresholdCount"))
+	req.Matcher = matcherFromForm(form)
+	req.TargetType = firstELBFormValue(form, "TargetType")
+	req.Tags = parseELBTagPairsFromForm(form)
+}
+
+func applyCreateTargetGroupFormSupplement(form map[string][]string, req *CreateTargetGroupRequest) {
+	if req.Matcher == nil {
+		req.Matcher = matcherFromForm(form)
+	}
+	if len(req.Tags) == 0 {
+		req.Tags = parseELBTagPairsFromForm(form)
+	}
+}
+
+func matcherFromForm(form map[string][]string) *Matcher {
+	httpCode := firstELBFormValue(form, "Matcher.HttpCode")
+	if httpCode == "" {
+		return nil
+	}
+
+	return &Matcher{HttpCode: httpCode}
+}
+
+func firstELBFormValue(form map[string][]string, key string) string {
+	values := form[key]
+	if len(values) == 0 {
+		return ""
+	}
+
+	return values[0]
 }
 
 // DeleteTargetGroup handles the DeleteTargetGroup action.
@@ -324,7 +440,7 @@ func applyELBTargetFormEntry(byIdx map[int]*Target, key string, values []string)
 // CreateListener handles the CreateListener action.
 func (s *Service) CreateListener(w http.ResponseWriter, r *http.Request) {
 	var req CreateListenerRequest
-	if err := readELBJSONRequest(r, &req); err != nil {
+	if err := readCreateListenerRequest(r, &req); err != nil {
 		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -352,6 +468,42 @@ func (s *Service) CreateListener(w http.ResponseWriter, r *http.Request) {
 		},
 		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
 	})
+}
+
+func readCreateListenerRequest(r *http.Request, req *CreateListenerRequest) error {
+	if strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			return err
+		}
+
+		req.LoadBalancerArn = r.Form.Get("LoadBalancerArn")
+		req.Protocol = r.Form.Get("Protocol")
+		req.Port = parseELBFormInt(r.Form.Get("Port"))
+		req.DefaultActions = parseActionsFromForm(r.Form, "DefaultActions")
+
+		return nil
+	}
+
+	if err := readELBJSONRequest(r, req); err != nil {
+		return err
+	}
+
+	if len(req.DefaultActions) == 0 {
+		if err := r.ParseForm(); err == nil {
+			req.DefaultActions = parseActionsFromForm(r.Form, "DefaultActions")
+		}
+	}
+
+	return nil
+}
+
+func parseELBFormInt(value string) int {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+
+	return n
 }
 
 // DeleteListener handles the DeleteListener action.
@@ -851,6 +1003,7 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"CreateLoadBalancer":             s.CreateLoadBalancer,
 		"DeleteLoadBalancer":             s.DeleteLoadBalancer,
 		"DescribeLoadBalancers":          s.DescribeLoadBalancers,
+		"DescribeCapacityReservation":    s.DescribeCapacityReservation,
 		"CreateTargetGroup":              s.CreateTargetGroup,
 		"DeleteTargetGroup":              s.DeleteTargetGroup,
 		"DescribeTargetGroups":           s.DescribeTargetGroups,
@@ -865,6 +1018,7 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		"SetRulePriorities":              s.SetRulePriorities,
 		"ModifyLoadBalancerAttributes":   s.ModifyLoadBalancerAttributes,
 		"DescribeLoadBalancerAttributes": s.DescribeLoadBalancerAttributes,
+		"DescribeListenerAttributes":     s.DescribeListenerAttributes,
 		"ModifyTargetGroupAttributes":    s.ModifyTargetGroupAttributes,
 		"DescribeTargetGroupAttributes":  s.DescribeTargetGroupAttributes,
 		"DescribeListeners":              s.DescribeListeners,
@@ -924,9 +1078,18 @@ func convertToXMLTargetGroup(tg *TargetGroup) XMLTargetGroup {
 		HealthCheckTimeoutSeconds:  tg.HealthCheckTimeoutSeconds,
 		HealthyThresholdCount:      tg.HealthyThresholdCount,
 		UnhealthyThresholdCount:    tg.UnhealthyThresholdCount,
+		Matcher:                    xmlMatcher(tg.Matcher),
 		TargetType:                 tg.TargetType,
 		LoadBalancerArns:           XMLLoadBalancerArns{Members: tg.LoadBalancerArns},
 	}
+}
+
+func xmlMatcher(httpCode string) *XMLMatcher {
+	if httpCode == "" {
+		return nil
+	}
+
+	return &XMLMatcher{HttpCode: httpCode}
 }
 
 // convertToXMLListener converts a Listener to XMLListener.
@@ -1064,6 +1227,28 @@ func (s *Service) DescribeLoadBalancerAttributes(w http.ResponseWriter, r *http.
 	writeELBXMLResponse(w, XMLDescribeLoadBalancerAttributesResponse{
 		Xmlns:            elbXMLNS,
 		Result:           XMLDescribeLoadBalancerAttributesResult{Attributes: attributesToXML(attrs)},
+		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// DescribeListenerAttributes handles the DescribeListenerAttributes action.
+func (s *Service) DescribeListenerAttributes(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return
+	}
+
+	listenerArn := r.Form.Get("ListenerArn")
+	if listenerArn == "" {
+		writeELBError(w, errInvalidParameter, "ListenerArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	writeELBXMLResponse(w, XMLDescribeListenerAttributesResponse{
+		Xmlns:            elbXMLNS,
+		Result:           XMLDescribeListenerAttributesResult{Attributes: attributesToXML(map[string]string{})},
 		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
 	})
 }

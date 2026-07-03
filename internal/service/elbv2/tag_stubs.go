@@ -1,33 +1,29 @@
 package elbv2
 
 import (
-	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 )
 
-// DescribeTags returns an empty TagDescription per requested ResourceArn.
-//
-// Required for terraform compatibility — terraform-provider-aws calls
-// DescribeTags on every refresh of aws_lb / aws_lb_target_group /
-// aws_lb_listener. Without it, `tofu apply` of any ELBv2 resource fails
-// with InvalidAction immediately after the resource is created.
-//
-// AWS returns one TagDescription per requested ARN even when no tags are
-// attached (the provider crashes if a requested ARN is missing from the
-// response), so this stub echoes each ResourceArns.member.N entry back
-// with an empty Tags list. Tags are not modeled in storage yet; same
-// shape as the ecr / logs / dynamodb / route53 stubs — wire-level no-op
-// with the door open for real persistence later.
+// DescribeTags returns tag descriptions for requested ResourceArns.
 func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
 	arns := collectResourceArns(r)
+	tagsByARN, err := s.storage.DescribeTags(r.Context(), arns)
+	if err != nil {
+		handleELBError(w, err)
+
+		return
+	}
 
 	items := make([]XMLTagDescription, 0, len(arns))
 	for _, arn := range arns {
 		items = append(items, XMLTagDescription{
 			ResourceArn: arn,
-			Tags:        XMLTagList{Items: []XMLTagMember{}},
+			Tags:        xmlTags(tagsByARN[arn]),
 		})
 	}
 
@@ -45,17 +41,7 @@ func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
 // converted by the unified Query→JSON dispatcher.
 func collectResourceArns(r *http.Request) []string {
 	if err := r.ParseForm(); err == nil {
-		var arns []string
-
-		for i := 1; ; i++ {
-			v := r.Form.Get(fmt.Sprintf("ResourceArns.member.%d", i))
-			if v == "" {
-				break
-			}
-
-			arns = append(arns, v)
-		}
-
+		arns := parseMemberListFromForm(r.Form, "ResourceArns")
 		if len(arns) > 0 {
 			return arns
 		}
@@ -69,18 +55,172 @@ func collectResourceArns(r *http.Request) []string {
 	return nil
 }
 
-// AddTags accepts and discards tag attachments.
-func (s *Service) AddTags(w http.ResponseWriter, _ *http.Request) {
+// AddTags attaches or updates tags on ELBv2 resources.
+func (s *Service) AddTags(w http.ResponseWriter, r *http.Request) {
+	arns, tags, err := readAddTagsRequest(r)
+	if err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AddTags(r.Context(), arns, tags); err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
 	writeELBXMLResponse(w, XMLAddTagsResponse{
 		Xmlns:            elbXMLNS,
 		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
 
-// RemoveTags accepts and discards tag detachments.
-func (s *Service) RemoveTags(w http.ResponseWriter, _ *http.Request) {
+// RemoveTags detaches tags from ELBv2 resources.
+func (s *Service) RemoveTags(w http.ResponseWriter, r *http.Request) {
+	arns, keys, err := readRemoveTagsRequest(r)
+	if err != nil {
+		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.RemoveTags(r.Context(), arns, keys); err != nil {
+		handleELBError(w, err)
+
+		return
+	}
+
 	writeELBXMLResponse(w, XMLRemoveTagsResponse{
 		Xmlns:            elbXMLNS,
 		ResponseMetadata: XMLResponseMetadata{RequestID: uuid.New().String()},
 	})
+}
+
+func readAddTagsRequest(r *http.Request) ([]string, map[string]string, error) {
+	if err := r.ParseForm(); err == nil {
+		arns := parseMemberListFromForm(r.Form, "ResourceArns")
+		tags := parseELBTagPairsFromForm(r.Form)
+		if len(arns) > 0 || len(tags) > 0 {
+			return arns, tags, nil
+		}
+	}
+
+	var req addTagsJSONRequest
+	if err := readELBJSONRequest(r, &req); err != nil {
+		return nil, nil, err
+	}
+
+	return req.ResourceArns, jsonTagsToMap(req.Tags), nil
+}
+
+func readRemoveTagsRequest(r *http.Request) ([]string, []string, error) {
+	if err := r.ParseForm(); err == nil {
+		arns := parseMemberListFromForm(r.Form, "ResourceArns")
+		keys := parseMemberListFromForm(r.Form, "TagKeys")
+		if len(arns) > 0 || len(keys) > 0 {
+			return arns, keys, nil
+		}
+	}
+
+	var req removeTagsJSONRequest
+	if err := readELBJSONRequest(r, &req); err != nil {
+		return nil, nil, err
+	}
+
+	return req.ResourceArns, req.TagKeys, nil
+}
+
+type addTagsJSONRequest struct {
+	ResourceArns []string      `json:"ResourceArns"`
+	Tags         []tagJSONPair `json:"Tags"`
+}
+
+type removeTagsJSONRequest struct {
+	ResourceArns []string `json:"ResourceArns"`
+	TagKeys      []string `json:"TagKeys"`
+}
+
+type tagJSONPair struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
+}
+
+type tagPairAcc struct {
+	key   string
+	value string
+}
+
+func parseELBTagPairsFromForm(form map[string][]string) map[string]string {
+	byIdx := make(map[int]*tagPairAcc)
+
+	for key, values := range form {
+		applyELBTagPairFormEntry(byIdx, key, values)
+	}
+
+	out := make(map[string]string)
+	for _, entry := range byIdx {
+		if entry.key != "" {
+			out[entry.key] = entry.value
+		}
+	}
+
+	return out
+}
+
+func applyELBTagPairFormEntry(byIdx map[int]*tagPairAcc, key string, values []string) {
+	suffix, ok := strings.CutPrefix(key, "Tags.member.")
+	if !ok || len(values) == 0 {
+		return
+	}
+
+	dot := strings.Index(suffix, ".")
+	if dot < 0 {
+		return
+	}
+
+	n, err := strconv.Atoi(suffix[:dot])
+	if err != nil {
+		return
+	}
+
+	entry, exists := byIdx[n]
+	if !exists {
+		entry = &tagPairAcc{}
+		byIdx[n] = entry
+	}
+
+	switch suffix[dot+1:] {
+	case "Key":
+		entry.key = values[0]
+	case "Value":
+		entry.value = values[0]
+	}
+}
+
+func jsonTagsToMap(tags []tagJSONPair) map[string]string {
+	out := make(map[string]string, len(tags))
+	for _, tag := range tags {
+		if tag.Key != "" {
+			out[tag.Key] = tag.Value
+		}
+	}
+
+	return out
+}
+
+func xmlTags(tags map[string]string) XMLTagList {
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	items := make([]XMLTagMember, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, XMLTagMember{Key: key, Value: tags[key]})
+	}
+
+	return XMLTagList{Items: items}
 }

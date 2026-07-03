@@ -50,16 +50,25 @@ type SecurityGroup struct {
 
 // IPPermission represents an ingress or egress rule.
 type IPPermission struct {
-	IPProtocol string
-	FromPort   int
-	ToPort     int
-	IPRanges   []IPRange
+	IPProtocol       string            `json:"IpProtocol"`
+	FromPort         int               `json:"FromPort"`
+	ToPort           int               `json:"ToPort"`
+	IPRanges         []IPRange         `json:"IpRanges"`
+	UserIDGroupPairs []UserIDGroupPair `json:"UserIdGroupPairs"`
 }
 
 // IPRange represents a CIDR IP range.
 type IPRange struct {
-	CidrIP      string
-	Description string
+	CidrIP      string `json:"CidrIp"`
+	Description string `json:"Description,omitempty"`
+}
+
+// UserIDGroupPair represents a referenced security group in a rule.
+type UserIDGroupPair struct {
+	UserID      string `json:"UserId,omitempty"`
+	GroupID     string `json:"GroupId,omitempty"`
+	GroupName   string `json:"GroupName,omitempty"`
+	Description string `json:"Description,omitempty"`
 }
 
 // KeyPair represents an EC2 key pair.
@@ -116,6 +125,13 @@ type DeleteSecurityGroupRequest struct {
 	GroupName string `json:"GroupName,omitempty"`
 }
 
+// DescribeSecurityGroupsRequest represents a DescribeSecurityGroups request.
+type DescribeSecurityGroupsRequest struct {
+	GroupIDs   []string            `json:"GroupIds,omitempty"`
+	GroupNames []string            `json:"GroupNames,omitempty"`
+	Filters    map[string][]string `json:"Filters,omitempty"`
+}
+
 // AuthorizeSecurityGroupIngressRequest represents an AuthorizeSecurityGroupIngress request.
 type AuthorizeSecurityGroupIngressRequest struct {
 	GroupID       string         `json:"GroupId,omitempty"`
@@ -125,6 +141,19 @@ type AuthorizeSecurityGroupIngressRequest struct {
 
 // AuthorizeSecurityGroupEgressRequest represents an AuthorizeSecurityGroupEgress request.
 type AuthorizeSecurityGroupEgressRequest struct {
+	GroupID       string         `json:"GroupId"`
+	IPPermissions []IPPermission `json:"IPPermissions"`
+}
+
+// RevokeSecurityGroupIngressRequest represents a RevokeSecurityGroupIngress request.
+type RevokeSecurityGroupIngressRequest struct {
+	GroupID       string         `json:"GroupId,omitempty"`
+	GroupName     string         `json:"GroupName,omitempty"`
+	IPPermissions []IPPermission `json:"IPPermissions"`
+}
+
+// RevokeSecurityGroupEgressRequest represents a RevokeSecurityGroupEgress request.
+type RevokeSecurityGroupEgressRequest struct {
 	GroupID       string         `json:"GroupId"`
 	IPPermissions []IPPermission `json:"IPPermissions"`
 }
@@ -267,6 +296,69 @@ type XMLDeleteSecurityGroupResponse struct {
 	Return    bool     `xml:"return"`
 }
 
+// XMLDescribeSecurityGroupsResponse is the XML response for DescribeSecurityGroups.
+type XMLDescribeSecurityGroupsResponse struct {
+	XMLName           xml.Name            `xml:"DescribeSecurityGroupsResponse"`
+	Xmlns             string              `xml:"xmlns,attr"`
+	RequestID         string              `xml:"requestId"`
+	SecurityGroupInfo XMLSecurityGroupSet `xml:"securityGroupInfo"`
+}
+
+// XMLSecurityGroupSet contains security groups.
+type XMLSecurityGroupSet struct {
+	Items []XMLSecurityGroup `xml:"item"`
+}
+
+// XMLSecurityGroup represents a security group in XML format.
+type XMLSecurityGroup struct {
+	OwnerID             string             `xml:"ownerId"`
+	GroupID             string             `xml:"groupId"`
+	GroupName           string             `xml:"groupName"`
+	GroupDescription    string             `xml:"groupDescription"`
+	VpcID               string             `xml:"vpcId,omitempty"`
+	IPPermissions       XMLIPPermissionSet `xml:"ipPermissions"`
+	IPPermissionsEgress XMLIPPermissionSet `xml:"ipPermissionsEgress"`
+	TagSet              XMLTagSet          `xml:"tagSet"`
+}
+
+// XMLIPPermissionSet contains security group rules.
+type XMLIPPermissionSet struct {
+	Items []XMLIPPermission `xml:"item"`
+}
+
+// XMLIPPermission represents a security group rule in XML format.
+type XMLIPPermission struct {
+	IPProtocol string                `xml:"ipProtocol"`
+	FromPort   int                   `xml:"fromPort,omitempty"`
+	ToPort     int                   `xml:"toPort,omitempty"`
+	Groups     XMLUserIDGroupPairSet `xml:"groups"`
+	IPRanges   XMLIPRangeSet         `xml:"ipRanges"`
+}
+
+// XMLIPRangeSet contains IPv4 CIDR ranges.
+type XMLIPRangeSet struct {
+	Items []XMLIPRange `xml:"item"`
+}
+
+// XMLIPRange represents an IPv4 CIDR range in XML format.
+type XMLIPRange struct {
+	CidrIP      string `xml:"cidrIp"`
+	Description string `xml:"description,omitempty"`
+}
+
+// XMLUserIDGroupPairSet contains referenced security groups.
+type XMLUserIDGroupPairSet struct {
+	Items []XMLUserIDGroupPair `xml:"item"`
+}
+
+// XMLUserIDGroupPair represents a referenced security group in XML format.
+type XMLUserIDGroupPair struct {
+	UserID      string `xml:"userId,omitempty"`
+	GroupID     string `xml:"groupId,omitempty"`
+	GroupName   string `xml:"groupName,omitempty"`
+	Description string `xml:"description,omitempty"`
+}
+
 // XMLAuthorizeSecurityGroupIngressResponse is the XML response for AuthorizeSecurityGroupIngress.
 type XMLAuthorizeSecurityGroupIngressResponse struct {
 	XMLName   xml.Name `xml:"AuthorizeSecurityGroupIngressResponse"`
@@ -278,6 +370,22 @@ type XMLAuthorizeSecurityGroupIngressResponse struct {
 // XMLAuthorizeSecurityGroupEgressResponse is the XML response for AuthorizeSecurityGroupEgress.
 type XMLAuthorizeSecurityGroupEgressResponse struct {
 	XMLName   xml.Name `xml:"AuthorizeSecurityGroupEgressResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLRevokeSecurityGroupIngressResponse is the XML response for RevokeSecurityGroupIngress.
+type XMLRevokeSecurityGroupIngressResponse struct {
+	XMLName   xml.Name `xml:"RevokeSecurityGroupIngressResponse"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	RequestID string   `xml:"requestId"`
+	Return    bool     `xml:"return"`
+}
+
+// XMLRevokeSecurityGroupEgressResponse is the XML response for RevokeSecurityGroupEgress.
+type XMLRevokeSecurityGroupEgressResponse struct {
+	XMLName   xml.Name `xml:"RevokeSecurityGroupEgressResponse"`
 	Xmlns     string   `xml:"xmlns,attr"`
 	RequestID string   `xml:"requestId"`
 	Return    bool     `xml:"return"`

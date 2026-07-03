@@ -35,6 +35,9 @@ type Storage interface {
 	DescribeLogStreams(ctx context.Context, req *DescribeLogStreamsRequest) (*DescribeLogStreamsResponse, error)
 	PutRetentionPolicy(ctx context.Context, groupName string, retentionInDays int32) error
 	DeleteRetentionPolicy(ctx context.Context, groupName string) error
+	ListTags(ctx context.Context, groupNameOrArn string) (map[string]string, error)
+	Tag(ctx context.Context, groupNameOrArn string, tags map[string]string) error
+	Untag(ctx context.Context, groupNameOrArn string, keys []string) error
 }
 
 // LogStreamData holds log stream data with events.
@@ -157,11 +160,63 @@ func (m *MemoryStorage) CreateLogGroup(_ context.Context, req *CreateLogGroupReq
 		CreationTime:  now,
 		KmsKeyID:      req.KmsKeyID,
 		LogGroupClass: req.LogGroupClass,
+		Tags:          copyStringMap(req.Tags),
 	}
 
 	m.LogGroups[req.LogGroupName] = &LogGroupData{
 		Group:   logGroup,
 		Streams: make(map[string]*LogStreamData),
+	}
+
+	return nil
+}
+
+// ListTags returns the tags for a log group.
+func (m *MemoryStorage) ListTags(_ context.Context, groupNameOrArn string) (map[string]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	group, err := m.lookupLogGroupByNameOrArn(groupNameOrArn)
+	if err != nil {
+		return nil, err
+	}
+
+	return copyStringMap(group.Tags), nil
+}
+
+// Tag adds or updates tags on a log group.
+func (m *MemoryStorage) Tag(_ context.Context, groupNameOrArn string, tags map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	group, err := m.lookupLogGroupByNameOrArn(groupNameOrArn)
+	if err != nil {
+		return err
+	}
+
+	if group.Tags == nil {
+		group.Tags = make(map[string]string)
+	}
+
+	for key, value := range tags {
+		group.Tags[key] = value
+	}
+
+	return nil
+}
+
+// Untag removes tags from a log group.
+func (m *MemoryStorage) Untag(_ context.Context, groupNameOrArn string, keys []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	group, err := m.lookupLogGroupByNameOrArn(groupNameOrArn)
+	if err != nil {
+		return err
+	}
+
+	for _, key := range keys {
+		delete(group.Tags, key)
 	}
 
 	return nil
@@ -547,6 +602,32 @@ func buildLogGroupResponse(group *LogGroup) LogGroupResponse {
 		KmsKeyID:          group.KmsKeyID,
 		LogGroupClass:     group.LogGroupClass,
 	}
+}
+
+func (m *MemoryStorage) lookupLogGroupByNameOrArn(groupNameOrArn string) (*LogGroup, error) {
+	if groupData, exists := m.LogGroups[groupNameOrArn]; exists {
+		return groupData.Group, nil
+	}
+
+	for _, groupData := range m.LogGroups {
+		if groupData.Group.LogGroupARN == groupNameOrArn {
+			return groupData.Group, nil
+		}
+	}
+
+	return nil, &LogsError{
+		Code:    "ResourceNotFoundException",
+		Message: fmt.Sprintf("The specified log group does not exist: %s", groupNameOrArn),
+	}
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+
+	return out
 }
 
 // paginateLogGroups applies pagination to log groups.

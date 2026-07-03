@@ -252,6 +252,48 @@ func (s *Service) DeleteSecurityGroup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DescribeSecurityGroups handles the DescribeSecurityGroups action.
+func (s *Service) DescribeSecurityGroups(w http.ResponseWriter, r *http.Request) {
+	var req DescribeSecurityGroupsRequest
+	if err := readEC2JSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := r.ParseForm(); err == nil {
+		if len(req.GroupIDs) == 0 {
+			req.GroupIDs = parseIndexedListFromForm(r.Form, "GroupId")
+		}
+
+		if len(req.GroupNames) == 0 {
+			req.GroupNames = parseIndexedListFromForm(r.Form, "GroupName")
+		}
+
+		if len(req.Filters) == 0 {
+			req.Filters = parseFiltersFromForm(r.Form)
+		}
+	}
+
+	groups, err := s.storage.DescribeSecurityGroups(r.Context(), req.GroupIDs, req.GroupNames, req.Filters)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	xmlGroups := make([]XMLSecurityGroup, 0, len(groups))
+	for _, sg := range groups {
+		xmlGroups = append(xmlGroups, convertToXMLSecurityGroup(sg))
+	}
+
+	writeEC2XMLResponse(w, XMLDescribeSecurityGroupsResponse{
+		Xmlns:             ec2XMLNS,
+		RequestID:         uuid.New().String(),
+		SecurityGroupInfo: XMLSecurityGroupSet{Items: xmlGroups},
+	})
+}
+
 // AuthorizeSecurityGroupIngress handles the AuthorizeSecurityGroupIngress action.
 func (s *Service) AuthorizeSecurityGroupIngress(w http.ResponseWriter, r *http.Request) {
 	var req AuthorizeSecurityGroupIngressRequest
@@ -266,6 +308,8 @@ func (s *Service) AuthorizeSecurityGroupIngress(w http.ResponseWriter, r *http.R
 
 		return
 	}
+
+	req.IPPermissions = parseIPPermissionsFromRequest(r, req.IPPermissions)
 
 	err := s.storage.AuthorizeSecurityGroupIngress(r.Context(), req.GroupID, req.GroupName, req.IPPermissions)
 	if err != nil {
@@ -296,6 +340,8 @@ func (s *Service) AuthorizeSecurityGroupEgress(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	req.IPPermissions = parseIPPermissionsFromRequest(r, req.IPPermissions)
+
 	err := s.storage.AuthorizeSecurityGroupEgress(r.Context(), req.GroupID, req.IPPermissions)
 	if err != nil {
 		handleError(w, err)
@@ -304,6 +350,66 @@ func (s *Service) AuthorizeSecurityGroupEgress(w http.ResponseWriter, r *http.Re
 	}
 
 	writeEC2XMLResponse(w, XMLAuthorizeSecurityGroupEgressResponse{
+		Xmlns:     ec2XMLNS,
+		RequestID: uuid.New().String(),
+		Return:    true,
+	})
+}
+
+// RevokeSecurityGroupIngress handles the RevokeSecurityGroupIngress action.
+func (s *Service) RevokeSecurityGroupIngress(w http.ResponseWriter, r *http.Request) {
+	var req RevokeSecurityGroupIngressRequest
+	if err := readEC2JSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.GroupID == "" && req.GroupName == "" {
+		writeError(w, errInvalidParameter, "GroupId or GroupName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	req.IPPermissions = parseIPPermissionsFromRequest(r, req.IPPermissions)
+
+	if err := s.storage.RevokeSecurityGroupIngress(r.Context(), req.GroupID, req.GroupName, req.IPPermissions); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeEC2XMLResponse(w, XMLRevokeSecurityGroupIngressResponse{
+		Xmlns:     ec2XMLNS,
+		RequestID: uuid.New().String(),
+		Return:    true,
+	})
+}
+
+// RevokeSecurityGroupEgress handles the RevokeSecurityGroupEgress action.
+func (s *Service) RevokeSecurityGroupEgress(w http.ResponseWriter, r *http.Request) {
+	var req RevokeSecurityGroupEgressRequest
+	if err := readEC2JSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.GroupID == "" {
+		writeError(w, errInvalidParameter, "GroupId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	req.IPPermissions = parseIPPermissionsFromRequest(r, req.IPPermissions)
+
+	if err := s.storage.RevokeSecurityGroupEgress(r.Context(), req.GroupID, req.IPPermissions); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeEC2XMLResponse(w, XMLRevokeSecurityGroupEgressResponse{
 		Xmlns:     ec2XMLNS,
 		RequestID: uuid.New().String(),
 		Return:    true,
@@ -1192,6 +1298,207 @@ func parseIndexedListFromForm(form map[string][]string, prefix string) []string 
 	return out
 }
 
+func parseIPPermissionsFromRequest(r *http.Request, current []IPPermission) []IPPermission {
+	if len(current) > 0 {
+		return current
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return current
+	}
+
+	permissions := parseIPPermissionsFromForm(r.Form)
+	if len(permissions) == 0 {
+		return current
+	}
+
+	return permissions
+}
+
+type permissionAcc struct {
+	permission IPPermission
+	ipRanges   map[int]IPRange
+	groups     map[int]UserIDGroupPair
+}
+
+func parseIPPermissionsFromForm(form map[string][]string) []IPPermission {
+	byIdx := make(map[int]*permissionAcc)
+
+	for key, values := range form {
+		if len(values) == 0 {
+			continue
+		}
+
+		suffix, ok := strings.CutPrefix(key, "IpPermissions.")
+		if !ok {
+			continue
+		}
+
+		dot := strings.Index(suffix, ".")
+		if dot < 0 {
+			continue
+		}
+
+		idx, err := strconv.Atoi(suffix[:dot])
+		if err != nil {
+			continue
+		}
+
+		acc := ensureIPPermissionAcc(byIdx, idx)
+		applyIPPermissionField(acc, suffix[dot+1:], values[0])
+	}
+
+	indexes := make([]int, 0, len(byIdx))
+	for idx := range byIdx {
+		indexes = append(indexes, idx)
+	}
+
+	sort.Ints(indexes)
+
+	permissions := make([]IPPermission, 0, len(indexes))
+	for _, idx := range indexes {
+		acc := byIdx[idx]
+		acc.permission.IPRanges = sortedIPRanges(acc.ipRanges)
+		acc.permission.UserIDGroupPairs = sortedUserIDGroupPairs(acc.groups)
+		permissions = append(permissions, acc.permission)
+	}
+
+	return permissions
+}
+
+func ensureIPPermissionAcc(byIdx map[int]*permissionAcc, idx int) *permissionAcc {
+	acc, exists := byIdx[idx]
+	if exists {
+		return acc
+	}
+
+	acc = &permissionAcc{
+		ipRanges: make(map[int]IPRange),
+		groups:   make(map[int]UserIDGroupPair),
+	}
+	byIdx[idx] = acc
+
+	return acc
+}
+
+func applyIPPermissionField(acc *permissionAcc, field, value string) {
+	switch {
+	case field == "IpProtocol":
+		acc.permission.IPProtocol = value
+	case field == "FromPort":
+		acc.permission.FromPort = parseFormInt(value)
+	case field == "ToPort":
+		acc.permission.ToPort = parseFormInt(value)
+	case strings.HasPrefix(field, "IpRanges."):
+		applyIPRangeField(acc.ipRanges, strings.TrimPrefix(field, "IpRanges."), value)
+	case strings.HasPrefix(field, "UserIdGroupPairs."):
+		applyUserIDGroupPairField(acc.groups, strings.TrimPrefix(field, "UserIdGroupPairs."), value)
+	case strings.HasPrefix(field, "Groups."):
+		applyUserIDGroupPairField(acc.groups, strings.TrimPrefix(field, "Groups."), value)
+	}
+}
+
+func applyIPRangeField(ranges map[int]IPRange, field, value string) {
+	idx, name, ok := splitIndexedField(field)
+	if !ok {
+		return
+	}
+
+	item := ranges[idx]
+	switch name {
+	case "CidrIp":
+		item.CidrIP = value
+	case "Description":
+		item.Description = value
+	}
+
+	ranges[idx] = item
+}
+
+func applyUserIDGroupPairField(groups map[int]UserIDGroupPair, field, value string) {
+	idx, name, ok := splitIndexedField(field)
+	if !ok {
+		return
+	}
+
+	item := groups[idx]
+	switch name {
+	case "UserId":
+		item.UserID = value
+	case "GroupId":
+		item.GroupID = value
+	case "GroupName":
+		item.GroupName = value
+	case "Description":
+		item.Description = value
+	}
+
+	groups[idx] = item
+}
+
+func splitIndexedField(field string) (int, string, bool) {
+	dot := strings.Index(field, ".")
+	if dot < 0 {
+		return 0, "", false
+	}
+
+	idx, err := strconv.Atoi(field[:dot])
+	if err != nil {
+		return 0, "", false
+	}
+
+	return idx, field[dot+1:], true
+}
+
+func sortedIPRanges(ranges map[int]IPRange) []IPRange {
+	indexes := make([]int, 0, len(ranges))
+	for idx, item := range ranges {
+		if item.CidrIP == "" {
+			continue
+		}
+
+		indexes = append(indexes, idx)
+	}
+
+	sort.Ints(indexes)
+
+	items := make([]IPRange, 0, len(indexes))
+	for _, idx := range indexes {
+		items = append(items, ranges[idx])
+	}
+
+	return items
+}
+
+func sortedUserIDGroupPairs(groups map[int]UserIDGroupPair) []UserIDGroupPair {
+	indexes := make([]int, 0, len(groups))
+	for idx, item := range groups {
+		if item.GroupID == "" && item.GroupName == "" {
+			continue
+		}
+
+		indexes = append(indexes, idx)
+	}
+
+	sort.Ints(indexes)
+
+	items := make([]UserIDGroupPair, 0, len(indexes))
+	for _, idx := range indexes {
+		items = append(items, groups[idx])
+	}
+
+	return items
+}
+
+func parseFormInt(value string) int {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+
+	return n
+}
+
 // parseTagsFromForm reads "<prefix>.N.Key" and "<prefix>.N.Value" pairs.
 // A missing Value is treated as empty string.
 func parseTagsFromForm(form map[string][]string, prefix string) []Tag {
@@ -1406,8 +1713,11 @@ func (s *Service) getActionHandler(action string) func(http.ResponseWriter, *htt
 		// Security group operations
 		"CreateSecurityGroup":           s.CreateSecurityGroup,
 		"DeleteSecurityGroup":           s.DeleteSecurityGroup,
+		"DescribeSecurityGroups":        s.DescribeSecurityGroups,
 		"AuthorizeSecurityGroupIngress": s.AuthorizeSecurityGroupIngress,
 		"AuthorizeSecurityGroupEgress":  s.AuthorizeSecurityGroupEgress,
+		"RevokeSecurityGroupIngress":    s.RevokeSecurityGroupIngress,
+		"RevokeSecurityGroupEgress":     s.RevokeSecurityGroupEgress,
 		// Key pair operations
 		"CreateKeyPair":    s.CreateKeyPair,
 		"DeleteKeyPair":    s.DeleteKeyPair,
@@ -1467,6 +1777,49 @@ func convertToXMLInstance(inst *Instance) XMLInstance {
 		LaunchTime:       inst.LaunchTime.Format("2006-01-02T15:04:05.000Z"),
 		GroupSet:         XMLGroupSet{Items: groupSet},
 	}
+}
+
+func convertToXMLSecurityGroup(sg *SecurityGroup) XMLSecurityGroup {
+	tags := make([]XMLTag, 0, len(sg.Tags))
+	for _, t := range sg.Tags {
+		tags = append(tags, XMLTag(t))
+	}
+
+	return XMLSecurityGroup{
+		OwnerID:             defaultAccountID,
+		GroupID:             sg.GroupID,
+		GroupName:           sg.GroupName,
+		GroupDescription:    sg.Description,
+		VpcID:               sg.VpcID,
+		IPPermissions:       convertToXMLIPPermissionSet(sg.IngressRules),
+		IPPermissionsEgress: convertToXMLIPPermissionSet(sg.EgressRules),
+		TagSet:              XMLTagSet{Items: tags},
+	}
+}
+
+func convertToXMLIPPermissionSet(permissions []IPPermission) XMLIPPermissionSet {
+	items := make([]XMLIPPermission, 0, len(permissions))
+	for _, permission := range permissions {
+		ipRanges := make([]XMLIPRange, 0, len(permission.IPRanges))
+		for _, ipRange := range permission.IPRanges {
+			ipRanges = append(ipRanges, XMLIPRange(ipRange))
+		}
+
+		groups := make([]XMLUserIDGroupPair, 0, len(permission.UserIDGroupPairs))
+		for _, group := range permission.UserIDGroupPairs {
+			groups = append(groups, XMLUserIDGroupPair(group))
+		}
+
+		items = append(items, XMLIPPermission{
+			IPProtocol: permission.IPProtocol,
+			FromPort:   permission.FromPort,
+			ToPort:     permission.ToPort,
+			Groups:     XMLUserIDGroupPairSet{Items: groups},
+			IPRanges:   XMLIPRangeSet{Items: ipRanges},
+		})
+	}
+
+	return XMLIPPermissionSet{Items: items}
 }
 
 // convertToXMLInstanceStateChangeSet converts instance state changes to XML format.

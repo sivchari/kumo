@@ -31,6 +31,8 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.RegisterTaskDefinition(w, r)
 	case "DeregisterTaskDefinition":
 		s.DeregisterTaskDefinition(w, r)
+	case "DescribeTaskDefinition":
+		s.DescribeTaskDefinition(w, r)
 	case "RunTask":
 		s.RunTask(w, r)
 	case "StopTask":
@@ -39,6 +41,8 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.DescribeTasks(w, r)
 	case "CreateService":
 		s.CreateService(w, r)
+	case "DescribeServices":
+		s.DescribeServices(w, r)
 	case "DeleteService":
 		s.DeleteService(w, r)
 	case "UpdateService":
@@ -236,6 +240,41 @@ func (s *Service) DeregisterTaskDefinition(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// DescribeTaskDefinition handles the DescribeTaskDefinition action.
+func (s *Service) DescribeTaskDefinition(w http.ResponseWriter, r *http.Request) {
+	var req DescribeTaskDefinitionRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.TaskDefinition == "" {
+		writeECSError(w, "InvalidParameterException", "TaskDefinition is required", http.StatusBadRequest)
+
+		return
+	}
+
+	taskDef, err := s.storage.DescribeTaskDefinition(r.Context(), req.TaskDefinition)
+	if err != nil {
+		var ecsErr *Error
+		if errors.As(err, &ecsErr) {
+			writeECSError(w, ecsErr.Code, ecsErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeECSError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeTaskDefinitionResponse{
+		TaskDefinition: taskDef,
+		Tags:           taskDef.Tags,
+	})
+}
+
 // RunTask handles the RunTask action.
 func (s *Service) RunTask(w http.ResponseWriter, r *http.Request) {
 	var req RunTaskRequest
@@ -370,6 +409,28 @@ func (s *Service) CreateService(w http.ResponseWriter, r *http.Request) {
 
 	writeJSONResponse(w, CreateServiceResponse{
 		Service: svc,
+	})
+}
+
+// DescribeServices handles the DescribeServices action.
+func (s *Service) DescribeServices(w http.ResponseWriter, r *http.Request) {
+	var req DescribeServicesRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	services, failures, err := s.storage.DescribeServices(r.Context(), req.Cluster, req.Services)
+	if err != nil {
+		writeECSError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeServicesResponse{
+		Services: services,
+		Failures: failures,
 	})
 }
 
