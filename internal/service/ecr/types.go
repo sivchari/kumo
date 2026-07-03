@@ -1,6 +1,10 @@
 package ecr
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // Repository represents an ECR repository.
 type Repository struct {
@@ -253,12 +257,4 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a service-level error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError

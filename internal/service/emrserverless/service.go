@@ -68,3 +68,12 @@ func (s *Service) RegisterRoutes(r service.Router) {
 
 // Ensure Service implements service.Service.
 var _ service.Service = (*Service)(nil)
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "EMR Serverless",
+		Category:    "Other Services",
+		Description: "Big data processing",
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -70,14 +71,21 @@ type MemoryStorage struct {
 	mu        sync.RWMutex             `json:"-"`
 	LogGroups map[string]*LogGroupData `json:"logGroups"`
 	baseURL   string
+	region    string
 	dataDir   string
 }
 
 // NewMemoryStorage creates a new in-memory CloudWatch Logs storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		LogGroups: make(map[string]*LogGroupData),
 		baseURL:   baseURL,
+		region:    region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -125,6 +133,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "logs", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -164,6 +181,8 @@ func (m *MemoryStorage) CreateLogGroup(_ context.Context, req *CreateLogGroupReq
 		Streams: make(map[string]*LogStreamData),
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -180,6 +199,8 @@ func (m *MemoryStorage) DeleteLogGroup(_ context.Context, name string) error {
 	}
 
 	delete(m.LogGroups, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -217,6 +238,8 @@ func (m *MemoryStorage) CreateLogStream(_ context.Context, groupName, streamName
 		Events: make([]*LogEvent, 0),
 	}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -241,6 +264,8 @@ func (m *MemoryStorage) DeleteLogStream(_ context.Context, groupName, streamName
 	}
 
 	delete(groupData.Streams, streamName)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -291,6 +316,8 @@ func (m *MemoryStorage) PutLogEvents(_ context.Context, groupName, streamName st
 	// Generate new sequence token
 	newToken := uuid.New().String()
 	streamData.Stream.UploadSequenceToken = newToken
+
+	m.saveLocked()
 
 	return &PutLogEventsResponse{
 		NextSequenceToken: newToken,
@@ -720,13 +747,13 @@ func findLogStreamStartIndex(streams []LogStreamResponse, nextToken string) int 
 // buildLogGroupARN builds an ARN for a log group.
 func (m *MemoryStorage) buildLogGroupARN(name string) string {
 	return fmt.Sprintf("arn:aws:logs:%s:%s:log-group:%s",
-		defaultRegion, defaultAccountID, name)
+		m.region, defaultAccountID, name)
 }
 
 // buildLogStreamARN builds an ARN for a log stream.
 func (m *MemoryStorage) buildLogStreamARN(groupName, streamName string) string {
 	return fmt.Sprintf("arn:aws:logs:%s:%s:log-group:%s:log-stream:%s",
-		defaultRegion, defaultAccountID, groupName, streamName)
+		m.region, defaultAccountID, groupName, streamName)
 }
 
 // filterEventsByTime filters events by time range.
@@ -778,6 +805,8 @@ func (m *MemoryStorage) PutRetentionPolicy(_ context.Context, groupName string, 
 	v := retentionInDays
 	group.Group.RetentionInDays = &v
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -796,6 +825,8 @@ func (m *MemoryStorage) DeleteRetentionPolicy(_ context.Context, groupName strin
 	}
 
 	group.Group.RetentionInDays = nil
+
+	m.saveLocked()
 
 	return nil
 }

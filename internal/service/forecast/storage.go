@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Storage defines the interface for Forecast storage operations.
 type Storage interface {
@@ -71,13 +75,18 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Datasets:      make(map[string]*Dataset),
 		DatasetGroups: make(map[string]*DatasetGroup),
 		Predictors:    make(map[string]*Predictor),
 		Forecasts:     make(map[string]*Forecast),
 		accountID:     "123456789012",
-		region:        "us-east-1",
+		region:        region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -135,6 +144,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "forecast", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -200,6 +218,8 @@ func (m *MemoryStorage) CreateDataset(_ context.Context, req *CreateDatasetInput
 	}
 
 	m.Datasets[datasetArn] = dataset
+
+	m.saveLocked()
 
 	return datasetArn, nil
 }
@@ -274,6 +294,8 @@ func (m *MemoryStorage) DeleteDataset(_ context.Context, datasetArn string) erro
 
 	delete(m.Datasets, datasetArn)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -334,6 +356,8 @@ func (m *MemoryStorage) CreateDatasetGroup(_ context.Context, req *CreateDataset
 	}
 
 	m.DatasetGroups[datasetGroupArn] = datasetGroup
+
+	m.saveLocked()
 
 	return datasetGroupArn, nil
 }
@@ -406,6 +430,8 @@ func (m *MemoryStorage) DeleteDatasetGroup(_ context.Context, datasetGroupArn st
 
 	delete(m.DatasetGroups, datasetGroupArn)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -443,50 +469,21 @@ func (m *MemoryStorage) UpdateDatasetGroup(_ context.Context, datasetGroupArn st
 	dg.DatasetArns = datasetArns
 	dg.LastModificationTime = ToAWSTimestamp(time.Now())
 
+	m.saveLocked()
+
 	return nil
 }
 
 // Predictor operations.
 
 // CreatePredictor creates a new predictor.
-//
-//nolint:funlen // validation and struct initialization require more lines
 func (m *MemoryStorage) CreatePredictor(_ context.Context, req *CreatePredictorInput) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check for duplicate name.
-	for _, p := range m.Predictors {
-		if p.PredictorName == req.PredictorName {
-			return "", &Error{
-				Code:    errResourceAlreadyExistsException,
-				Message: fmt.Sprintf("A predictor with name %s already exists", req.PredictorName),
-			}
-		}
-	}
-
-	// Validate dataset group exists.
-	if req.InputDataConfig == nil || req.InputDataConfig.DatasetGroupArn == "" {
-		return "", &Error{
-			Code:    errInvalidInputException,
-			Message: "InputDataConfig.DatasetGroupArn is required",
-		}
-	}
-
-	dg, exists := m.DatasetGroups[req.InputDataConfig.DatasetGroupArn]
-	if !exists {
-		return "", &Error{
-			Code:    errResourceNotFoundException,
-			Message: fmt.Sprintf("Dataset group %s not found", req.InputDataConfig.DatasetGroupArn),
-		}
-	}
-
-	// Validate forecast horizon.
-	if req.ForecastHorizon < 1 || req.ForecastHorizon > 500 {
-		return "", &Error{
-			Code:    errInvalidInputException,
-			Message: "ForecastHorizon must be between 1 and 500",
-		}
+	dg, verr := m.validateCreatePredictor(req)
+	if verr != nil {
+		return "", verr
 	}
 
 	predictorID := uuid.New().String()[:8]
@@ -515,7 +512,47 @@ func (m *MemoryStorage) CreatePredictor(_ context.Context, req *CreatePredictorI
 
 	m.Predictors[predictorArn] = predictor
 
+	m.saveLocked()
+
 	return predictorArn, nil
+}
+
+// validateCreatePredictor validates a CreatePredictor request and returns the
+// resolved dataset group. It must be called with m.mu held.
+func (m *MemoryStorage) validateCreatePredictor(req *CreatePredictorInput) (*DatasetGroup, *Error) {
+	// Check for duplicate name.
+	for _, p := range m.Predictors {
+		if p.PredictorName == req.PredictorName {
+			return nil, &Error{
+				Code:    errResourceAlreadyExistsException,
+				Message: fmt.Sprintf("A predictor with name %s already exists", req.PredictorName),
+			}
+		}
+	}
+
+	if req.InputDataConfig == nil || req.InputDataConfig.DatasetGroupArn == "" {
+		return nil, &Error{
+			Code:    errInvalidInputException,
+			Message: "InputDataConfig.DatasetGroupArn is required",
+		}
+	}
+
+	dg, exists := m.DatasetGroups[req.InputDataConfig.DatasetGroupArn]
+	if !exists {
+		return nil, &Error{
+			Code:    errResourceNotFoundException,
+			Message: fmt.Sprintf("Dataset group %s not found", req.InputDataConfig.DatasetGroupArn),
+		}
+	}
+
+	if req.ForecastHorizon < 1 || req.ForecastHorizon > 500 {
+		return nil, &Error{
+			Code:    errInvalidInputException,
+			Message: "ForecastHorizon must be between 1 and 500",
+		}
+	}
+
+	return dg, nil
 }
 
 // DescribePredictor returns a predictor.
@@ -599,6 +636,8 @@ func (m *MemoryStorage) DeletePredictor(_ context.Context, predictorArn string) 
 
 	delete(m.Predictors, predictorArn)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -654,6 +693,8 @@ func (m *MemoryStorage) CreateForecast(_ context.Context, req *CreateForecastInp
 	}
 
 	m.Forecasts[forecastArn] = forecast
+
+	m.saveLocked()
 
 	return forecastArn, nil
 }
@@ -724,6 +765,8 @@ func (m *MemoryStorage) DeleteForecast(_ context.Context, forecastArn string) er
 	}
 
 	delete(m.Forecasts, forecastArn)
+
+	m.saveLocked()
 
 	return nil
 }

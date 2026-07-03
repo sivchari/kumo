@@ -64,3 +64,12 @@ func (s *Service) Close() error {
 
 	return nil
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Route 53 Resolver",
+		Category:    "Networking & Content Delivery",
+		Description: "DNS resolver",
+	}
+}

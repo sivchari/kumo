@@ -62,3 +62,12 @@ func init() {
 
 	service.Register(New(NewMemoryStorage(opts...)))
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Kinesis",
+		Category:    "Messaging & Integration",
+		Description: "Real-time streaming",
+	}
+}

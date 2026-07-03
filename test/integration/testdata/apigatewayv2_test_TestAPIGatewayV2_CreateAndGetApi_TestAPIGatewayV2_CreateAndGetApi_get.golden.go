@@ -1,0 +1,20 @@
+{
+  "ApiEndpoint": "https://6600f455-b.execute-api.us-east-1.amazonaws.com",
+  "ApiGatewayManaged": null,
+  "ApiId": "6600f455-b",
+  "ApiKeySelectionExpression": null,
+  "CorsConfiguration": null,
+  "CreatedDate": "2026-06-01T06:45:40Z",
+  "Description": "Test HTTP API",
+  "DisableExecuteApiEndpoint": null,
+  "DisableSchemaValidation": null,
+  "ImportInfo": null,
+  "IpAddressType": "",
+  "Name": "test-http-api",
+  "ProtocolType": "HTTP",
+  "RouteSelectionExpression": "$request.method $request.path",
+  "Tags": null,
+  "Version": null,
+  "Warnings": null,
+  "ResultMetadata": {}
+}

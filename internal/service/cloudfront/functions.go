@@ -65,6 +65,7 @@ type xmlFunctionConfig struct {
 // endpoints all share this shape.
 type xmlFunctionSummary struct {
 	XMLName          xml.Name            `xml:"FunctionSummary"`
+	Xmlns            string              `xml:"xmlns,attr,omitempty"`
 	Name             string              `xml:"Name"`
 	Status           string              `xml:"Status"`
 	FunctionConfig   xmlFunctionConfig   `xml:"FunctionConfig"`
@@ -78,42 +79,11 @@ type xmlFunctionMetadata struct {
 	LastModifiedTime string `xml:"LastModifiedTime"`
 }
 
-// xmlCreateFunctionResult is the body wrapper returned from
-// CreateFunction. Update / Publish use the same shape but with their
-// own outer element names.
-type xmlCreateFunctionResult struct {
-	XMLName         xml.Name           `xml:"CreateFunctionResult"`
-	Xmlns           string             `xml:"xmlns,attr"`
-	FunctionSummary xmlFunctionSummary `xml:"FunctionSummary"`
-}
-
-type xmlUpdateFunctionResult struct {
-	XMLName         xml.Name           `xml:"UpdateFunctionResult"`
-	Xmlns           string             `xml:"xmlns,attr"`
-	FunctionSummary xmlFunctionSummary `xml:"FunctionSummary"`
-}
-
-type xmlPublishFunctionResult struct {
-	XMLName         xml.Name           `xml:"PublishFunctionResult"`
-	Xmlns           string             `xml:"xmlns,attr"`
-	FunctionSummary xmlFunctionSummary `xml:"FunctionSummary"`
-}
-
-type xmlDescribeFunctionResult struct {
-	XMLName         xml.Name           `xml:"DescribeFunctionResult"`
-	Xmlns           string             `xml:"xmlns,attr"`
-	FunctionSummary xmlFunctionSummary `xml:"FunctionSummary"`
-}
-
-// xmlListFunctionsResult is the wrapper for ListFunctions. AWS uses an
-// inner FunctionList element with a list of FunctionSummary children.
+// xmlListFunctionsResult is the root body for ListFunctions. AWS uses a
+// FunctionList element with a list of FunctionSummary children.
 type xmlListFunctionsResult struct {
-	XMLName      xml.Name        `xml:"ListFunctionsResult"`
-	Xmlns        string          `xml:"xmlns,attr"`
-	FunctionList xmlFunctionList `xml:"FunctionList"`
-}
-
-type xmlFunctionList struct {
+	XMLName    xml.Name             `xml:"FunctionList"`
+	Xmlns      string               `xml:"xmlns,attr,omitempty"`
 	NextMarker string               `xml:"NextMarker,omitempty"`
 	MaxItems   int                  `xml:"MaxItems"`
 	Quantity   int                  `xml:"Quantity"`
@@ -130,21 +100,14 @@ type xmlTestFunctionRequest struct {
 	EventObject string   `xml:"EventObject"`
 }
 
-// xmlTestFunctionResult mirrors the AWS shape: a TestResult element
-// with the function's stdout-equivalent (FunctionExecutionLogList),
-// the output JSON, runtime, compute usage, and any error message.
-type xmlTestFunctionResult struct {
-	XMLName    xml.Name      `xml:"TestFunctionResult"`
-	Xmlns      string        `xml:"xmlns,attr"`
-	TestResult xmlTestResult `xml:"TestResult"`
-}
-
 type xmlTestResult struct {
-	FunctionSummary          xmlFunctionSummary `xml:"FunctionSummary"`
-	ComputeUtilization       string             `xml:"ComputeUtilization"`
-	FunctionExecutionLogList xmlFunctionLogList `xml:"FunctionExecutionLogList"`
-	FunctionErrorMessage     string             `xml:"FunctionErrorMessage,omitempty"`
-	FunctionOutput           string             `xml:"FunctionOutput,omitempty"`
+	XMLName               xml.Name           `xml:"TestResult"`
+	Xmlns                 string             `xml:"xmlns,attr,omitempty"`
+	FunctionSummary       xmlFunctionSummary `xml:"FunctionSummary"`
+	ComputeUtilization    string             `xml:"ComputeUtilization"`
+	FunctionExecutionLogs xmlFunctionLogList `xml:"FunctionExecutionLogs"`
+	FunctionErrorMessage  string             `xml:"FunctionErrorMessage,omitempty"`
+	FunctionOutput        string             `xml:"FunctionOutput,omitempty"`
 }
 
 type xmlFunctionLogList struct {

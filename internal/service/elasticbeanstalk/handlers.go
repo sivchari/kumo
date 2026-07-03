@@ -2,15 +2,15 @@
 package elasticbeanstalk
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // DispatchAction routes the request to the appropriate handler based on Action parameter.
@@ -40,7 +40,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateApplication handles the CreateApplication action.
 func (s *Service) CreateApplication(w http.ResponseWriter, r *http.Request) {
 	var req CreateApplicationInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errAppNotFound, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -69,7 +69,7 @@ func (s *Service) CreateApplication(w http.ResponseWriter, r *http.Request) {
 // DescribeApplications handles the DescribeApplications action.
 func (s *Service) DescribeApplications(w http.ResponseWriter, r *http.Request) {
 	var req DescribeApplicationsInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errAppNotFound, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -97,7 +97,7 @@ func (s *Service) DescribeApplications(w http.ResponseWriter, r *http.Request) {
 // UpdateApplication handles the UpdateApplication action.
 func (s *Service) UpdateApplication(w http.ResponseWriter, r *http.Request) {
 	var req UpdateApplicationInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errAppNotFound, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -126,7 +126,7 @@ func (s *Service) UpdateApplication(w http.ResponseWriter, r *http.Request) {
 // DeleteApplication handles the DeleteApplication action.
 func (s *Service) DeleteApplication(w http.ResponseWriter, r *http.Request) {
 	var req DeleteApplicationInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errAppNotFound, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -153,7 +153,7 @@ func (s *Service) DeleteApplication(w http.ResponseWriter, r *http.Request) {
 // CreateEnvironment handles the CreateEnvironment action.
 func (s *Service) CreateEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req CreateEnvironmentInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errEnvNotFound, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -188,7 +188,7 @@ func (s *Service) CreateEnvironment(w http.ResponseWriter, r *http.Request) {
 // DescribeEnvironments handles the DescribeEnvironments action.
 func (s *Service) DescribeEnvironments(w http.ResponseWriter, r *http.Request) {
 	var req DescribeEnvironmentsInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errEnvNotFound, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -217,7 +217,7 @@ func (s *Service) DescribeEnvironments(w http.ResponseWriter, r *http.Request) {
 // TerminateEnvironment handles the TerminateEnvironment action.
 func (s *Service) TerminateEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req TerminateEnvironmentInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errEnvNotFound, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -280,23 +280,6 @@ func extractAction(r *http.Request) string {
 	}
 
 	return r.URL.Query().Get("Action")
-}
-
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 func writeXMLResponse(w http.ResponseWriter, v any) {

@@ -26,6 +26,8 @@ func init() {
 type Service struct {
 	storage Storage
 	baseURL string
+	broker  *runtimeBroker
+	async   *asyncDispatcher
 }
 
 // New creates a new Lambda service.
@@ -33,6 +35,8 @@ func New(storage Storage, baseURL string) *Service {
 	return &Service{
 		storage: storage,
 		baseURL: baseURL,
+		broker:  newRuntimeBroker(),
+		async:   newAsyncDispatcher(),
 	}
 }
 
@@ -59,11 +63,9 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("PUT", prefix+"/2015-03-31/event-source-mappings/{uuid}", s.UpdateEventSourceMapping)
 		r.Handle("DELETE", prefix+"/2015-03-31/event-source-mappings/{uuid}", s.DeleteEventSourceMapping)
 
-		// Refresh stubs — see refresh_stubs.go. Required by
-		// terraform-provider-aws after CreateFunction; without these the
-		// apply errors immediately on the post-create read. Versioned-API
-		// dates (2019-09-25, 2020-06-30) are now isolated by router prefix
-		// from the S3 catch-all so the bare-prefix variants register too.
+		// terraform-provider-aws refresh endpoints. Required after
+		// CreateFunction; without these the apply errors immediately on
+		// the post-create read.
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/versions", s.ListVersionsByFunction)
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/aliases", s.ListAliases)
 		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/policy", s.GetPolicy)
@@ -72,11 +74,24 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("GET", prefix+"/2020-06-30/functions/{functionName}/code-signing-config", s.GetFunctionCodeSigningConfig)
 		r.Handle("GET", prefix+"/2019-09-25/functions/{functionName}/event-invoke-config/list", s.ListFunctionEventInvokeConfigs)
 		r.Handle("GET", prefix+"/2017-03-31/tags/{arn...}", s.ListTags)
+		r.Handle("POST", prefix+"/2017-03-31/tags/{arn...}", s.TagResource)
+		r.Handle("DELETE", prefix+"/2017-03-31/tags/{arn...}", s.UntagResource)
 	}
+
+	// kumo-native Lambda Runtime API. A handler built with lambda.Start
+	// connects here with AWS_LAMBDA_RUNTIME_API=<host>/_runtime/{functionName},
+	// so an unmodified binary runs against kumo without external RIE.
+	r.Handle("GET", "/_runtime/{functionName}/2018-06-01/runtime/invocation/next", s.RuntimeNext)
+	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/invocation/{requestId}/response", s.RuntimeResponse)
+	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/invocation/{requestId}/error", s.RuntimeError)
+	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/init/error", s.RuntimeInitError)
 }
 
-// Close saves the storage state if persistence is enabled.
+// Close stops the async dispatcher and saves the storage state if
+// persistence is enabled.
 func (s *Service) Close() error {
+	s.async.close()
+
 	if c, ok := s.storage.(io.Closer); ok {
 		if err := c.Close(); err != nil {
 			return fmt.Errorf("failed to close storage: %w", err)
@@ -84,4 +99,13 @@ func (s *Service) Close() error {
 	}
 
 	return nil
+}
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Lambda",
+		Category:    "Compute",
+		Description: "Serverless functions",
+	}
 }

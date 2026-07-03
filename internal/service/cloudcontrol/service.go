@@ -83,3 +83,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "InvalidAction", "Action "+action+" is not supported")
 	}
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Cloud Control API",
+		Category:    "Management & Configuration",
+		Description: "Unified CRUD API for cloud resources",
+	}
+}

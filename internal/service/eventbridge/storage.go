@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -61,6 +62,11 @@ type Storage interface {
 	DescribeAPIDestination(ctx context.Context, name string) (*APIDestination, error)
 	DeleteAPIDestination(ctx context.Context, name string) error
 
+	// Tag operations.
+	ListTagsForResource(ctx context.Context, arn string) ([]Tag, error)
+	TagResource(ctx context.Context, arn string, tags []Tag) error
+	UntagResource(ctx context.Context, arn string, tagKeys []string) error
+
 	// DispatchAction dispatches the request to the appropriate handler.
 	DispatchAction(action string) bool
 }
@@ -96,6 +102,7 @@ type MemoryStorage struct {
 	Targets         map[string]map[string][]*Target `json:"targets"`
 	Connections     map[string]*Connection          `json:"connections"`
 	APIDestinations map[string]*APIDestination      `json:"apiDestinations"`
+	Tags            map[string][]Tag                `json:"tags"`
 	DeliveredEvents []DeliveredEvent                `json:"deliveredEvents"`
 	region          string
 	accountID       string
@@ -127,6 +134,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		Targets:         make(map[string]map[string][]*Target),
 		Connections:     make(map[string]*Connection),
 		APIDestinations: make(map[string]*APIDestination),
+		Tags:            make(map[string][]Tag),
 		region:          region,
 		accountID:       "000000000000",
 		baseURL:         "http://localhost:4566",
@@ -198,7 +206,20 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Targets = make(map[string]map[string][]*Target)
 	}
 
+	if s.Tags == nil {
+		s.Tags = make(map[string][]Tag)
+	}
+
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "eventbridge", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -239,6 +260,8 @@ func (s *MemoryStorage) CreateEventBus(_ context.Context, req *CreateEventBusReq
 	s.EventBuses[req.Name] = eventBus
 	s.Rules[req.Name] = make(map[string]*Rule)
 
+	s.saveLocked()
+
 	return eventBus, nil
 }
 
@@ -264,6 +287,8 @@ func (s *MemoryStorage) DeleteEventBus(_ context.Context, name string) error {
 			delete(s.Targets, key)
 		}
 	}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -349,6 +374,8 @@ func (s *MemoryStorage) PutRule(_ context.Context, req *PutRuleRequest) (*Rule, 
 
 	s.Rules[eventBusName][req.Name] = rule
 
+	s.saveLocked()
+
 	return rule, nil
 }
 
@@ -375,6 +402,8 @@ func (s *MemoryStorage) DeleteRule(_ context.Context, eventBusName, ruleName str
 	// Delete targets for this rule.
 	targetKey := eventBusName + ":" + ruleName
 	delete(s.Targets, targetKey)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -434,6 +463,27 @@ func (s *MemoryStorage) ListRules(_ context.Context, eventBusName, namePrefix st
 	return result, "", nil
 }
 
+// convertTargetInput converts a TargetInput to a Target.
+func convertTargetInput(t *TargetInput) *Target {
+	target := &Target{
+		ID:             t.ID,
+		Arn:            t.Arn,
+		RoleArn:        t.RoleArn,
+		Input:          t.Input,
+		InputPath:      t.InputPath,
+		HTTPParameters: t.HTTPParameters,
+	}
+
+	if t.InputTransformer != nil {
+		target.InputTransformer = &InputTransformer{
+			InputPathsMap: t.InputTransformer.InputPathsMap,
+			InputTemplate: t.InputTransformer.InputTemplate,
+		}
+	}
+
+	return target
+}
+
 // PutTargets adds targets to a rule.
 func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName string, targets []TargetInput) ([]PutTargetsResultEntry, error) {
 	s.mu.Lock()
@@ -461,21 +511,7 @@ func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName str
 	var failedEntries []PutTargetsResultEntry
 
 	for _, t := range targets {
-		target := &Target{
-			ID:             t.ID,
-			Arn:            t.Arn,
-			RoleArn:        t.RoleArn,
-			Input:          t.Input,
-			InputPath:      t.InputPath,
-			HTTPParameters: t.HTTPParameters,
-		}
-
-		if t.InputTransformer != nil {
-			target.InputTransformer = &InputTransformer{
-				InputPathsMap: t.InputTransformer.InputPathsMap,
-				InputTemplate: t.InputTransformer.InputTemplate,
-			}
-		}
+		target := convertTargetInput(&t)
 
 		// Find and update existing target or add new one.
 		found := false
@@ -494,6 +530,8 @@ func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName str
 			s.Targets[targetKey][ruleName] = append(s.Targets[targetKey][ruleName], target)
 		}
 	}
+
+	s.saveLocked()
 
 	return failedEntries, nil
 }
@@ -531,6 +569,8 @@ func (s *MemoryStorage) RemoveTargets(_ context.Context, eventBusName, ruleName 
 	}
 
 	s.Targets[targetKey][ruleName] = newTargets
+
+	s.saveLocked()
 
 	return failedEntries, nil
 }
@@ -581,6 +621,8 @@ func (s *MemoryStorage) PutEvents(_ context.Context, entries []PutEventsRequestE
 
 		s.matchAndDeliver(eventID, eventBusName, &entry)
 	}
+
+	s.saveLocked()
 
 	return results, nil
 }
@@ -793,7 +835,7 @@ func (s *MemoryStorage) deliverToHTTP(dest *APIDestination, target *Target, payl
 		return
 	}
 
-	endpoint := dest.InvocationEndpoint
+	endpoint := expandEndpointPathParameters(dest.InvocationEndpoint, target.HTTPParameters)
 	method := dest.HTTPMethod
 
 	if method == "" {
@@ -932,6 +974,22 @@ func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
 	)
 }
 
+// expandEndpointPathParameters replaces each "*" wildcard in the invocation
+// endpoint with the corresponding value from PathParameterValues, in order.
+// AWS EventBridge substitutes path parameters into the endpoint at delivery
+// time; without this, the literal "*" would be sent and the target would 404.
+func expandEndpointPathParameters(endpoint string, params *HTTPParameters) string {
+	if params == nil {
+		return endpoint
+	}
+
+	for _, value := range params.PathParameterValues {
+		endpoint = strings.Replace(endpoint, "*", url.PathEscape(value), 1)
+	}
+
+	return endpoint
+}
+
 // applyHTTPParameters applies HTTP parameters from a target to an HTTP request.
 func applyHTTPParameters(req *http.Request, params *HTTPParameters) {
 	if params == nil {
@@ -986,6 +1044,8 @@ func (s *MemoryStorage) CreateConnection(_ context.Context, req *CreateConnectio
 
 	s.Connections[req.Name] = conn
 
+	s.saveLocked()
+
 	return conn, nil
 }
 
@@ -1013,6 +1073,8 @@ func (s *MemoryStorage) DeleteConnection(_ context.Context, name string) (*Conne
 	}
 
 	delete(s.Connections, name)
+
+	s.saveLocked()
 
 	return conn, nil
 }
@@ -1046,6 +1108,8 @@ func (s *MemoryStorage) CreateAPIDestination(_ context.Context, req *CreateAPIDe
 
 	s.APIDestinations[req.Name] = dest
 
+	s.saveLocked()
+
 	return dest, nil
 }
 
@@ -1073,6 +1137,8 @@ func (s *MemoryStorage) DeleteAPIDestination(_ context.Context, name string) err
 
 	delete(s.APIDestinations, name)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1090,6 +1156,87 @@ func (s *MemoryStorage) resolveAPIDestination(targetArn string) *APIDestination 
 	if dest, ok := s.APIDestinations[name]; ok {
 		return dest
 	}
+
+	return nil
+}
+
+// ListTagsForResource returns the tags for a resource.
+func (s *MemoryStorage) ListTagsForResource(_ context.Context, arn string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tags, exists := s.Tags[arn]
+	if !exists {
+		return []Tag{}, nil
+	}
+
+	result := make([]Tag, len(tags))
+	copy(result, tags)
+
+	return result, nil
+}
+
+// TagResource adds or updates tags on a resource.
+func (s *MemoryStorage) TagResource(_ context.Context, arn string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing := s.Tags[arn]
+
+	for _, newTag := range tags {
+		found := false
+
+		for i, existingTag := range existing {
+			if existingTag.Key == newTag.Key {
+				existing[i].Value = newTag.Value
+				found = true
+
+				break
+			}
+		}
+
+		if !found {
+			existing = append(existing, newTag)
+		}
+	}
+
+	s.Tags[arn] = existing
+
+	s.saveLocked()
+
+	return nil
+}
+
+// UntagResource removes tags from a resource.
+func (s *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing, exists := s.Tags[arn]
+	if !exists {
+		return nil
+	}
+
+	keysToRemove := make(map[string]bool, len(tagKeys))
+	for _, key := range tagKeys {
+		keysToRemove[key] = true
+	}
+
+	var remaining []Tag
+
+	for _, tag := range existing {
+		if !keysToRemove[tag.Key] {
+			remaining = append(remaining, tag)
+		}
+	}
+
+	if len(remaining) == 0 {
+		delete(s.Tags, arn)
+	} else {
+		s.Tags[arn] = remaining
+	}
+
+	s.saveLocked()
 
 	return nil
 }

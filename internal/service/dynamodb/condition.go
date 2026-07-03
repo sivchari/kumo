@@ -127,8 +127,10 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 		return result, rest[1:], nil
 	}
 
-	// Function calls.
-	for _, fn := range []string{"attribute_exists", "attribute_not_exists", "begins_with", "contains"} {
+	// Function calls. attribute_type belongs here: like the others it takes a
+	// parenthesized argument list and returns a boolean. (size() is handled
+	// separately below because its syntax is "size(path) op value".)
+	for _, fn := range []string{"attribute_exists", "attribute_not_exists", "attribute_type", "begins_with", "contains"} {
 		if strings.HasPrefix(trimmed, fn+"(") {
 			return parseFunctionCall(fn, trimmed[len(fn):], item, values)
 		}
@@ -148,67 +150,139 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 	return parseComparison(trimmed, item, values)
 }
 
-// parseFunctionCall parses and evaluates a function call.
+// matchesAttributeType reports whether the attribute value is of the given
+// DynamoDB type descriptor.
+//
+//nolint:gocritic // hugeParam: AttributeValue passed by value intentionally.
+func matchesAttributeType(av AttributeValue, typ string) bool {
+	switch typ {
+	case "S":
+		return av.S != nil
+	case "N":
+		return av.N != nil
+	case "B":
+		return av.B != nil
+	case "SS":
+		return av.SS != nil
+	case "NS":
+		return av.NS != nil
+	case "BS":
+		return av.BS != nil
+	case "M":
+		return av.M != nil
+	case "L":
+		return av.L != nil
+	case "NULL":
+		return av.NULL != nil
+	case "BOOL":
+		return av.BOOL != nil
+	default:
+		return false
+	}
+}
+
+// parseFunctionCall parses a function's argument list and dispatches to the
+// matching evaluator. The remaining input after the argument list is the same
+// for every function, so it is returned here rather than by each evaluator.
 func parseFunctionCall(fn, argsStr string, item Item, values map[string]AttributeValue) (bool, string, error) {
 	args, rest, err := parseArgList(argsStr)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to parse %s arguments: %w", fn, err)
 	}
 
+	var result bool
+
 	switch fn {
 	case "attribute_exists":
-		if len(args) != 1 {
-			return false, "", fmt.Errorf("attribute_exists requires 1 argument")
-		}
-
-		path := strings.TrimSpace(args[0])
-		_, exists := resolveItemPath(item, path)
-
-		return exists, rest, nil
-
+		result, err = evalAttributeExists(args, item)
 	case "attribute_not_exists":
-		if len(args) != 1 {
-			return false, "", fmt.Errorf("attribute_not_exists requires 1 argument")
-		}
-
-		path := strings.TrimSpace(args[0])
-		_, exists := resolveItemPath(item, path)
-
-		return !exists, rest, nil
-
+		result, err = evalAttributeNotExists(args, item)
+	case "attribute_type":
+		result, err = evalAttributeType(args, item, values)
 	case "begins_with":
-		if len(args) != 2 {
-			return false, "", fmt.Errorf("begins_with requires 2 arguments")
-		}
-
-		path := strings.TrimSpace(args[0])
-		val := resolveOperand(strings.TrimSpace(args[1]), item, values)
-
-		av, exists := resolveItemPath(item, path)
-		if !exists || av.S == nil || val.S == nil {
-			return false, rest, nil
-		}
-
-		return strings.HasPrefix(*av.S, *val.S), rest, nil
-
+		result, err = evalBeginsWith(args, item, values)
 	case "contains":
-		if len(args) != 2 {
-			return false, "", fmt.Errorf("contains requires 2 arguments")
-		}
-
-		path := strings.TrimSpace(args[0])
-		val := resolveOperand(strings.TrimSpace(args[1]), item, values)
-
-		av, exists := resolveItemPath(item, path)
-		if !exists {
-			return false, rest, nil
-		}
-
-		return evalContains(av, val), rest, nil
-
+		result, err = evalContainsFunc(args, item, values)
 	default:
 		return false, "", fmt.Errorf("unknown function: %s", fn)
 	}
+
+	if err != nil {
+		return false, "", err
+	}
+
+	return result, rest, nil
+}
+
+func evalAttributeExists(args []string, item Item) (bool, error) {
+	if len(args) != 1 {
+		return false, fmt.Errorf("attribute_exists requires 1 argument")
+	}
+
+	_, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+
+	return exists, nil
+}
+
+func evalAttributeNotExists(args []string, item Item) (bool, error) {
+	if len(args) != 1 {
+		return false, fmt.Errorf("attribute_not_exists requires 1 argument")
+	}
+
+	_, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+
+	return !exists, nil
+}
+
+// evalAttributeType evaluates attribute_type(path, :type). Per DynamoDB the type
+// argument must be an expression attribute value holding one of the type
+// descriptors (S, N, B, SS, NS, BS, M, L, NULL, BOOL).
+func evalAttributeType(args []string, item Item, values map[string]AttributeValue) (bool, error) {
+	if len(args) != 2 {
+		return false, fmt.Errorf("attribute_type requires 2 arguments")
+	}
+
+	typeVal := resolveOperand(strings.TrimSpace(args[1]), item, values)
+	if typeVal.S == nil {
+		return false, fmt.Errorf("attribute_type requires a string type operand")
+	}
+
+	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+	if !exists {
+		return false, nil
+	}
+
+	return matchesAttributeType(av, *typeVal.S), nil
+}
+
+func evalBeginsWith(args []string, item Item, values map[string]AttributeValue) (bool, error) {
+	if len(args) != 2 {
+		return false, fmt.Errorf("begins_with requires 2 arguments")
+	}
+
+	val := resolveOperand(strings.TrimSpace(args[1]), item, values)
+
+	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+	if !exists || av.S == nil || val.S == nil {
+		return false, nil
+	}
+
+	return strings.HasPrefix(*av.S, *val.S), nil
+}
+
+func evalContainsFunc(args []string, item Item, values map[string]AttributeValue) (bool, error) {
+	if len(args) != 2 {
+		return false, fmt.Errorf("contains requires 2 arguments")
+	}
+
+	val := resolveOperand(strings.TrimSpace(args[1]), item, values)
+
+	av, exists := resolveItemPath(item, strings.TrimSpace(args[0]))
+	if !exists {
+		return false, nil
+	}
+
+	return evalContains(av, val), nil
 }
 
 // evalContains evaluates the contains function for various types.
@@ -288,24 +362,16 @@ func parseSizeComparison(expr string, item Item, values map[string]AttributeValu
 	path := strings.TrimSpace(inner[:idx])
 	rest := strings.TrimSpace(inner[idx+1:])
 
-	// Get the size of the attribute.
-	av, exists := resolveItemPath(item, path)
-	if !exists {
-		return false, "", fmt.Errorf("attribute %s not found for size()", path)
-	}
-
-	sizeVal := attributeSize(av)
-
-	// Parse operator.
+	// Parse operator and right operand first so the remaining string (finalRest)
+	// is consumed correctly even when the attribute is absent.
 	op, afterOp, err := parseComparisonOp(rest)
 	if err != nil {
 		return false, "", err
 	}
 
-	// Parse right operand.
 	rightToken, finalRest := nextToken(strings.TrimSpace(afterOp))
-	rightVal := resolveOperand(rightToken, item, values)
 
+	rightVal := resolveOperand(rightToken, item, values)
 	if rightVal.N == nil {
 		return false, "", fmt.Errorf("size() comparison requires numeric operand")
 	}
@@ -315,7 +381,14 @@ func parseSizeComparison(expr string, item Item, values map[string]AttributeValu
 		return false, "", fmt.Errorf("invalid number: %s", *rightVal.N)
 	}
 
-	result := compareNumbers(float64(sizeVal), rightNum, op)
+	// A missing attribute is not an error: like any other comparison against an
+	// absent attribute, the item simply does not match (DynamoDB does not fail).
+	av, exists := resolveItemPath(item, path)
+	if !exists {
+		return false, finalRest, nil
+	}
+
+	result := compareNumbers(float64(attributeSize(av)), rightNum, op)
 
 	return result, finalRest, nil
 }
@@ -360,6 +433,11 @@ func parseComparison(expr string, item Item, values map[string]AttributeValue) (
 		return parseBetween(leftToken, strings.TrimSpace(rest[7:]), item, values)
 	}
 
+	// Handle IN: operand IN (operand, operand, ...)
+	if startsWithKeyword(rest, "IN") {
+		return parseIn(leftToken, strings.TrimSpace(rest[2:]), item, values)
+	}
+
 	op, afterOp, err := parseComparisonOp(rest)
 	if err != nil {
 		return false, "", err
@@ -374,6 +452,41 @@ func parseComparison(expr string, item Item, values map[string]AttributeValue) (
 	right := resolveOperand(rightToken, item, values)
 
 	result := compareAttributeValues(left, right, op)
+
+	return result, finalRest, nil
+}
+
+// maxInOperands is DynamoDB's limit on the number of operands in an IN list.
+const maxInOperands = 100
+
+// parseIn handles "operand IN (operand, operand, ...)". The result is true if
+// the left operand equals any operand in the list.
+func parseIn(leftToken, rest string, item Item, values map[string]AttributeValue) (bool, string, error) {
+	args, finalRest, err := parseArgList(rest)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to parse IN operand list: %w", err)
+	}
+
+	if len(args) == 0 {
+		return false, "", fmt.Errorf("IN requires at least 1 operand")
+	}
+
+	if len(args) > maxInOperands {
+		return false, "", fmt.Errorf("IN accepts at most %d operands, got %d", maxInOperands, len(args))
+	}
+
+	val := resolveOperand(leftToken, item, values)
+
+	result := false
+
+	for _, arg := range args {
+		operand := resolveOperand(strings.TrimSpace(arg), item, values)
+		if compareAttributeValues(val, operand, "=") {
+			result = true
+
+			break
+		}
+	}
 
 	return result, finalRest, nil
 }
@@ -525,7 +638,20 @@ func resolveItemPath(item Item, path string) (AttributeValue, bool) {
 
 // compareAttributeValues compares two attribute values using the given operator.
 //
-//nolint:gocritic,cyclop // hugeParam: AttributeValue passed by value for comparison.
+// equalityOnly evaluates the only operators DynamoDB allows for BOOL and NULL
+// operands: equality and inequality. Any other operator is false.
+func equalityOnly(equal bool, op string) bool {
+	switch op {
+	case "=":
+		return equal
+	case "<>":
+		return !equal
+	default:
+		return false
+	}
+}
+
+//nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
 func compareAttributeValues(a, b AttributeValue, op string) bool {
 	// String comparison.
 	if a.S != nil && b.S != nil {
@@ -546,26 +672,12 @@ func compareAttributeValues(a, b AttributeValue, op string) bool {
 
 	// Boolean comparison (only = and <>).
 	if a.BOOL != nil && b.BOOL != nil {
-		switch op {
-		case "=":
-			return *a.BOOL == *b.BOOL
-		case "<>":
-			return *a.BOOL != *b.BOOL
-		default:
-			return false
-		}
+		return equalityOnly(*a.BOOL == *b.BOOL, op)
 	}
 
 	// NULL comparison (only = and <>).
 	if a.NULL != nil && b.NULL != nil {
-		switch op {
-		case "=":
-			return *a.NULL == *b.NULL
-		case "<>":
-			return *a.NULL != *b.NULL
-		default:
-			return false
-		}
+		return equalityOnly(*a.NULL == *b.NULL, op)
 	}
 
 	// Type mismatch or unsupported types: only <> returns true.

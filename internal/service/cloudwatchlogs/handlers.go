@@ -1,14 +1,13 @@
 package cloudwatchlogs
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Error codes for CloudWatch Logs.
@@ -21,7 +20,7 @@ const (
 // CreateLogGroup handles the CreateLogGroup action.
 func (s *Service) CreateLogGroup(w http.ResponseWriter, r *http.Request) {
 	var req CreateLogGroupRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -45,7 +44,7 @@ func (s *Service) CreateLogGroup(w http.ResponseWriter, r *http.Request) {
 // DeleteLogGroup handles the DeleteLogGroup action.
 func (s *Service) DeleteLogGroup(w http.ResponseWriter, r *http.Request) {
 	var req DeleteLogGroupRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -69,7 +68,7 @@ func (s *Service) DeleteLogGroup(w http.ResponseWriter, r *http.Request) {
 // CreateLogStream handles the CreateLogStream action.
 func (s *Service) CreateLogStream(w http.ResponseWriter, r *http.Request) {
 	var req CreateLogStreamRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -93,7 +92,7 @@ func (s *Service) CreateLogStream(w http.ResponseWriter, r *http.Request) {
 // DeleteLogStream handles the DeleteLogStream action.
 func (s *Service) DeleteLogStream(w http.ResponseWriter, r *http.Request) {
 	var req DeleteLogStreamRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -117,7 +116,7 @@ func (s *Service) DeleteLogStream(w http.ResponseWriter, r *http.Request) {
 // PutLogEvents handles the PutLogEvents action.
 func (s *Service) PutLogEvents(w http.ResponseWriter, r *http.Request) {
 	var req PutLogEventsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -148,7 +147,7 @@ func (s *Service) PutLogEvents(w http.ResponseWriter, r *http.Request) {
 // GetLogEvents handles the GetLogEvents action.
 func (s *Service) GetLogEvents(w http.ResponseWriter, r *http.Request) {
 	var req GetLogEventsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -173,7 +172,7 @@ func (s *Service) GetLogEvents(w http.ResponseWriter, r *http.Request) {
 // FilterLogEvents handles the FilterLogEvents action.
 func (s *Service) FilterLogEvents(w http.ResponseWriter, r *http.Request) {
 	var req FilterLogEventsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -198,7 +197,7 @@ func (s *Service) FilterLogEvents(w http.ResponseWriter, r *http.Request) {
 // DescribeLogGroups handles the DescribeLogGroups action.
 func (s *Service) DescribeLogGroups(w http.ResponseWriter, r *http.Request) {
 	var req DescribeLogGroupsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -217,7 +216,7 @@ func (s *Service) DescribeLogGroups(w http.ResponseWriter, r *http.Request) {
 // DescribeLogStreams handles the DescribeLogStreams action.
 func (s *Service) DescribeLogStreams(w http.ResponseWriter, r *http.Request) {
 	var req DescribeLogStreamsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -242,7 +241,7 @@ func (s *Service) DescribeLogStreams(w http.ResponseWriter, r *http.Request) {
 // PutRetentionPolicy handles the PutRetentionPolicy action.
 func (s *Service) PutRetentionPolicy(w http.ResponseWriter, r *http.Request) {
 	var req PutRetentionPolicyRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -272,7 +271,7 @@ func (s *Service) PutRetentionPolicy(w http.ResponseWriter, r *http.Request) {
 // DeleteRetentionPolicy handles the DeleteRetentionPolicy action.
 func (s *Service) DeleteRetentionPolicy(w http.ResponseWriter, r *http.Request) {
 	var req DeleteRetentionPolicyRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -345,30 +344,9 @@ func handleLogsError(w http.ResponseWriter, err error) {
 	writeLogsError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
 }
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponse(w, service.ContentTypeAmzJSON11, v)
 }
 
 // writeEmptyResponse writes an empty response with HTTP 200 OK.
@@ -380,11 +358,5 @@ func writeEmptyResponse(w http.ResponseWriter) {
 
 // writeLogsError writes a CloudWatch Logs error response in JSON format.
 func writeLogsError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }

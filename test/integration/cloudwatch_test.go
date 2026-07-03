@@ -416,3 +416,86 @@ func TestCloudWatch_SetAlarmState(t *testing.T) {
 		"AlarmArn", "StateUpdatedTimestamp", "AlarmConfigurationUpdatedTimestamp", "ResultMetadata",
 	)).Assert(t.Name(), descOutput)
 }
+
+func TestCloudWatch_TagOperations(t *testing.T) {
+	client := newCloudWatchClient(t)
+	ctx := t.Context()
+
+	alarmName := "test-tag-operations-alarm"
+
+	// Create an alarm to tag.
+	_, err := client.PutMetricAlarm(ctx, &cloudwatch.PutMetricAlarmInput{
+		AlarmName:          aws.String(alarmName),
+		MetricName:         aws.String("TagTestMetric"),
+		Namespace:          aws.String("TestNamespace"),
+		Statistic:          types.StatisticAverage,
+		Period:             aws.Int32(60),
+		EvaluationPeriods:  aws.Int32(1),
+		Threshold:          aws.Float64(70.0),
+		ComparisonOperator: types.ComparisonOperatorGreaterThanThreshold,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteAlarms(context.Background(), &cloudwatch.DeleteAlarmsInput{
+			AlarmNames: []string{alarmName},
+		})
+	})
+
+	// Get the alarm ARN from DescribeAlarms.
+	descOutput, err := client.DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{
+		AlarmNames: []string{alarmName},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(descOutput.MetricAlarms) == 0 {
+		t.Fatal("expected alarm to exist after PutMetricAlarm")
+	}
+
+	alarmARN := *descOutput.MetricAlarms[0].AlarmArn
+
+	// TagResource — attach two tags.
+	_, err = client.TagResource(ctx, &cloudwatch.TagResourceInput{
+		ResourceARN: aws.String(alarmARN),
+		Tags: []types.Tag{
+			{Key: aws.String("Environment"), Value: aws.String("Production")},
+			{Key: aws.String("Team"), Value: aws.String("Platform")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsForResource — verify both tags are returned.
+	listOutput, err := client.ListTagsForResource(ctx, &cloudwatch.ListTagsForResourceInput{
+		ResourceARN: aws.String(alarmARN),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_tag", listOutput)
+
+	// UntagResource — remove one tag.
+	_, err = client.UntagResource(ctx, &cloudwatch.UntagResourceInput{
+		ResourceARN: aws.String(alarmARN),
+		TagKeys:     []string{"Team"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListTagsForResource — verify only the remaining tag is returned.
+	listOutput2, err := client.ListTagsForResource(ctx, &cloudwatch.ListTagsForResourceInput{
+		ResourceARN: aws.String(alarmARN),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_untag", listOutput2)
+}

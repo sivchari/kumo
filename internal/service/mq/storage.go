@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Storage defines the MQ storage interface.
 type Storage interface {
@@ -52,10 +56,15 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Brokers:        make(map[string]*Broker),
 		Configurations: make(map[string]*Configuration),
-		region:         "us-east-1",
+		region:         region,
 		accountID:      "123456789012",
 	}
 	for _, o := range opts {
@@ -106,6 +115,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "mq", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -167,6 +185,8 @@ func (s *MemoryStorage) CreateBroker(_ context.Context, req *CreateBrokerRequest
 
 	s.Brokers[brokerID] = broker
 
+	s.saveLocked()
+
 	return broker, nil
 }
 
@@ -183,6 +203,8 @@ func (s *MemoryStorage) DeleteBroker(_ context.Context, brokerID string) error {
 	}
 
 	delete(s.Brokers, brokerID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -277,6 +299,8 @@ func (s *MemoryStorage) UpdateBroker(_ context.Context, brokerID string, req *Up
 		broker.Configuration = req.Configuration
 	}
 
+	s.saveLocked()
+
 	return broker, nil
 }
 
@@ -318,6 +342,8 @@ func (s *MemoryStorage) CreateConfiguration(_ context.Context, req *CreateConfig
 	}
 
 	s.Configurations[configID] = config
+
+	s.saveLocked()
 
 	return config, nil
 }

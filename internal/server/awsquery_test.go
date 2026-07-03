@@ -40,6 +40,11 @@ func TestParseServiceFromUserAgent(t *testing.T) {
 			userAgent: "",
 			want:      "",
 		},
+		{
+			name:      "Java sdk sns upper case",
+			userAgent: "aws-sdk-java/2.44.12 md/io#sync md/http#Apache ua/2.1 api/SNS#2.44.x os/Linux#6.1 lang/java#17 md/OpenJDK_64-Bit_Server_VM#17 md/vendor#OpenJDK md/en_US",
+			want:      "sns",
+		},
 	}
 
 	for _, tt := range tests {

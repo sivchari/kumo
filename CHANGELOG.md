@@ -1,5 +1,95 @@
 # Changelog
 
+## [v0.25.3](https://github.com/sivchari/kumo/compare/v0.25.2...v0.25.3) - 2026-06-18
+- fix testcase by @sivchari in https://github.com/sivchari/kumo/pull/821
+- fix(s3): externalize object bodies from snapshot to bound persistence memory by @sivchari in https://github.com/sivchari/kumo/pull/823
+- release v0.25.3 by @sivchari in https://github.com/sivchari/kumo/pull/824
+
+## [v0.25.2](https://github.com/sivchari/kumo/compare/v0.25.1...v0.25.2) - 2026-06-15
+- fix(dynamodb): fail closed on unparseable FilterExpression and implement IN by @wakame1367 in https://github.com/sivchari/kumo/pull/808
+- fix(dynamodb): fail closed on KeyConditionExpression and implement attribute_type by @sivchari in https://github.com/sivchari/kumo/pull/810
+- refactor(dynamodb): simplify storage/expression functions to drop complexity nolints by @sivchari in https://github.com/sivchari/kumo/pull/811
+- refactor: simplify service handlers to drop complexity nolints by @sivchari in https://github.com/sivchari/kumo/pull/812
+- refactor: consolidate duplicated readJSONRequest into service.ReadJSONRequest by @sivchari in https://github.com/sivchari/kumo/pull/813
+- refactor: consolidate writeJSONResponse into service.WriteJSONResponse by @sivchari in https://github.com/sivchari/kumo/pull/814
+- refactor: share identical ServiceError via service.CodedError alias by @sivchari in https://github.com/sivchari/kumo/pull/815
+- fix(eventbridge): expand InvocationEndpoint path parameters on API destination delivery by @sivchari in https://github.com/sivchari/kumo/pull/817
+- refactor: consolidate JSON-protocol writeError into service.WriteJSONError by @sivchari in https://github.com/sivchari/kumo/pull/818
+- fix(json): emit lowercase "message" in error responses for 4 services by @sivchari in https://github.com/sivchari/kumo/pull/819
+- release v0.25.2 by @sivchari in https://github.com/sivchari/kumo/pull/820
+
+## [v0.25.1](https://github.com/sivchari/kumo/compare/v0.25.0...v0.25.1) - 2026-06-11
+- feat(readme): auto-generate Supported Services catalog from service metadata by @sivchari in https://github.com/sivchari/kumo/pull/801
+- fix(ci): improve govulncheck output parsing with JSON and reachability filter by @sivchari in https://github.com/sivchari/kumo/pull/805
+- fix(lambda): queue async Event invocations with retry instead of fire-and-forget by @sivchari in https://github.com/sivchari/kumo/pull/804
+- release v0.25.1 by @sivchari in https://github.com/sivchari/kumo/pull/806
+
+## [v0.25.0](https://github.com/sivchari/kumo/compare/v0.24.1...v0.25.0) - 2026-06-04
+- feat(apigatewayv2): implement API Gateway v2 (HTTP API) CRUD by @sivchari in https://github.com/sivchari/kumo/pull/772
+- feat(apigateway): execute-api invoke for deployed stages (v1 + v2) by @sivchari in https://github.com/sivchari/kumo/pull/773
+- feat(lambda): kumo-native Lambda Runtime API (run lambda.Start without RIE) by @sivchari in https://github.com/sivchari/kumo/pull/776
+- feat(s3): support browser-based POST Object (presigned POST) by @sivchari in https://github.com/sivchari/kumo/pull/777
+- fix(storage): debounce snapshot persistence to stop OOM under write load by @sivchari in https://github.com/sivchari/kumo/pull/799
+- release v0.25.0 by @sivchari in https://github.com/sivchari/kumo/pull/800
+
+## [v0.24.1](https://github.com/sivchari/kumo/compare/v0.24.0...v0.24.1) - 2026-05-30
+- fix(cloudfront): support SHA256 signed cookie/URL verification by @sivchari in https://github.com/sivchari/kumo/pull/768
+- release v0.24.1 by @sivchari in https://github.com/sivchari/kumo/pull/770
+
+## [v0.24.0](https://github.com/sivchari/kumo/compare/v0.23.1...v0.24.0) - 2026-05-29
+- feat(kms): support Sign, Verify, GetPublicKey and asymmetric keys by @sivchari in https://github.com/sivchari/kumo/pull/765
+- release v0.24.0 by @sivchari in https://github.com/sivchari/kumo/pull/766
+
+## [v0.23.1](https://github.com/sivchari/kumo/compare/v0.23.0...v0.23.1) - 2026-05-28
+- fix(dynamodb): accept space-separated values for --key-schema and --attribute-definitions by @hirasawayuki in https://github.com/sivchari/kumo/pull/761
+- fix(dynamodb): support legacy KeyConditions in Query by @sivchari in https://github.com/sivchari/kumo/pull/763
+- release v0.23.1 by @sivchari in https://github.com/sivchari/kumo/pull/764
+
+## [v0.23.0](https://github.com/sivchari/kumo/compare/v0.22.0...v0.23.0) - 2026-05-28
+- feat(cloudfront): Signed Cookie / Signed URL verification on Edge proxy by @sivchari in https://github.com/sivchari/kumo/pull/758
+- release v0.23.0 by @sivchari in https://github.com/sivchari/kumo/pull/760
+
+## [v0.22.0](https://github.com/sivchari/kumo/compare/v0.21.0...v0.22.0) - 2026-05-26
+- Fix DynamoDB UpdateExpression invalid UTF-8 panic by @mizchi in https://github.com/sivchari/kumo/pull/674
+- fix(s3): reject unordered multipart completion by @mizchi in https://github.com/sivchari/kumo/pull/680
+- fix(range): reject suffix ranges on empty bodies by @mizchi in https://github.com/sivchari/kumo/pull/681
+- Add fuzz coverage for S3 and DynamoDB edge cases by @mizchi in https://github.com/sivchari/kumo/pull/669
+- fix(dynamodb): partition parallel scan segments by @mizchi in https://github.com/sivchari/kumo/pull/700
+- fix(dynamodb): apply projection expressions to reads by @mizchi in https://github.com/sivchari/kumo/pull/699
+- fix(s3): honor copy source version id by @mizchi in https://github.com/sivchari/kumo/pull/693
+- fix(kinesis): validate record key inputs by @mizchi in https://github.com/sivchari/kumo/pull/685
+- Proposal: env-var endpoint passthrough for RDS (and a model for ElastiCache / AMP / MSK / …) by @mizchi in https://github.com/sivchari/kumo/pull/579
+- fix(s3): fix fuzz test build failure for parseCopySource by @sivchari in https://github.com/sivchari/kumo/pull/730
+- delete tflog by @sivchari in https://github.com/sivchari/kumo/pull/733
+- fix(s3): reduce CopyObject function length to satisfy funlen linter by @sivchari in https://github.com/sivchari/kumo/pull/731
+- chore: add lefthook for pre-commit and pre-push hooks by @sivchari in https://github.com/sivchari/kumo/pull/735
+- add toolchain by @sivchari in https://github.com/sivchari/kumo/pull/738
+- delete integration test task by @sivchari in https://github.com/sivchari/kumo/pull/739
+- feat(ssm): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/732
+- feat(eventbridge): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/734
+- feat(glue): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/737
+- feat(route53): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/740
+- feat(kms): implement policy and tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/741
+- feat(lambda): implement tag and permission operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/742
+- feat(cloudwatch): implement tag operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/743
+- feat(sfn): implement tag and validation operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/744
+- feat(secretsmanager): implement resource policy operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/745
+- feat(dynamodb): implement tag and backup operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/746
+- feat(cognito): implement MFA config operations with storage persistence by @sivchari in https://github.com/sivchari/kumo/pull/747
+- ci(fuzz): add daily fuzzing CI workflow by @sivchari in https://github.com/sivchari/kumo/pull/748
+- test(dynamodbstreams): add integration test by @sivchari in https://github.com/sivchari/kumo/pull/749
+- refactor: eliminate hardcoded magic strings across services by @sivchari in https://github.com/sivchari/kumo/pull/751
+- fix(ci): improve fuzz workflow and fix dynamodbstreams golden test by @sivchari in https://github.com/sivchari/kumo/pull/752
+- feat: add write-through persistence to all services by @sivchari in https://github.com/sivchari/kumo/pull/753
+- fix(s3): honor CopyObject tagging directive by @mizchi in https://github.com/sivchari/kumo/pull/691
+- fix(dynamodb): validate key schema and write actions by @mizchi in https://github.com/sivchari/kumo/pull/679
+- feat(cloudfront): PublicKey + KeyGroup CRUD (signed URL building blocks) by @mizchi in https://github.com/sivchari/kumo/pull/586
+- fix(s3): honor CopyObject metadata directive by @mizchi in https://github.com/sivchari/kumo/pull/689
+- fix(server): normalize AWS service name from User-Agent by @OliveiraNt in https://github.com/sivchari/kumo/pull/755
+- feat(sesv2): EmailTemplate CRUD + SendBulkEmail by @hc100 in https://github.com/sivchari/kumo/pull/720
+- ci(govulncheck): add daily vulnerability scan and pin toolchain by @sivchari in https://github.com/sivchari/kumo/pull/756
+- release v0.22.0 by @sivchari in https://github.com/sivchari/kumo/pull/757
+
 ## [v0.21.0](https://github.com/sivchari/kumo/compare/v0.20.0...v0.21.0) - 2026-05-18
 - feat(ssm): no-op stubs for ListTagsForResource / AddTagsToResource / RemoveTagsFromResource by @sivchari in https://github.com/sivchari/kumo/pull/626
 - feat(sqs): support Policy attribute in SetQueueAttributes / GetQueueAttributes by @sivchari in https://github.com/sivchari/kumo/pull/627

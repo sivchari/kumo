@@ -1,6 +1,10 @@
 package sfn
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // StateMachineStatus represents the status of a state machine.
 type StateMachineStatus string
@@ -346,20 +350,70 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a service-level error.
-type ServiceError struct {
-	Code    string
-	Message string
+type ServiceError = service.CodedError
+
+// ListTagsForResourceRequest is the request for ListTagsForResource.
+type ListTagsForResourceRequest struct {
+	ResourceArn string `json:"resourceArn"`
 }
 
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
+// ListTagsForResourceResponse is the response for ListTagsForResource.
+type ListTagsForResourceResponse struct {
+	Tags []Tag `json:"tags"`
 }
 
-// validateStateMachineDefinitionResponse is the wire shape of
-// ValidateStateMachineDefinition. AWS returns Result="OK" plus an empty
-// diagnostics array on success; terraform-provider-aws checks Result.
-type validateStateMachineDefinitionResponse struct {
+// TagResourceRequest is the request for TagResource.
+type TagResourceRequest struct {
+	ResourceArn string `json:"resourceArn"`
+	Tags        []Tag  `json:"tags"`
+}
+
+// TagResourceResponse is the response for TagResource.
+type TagResourceResponse struct{}
+
+// UntagResourceRequest is the request for UntagResource.
+type UntagResourceRequest struct {
+	ResourceArn string   `json:"resourceArn"`
+	TagKeys     []string `json:"tagKeys"`
+}
+
+// UntagResourceResponse is the response for UntagResource.
+type UntagResourceResponse struct{}
+
+// ListStateMachineVersionsRequest is the request for ListStateMachineVersions.
+type ListStateMachineVersionsRequest struct {
+	StateMachineArn string `json:"stateMachineArn"`
+	MaxResults      int32  `json:"maxResults,omitempty"`
+	NextToken       string `json:"nextToken,omitempty"`
+}
+
+// ListStateMachineVersionsResponse is the response for ListStateMachineVersions.
+type ListStateMachineVersionsResponse struct {
+	StateMachineVersions []map[string]string `json:"stateMachineVersions"`
+	NextToken            string              `json:"nextToken,omitempty"`
+}
+
+// ListStateMachineAliasesRequest is the request for ListStateMachineAliases.
+type ListStateMachineAliasesRequest struct {
+	StateMachineArn string `json:"stateMachineArn"`
+	MaxResults      int32  `json:"maxResults,omitempty"`
+	NextToken       string `json:"nextToken,omitempty"`
+}
+
+// ListStateMachineAliasesResponse is the response for ListStateMachineAliases.
+type ListStateMachineAliasesResponse struct {
+	StateMachineAliases []map[string]string `json:"stateMachineAliases"`
+	NextToken           string              `json:"nextToken,omitempty"`
+}
+
+// ValidateStateMachineDefinitionRequest is the request for ValidateStateMachineDefinition.
+type ValidateStateMachineDefinitionRequest struct {
+	Definition string `json:"definition"`
+	Type       string `json:"type,omitempty"`
+}
+
+// ValidateStateMachineDefinitionResponse is the response for ValidateStateMachineDefinition.
+type ValidateStateMachineDefinitionResponse struct {
 	Result      string               `json:"result"`
 	Diagnostics []validateDiagnostic `json:"diagnostics"`
 }
@@ -370,22 +424,4 @@ type validateDiagnostic struct {
 	Code     string `json:"code"`
 	Message  string `json:"message"`
 	Location string `json:"location,omitempty"`
-}
-
-// listTagsForResourceResponse is the wire shape of ListTagsForResource;
-// the Tags field must be present even when empty.
-type listTagsForResourceResponse struct {
-	Tags []map[string]string `json:"tags"`
-}
-
-// listStateMachineVersionsResponse is the wire shape of ListStateMachineVersions.
-type listStateMachineVersionsResponse struct {
-	StateMachineVersions []map[string]string `json:"stateMachineVersions"`
-	NextToken            string              `json:"nextToken,omitempty"`
-}
-
-// listStateMachineAliasesResponse is the wire shape of ListStateMachineAliases.
-type listStateMachineAliasesResponse struct {
-	StateMachineAliases []map[string]string `json:"stateMachineAliases"`
-	NextToken           string              `json:"nextToken,omitempty"`
 }

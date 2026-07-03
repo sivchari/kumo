@@ -66,3 +66,12 @@ var (
 	_ service.JSONProtocolService = (*Service)(nil)
 	_ io.Closer                   = (*Service)(nil)
 )
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "GameLift",
+		Category:    "Other Services",
+		Description: "Game server hosting",
+	}
+}

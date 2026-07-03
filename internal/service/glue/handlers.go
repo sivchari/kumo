@@ -1,14 +1,12 @@
 package glue
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // DispatchAction routes Glue requests based on the X-Amz-Target header.
@@ -54,18 +52,16 @@ func (s *Service) actionHandlers() map[string]http.HandlerFunc {
 		"CreateJob":      s.CreateJob,
 		"DeleteJob":      s.DeleteJob,
 		"StartJobRun":    s.StartJobRun,
-		// Tag stubs — see tag_stubs.go.
-		// Required by terraform-provider-aws after CreateDatabase / CreateTable.
-		"GetTags":       s.GetTags,
-		"TagResource":   s.TagResource,
-		"UntagResource": s.UntagResource,
+		"GetTags":        s.GetTags,
+		"TagResource":    s.TagResource,
+		"UntagResource":  s.UntagResource,
 	}
 }
 
 // CreateDatabase handles the CreateDatabase operation.
 func (s *Service) CreateDatabase(w http.ResponseWriter, r *http.Request) {
 	var req CreateDatabaseInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -89,7 +85,7 @@ func (s *Service) CreateDatabase(w http.ResponseWriter, r *http.Request) {
 // GetDatabase handles the GetDatabase operation.
 func (s *Service) GetDatabase(w http.ResponseWriter, r *http.Request) {
 	var req GetDatabaseInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -124,7 +120,7 @@ func (s *Service) GetDatabase(w http.ResponseWriter, r *http.Request) {
 // GetDatabases handles the GetDatabases operation.
 func (s *Service) GetDatabases(w http.ResponseWriter, r *http.Request) {
 	var req GetDatabasesInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -160,7 +156,7 @@ func (s *Service) GetDatabases(w http.ResponseWriter, r *http.Request) {
 // DeleteDatabase handles the DeleteDatabase operation.
 func (s *Service) DeleteDatabase(w http.ResponseWriter, r *http.Request) {
 	var req DeleteDatabaseInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -184,7 +180,7 @@ func (s *Service) DeleteDatabase(w http.ResponseWriter, r *http.Request) {
 // CreateTable handles the CreateTable operation.
 func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 	var req CreateTableInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -214,7 +210,7 @@ func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 // GetTable handles the GetTable operation.
 func (s *Service) GetTable(w http.ResponseWriter, r *http.Request) {
 	var req GetTableInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -264,7 +260,7 @@ func (s *Service) GetTable(w http.ResponseWriter, r *http.Request) {
 // GetTables handles the GetTables operation.
 func (s *Service) GetTables(w http.ResponseWriter, r *http.Request) {
 	var req GetTablesInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -315,7 +311,7 @@ func (s *Service) GetTables(w http.ResponseWriter, r *http.Request) {
 // DeleteTable handles the DeleteTable operation.
 func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 	var req DeleteTableInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -345,7 +341,7 @@ func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 // CreateJob handles the CreateJob operation.
 func (s *Service) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -366,7 +362,7 @@ func (s *Service) CreateJob(w http.ResponseWriter, r *http.Request) {
 // DeleteJob handles the DeleteJob operation.
 func (s *Service) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	var req DeleteJobInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -390,7 +386,7 @@ func (s *Service) DeleteJob(w http.ResponseWriter, r *http.Request) {
 // StartJobRun handles the StartJobRun operation.
 func (s *Service) StartJobRun(w http.ResponseWriter, r *http.Request) {
 	var req StartJobRunInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -416,44 +412,14 @@ func (s *Service) StartJobRun(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions.
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-
-	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
-	}
+	service.WriteJSONResponse(w, service.ContentTypeJSON, v)
 }
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeJSON, code, message, status)
 }
 
 // handleStorageError handles storage errors and writes appropriate response.
@@ -471,4 +437,59 @@ func handleStorageError(w http.ResponseWriter, err error) {
 	}
 
 	writeError(w, "InternalServiceError", "Internal server error", http.StatusInternalServerError)
+}
+
+// GetTags handles the GetTags operation.
+func (s *Service) GetTags(w http.ResponseWriter, r *http.Request) {
+	var req GetTagsInput
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.GetTags(r.Context(), req.ResourceArn)
+	if err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, GetTagsOutput{Tags: tags})
+}
+
+// TagResource handles the TagResource operation.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceInput
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceArn, req.TagsToAdd); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// UntagResource handles the UntagResource operation.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceInput
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidInput, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceArn, req.TagsToRemove); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
 }

@@ -163,6 +163,7 @@ func parseServiceFromUserAgent(userAgent string) string {
 		// Strip version suffix: "rds#1.5.0" / "rds/1.5.0" -> "rds"
 		name, _, _ := strings.Cut(after, "#")
 		name, _, _ = strings.Cut(name, "/")
+		name = strings.ToLower(name)
 
 		return name
 	}

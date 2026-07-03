@@ -37,6 +37,8 @@ type Storage interface {
 	ChangeRecordSets(hostedZoneID string, changes []Change) error
 	PutChange(change *ChangeInfo) error
 	GetChange(id string) (*ChangeInfo, error)
+	ListTagsForResource(resourceType, resourceID string) ([]Tag, error)
+	ChangeTagsForResource(resourceType, resourceID string, addTags []Tag, removeKeys []string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -61,6 +63,7 @@ type MemoryStorage struct {
 	HostedZones map[string]*HostedZone         `json:"hostedZones"`
 	RecordSets  map[string][]ResourceRecordSet `json:"recordSets"` // key: hostedZoneID
 	Changes     map[string]*ChangeInfo         `json:"changes"`    // key: bare change ID
+	Tags        map[string][]Tag               `json:"tags"`       // key: "{type}/{id}"
 	dataDir     string
 }
 
@@ -70,6 +73,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		HostedZones: make(map[string]*HostedZone),
 		RecordSets:  make(map[string][]ResourceRecordSet),
 		Changes:     make(map[string]*ChangeInfo),
+		Tags:        make(map[string][]Tag),
 	}
 	for _, o := range opts {
 		o(s)
@@ -122,7 +126,20 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Changes = make(map[string]*ChangeInfo)
 	}
 
+	if s.Tags == nil {
+		s.Tags = make(map[string][]Tag)
+	}
+
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "route53", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -149,6 +166,8 @@ func (s *MemoryStorage) CreateHostedZone(zone *HostedZone) error {
 
 	s.HostedZones[zone.ID] = zone
 	s.RecordSets[zone.ID] = []ResourceRecordSet{}
+
+	s.saveLocked()
 
 	return nil
 }
@@ -199,6 +218,12 @@ func (s *MemoryStorage) DeleteHostedZone(id string) error {
 
 	delete(s.HostedZones, id)
 	delete(s.RecordSets, id)
+
+	// Clean up tags associated with the hosted zone.
+	bareID := strings.TrimPrefix(id, "/hostedzone/")
+	delete(s.Tags, "hostedzone/"+bareID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -265,6 +290,8 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 		zone.ResourceRecordSetCount = int64(len(records))
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -275,6 +302,8 @@ func (s *MemoryStorage) PutChange(change *ChangeInfo) error {
 
 	id := strings.TrimPrefix(change.ID, "/change/")
 	s.Changes[id] = change
+
+	s.saveLocked()
 
 	return nil
 }
@@ -301,4 +330,68 @@ func (s *MemoryStorage) findRecordIndex(records []ResourceRecordSet, name, recor
 	}
 
 	return -1
+}
+
+// ListTagsForResource returns the tags for the given resource.
+func (s *MemoryStorage) ListTagsForResource(resourceType, resourceID string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := resourceType + "/" + resourceID
+	tags := s.Tags[key]
+
+	if tags == nil {
+		return []Tag{}, nil
+	}
+
+	// Return a copy.
+	out := make([]Tag, len(tags))
+	copy(out, tags)
+
+	return out, nil
+}
+
+// ChangeTagsForResource adds and/or removes tags for the given resource.
+func (s *MemoryStorage) ChangeTagsForResource(resourceType, resourceID string, addTags []Tag, removeKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := resourceType + "/" + resourceID
+
+	tags := s.Tags[key]
+
+	// Remove tags by key.
+	for _, rk := range removeKeys {
+		for i := range tags {
+			if tags[i].Key == rk {
+				tags = append(tags[:i], tags[i+1:]...)
+
+				break
+			}
+		}
+	}
+
+	// Add/update tags.
+	for _, at := range addTags {
+		found := false
+
+		for i := range tags {
+			if tags[i].Key == at.Key {
+				tags[i].Value = at.Value
+				found = true
+
+				break
+			}
+		}
+
+		if !found {
+			tags = append(tags, at)
+		}
+	}
+
+	s.Tags[key] = tags
+
+	s.saveLocked()
+
+	return nil
 }

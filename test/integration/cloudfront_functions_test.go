@@ -146,7 +146,9 @@ func TestCloudFrontFunctions_ListFunctions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listed, err := client.ListFunctions(ctx, &cloudfront.ListFunctionsInput{})
+	listed, err := client.ListFunctions(ctx, &cloudfront.ListFunctionsInput{
+		Stage: types.FunctionStageDevelopment,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

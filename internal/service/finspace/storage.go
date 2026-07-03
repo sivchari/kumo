@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ const (
 	errConflict         = "ConflictException"
 	errValidation       = "ValidationException"
 
+	defaultRegion = "us-east-1"
 	statusCreated = "CREATED"
 )
 
@@ -80,13 +82,18 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Environments: make(map[string]*KxEnvironment),
 		Databases:    make(map[string]*KxDatabase),
 		Users:        make(map[string]*KxUser),
 		Tags:         make(map[string]map[string]string),
 		accountID:    "123456789012",
-		region:       "us-east-1",
+		region:       region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -146,6 +153,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "finspace", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -195,6 +211,8 @@ func (s *MemoryStorage) CreateKxEnvironment(_ context.Context, req *CreateKxEnvi
 	if len(req.Tags) > 0 {
 		s.Tags[arn] = req.Tags
 	}
+
+	s.saveLocked()
 
 	return &CreateKxEnvironmentResponse{
 		CreationTimestamp: env.CreationTimestamp,
@@ -256,6 +274,8 @@ func (s *MemoryStorage) DeleteKxEnvironment(_ context.Context, environmentID str
 	delete(s.Tags, env.EnvironmentARN)
 	delete(s.Environments, environmentID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -305,6 +325,8 @@ func (s *MemoryStorage) UpdateKxEnvironment(_ context.Context, req *UpdateKxEnvi
 	}
 
 	env.UpdateTimestamp = float64(time.Now().Unix())
+
+	s.saveLocked()
 
 	return &UpdateKxEnvironmentResponse{
 		AvailabilityZoneIDs:       env.AvailabilityZoneIDs,
@@ -364,6 +386,8 @@ func (s *MemoryStorage) CreateKxDatabase(_ context.Context, req *CreateKxDatabas
 		s.Tags[arn] = req.Tags
 	}
 
+	s.saveLocked()
+
 	return &CreateKxDatabaseResponse{
 		CreatedTimestamp: db.CreatedTimestamp,
 		DatabaseARN:      db.DatabaseARN,
@@ -420,6 +444,8 @@ func (s *MemoryStorage) DeleteKxDatabase(_ context.Context, environmentID, datab
 	delete(s.Tags, db.DatabaseARN)
 	delete(s.Databases, key)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -472,6 +498,8 @@ func (s *MemoryStorage) UpdateKxDatabase(_ context.Context, req *UpdateKxDatabas
 
 	db.LastModifiedTimestamp = float64(time.Now().Unix())
 
+	s.saveLocked()
+
 	return &UpdateKxDatabaseResponse{
 		DatabaseARN:           db.DatabaseARN,
 		DatabaseName:          db.DatabaseName,
@@ -521,6 +549,8 @@ func (s *MemoryStorage) CreateKxUser(_ context.Context, req *CreateKxUserRequest
 		s.Tags[arn] = req.Tags
 	}
 
+	s.saveLocked()
+
 	return &CreateKxUserResponse{
 		EnvironmentID: req.EnvironmentID,
 		IamRole:       user.IamRole,
@@ -569,6 +599,8 @@ func (s *MemoryStorage) DeleteKxUser(_ context.Context, environmentID, userName 
 
 	delete(s.Tags, user.UserARN)
 	delete(s.Users, key)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -621,6 +653,8 @@ func (s *MemoryStorage) UpdateKxUser(_ context.Context, req *UpdateKxUserRequest
 
 	user.UpdateTimestamp = float64(time.Now().Unix())
 
+	s.saveLocked()
+
 	return &UpdateKxUserResponse{
 		EnvironmentID: req.EnvironmentID,
 		IamRole:       user.IamRole,
@@ -640,6 +674,8 @@ func (s *MemoryStorage) TagResource(_ context.Context, resourceARN string, tags 
 
 	maps.Copy(s.Tags[resourceARN], tags)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -655,6 +691,8 @@ func (s *MemoryStorage) UntagResource(_ context.Context, resourceARN string, tag
 	for _, key := range tagKeys {
 		delete(s.Tags[resourceARN], key)
 	}
+
+	s.saveLocked()
 
 	return nil
 }

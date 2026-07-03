@@ -27,6 +27,15 @@ const (
 	// to a const because the metadata-pass loop excludes it in three
 	// different handlers — goconst was flagging the literal.
 	contentTypeHeader = "Content-Type"
+
+	taggingDirectiveHeader  = "X-Amz-Tagging-Directive"
+	taggingDirectiveCopy    = "COPY"
+	taggingDirectiveReplace = "REPLACE"
+	taggingHeader           = "X-Amz-Tagging"
+
+	metadataDirectiveHeader  = "X-Amz-Metadata-Directive"
+	metadataDirectiveCopy    = "COPY"
+	metadataDirectiveReplace = "REPLACE"
 )
 
 // applyCORSHeaders sets CORS response headers if the bucket has CORS configured and the request Origin matches.
@@ -107,73 +116,41 @@ func (s *Service) HandleCORSPreflight(w http.ResponseWriter, r *http.Request) {
 
 // handleBucketGet dispatches GET /{bucket} requests based on query parameters.
 //
-//nolint:funlen // It's a straightforward dispatch, and splitting it up would just add indirection.
+// bucketGetSubresources maps a GET query-parameter key to its handler, in the
+// order they must be checked. AWS treats these subresource selectors as
+// mutually exclusive, so the first present key wins.
+var bucketGetSubresources = []struct {
+	key     string
+	handler func(*Service, http.ResponseWriter, *http.Request)
+}{
+	{"versioning", (*Service).GetBucketVersioning},
+	{"publicAccessBlock", (*Service).GetPublicAccessBlock},
+	{"encryption", (*Service).GetBucketEncryption},
+	{"policy", (*Service).GetBucketPolicy},
+	{"logging", (*Service).GetBucketLogging},
+	{"versions", (*Service).ListObjectVersions},
+	{"uploads", (*Service).ListMultipartUploads},
+	{"website", (*Service).GetBucketWebsite},
+	{"lifecycle", (*Service).GetBucketLifecycleConfiguration},
+	{"cors", (*Service).GetBucketCors},
+}
+
 func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
-	if _, ok := r.URL.Query()["versioning"]; ok {
-		s.GetBucketVersioning(w, r)
+	query := r.URL.Query()
 
-		return
-	}
+	for _, sub := range bucketGetSubresources {
+		if _, ok := query[sub.key]; ok {
+			sub.handler(s, w, r)
 
-	if _, ok := r.URL.Query()["publicAccessBlock"]; ok {
-		s.GetPublicAccessBlock(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["encryption"]; ok {
-		s.GetBucketEncryption(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["policy"]; ok {
-		s.GetBucketPolicy(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["logging"]; ok {
-		s.GetBucketLogging(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["versions"]; ok {
-		s.ListObjectVersions(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["uploads"]; ok {
-		s.ListMultipartUploads(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["website"]; ok {
-		s.GetBucketWebsite(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["lifecycle"]; ok {
-		s.GetBucketLifecycleConfiguration(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["cors"]; ok {
-		s.GetBucketCors(w, r)
-
-		return
+			return
+		}
 	}
 
 	if handled := s.serveBucketSubresourceStub(w, r); handled {
 		return
 	}
 
-	if r.URL.Query().Get("list-type") == "2" {
+	if query.Get("list-type") == "2" {
 		s.ListObjects(w, r)
 
 		return
@@ -295,6 +272,13 @@ func defaultBucketACL() any {
 func (s *Service) handleBucketPost(w http.ResponseWriter, r *http.Request) {
 	if _, ok := r.URL.Query()["delete"]; ok {
 		s.DeleteObjects(w, r)
+
+		return
+	}
+
+	// Browser-based "presigned POST" uploads arrive as multipart/form-data.
+	if strings.HasPrefix(r.Header.Get(contentTypeHeader), "multipart/form-data") {
+		s.PostObject(w, r)
 
 		return
 	}
@@ -756,9 +740,7 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metadata := extractObjectMetadata(r)
-
-	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, metadata)
+	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, extractObjectMetadata(r.Header))
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -773,9 +755,9 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store tags from x-amz-tagging header (URL-encoded query string format).
-	if taggingHeader := r.Header.Get("X-Amz-Tagging"); taggingHeader != "" {
-		tags := parseTaggingHeader(taggingHeader)
-		if len(tags) > 0 {
+	if header := r.Header.Get("X-Amz-Tagging"); header != "" {
+		tags, err := parseTaggingHeader(header)
+		if err == nil && len(tags) > 0 {
 			_ = s.storage.PutObjectTagging(r.Context(), bucket, key, tags)
 		}
 	}
@@ -802,25 +784,14 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	dstBucket := r.PathValue("bucket")
 	dstKey := r.PathValue("key")
 
-	copySource := r.Header.Get("X-Amz-Copy-Source")
-	srcBucket, srcKey, srcVersionID := parseCopySource(copySource)
-
+	srcBucket, srcKey, srcVersionID := parseCopySource(r.Header.Get("X-Amz-Copy-Source"))
 	if srcBucket == "" || srcKey == "" {
 		writeS3Error(w, r, "InvalidArgument", "Invalid copy source", http.StatusBadRequest)
 
 		return
 	}
 
-	var srcObj *Object
-
-	var err error
-
-	if srcVersionID != "" {
-		srcObj, err = s.storage.GetObjectVersion(r.Context(), srcBucket, srcKey, srcVersionID)
-	} else {
-		srcObj, err = s.storage.GetObject(r.Context(), srcBucket, srcKey)
-	}
-
+	srcObj, err := s.getCopySource(r.Context(), srcBucket, srcKey, srcVersionID)
 	if err != nil {
 		handleGetObjectError(w, r, err)
 
@@ -833,7 +804,21 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), srcObj.Metadata)
+	metadata, err := copyObjectMetadata(r.Header, srcObj.Metadata)
+	if err != nil {
+		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.copyObjectTags(r.Context(), r.Header, srcBucket, srcKey)
+	if err != nil {
+		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	dstObj, err := s.storage.PutObject(r.Context(), dstBucket, dstKey, bytes.NewReader(srcObj.Body), metadata)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -842,6 +827,12 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if err := s.storage.PutObjectTagging(r.Context(), dstBucket, dstKey, tags); err != nil {
 		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 
 		return
@@ -860,6 +851,89 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 	go s.emitObjectCreatedEvent(context.Background(), dstBucket, dstKey, dstObj.Size, dstObj.ETag)
 	go s.emitSQSNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
+}
+
+// getCopySource retrieves the source object for a copy operation,
+// handling version-specific requests when srcVersionID is non-empty.
+func (s *Service) getCopySource(ctx context.Context, bucket, key, versionID string) (*Object, error) {
+	if versionID != "" {
+		obj, err := s.storage.GetObjectVersion(ctx, bucket, key, versionID)
+		if err != nil {
+			return nil, fmt.Errorf("get object version failed: %w", err)
+		}
+
+		return obj, nil
+	}
+
+	obj, err := s.storage.GetObject(ctx, bucket, key)
+	if err != nil {
+		return nil, fmt.Errorf("get object failed: %w", err)
+	}
+
+	return obj, nil
+}
+
+func extractObjectMetadata(header http.Header) map[string]string {
+	metadata := make(map[string]string)
+	if ct := header.Get(contentTypeHeader); ct != "" {
+		metadata[contentTypeHeader] = ct
+	}
+
+	for name, values := range header {
+		if len(values) == 0 {
+			continue
+		}
+
+		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
+			metadata[metaKey] = values[0]
+		}
+	}
+
+	if sse := header.Get("X-Amz-Server-Side-Encryption"); sse != "" {
+		metadata["x-amz-server-side-encryption"] = sse
+	}
+
+	if sseKey := header.Get("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"); sseKey != "" {
+		metadata["x-amz-server-side-encryption-aws-kms-key-id"] = sseKey
+	}
+
+	return metadata
+}
+
+func copyObjectMetadata(header http.Header, src map[string]string) (map[string]string, error) {
+	switch strings.ToUpper(header.Get(metadataDirectiveHeader)) {
+	case "", metadataDirectiveCopy:
+		return cloneStringMap(src), nil
+	case metadataDirectiveReplace:
+		return extractObjectMetadata(header), nil
+	default:
+		return nil, errors.New("invalid metadata directive")
+	}
+}
+
+func (s *Service) copyObjectTags(ctx context.Context, header http.Header, srcBucket, srcKey string) (map[string]string, error) {
+	switch strings.ToUpper(header.Get(taggingDirectiveHeader)) {
+	case "", taggingDirectiveCopy:
+		tags, err := s.storage.GetObjectTagging(ctx, srcBucket, srcKey)
+		if err != nil {
+			return nil, fmt.Errorf("get source object tagging: %w", err)
+		}
+
+		return cloneStringMap(tags), nil
+	case taggingDirectiveReplace:
+		return parseTaggingHeader(header.Get(taggingHeader))
+	default:
+		return nil, errors.New("invalid tagging directive")
+	}
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+
+	return dst
 }
 
 // parseCopySource parses the X-Amz-Copy-Source header value.
@@ -2413,46 +2487,29 @@ func handleMultipartError(w http.ResponseWriter, r *http.Request, err error) {
 	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 }
 
-// extractObjectMetadata builds the metadata map from request headers.
-func extractObjectMetadata(r *http.Request) map[string]string {
-	metadata := make(map[string]string)
-
-	if ct := r.Header.Get("Content-Type"); ct != "" {
-		metadata["Content-Type"] = ct
-	}
-
-	for name, values := range r.Header {
-		if metaKey, found := strings.CutPrefix(strings.ToLower(name), "x-amz-meta-"); found {
-			metadata[metaKey] = values[0]
-		}
-	}
-
-	if sse := r.Header.Get("X-Amz-Server-Side-Encryption"); sse != "" {
-		metadata["x-amz-server-side-encryption"] = sse
-	}
-
-	if sseKey := r.Header.Get("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"); sseKey != "" {
-		metadata["x-amz-server-side-encryption-aws-kms-key-id"] = sseKey
-	}
-
-	return metadata
-}
-
 // parseTaggingHeader parses the x-amz-tagging header value.
 // Format: URL-encoded query string, e.g. "key1=value1&key2=value2".
-func parseTaggingHeader(header string) map[string]string {
-	tags := make(map[string]string)
+// Percent-encoded keys / values are decoded via url.ParseQuery, so PutObject
+// and CopyObject (with REPLACE directive) treat tagging strings identically.
+func parseTaggingHeader(raw string) (map[string]string, error) {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil, errors.New("invalid tagging")
+	}
 
-	for _, pair := range strings.Split(header, "&") {
-		k, v, ok := strings.Cut(pair, "=")
-		if !ok || k == "" {
+	tags := make(map[string]string, len(values))
+
+	for key, value := range values {
+		if len(value) == 0 {
+			tags[key] = ""
+
 			continue
 		}
 
-		tags[k] = v
+		tags[key] = value[0]
 	}
 
-	return tags
+	return tags, nil
 }
 
 // PutObjectTagging handles PUT /{bucket}/{key}?tagging.

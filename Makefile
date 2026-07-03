@@ -1,9 +1,11 @@
-.PHONY: build run test test-integration test-helm-e2e clean docker lint lint-fix fmt fmt-diff
+.PHONY: build run test test-fuzz test-integration test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme
 
 BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
 BUILD_DIR=bin
 GOLANGCI_LINT=go tool -modfile tools/go.mod golangci-lint
+GOTOOLCHAIN=go1.25.10
+export GOTOOLCHAIN
 
 # Build
 build:
@@ -23,6 +25,14 @@ test-cover:
 test-integration:
 	go test -C test -v -tags=integration ./integration/...
 
+test-fuzz:
+	@grep -rl '^func Fuzz' internal/ | xargs -I{} dirname {} | sort -u | while read pkg; do \
+		grep -oh 'func \(Fuzz[A-Za-z]*\)' "$$pkg"/*_test.go | sed 's/func //' | while read fn; do \
+			echo "=== fuzzing $$fn in $$pkg ==="; \
+			go test -fuzz="$$fn" -fuzztime=60s "./$$pkg/..." || exit 1; \
+		done; \
+	done
+
 test-helm-e2e:
 	bash test/e2e/helm-e2e.sh
 
@@ -38,6 +48,10 @@ fmt:
 
 fmt-diff:
 	$(GOLANGCI_LINT) fmt ./... --diff
+
+# Regenerate the README service catalog from each service's Meta().
+readme:
+	go run ./cmd/readme-gen
 
 # Docker
 docker:

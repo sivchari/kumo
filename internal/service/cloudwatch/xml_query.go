@@ -83,6 +83,42 @@ type xmlMetricAlarm struct {
 	AlarmConfigurationUpdatedTimestamp string  `xml:"AlarmConfigurationUpdatedTimestamp,omitempty"`
 }
 
+// xmlListTagsForResourceResponse echoes the AWS Query shape
+// (`<ListTagsForResourceResponse><ListTagsForResourceResult><Tags>...</Tags></ListTagsForResourceResult></...>`).
+type xmlListTagsForResourceResponse struct {
+	XMLName                   xml.Name                     `xml:"ListTagsForResourceResponse"`
+	Xmlns                     string                       `xml:"xmlns,attr"`
+	ListTagsForResourceResult xmlListTagsForResourceResult `xml:"ListTagsForResourceResult"`
+	ResponseMetadata          xmlResponseMetadata          `xml:"ResponseMetadata"`
+}
+
+type xmlListTagsForResourceResult struct {
+	Tags xmlTagList `xml:"Tags"`
+}
+
+type xmlTagList struct {
+	Members []xmlTagMember `xml:"member"`
+}
+
+type xmlTagMember struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+// xmlTagResourceResponse is the empty envelope returned for TagResource.
+type xmlTagResourceResponse struct {
+	XMLName          xml.Name            `xml:"TagResourceResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata xmlResponseMetadata `xml:"ResponseMetadata"`
+}
+
+// xmlUntagResourceResponse is the empty envelope returned for UntagResource.
+type xmlUntagResourceResponse struct {
+	XMLName          xml.Name            `xml:"UntagResourceResponse"`
+	Xmlns            string              `xml:"xmlns,attr"`
+	ResponseMetadata xmlResponseMetadata `xml:"ResponseMetadata"`
+}
+
 // metricAlarmsToXML converts the internal MetricAlarm slice to the XML
 // member list shape.
 func metricAlarmsToXML(alarms []MetricAlarm) []xmlMetricAlarm {

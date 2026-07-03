@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateBroker handles the CreateBroker API.
@@ -289,10 +291,7 @@ func handleError(w http.ResponseWriter, err error) {
 
 // writeJSONResponse writes a JSON response with status 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Amzn-Requestid", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponse(w, service.ContentTypeJSON, v)
 }
 
 // writeError writes an MQ error response.

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // handlerFunc is a type alias for handler functions.
@@ -33,11 +35,9 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"CreateApiDestination":   s.CreateAPIDestination,
 		"DescribeApiDestination": s.DescribeAPIDestination,
 		"DeleteApiDestination":   s.DeleteAPIDestination,
-		// Tag stubs — see tag_stubs.go.
-		// Required by terraform-provider-aws after CreateEventBus.
-		"ListTagsForResource": s.ListTagsForResource,
-		"TagResource":         s.TagResource,
-		"UntagResource":       s.UntagResource,
+		"ListTagsForResource":    s.ListTagsForResource,
+		"TagResource":            s.TagResource,
+		"UntagResource":          s.UntagResource,
 	}
 }
 
@@ -535,6 +535,61 @@ func (s *Service) DeleteAPIDestination(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, &DeleteAPIDestinationResponse{})
 }
 
+// ListTagsForResource handles the ListTagsForResource API.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &ListTagsForResourceResponse{Tags: tags})
+}
+
+// TagResource handles the TagResource API.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &TagResourceResponse{})
+}
+
+// UntagResource handles the UntagResource API.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &UntagResourceResponse{})
+}
+
 // GetDeliveredEvents returns events that were matched against rules and delivered to targets.
 // This is a kumo-specific endpoint for test verification.
 func (s *Service) GetDeliveredEvents(w http.ResponseWriter, r *http.Request) {
@@ -555,13 +610,7 @@ func writeResponse(w http.ResponseWriter, resp any) {
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(&ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }
 
 // handleError handles service errors.

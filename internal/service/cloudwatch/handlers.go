@@ -1,10 +1,8 @@
 package cloudwatch
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sivchari/kumo/internal/server"
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Error codes for CloudWatch.
@@ -26,7 +25,7 @@ const (
 // PutMetricData handles the PutMetricData action.
 func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricDataRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -57,7 +56,7 @@ func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 // GetMetricData handles the GetMetricData action.
 func (s *Service) GetMetricData(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricDataRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -85,7 +84,7 @@ func (s *Service) GetMetricData(w http.ResponseWriter, r *http.Request) {
 // GetMetricStatistics handles the GetMetricStatistics action.
 func (s *Service) GetMetricStatistics(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricStatisticsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -119,7 +118,7 @@ func (s *Service) GetMetricStatistics(w http.ResponseWriter, r *http.Request) {
 // ListMetrics handles the ListMetrics action.
 func (s *Service) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	var req ListMetricsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -142,7 +141,7 @@ func (s *Service) ListMetrics(w http.ResponseWriter, r *http.Request) {
 // PutMetricAlarm handles the PutMetricAlarm action.
 func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricAlarmRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -189,7 +188,7 @@ func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 // DeleteAlarms handles the DeleteAlarms action.
 func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAlarmsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -218,7 +217,7 @@ func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 // DescribeAlarms handles the DescribeAlarms action.
 func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 	var req DescribeAlarmsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -245,7 +244,7 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 // SetAlarmState handles the SetAlarmState action via JSON protocol.
 func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 	var req SetAlarmStateRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -264,6 +263,96 @@ func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, struct{}{})
+}
+
+// ListTagsForResource returns the tags attached to a CloudWatch resource.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	members := make([]xmlTagMember, 0, len(tags))
+	for _, tag := range tags {
+		members = append(members, xmlTagMember(tag))
+	}
+
+	writeCloudWatchXML(w, xmlListTagsForResourceResponse{
+		Xmlns: cloudWatchXMLNS,
+		ListTagsForResourceResult: xmlListTagsForResourceResult{
+			Tags: xmlTagList{Members: members},
+		},
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// TagResource attaches tags to a CloudWatch resource.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlTagResourceResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
+}
+
+// UntagResource removes tags from a CloudWatch resource.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
+		handleCloudWatchError(w, err)
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlUntagResourceResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
@@ -316,41 +405,14 @@ func handleCloudWatchError(w http.ResponseWriter, err error) {
 	writeCloudWatchError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
 }
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponse(w, service.ContentTypeAmzJSON10, v)
 }
 
 // writeCloudWatchError writes a CloudWatch error response in JSON format.
 func writeCloudWatchError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
 // CBOR Protocol Handlers for RPC v2 CBOR
@@ -665,6 +727,81 @@ func (s *Service) SetAlarmStateCBOR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.storage.SetAlarmState(r.Context(), req.AlarmName, req.StateValue, req.StateReason); err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, struct{}{})
+}
+
+// ListTagsForResourceCBOR handles the ListTagsForResource action with CBOR protocol.
+func (s *Service) ListTagsForResourceCBOR(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, ListTagsForResourceCBORResponse{
+		Tags: tags,
+	})
+}
+
+// TagResourceCBOR handles the TagResource action with CBOR protocol.
+func (s *Service) TagResourceCBOR(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleCloudWatchCBORError(w, err)
+
+		return
+	}
+
+	server.WriteCBORResponse(w, struct{}{})
+}
+
+// UntagResourceCBOR handles the UntagResource action with CBOR protocol.
+func (s *Service) UntagResourceCBOR(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := server.DecodeCBORRequest(r, &req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
 		handleCloudWatchCBORError(w, err)
 
 		return

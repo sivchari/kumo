@@ -69,3 +69,12 @@ func (s *Service) Close() error {
 
 	return nil
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "Amplify",
+		Category:    "Application Integration",
+		Description: "Full-stack application hosting",
+	}
+}

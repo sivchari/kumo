@@ -121,6 +121,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "entityresolution", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -159,6 +168,8 @@ func (m *MemoryStorage) CreateSchemaMapping(_ context.Context, req *CreateSchema
 
 	m.Schemas[req.SchemaName] = schema
 
+	m.saveLocked()
+
 	return schema, nil
 }
 
@@ -191,6 +202,8 @@ func (m *MemoryStorage) DeleteSchemaMapping(_ context.Context, schemaName string
 	}
 
 	delete(m.Schemas, schemaName)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -241,6 +254,8 @@ func (m *MemoryStorage) CreateMatchingWorkflow(_ context.Context, req *CreateMat
 
 	m.MatchingWorkflows[req.WorkflowName] = workflow
 
+	m.saveLocked()
+
 	return workflow, nil
 }
 
@@ -273,6 +288,8 @@ func (m *MemoryStorage) DeleteMatchingWorkflow(_ context.Context, workflowName s
 	}
 
 	delete(m.MatchingWorkflows, workflowName)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -323,6 +340,8 @@ func (m *MemoryStorage) CreateIDMappingWorkflow(_ context.Context, req *CreateID
 
 	m.IDMappingWorkflows[req.WorkflowName] = workflow
 
+	m.saveLocked()
+
 	return workflow, nil
 }
 
@@ -355,6 +374,8 @@ func (m *MemoryStorage) DeleteIDMappingWorkflow(_ context.Context, workflowName 
 	}
 
 	delete(m.IDMappingWorkflows, workflowName)
+
+	m.saveLocked()
 
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -15,14 +16,7 @@ const (
 )
 
 // ServiceError represents a MemoryDB service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-func (e *ServiceError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
+type ServiceError = service.CodedError
 
 const (
 	errClusterNotFound = "ClusterNotFoundFault"
@@ -137,6 +131,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "memorydb", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -245,6 +248,8 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 	cluster := buildCluster(req)
 	m.Clusters[req.ClusterName] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -286,6 +291,15 @@ func (m *MemoryStorage) UpdateCluster(_ context.Context, req *UpdateClusterReque
 		}
 	}
 
+	applyClusterUpdates(cluster, req)
+
+	m.saveLocked()
+
+	return cluster, nil
+}
+
+// applyClusterUpdates applies non-empty fields from the update request to the cluster.
+func applyClusterUpdates(cluster *Cluster, req *UpdateClusterRequest) {
 	if req.Description != "" {
 		cluster.Description = req.Description
 	}
@@ -333,8 +347,6 @@ func (m *MemoryStorage) UpdateCluster(_ context.Context, req *UpdateClusterReque
 
 		cluster.SecurityGroups = sgs
 	}
-
-	return cluster, nil
 }
 
 // DeleteCluster deletes a cluster.
@@ -353,6 +365,8 @@ func (m *MemoryStorage) DeleteCluster(_ context.Context, clusterName string) (*C
 	cluster.Status = statusDeleting
 
 	delete(m.Clusters, clusterName)
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -393,6 +407,8 @@ func (m *MemoryStorage) CreateUser(_ context.Context, req *CreateUserRequest) (*
 	}
 
 	m.Users[req.UserName] = user
+
+	m.saveLocked()
 
 	return user, nil
 }
@@ -439,6 +455,8 @@ func (m *MemoryStorage) DeleteUser(_ context.Context, userName string) (*User, e
 
 	delete(m.Users, userName)
 
+	m.saveLocked()
+
 	return user, nil
 }
 
@@ -469,6 +487,8 @@ func (m *MemoryStorage) CreateACL(_ context.Context, req *CreateACLRequest) (*AC
 	}
 
 	m.Acls[req.ACLName] = acl
+
+	m.saveLocked()
 
 	return acl, nil
 }
@@ -514,6 +534,8 @@ func (m *MemoryStorage) DeleteACL(_ context.Context, aclName string) (*ACL, erro
 	acl.Status = statusDeleting
 
 	delete(m.Acls, aclName)
+
+	m.saveLocked()
 
 	return acl, nil
 }

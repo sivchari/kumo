@@ -2,15 +2,15 @@
 package rds
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const rdsXMLNS = "http://rds.amazonaws.com/doc/2014-10-31/"
@@ -52,7 +52,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateDBInstance handles the CreateDBInstance action.
 func (s *Service) CreateDBInstance(w http.ResponseWriter, r *http.Request) {
 	var req CreateDBInstanceInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -93,7 +93,7 @@ func (s *Service) CreateDBInstance(w http.ResponseWriter, r *http.Request) {
 // DeleteDBInstance handles the DeleteDBInstance action.
 func (s *Service) DeleteDBInstance(w http.ResponseWriter, r *http.Request) {
 	var req DeleteDBInstanceInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -122,7 +122,7 @@ func (s *Service) DeleteDBInstance(w http.ResponseWriter, r *http.Request) {
 // DescribeDBInstances handles the DescribeDBInstances action.
 func (s *Service) DescribeDBInstances(w http.ResponseWriter, r *http.Request) {
 	var req DescribeDBInstancesInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -150,7 +150,7 @@ func (s *Service) DescribeDBInstances(w http.ResponseWriter, r *http.Request) {
 // ModifyDBInstance handles the ModifyDBInstance action.
 func (s *Service) ModifyDBInstance(w http.ResponseWriter, r *http.Request) {
 	var req ModifyDBInstanceInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -179,7 +179,7 @@ func (s *Service) ModifyDBInstance(w http.ResponseWriter, r *http.Request) {
 // StartDBInstance handles the StartDBInstance action.
 func (s *Service) StartDBInstance(w http.ResponseWriter, r *http.Request) {
 	var req StartDBInstanceInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -208,7 +208,7 @@ func (s *Service) StartDBInstance(w http.ResponseWriter, r *http.Request) {
 // StopDBInstance handles the StopDBInstance action.
 func (s *Service) StopDBInstance(w http.ResponseWriter, r *http.Request) {
 	var req StopDBInstanceInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -237,7 +237,7 @@ func (s *Service) StopDBInstance(w http.ResponseWriter, r *http.Request) {
 // CreateDBCluster handles the CreateDBCluster action.
 func (s *Service) CreateDBCluster(w http.ResponseWriter, r *http.Request) {
 	var req CreateDBClusterInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -272,7 +272,7 @@ func (s *Service) CreateDBCluster(w http.ResponseWriter, r *http.Request) {
 // DeleteDBCluster handles the DeleteDBCluster action.
 func (s *Service) DeleteDBCluster(w http.ResponseWriter, r *http.Request) {
 	var req DeleteDBClusterInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -301,7 +301,7 @@ func (s *Service) DeleteDBCluster(w http.ResponseWriter, r *http.Request) {
 // DescribeDBClusters handles the DescribeDBClusters action.
 func (s *Service) DescribeDBClusters(w http.ResponseWriter, r *http.Request) {
 	var req DescribeDBClustersInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -329,7 +329,7 @@ func (s *Service) DescribeDBClusters(w http.ResponseWriter, r *http.Request) {
 // ModifyDBCluster handles the ModifyDBCluster action.
 func (s *Service) ModifyDBCluster(w http.ResponseWriter, r *http.Request) {
 	var req ModifyDBClusterInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -358,7 +358,7 @@ func (s *Service) ModifyDBCluster(w http.ResponseWriter, r *http.Request) {
 // CreateDBSnapshot handles the CreateDBSnapshot action.
 func (s *Service) CreateDBSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req CreateDBSnapshotInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -393,7 +393,7 @@ func (s *Service) CreateDBSnapshot(w http.ResponseWriter, r *http.Request) {
 // DeleteDBSnapshot handles the DeleteDBSnapshot action.
 func (s *Service) DeleteDBSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req DeleteDBSnapshotInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -430,23 +430,6 @@ func extractAction(r *http.Request) string {
 	}
 
 	return r.URL.Query().Get("Action")
-}
-
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 func writeXMLResponse(w http.ResponseWriter, v any) {

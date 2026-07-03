@@ -133,6 +133,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "globalaccelerator", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -199,6 +208,8 @@ func (s *MemoryStorage) CreateAccelerator(_ context.Context, req *CreateAccelera
 	}
 
 	s.Accelerators[arn] = accelerator
+
+	s.saveLocked()
 
 	return accelerator, nil
 }
@@ -286,6 +297,8 @@ func (s *MemoryStorage) UpdateAccelerator(_ context.Context, arn, name, ipAddres
 
 	accelerator.LastModified = time.Now()
 
+	s.saveLocked()
+
 	return accelerator, nil
 }
 
@@ -318,6 +331,8 @@ func (s *MemoryStorage) DeleteAccelerator(_ context.Context, arn string) error {
 	}
 
 	delete(s.Accelerators, arn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -354,6 +369,8 @@ func (s *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 	}
 
 	s.Listeners[arn] = listener
+
+	s.saveLocked()
 
 	return listener, nil
 }
@@ -421,6 +438,8 @@ func (s *MemoryStorage) UpdateListener(_ context.Context, req *UpdateListenerReq
 		listener.ClientAffinity = ClientAffinity(req.ClientAffinity)
 	}
 
+	s.saveLocked()
+
 	return listener, nil
 }
 
@@ -441,6 +460,8 @@ func (s *MemoryStorage) DeleteListener(_ context.Context, arn string) error {
 	}
 
 	delete(s.Listeners, arn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -493,6 +514,8 @@ func (s *MemoryStorage) CreateEndpointGroup(_ context.Context, req *CreateEndpoi
 	}
 
 	s.EndpointGroups[arn] = endpointGroup
+
+	s.saveLocked()
 
 	return endpointGroup, nil
 }
@@ -575,6 +598,8 @@ func (s *MemoryStorage) UpdateEndpointGroup(_ context.Context, req *UpdateEndpoi
 		eg.PortOverrides = convertPortOverrides(req.PortOverrides)
 	}
 
+	s.saveLocked()
+
 	return eg, nil
 }
 
@@ -588,6 +613,8 @@ func (s *MemoryStorage) DeleteEndpointGroup(_ context.Context, arn string) error
 	}
 
 	delete(s.EndpointGroups, arn)
+
+	s.saveLocked()
 
 	return nil
 }

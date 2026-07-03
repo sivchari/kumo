@@ -66,10 +66,7 @@ func (s *Service) CreateFunction(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("ETag", fn.ETag)
 	w.Header().Set("Location", "/2020-05-31/function/"+fn.Name)
-	writeXMLResponse(w, http.StatusCreated, xmlCreateFunctionResult{
-		Xmlns:           cloudfrontXmlns,
-		FunctionSummary: functionSummaryXML(fn, FunctionStageDevelopment),
-	})
+	writeXMLResponse(w, http.StatusCreated, functionSummaryResponse(fn, FunctionStageDevelopment))
 }
 
 // GetFunction handles GET /2020-05-31/function/{Name}. The function code
@@ -118,10 +115,7 @@ func (s *Service) DescribeFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("ETag", fn.ETag)
-	writeXMLResponse(w, http.StatusOK, xmlDescribeFunctionResult{
-		Xmlns:           cloudfrontXmlns,
-		FunctionSummary: functionSummaryXML(fn, effectiveStage(stage)),
-	})
+	writeXMLResponse(w, http.StatusOK, functionSummaryResponse(fn, effectiveStage(stage)))
 }
 
 // ListFunctions handles GET /2020-05-31/function.
@@ -141,12 +135,10 @@ func (s *Service) ListFunctions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeXMLResponse(w, http.StatusOK, xmlListFunctionsResult{
-		Xmlns: cloudfrontXmlns,
-		FunctionList: xmlFunctionList{
-			MaxItems: 100,
-			Quantity: len(items),
-			Items:    items,
-		},
+		Xmlns:    cloudfrontXmlns,
+		MaxItems: 100,
+		Quantity: len(items),
+		Items:    items,
 	})
 }
 
@@ -197,10 +189,7 @@ func (s *Service) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("ETag", fn.ETag)
-	writeXMLResponse(w, http.StatusOK, xmlUpdateFunctionResult{
-		Xmlns:           cloudfrontXmlns,
-		FunctionSummary: functionSummaryXML(fn, FunctionStageDevelopment),
-	})
+	writeXMLResponse(w, http.StatusOK, functionSummaryResponse(fn, FunctionStageDevelopment))
 }
 
 // PublishFunction handles POST /2020-05-31/function/{Name}/publish.
@@ -229,10 +218,7 @@ func (s *Service) PublishFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("ETag", fn.ETag)
-	writeXMLResponse(w, http.StatusOK, xmlPublishFunctionResult{
-		Xmlns:           cloudfrontXmlns,
-		FunctionSummary: functionSummaryXML(fn, FunctionStageLive),
-	})
+	writeXMLResponse(w, http.StatusOK, functionSummaryResponse(fn, FunctionStageLive))
 }
 
 // DeleteFunction handles DELETE /2020-05-31/function/{Name}. Requires
@@ -306,16 +292,21 @@ func (s *Service) TestFunction(w http.ResponseWriter, r *http.Request) {
 
 	result := runFunction(code, eventJSON)
 
-	writeXMLResponse(w, http.StatusOK, xmlTestFunctionResult{
-		Xmlns: cloudfrontXmlns,
-		TestResult: xmlTestResult{
-			FunctionSummary:          functionSummaryXML(fn, stage),
-			ComputeUtilization:       "0",
-			FunctionExecutionLogList: xmlFunctionLogList{Items: result.LogLines},
-			FunctionErrorMessage:     result.Error,
-			FunctionOutput:           result.Output,
-		},
+	writeXMLResponse(w, http.StatusOK, xmlTestResult{
+		Xmlns:                 cloudfrontXmlns,
+		FunctionSummary:       functionSummaryXML(fn, stage),
+		ComputeUtilization:    "0",
+		FunctionExecutionLogs: xmlFunctionLogList{Items: result.LogLines},
+		FunctionErrorMessage:  result.Error,
+		FunctionOutput:        result.Output,
 	})
+}
+
+func functionSummaryResponse(fn *Function, stage string) xmlFunctionSummary {
+	summary := functionSummaryXML(fn, stage)
+	summary.Xmlns = cloudfrontXmlns
+
+	return summary
 }
 
 // functionSummaryXML translates a Function into the wire shape AWS

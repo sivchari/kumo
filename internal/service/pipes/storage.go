@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +120,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "pipes", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -133,9 +143,17 @@ func (m *MemoryStorage) Close() error {
 }
 
 const (
-	accountID = "123456789012"
-	region    = "us-east-1"
+	accountID     = "123456789012"
+	defaultRegion = "us-east-1"
 )
+
+var region = defaultRegion //nolint:gochecknoglobals // set once at init
+
+func init() {
+	if v := os.Getenv("AWS_DEFAULT_REGION"); v != "" {
+		region = v
+	}
+}
 
 // generatePipeArn generates an ARN for a pipe.
 func generatePipeArn(name string) string {
@@ -143,8 +161,6 @@ func generatePipeArn(name string) string {
 }
 
 // CreatePipe creates a new pipe.
-//
-//nolint:funlen // validation and struct initialization require more lines
 func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pipe, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -157,25 +173,14 @@ func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pi
 		}
 	}
 
-	// Validate required fields.
-	if req.Source == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "Source is required",
-		}
-	}
-
-	if req.Target == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "Target is required",
-		}
-	}
-
-	if req.RoleArn == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "RoleArn is required",
+	// Validate required fields (first empty wins).
+	for _, f := range []struct{ name, value string }{
+		{"Source", req.Source},
+		{"Target", req.Target},
+		{"RoleArn", req.RoleArn},
+	} {
+		if f.value == "" {
+			return nil, &Error{Code: errValidationException, Message: f.name + " is required"}
 		}
 	}
 
@@ -213,6 +218,8 @@ func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pi
 	}
 
 	m.Pipes[req.Name] = pipe
+
+	m.saveLocked()
 
 	return pipe, nil
 }
@@ -300,6 +307,8 @@ func (m *MemoryStorage) UpdatePipe(_ context.Context, req *UpdatePipeInput) (*Pi
 		pipe.KmsKeyIdentifier = req.KmsKeyIdentifier
 	}
 
+	m.saveLocked()
+
 	return pipe, nil
 }
 
@@ -332,6 +341,8 @@ func (m *MemoryStorage) DeletePipe(_ context.Context, name string) (*Pipe, error
 	}
 
 	delete(m.Pipes, name)
+
+	m.saveLocked()
 
 	return result, nil
 }
@@ -420,6 +431,8 @@ func (m *MemoryStorage) StartPipe(_ context.Context, name string) (*Pipe, error)
 	pipe.CurrentState = CurrentStateRunning
 	pipe.LastModifiedTime = AWSTimestamp{Time: time.Now()}
 
+	m.saveLocked()
+
 	return pipe, nil
 }
 
@@ -447,6 +460,8 @@ func (m *MemoryStorage) StopPipe(_ context.Context, name string) (*Pipe, error) 
 	pipe.DesiredState = DesiredStateStopped
 	pipe.CurrentState = CurrentStateStopped
 	pipe.LastModifiedTime = AWSTimestamp{Time: time.Now()}
+
+	m.saveLocked()
 
 	return pipe, nil
 }
@@ -479,6 +494,8 @@ func (m *MemoryStorage) TagResource(_ context.Context, arn string, tags map[stri
 	}
 
 	maps.Copy(pipe.Tags, tags)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -513,6 +530,8 @@ func (m *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []s
 	for _, key := range tagKeys {
 		delete(pipe.Tags, key)
 	}
+
+	m.saveLocked()
 
 	return nil
 }

@@ -1,14 +1,14 @@
 package acm
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // DispatchAction routes ACM requests based on the X-Amz-Target header.
@@ -51,7 +51,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // RequestCertificate handles the RequestCertificate operation.
 func (s *Service) RequestCertificate(w http.ResponseWriter, r *http.Request) {
 	var req RequestCertificateInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -72,7 +72,7 @@ func (s *Service) RequestCertificate(w http.ResponseWriter, r *http.Request) {
 // DescribeCertificate handles the DescribeCertificate operation.
 func (s *Service) DescribeCertificate(w http.ResponseWriter, r *http.Request) {
 	var req DescribeCertificateInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -124,7 +124,7 @@ func (s *Service) DescribeCertificate(w http.ResponseWriter, r *http.Request) {
 // ListCertificates handles the ListCertificates operation.
 func (s *Service) ListCertificates(w http.ResponseWriter, r *http.Request) {
 	var req ListCertificatesInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -183,7 +183,7 @@ func (s *Service) ListCertificates(w http.ResponseWriter, r *http.Request) {
 // DeleteCertificate handles the DeleteCertificate operation.
 func (s *Service) DeleteCertificate(w http.ResponseWriter, r *http.Request) {
 	var req DeleteCertificateInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -209,7 +209,7 @@ func (s *Service) DeleteCertificate(w http.ResponseWriter, r *http.Request) {
 // GetCertificate handles the GetCertificate operation.
 func (s *Service) GetCertificate(w http.ResponseWriter, r *http.Request) {
 	var req GetCertificateInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -237,7 +237,7 @@ func (s *Service) GetCertificate(w http.ResponseWriter, r *http.Request) {
 // ImportCertificate handles the ImportCertificate operation.
 func (s *Service) ImportCertificate(w http.ResponseWriter, r *http.Request) {
 	var req ImportCertificateInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -257,44 +257,14 @@ func (s *Service) ImportCertificate(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions.
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-
-	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
-	}
+	service.WriteJSONResponse(w, service.ContentTypeJSON, v)
 }
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeJSON, code, message, status)
 }
 
 // handleStorageError handles storage errors and writes appropriate response.

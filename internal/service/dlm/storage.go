@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -62,9 +63,14 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Policies:  make(map[string]*LifecyclePolicy),
-		region:    defaultRegion,
+		region:    region,
 		accountID: defaultAccountID,
 	}
 	for _, o := range opts {
@@ -113,6 +119,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "dlm", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -149,6 +164,8 @@ func (m *MemoryStorage) CreateLifecyclePolicy(_ context.Context, req *CreateLife
 	}
 
 	m.Policies[policyID] = policy
+
+	m.saveLocked()
 
 	return policy, nil
 }
@@ -235,6 +252,8 @@ func (m *MemoryStorage) UpdateLifecyclePolicy(_ context.Context, policyID string
 
 	policy.DateModified = time.Now()
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -248,6 +267,8 @@ func (m *MemoryStorage) DeleteLifecyclePolicy(_ context.Context, policyID string
 	}
 
 	delete(m.Policies, policyID)
+
+	m.saveLocked()
 
 	return nil
 }

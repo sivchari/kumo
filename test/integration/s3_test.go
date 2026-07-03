@@ -5,7 +5,9 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -1851,5 +1853,191 @@ func TestS3_PutObjectWithSSEKMS(t *testing.T) {
 
 	if aws.ToString(headOutput.SSEKMSKeyId) == "" {
 		t.Error("expected SSEKMSKeyId to be set")
+	}
+}
+
+// postPresignedForm builds a multipart/form-data body from the presigned POST
+// fields plus the object content (the file field is written last, as AWS
+// requires) and sends it to the presigned URL.
+func postPresignedForm(t *testing.T, presigned *s3.PresignedPostRequest, content []byte, extraFields map[string]string) *http.Response {
+	t.Helper()
+
+	var body bytes.Buffer
+
+	writer := multipart.NewWriter(&body)
+
+	for k, v := range presigned.Values {
+		if err := writer.WriteField(k, v); err != nil {
+			t.Fatalf("failed to write field %s: %v", k, err)
+		}
+	}
+
+	for k, v := range extraFields {
+		if err := writer.WriteField(k, v); err != nil {
+			t.Fatalf("failed to write extra field %s: %v", k, err)
+		}
+	}
+
+	part, err := writer.CreateFormFile("file", "upload.txt")
+	if err != nil {
+		t.Fatalf("failed to create file part: %v", err)
+	}
+
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("failed to write file content: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, presigned.URL, &body)
+	if err != nil {
+		t.Fatalf("failed to create POST request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to POST form: %v", err)
+	}
+
+	return resp
+}
+
+func TestS3_PresignedPost_PutObject(t *testing.T) {
+	client := newS3Client(t)
+	presignClient := newS3PresignClient(t)
+	ctx := t.Context()
+	bucketName := "test-presigned-post-object"
+	key := "test-presigned-post-key.txt"
+	content := []byte("Hello, presigned POST!")
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+		})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucketName),
+		})
+	})
+
+	presigned, err := presignClient.PresignPostObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignPostOptions) {
+		opts.Expires = 15 * time.Minute
+	})
+	if err != nil {
+		t.Fatalf("failed to presign POST: %v", err)
+	}
+
+	resp := postPresignedForm(t, presigned, content, nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 204, got %d: %s", resp.StatusCode, b)
+	}
+
+	result, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatalf("failed to get object: %v", err)
+	}
+	defer result.Body.Close()
+
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		t.Fatalf("failed to read body: %v", err)
+	}
+
+	if !bytes.Equal(body, content) {
+		t.Errorf("expected content %q, got %q", content, body)
+	}
+}
+
+func TestS3_PresignedPost_SuccessActionStatus201(t *testing.T) {
+	client := newS3Client(t)
+	presignClient := newS3PresignClient(t)
+	ctx := t.Context()
+	bucketName := "test-presigned-post-201"
+	key := "test-presigned-post-201-key.txt"
+	content := []byte("Hello, POST 201!")
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(key),
+		})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{
+			Bucket: aws.String(bucketName),
+		})
+	})
+
+	presigned, err := presignClient.PresignPostObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignPostOptions) {
+		opts.Expires = 15 * time.Minute
+	})
+	if err != nil {
+		t.Fatalf("failed to presign POST: %v", err)
+	}
+
+	resp := postPresignedForm(t, presigned, content, map[string]string{
+		"success_action_status": "201",
+	})
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 201, got %d: %s", resp.StatusCode, b)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	var postResp struct {
+		XMLName xml.Name `xml:"PostResponse"`
+		Bucket  string   `xml:"Bucket"`
+		Key     string   `xml:"Key"`
+		ETag    string   `xml:"ETag"`
+	}
+
+	if err := xml.Unmarshal(body, &postResp); err != nil {
+		t.Fatalf("failed to unmarshal PostResponse: %v (body: %s)", err, body)
+	}
+
+	if postResp.Bucket != bucketName {
+		t.Errorf("expected bucket %q, got %q", bucketName, postResp.Bucket)
+	}
+
+	if postResp.Key != key {
+		t.Errorf("expected key %q, got %q", key, postResp.Key)
+	}
+
+	if postResp.ETag == "" {
+		t.Error("expected non-empty ETag in PostResponse")
 	}
 }

@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const (
@@ -30,7 +31,7 @@ const (
 // CreateSecret handles the CreateSecret action.
 func (s *Service) CreateSecret(w http.ResponseWriter, r *http.Request) {
 	var req CreateSecretRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -66,7 +67,7 @@ func (s *Service) CreateSecret(w http.ResponseWriter, r *http.Request) {
 // GetSecretValue handles the GetSecretValue action.
 func (s *Service) GetSecretValue(w http.ResponseWriter, r *http.Request) {
 	var req GetSecretValueRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -111,7 +112,7 @@ func (s *Service) GetSecretValue(w http.ResponseWriter, r *http.Request) {
 // PutSecretValue handles the PutSecretValue action.
 func (s *Service) PutSecretValue(w http.ResponseWriter, r *http.Request) {
 	var req PutSecretValueRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -159,7 +160,7 @@ func (s *Service) PutSecretValue(w http.ResponseWriter, r *http.Request) {
 // DeleteSecret handles the DeleteSecret action.
 func (s *Service) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 	var req DeleteSecretRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -209,7 +210,7 @@ func (s *Service) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 // ListSecrets handles the ListSecrets action.
 func (s *Service) ListSecrets(w http.ResponseWriter, r *http.Request) {
 	var req ListSecretsRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -291,7 +292,7 @@ func convertSecretsToListEntries(secrets []*Secret) []SecretListEntry {
 // DescribeSecret handles the DescribeSecret action.
 func (s *Service) DescribeSecret(w http.ResponseWriter, r *http.Request) {
 	var req DescribeSecretRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -381,7 +382,7 @@ func buildDescribeSecretResponse(secret *Secret) DescribeSecretResponse {
 // UpdateSecret handles the UpdateSecret action.
 func (s *Service) UpdateSecret(w http.ResponseWriter, r *http.Request) {
 	var req UpdateSecretRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -424,30 +425,9 @@ func (s *Service) UpdateSecret(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, resp)
 }
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponse(w, service.ContentTypeAmzJSON11, v)
 }
 
 // writeSecretsManagerError writes a Secrets Manager error response in JSON format.
@@ -458,6 +438,127 @@ func writeSecretsManagerError(w http.ResponseWriter, code, message string, statu
 	_ = json.NewEncoder(w).Encode(ErrorResponse{
 		Type:    code,
 		Message: message,
+	})
+}
+
+// GetResourcePolicy returns the resource policy for an existing secret.
+func (s *Service) GetResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	var req GetResourcePolicyRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.SecretID == "" {
+		writeSecretsManagerError(w, errInvalidParameter, "You must provide a value for the SecretId parameter.", http.StatusBadRequest)
+
+		return
+	}
+
+	secret, policy, err := s.storage.GetResourcePolicy(r.Context(), req.SecretID)
+	if err != nil {
+		var sErr *SecretError
+		if errors.As(err, &sErr) {
+			status := http.StatusBadRequest
+			if sErr.Code == errResourceNotFound {
+				status = http.StatusNotFound
+			}
+
+			writeSecretsManagerError(w, sErr.Code, sErr.Message, status)
+
+			return
+		}
+
+		writeSecretsManagerError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, GetResourcePolicyResponse{
+		ARN:            secret.ARN,
+		Name:           secret.Name,
+		ResourcePolicy: policy,
+	})
+}
+
+// PutResourcePolicy attaches a resource policy to a secret.
+func (s *Service) PutResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	var req PutResourcePolicyRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.SecretID == "" {
+		writeSecretsManagerError(w, errInvalidParameter, "You must provide a value for the SecretId parameter.", http.StatusBadRequest)
+
+		return
+	}
+
+	secret, err := s.storage.PutResourcePolicy(r.Context(), req.SecretID, req.ResourcePolicy)
+	if err != nil {
+		var sErr *SecretError
+		if errors.As(err, &sErr) {
+			status := http.StatusBadRequest
+			if sErr.Code == errResourceNotFound {
+				status = http.StatusNotFound
+			}
+
+			writeSecretsManagerError(w, sErr.Code, sErr.Message, status)
+
+			return
+		}
+
+		writeSecretsManagerError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, PutResourcePolicyResponse{
+		ARN:  secret.ARN,
+		Name: secret.Name,
+	})
+}
+
+// DeleteResourcePolicy removes the resource policy from a secret.
+func (s *Service) DeleteResourcePolicy(w http.ResponseWriter, r *http.Request) {
+	var req DeleteResourcePolicyRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.SecretID == "" {
+		writeSecretsManagerError(w, errInvalidParameter, "You must provide a value for the SecretId parameter.", http.StatusBadRequest)
+
+		return
+	}
+
+	secret, err := s.storage.DeleteResourcePolicy(r.Context(), req.SecretID)
+	if err != nil {
+		var sErr *SecretError
+		if errors.As(err, &sErr) {
+			status := http.StatusBadRequest
+			if sErr.Code == errResourceNotFound {
+				status = http.StatusNotFound
+			}
+
+			writeSecretsManagerError(w, sErr.Code, sErr.Message, status)
+
+			return
+		}
+
+		writeSecretsManagerError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DeleteResourcePolicyResponse{
+		ARN:  secret.ARN,
+		Name: secret.Name,
 	})
 }
 
@@ -498,7 +599,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // GetRandomPassword handles the GetRandomPassword action.
 func (s *Service) GetRandomPassword(w http.ResponseWriter, r *http.Request) {
 	var req GetRandomPasswordRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeSecretsManagerError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return

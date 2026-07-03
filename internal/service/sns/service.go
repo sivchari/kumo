@@ -94,3 +94,12 @@ func (s *Service) Close() error {
 
 	return nil
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "SNS",
+		Category:    "Messaging & Integration",
+		Description: "Pub/Sub messaging",
+	}
+}

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -469,6 +470,210 @@ func TestSESv2_GetSentEmails(t *testing.T) {
 
 	if !found {
 		t.Errorf("sent email from %s with subject 'Test Subject' not found", fromEmail)
+	}
+}
+
+func TestSESv2_EmailTemplate_CRUD(t *testing.T) {
+	client := newSESv2Client(t)
+	ctx := t.Context()
+
+	const name = "tmpl-crud"
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteEmailTemplate(context.Background(), &sesv2.DeleteEmailTemplateInput{
+			TemplateName: aws.String(name),
+		})
+	})
+
+	if _, err := client.CreateEmailTemplate(ctx, &sesv2.CreateEmailTemplateInput{
+		TemplateName: aws.String(name),
+		TemplateContent: &types.EmailTemplateContent{
+			Subject: aws.String("Hi"),
+			Text:    aws.String("Body"),
+			Html:    aws.String("<p>Body</p>"),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	getOutput, err := client.GetEmailTemplate(ctx, &sesv2.GetEmailTemplateInput{
+		TemplateName: aws.String(name),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get", getOutput)
+
+	if _, err := client.UpdateEmailTemplate(ctx, &sesv2.UpdateEmailTemplateInput{
+		TemplateName: aws.String(name),
+		TemplateContent: &types.EmailTemplateContent{
+			Subject: aws.String("Hi v2"),
+			Text:    aws.String("Body v2"),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	getOutput, err = client.GetEmailTemplate(ctx, &sesv2.GetEmailTemplateInput{
+		TemplateName: aws.String(name),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_get_after_update", getOutput)
+
+	if _, err := client.DeleteEmailTemplate(ctx, &sesv2.DeleteEmailTemplateInput{
+		TemplateName: aws.String(name),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.GetEmailTemplate(ctx, &sesv2.GetEmailTemplateInput{
+		TemplateName: aws.String(name),
+	}); err == nil {
+		t.Fatal("expected error for deleted template")
+	}
+}
+
+func TestSESv2_ListEmailTemplates(t *testing.T) {
+	client := newSESv2Client(t)
+	ctx := t.Context()
+
+	const name = "tmpl-list"
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteEmailTemplate(context.Background(), &sesv2.DeleteEmailTemplateInput{
+			TemplateName: aws.String(name),
+		})
+	})
+
+	if _, err := client.CreateEmailTemplate(ctx, &sesv2.CreateEmailTemplateInput{
+		TemplateName: aws.String(name),
+		TemplateContent: &types.EmailTemplateContent{
+			Subject: aws.String("S"),
+			Text:    aws.String("B"),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := client.ListEmailTemplates(ctx, &sesv2.ListEmailTemplatesInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Extract the metadata entry for our template — other tests in the same
+	// run may have left additional templates, so we cannot golden-assert the
+	// whole response. CreatedTimestamp is dynamic and ignored.
+	var match types.EmailTemplateMetadata
+
+	found := false
+
+	for _, m := range out.TemplatesMetadata {
+		if m.TemplateName != nil && *m.TemplateName == name {
+			match = m
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("expected template %q in list", name)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("CreatedTimestamp")).Assert(t.Name(), match)
+}
+
+func TestSESv2_SendBulkEmail(t *testing.T) {
+	client := newSESv2Client(t)
+	ctx := t.Context()
+
+	const (
+		fromEmail = "bulk-sender@example.com"
+		tmpl      = "tmpl-bulk"
+	)
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = client.DeleteEmailIdentity(cleanupCtx, &sesv2.DeleteEmailIdentityInput{
+			EmailIdentity: aws.String(fromEmail),
+		})
+		_, _ = client.DeleteEmailTemplate(cleanupCtx, &sesv2.DeleteEmailTemplateInput{
+			TemplateName: aws.String(tmpl),
+		})
+	})
+
+	if _, err := client.CreateEmailIdentity(ctx, &sesv2.CreateEmailIdentityInput{
+		EmailIdentity: aws.String(fromEmail),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.CreateEmailTemplate(ctx, &sesv2.CreateEmailTemplateInput{
+		TemplateName: aws.String(tmpl),
+		TemplateContent: &types.EmailTemplateContent{
+			Subject: aws.String("Bulk subject"),
+			Text:    aws.String("Hello {{name}}"),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := client.SendBulkEmail(ctx, &sesv2.SendBulkEmailInput{
+		FromEmailAddress: aws.String(fromEmail),
+		DefaultContent: &types.BulkEmailContent{
+			Template: &types.Template{
+				TemplateName: aws.String(tmpl),
+				TemplateData: aws.String("{}"),
+			},
+		},
+		BulkEmailEntries: []types.BulkEmailEntry{
+			{
+				Destination: &types.Destination{ToAddresses: []string{"a@example.com"}},
+				ReplacementEmailContent: &types.ReplacementEmailContent{
+					ReplacementTemplate: &types.ReplacementTemplate{
+						ReplacementTemplateData: aws.String(`{"name":"A"}`),
+					},
+				},
+			},
+			{
+				Destination: &types.Destination{ToAddresses: []string{"b@example.com"}},
+				ReplacementEmailContent: &types.ReplacementEmailContent{
+					ReplacementTemplate: &types.ReplacementTemplate{
+						ReplacementTemplateData: aws.String(`{"name":"B"}`),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("MessageId", "ResultMetadata")).Assert(t.Name(), resp)
+}
+
+func TestSESv2_SendBulkEmail_UnknownTemplate(t *testing.T) {
+	client := newSESv2Client(t)
+	ctx := t.Context()
+
+	_, err := client.SendBulkEmail(ctx, &sesv2.SendBulkEmailInput{
+		FromEmailAddress: aws.String("missing-tmpl@example.com"),
+		DefaultContent: &types.BulkEmailContent{
+			Template: &types.Template{
+				TemplateName: aws.String("does-not-exist"),
+				TemplateData: aws.String("{}"),
+			},
+		},
+		BulkEmailEntries: []types.BulkEmailEntry{
+			{
+				Destination: &types.Destination{ToAddresses: []string{"a@example.com"}},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown template")
 	}
 }
 

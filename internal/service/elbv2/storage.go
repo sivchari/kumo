@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -74,16 +75,23 @@ type MemoryStorage struct {
 	TargetGroups  map[string]*TargetGroup  `json:"targetGroups"`  // keyed by ARN
 	Listeners     map[string]*Listener     `json:"listeners"`     // keyed by ARN
 	Targets       map[string][]Target      `json:"targets"`       // keyed by targetGroupArn
+	region        string
 	dataDir       string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		LoadBalancers: make(map[string]*LoadBalancer),
 		TargetGroups:  make(map[string]*TargetGroup),
 		Listeners:     make(map[string]*Listener),
 		Targets:       make(map[string][]Target),
+		region:        region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -143,6 +151,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "elbv2", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -199,6 +216,8 @@ func (m *MemoryStorage) CreateLoadBalancer(_ context.Context, req *CreateLoadBal
 	lb := m.buildLoadBalancer(req, defaults)
 	m.LoadBalancers[lb.LoadBalancerArn] = lb
 
+	m.saveLocked()
+
 	return lb, nil
 }
 
@@ -220,13 +239,13 @@ func (m *MemoryStorage) checkDuplicateLoadBalancerName(name string) error {
 func (m *MemoryStorage) buildLoadBalancer(req *CreateLoadBalancerRequest, defaults loadBalancerDefaults) *LoadBalancer {
 	lbID := uuid.New().String()[:17]
 	arn := fmt.Sprintf("arn:aws:elasticloadbalancing:%s:%s:loadbalancer/%s/%s/%s",
-		defaultRegion, defaultAccountID, defaults.lbType[:3], req.Name, lbID)
-	dnsName := fmt.Sprintf("%s-%s.%s.elb.amazonaws.com", req.Name, lbID[:8], defaultRegion)
+		m.region, defaultAccountID, defaults.lbType[:3], req.Name, lbID)
+	dnsName := fmt.Sprintf("%s-%s.%s.elb.amazonaws.com", req.Name, lbID[:8], m.region)
 
 	azs := make([]AvailabilityZone, 0, len(req.Subnets))
 	for i, subnet := range req.Subnets {
 		azs = append(azs, AvailabilityZone{
-			ZoneName: fmt.Sprintf("%s%c", defaultRegion, 'a'+byte(i%3)),
+			ZoneName: fmt.Sprintf("%s%c", m.region, 'a'+byte(i%3)),
 			SubnetID: subnet,
 		})
 	}
@@ -267,6 +286,8 @@ func (m *MemoryStorage) DeleteLoadBalancer(_ context.Context, loadBalancerArn st
 	}
 
 	delete(m.LoadBalancers, loadBalancerArn)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -391,6 +412,8 @@ func (m *MemoryStorage) CreateTargetGroup(_ context.Context, req *CreateTargetGr
 	m.TargetGroups[tg.TargetGroupArn] = tg
 	m.Targets[tg.TargetGroupArn] = []Target{}
 
+	m.saveLocked()
+
 	return tg, nil
 }
 
@@ -412,7 +435,7 @@ func (m *MemoryStorage) checkDuplicateTargetGroupName(name string) error {
 func (m *MemoryStorage) buildTargetGroup(req *CreateTargetGroupRequest, defaults *targetGroupDefaults) *TargetGroup {
 	tgID := uuid.New().String()[:17]
 	arn := fmt.Sprintf("arn:aws:elasticloadbalancing:%s:%s:targetgroup/%s/%s",
-		defaultRegion, defaultAccountID, req.Name, tgID)
+		m.region, defaultAccountID, req.Name, tgID)
 
 	return &TargetGroup{
 		TargetGroupArn:             arn,
@@ -447,6 +470,8 @@ func (m *MemoryStorage) DeleteTargetGroup(_ context.Context, targetGroupArn stri
 
 	delete(m.TargetGroups, targetGroupArn)
 	delete(m.Targets, targetGroupArn)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -527,6 +552,8 @@ func (m *MemoryStorage) RegisterTargets(_ context.Context, targetGroupArn string
 
 	m.Targets[targetGroupArn] = existingTargets
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -558,6 +585,8 @@ func (m *MemoryStorage) DeregisterTargets(_ context.Context, targetGroupArn stri
 
 	m.Targets[targetGroupArn] = newTargets
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -584,7 +613,7 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 	lbType := lb.Type[:3]
 
 	arn := fmt.Sprintf("arn:aws:elasticloadbalancing:%s:%s:listener/%s/%s/%s/%s",
-		defaultRegion, defaultAccountID, lbType, lb.LoadBalancerName, lbID, listenerID)
+		m.region, defaultAccountID, lbType, lb.LoadBalancerName, lbID, listenerID)
 
 	listener := &Listener{
 		ListenerArn:     arn,
@@ -607,6 +636,8 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 		}
 	}
 
+	m.saveLocked()
+
 	return listener, nil
 }
 
@@ -623,6 +654,8 @@ func (m *MemoryStorage) DeleteListener(_ context.Context, listenerArn string) er
 	}
 
 	delete(m.Listeners, listenerArn)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -648,6 +681,8 @@ func (m *MemoryStorage) CreateRule(_ context.Context, listenerArn, priority stri
 		IsDefault:  false,
 	}
 	listener.Rules = append(listener.Rules, rule)
+
+	m.saveLocked()
 
 	return &listener.Rules[len(listener.Rules)-1], nil
 }
@@ -721,6 +756,8 @@ func (m *MemoryStorage) ModifyRule(_ context.Context, ruleArn string, conditions
 				listener.Rules[i].Actions = append([]Action(nil), actions...)
 			}
 
+			m.saveLocked()
+
 			return &listener.Rules[i], nil
 		}
 	}
@@ -737,6 +774,8 @@ func (m *MemoryStorage) DeleteRule(_ context.Context, ruleArn string) error {
 		for i := range listener.Rules {
 			if listener.Rules[i].RuleArn == ruleArn {
 				listener.Rules = append(listener.Rules[:i], listener.Rules[i+1:]...)
+
+				m.saveLocked()
 
 				return nil
 			}
@@ -776,6 +815,8 @@ func (m *MemoryStorage) SetRulePriorities(_ context.Context, priorities map[stri
 			return nil, &Error{Code: "RuleNotFound", Message: "Rule '" + arn + "' not found"}
 		}
 	}
+
+	m.saveLocked()
 
 	return updated, nil
 }
@@ -831,6 +872,8 @@ func (m *MemoryStorage) ModifyLoadBalancerAttributes(_ context.Context, lbArn st
 		lb.Attributes[k] = v
 	}
 
+	m.saveLocked()
+
 	return cloneAttributes(lb.Attributes), nil
 }
 
@@ -848,6 +891,8 @@ func (m *MemoryStorage) DescribeLoadBalancerAttributes(_ context.Context, lbArn 
 	if lb.Attributes == nil {
 		lb.Attributes = defaultLoadBalancerAttributes()
 	}
+
+	m.saveLocked()
 
 	return cloneAttributes(lb.Attributes), nil
 }
@@ -870,6 +915,8 @@ func (m *MemoryStorage) ModifyTargetGroupAttributes(_ context.Context, tgArn str
 		tg.Attributes[k] = v
 	}
 
+	m.saveLocked()
+
 	return cloneAttributes(tg.Attributes), nil
 }
 
@@ -886,6 +933,8 @@ func (m *MemoryStorage) DescribeTargetGroupAttributes(_ context.Context, tgArn s
 	if tg.Attributes == nil {
 		tg.Attributes = defaultTargetGroupAttributes()
 	}
+
+	m.saveLocked()
 
 	return cloneAttributes(tg.Attributes), nil
 }
@@ -951,6 +1000,8 @@ func (m *MemoryStorage) ModifyListener(_ context.Context, listenerArn string, po
 	if defaultActions != nil {
 		listener.DefaultActions = append([]Action(nil), defaultActions...)
 	}
+
+	m.saveLocked()
 
 	return listener, nil
 }

@@ -119,6 +119,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "rds", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -146,6 +155,8 @@ func (m *MemoryStorage) CreateDBInstance(_ context.Context, input *CreateDBInsta
 
 	instance := m.buildDBInstance(input)
 	m.Instances[input.DBInstanceIdentifier] = instance
+
+	m.saveLocked()
 
 	return instance, nil
 }
@@ -213,6 +224,8 @@ func (m *MemoryStorage) DeleteDBInstance(_ context.Context, identifier string, _
 
 	delete(m.Instances, identifier)
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -255,6 +268,8 @@ func (m *MemoryStorage) ModifyDBInstance(_ context.Context, input *ModifyDBInsta
 	}
 
 	applyDBInstanceModifications(instance, input)
+
+	m.saveLocked()
 
 	return instance, nil
 }
@@ -327,6 +342,8 @@ func (m *MemoryStorage) StartDBInstance(_ context.Context, identifier string) (*
 
 	instance.DBInstanceStatus = DBInstanceStatusAvailable
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -351,6 +368,8 @@ func (m *MemoryStorage) StopDBInstance(_ context.Context, identifier string) (*D
 	}
 
 	instance.DBInstanceStatus = DBInstanceStatusStopped
+
+	m.saveLocked()
 
 	return instance, nil
 }
@@ -411,6 +430,8 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 
 	m.Clusters[input.DBClusterIdentifier] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -430,6 +451,8 @@ func (m *MemoryStorage) DeleteDBCluster(_ context.Context, identifier string, _ 
 	cluster.Status = DBClusterStatusDeleting
 
 	delete(m.Clusters, identifier)
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -488,6 +511,8 @@ func (m *MemoryStorage) ModifyDBCluster(_ context.Context, input *ModifyDBCluste
 		cluster.VpcSecurityGroups = buildVpcSecurityGroups(input.VpcSecurityGroupIDs)
 	}
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -532,6 +557,8 @@ func (m *MemoryStorage) CreateDBSnapshot(_ context.Context, input *CreateDBSnaps
 
 	m.Snapshots[input.DBSnapshotIdentifier] = snapshot
 
+	m.saveLocked()
+
 	return snapshot, nil
 }
 
@@ -549,6 +576,8 @@ func (m *MemoryStorage) DeleteDBSnapshot(_ context.Context, identifier string) (
 	}
 
 	delete(m.Snapshots, identifier)
+
+	m.saveLocked()
 
 	return snapshot, nil
 }

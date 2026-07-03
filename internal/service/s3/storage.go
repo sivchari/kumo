@@ -186,10 +186,21 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	return s
 }
 
-// MarshalJSON serializes the storage state to JSON.
+// MarshalJSON serializes the storage metadata to JSON. Object bodies are NOT
+// inlined: when persistence is enabled they are written to the blob store first
+// and the snapshot carries only a content reference per object (see blob.go and
+// Object.MarshalJSON). This keeps the whole-store marshal small and bounds its
+// peak memory, which is what stops the snapshot path from driving the process
+// into the OOM killer as the dataset grows.
 func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if s.dataDir != "" {
+		if err := s.persistBodiesLocked(); err != nil {
+			return nil, err
+		}
+	}
 
 	type Alias MemoryStorage
 
@@ -201,7 +212,8 @@ func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	return data, nil
 }
 
-// UnmarshalJSON restores the storage state from JSON.
+// UnmarshalJSON restores the storage metadata from JSON and, when persistence is
+// enabled, fills each object body from the blob store.
 func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,7 +230,113 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Buckets = make(map[string]*MemoryBucket)
 	}
 
+	if s.dataDir != "" {
+		if err := s.loadBodiesLocked(); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// persistBodiesLocked writes every object body to the blob store and prunes
+// orphaned blobs. The caller must hold at least the read lock; bodies are only
+// read (never mutated), so snapshotting never blocks concurrent reads.
+func (s *MemoryStorage) persistBodiesLocked() error {
+	referenced := make(map[string]struct{})
+
+	for _, b := range s.Buckets {
+		for _, obj := range b.Objects {
+			if err := s.persistObjectBody(obj, referenced); err != nil {
+				return err
+			}
+		}
+
+		for _, versions := range b.Versions {
+			for _, obj := range versions {
+				if err := s.persistObjectBody(obj, referenced); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	gcBlobs(s.dataDir, referenced)
+
+	return nil
+}
+
+// persistObjectBody writes one object's body to the blob store, recording its
+// reference in referenced (the live set used to GC orphans). Empty bodies carry
+// no blob: an empty or delete-marker object round-trips with a nil body.
+func (s *MemoryStorage) persistObjectBody(obj *Object, referenced map[string]struct{}) error {
+	if len(obj.Body) == 0 {
+		return nil
+	}
+
+	ref := obj.effectiveRef()
+	referenced[ref] = struct{}{}
+
+	return writeBlob(s.dataDir, ref, obj.Body)
+}
+
+// loadBodiesLocked fills each object's body from the blob store. The caller must
+// hold the write lock.
+func (s *MemoryStorage) loadBodiesLocked() error {
+	for _, b := range s.Buckets {
+		for _, obj := range b.Objects {
+			if err := s.loadObjectBody(obj); err != nil {
+				return err
+			}
+		}
+
+		for _, versions := range b.Versions {
+			for _, obj := range versions {
+				if err := s.loadObjectBody(obj); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// loadObjectBody populates one object's body from its blob. An object carrying a
+// legacy inline body (bodyRef empty, Body already set by an older snapshot) is
+// left untouched and gets a freshly computed ref so the next save migrates it to
+// a blob. The current-version object is shared by pointer between Objects and
+// Versions, so this may be called twice on it; the second call is a no-op.
+func (s *MemoryStorage) loadObjectBody(obj *Object) error {
+	if obj.bodyRef == "" {
+		if len(obj.Body) > 0 {
+			obj.bodyRef = bodyRefOf(obj.Body)
+		}
+
+		return nil
+	}
+
+	if len(obj.Body) > 0 {
+		return nil
+	}
+
+	data, err := readBlob(s.dataDir, obj.bodyRef)
+	if err != nil {
+		return err
+	}
+
+	obj.Body = data
+
+	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "s3", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -252,6 +370,8 @@ func (s *MemoryStorage) CreateBucket(_ context.Context, name string) error {
 		MultipartUploads: make(map[string]*MultipartUpload),
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -270,6 +390,8 @@ func (s *MemoryStorage) DeleteBucket(_ context.Context, name string) error {
 	}
 
 	delete(s.Buckets, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -325,6 +447,7 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 	obj := &Object{
 		Key:          key,
 		Body:         data,
+		bodyRef:      bodyRefOf(data),
 		ETag:         fmt.Sprintf("%q", etag),
 		Size:         int64(len(data)),
 		LastModified: time.Now(),
@@ -343,7 +466,18 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 		obj.ContentType = "application/octet-stream"
 	}
 
-	// Handle versioning
+	putObjectVersion(b, key, obj)
+
+	// Always update current object
+	b.Objects[key] = obj
+
+	s.saveLocked()
+
+	return obj, nil
+}
+
+// putObjectVersion handles versioning for a newly stored object.
+func putObjectVersion(b *MemoryBucket, key string, obj *Object) {
 	switch b.VersioningStatus {
 	case VersioningEnabled:
 		// Generate version ID
@@ -368,11 +502,6 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 
 		b.Versions[key] = append([]*Object{obj}, newVersions...)
 	}
-
-	// Always update current object
-	b.Objects[key] = obj
-
-	return obj, nil
 }
 
 // applySSEMetadata extracts SSE headers from metadata and sets them on the object.
@@ -449,6 +578,8 @@ func (s *MemoryStorage) PutObjectTagging(_ context.Context, bucket, key string, 
 	obj.Tags = tags
 	bd.Objects[key] = obj
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -499,6 +630,8 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 		b.Versions[key] = append([]*Object{deleteMarker}, b.Versions[key]...)
 		b.Objects[key] = deleteMarker
 
+		s.saveLocked()
+
 		return deleteMarker, nil
 	}
 
@@ -522,6 +655,8 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 			b.Versions[key] = newVersions
 		}
 	}
+
+	s.saveLocked()
 
 	// Return empty object for non-versioned delete (S3 returns 204 with no body)
 	return &Object{Key: key}, nil
@@ -553,6 +688,8 @@ func (s *MemoryStorage) DeleteObjectVersion(_ context.Context, bucket, key, vers
 		// Update current object to the newest version
 		b.Objects[key] = newVersions[0]
 	}
+
+	s.saveLocked()
 
 	return deletedObj, nil
 }
@@ -686,6 +823,8 @@ func (s *MemoryStorage) PutBucketVersioning(_ context.Context, bucket, status st
 	}
 
 	b.VersioningStatus = status
+
+	s.saveLocked()
 
 	return nil
 }
@@ -894,6 +1033,8 @@ func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key str
 
 	b.MultipartUploads[uploadID] = upload
 
+	s.saveLocked()
+
 	return upload, nil
 }
 
@@ -933,6 +1074,8 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 	}
 
 	upload.Parts[partNumber] = part
+
+	s.saveLocked()
 
 	return part, nil
 }
@@ -981,6 +1124,8 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 	}
 
 	upload.Parts[partNumber] = part
+
+	s.saveLocked()
 
 	return part, nil
 }
@@ -1065,6 +1210,7 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 	obj := &Object{
 		Key:          key,
 		Body:         combinedBody,
+		bodyRef:      bodyRefOf(combinedBody),
 		ETag:         etag,
 		Size:         int64(len(combinedBody)),
 		LastModified: time.Now(),
@@ -1073,6 +1219,8 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 
 	b.Objects[key] = obj
 	delete(b.MultipartUploads, uploadID)
+
+	s.saveLocked()
 
 	return obj, nil
 }
@@ -1097,6 +1245,8 @@ func (s *MemoryStorage) AbortMultipartUpload(_ context.Context, bucket, key, upl
 	}
 
 	delete(b.MultipartUploads, uploadID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1228,6 +1378,8 @@ func (s *MemoryStorage) SetEventBridgeNotification(_ context.Context, bucket str
 	if b, exists := s.Buckets[bucket]; exists {
 		b.EventBridgeEnabled = enabled
 	}
+
+	s.saveLocked()
 }
 
 // IsEventBridgeEnabled returns whether EventBridge notification is enabled for a bucket.
@@ -1250,6 +1402,8 @@ func (s *MemoryStorage) SetQueueConfigurations(_ context.Context, bucket string,
 	if b, exists := s.Buckets[bucket]; exists {
 		b.QueueConfigurations = configs
 	}
+
+	s.saveLocked()
 }
 
 // GetQueueConfigurations returns the SQS queue notification destinations for a bucket.
@@ -1272,6 +1426,8 @@ func (s *MemoryStorage) SetCORSConfiguration(_ context.Context, bucket string, r
 	if b, exists := s.Buckets[bucket]; exists {
 		b.CORSRules = rules
 	}
+
+	s.saveLocked()
 }
 
 // GetCORSRules returns the CORS rules for a bucket.
@@ -1298,6 +1454,8 @@ func (s *MemoryStorage) PutPublicAccessBlock(_ context.Context, bucket string, c
 
 	c := cfg
 	b.PublicAccessBlock = &c
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1337,6 +1495,8 @@ func (s *MemoryStorage) DeletePublicAccessBlock(_ context.Context, bucket string
 
 	b.PublicAccessBlock = nil
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1352,6 +1512,8 @@ func (s *MemoryStorage) PutBucketEncryption(_ context.Context, bucket string, cf
 
 	c := ServerSideEncryptionConfig{Rules: append([]ServerSideEncryptionRule(nil), cfg.Rules...)}
 	b.Encryption = &c
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1391,6 +1553,8 @@ func (s *MemoryStorage) DeleteBucketEncryption(_ context.Context, bucket string)
 
 	b.Encryption = nil
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1407,6 +1571,8 @@ func (s *MemoryStorage) PutBucketPolicy(_ context.Context, bucket, document stri
 	}
 
 	b.Policy = document
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1447,6 +1613,8 @@ func (s *MemoryStorage) DeleteBucketPolicy(_ context.Context, bucket string) err
 
 	b.Policy = ""
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1466,11 +1634,15 @@ func (s *MemoryStorage) PutBucketLogging(_ context.Context, bucket string, cfg B
 	if cfg.TargetBucket == "" {
 		b.Logging = nil
 
+		s.saveLocked()
+
 		return nil
 	}
 
 	c := cfg
 	b.Logging = &c
+
+	s.saveLocked()
 
 	return nil
 }

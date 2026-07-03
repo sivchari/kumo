@@ -119,6 +119,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "ce", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -235,27 +244,27 @@ func (s *MemoryStorage) GetCostForecast(_ context.Context, req *GetCostForecastR
 	}, nil
 }
 
-// CreateCostCategoryDefinition creates a cost category definition.
-func (s *MemoryStorage) CreateCostCategoryDefinition(_ context.Context, req *CreateCostCategoryDefinitionRequest) (*CostCategoryDefinition, error) {
+// validateCreateCostCategoryRequest validates the request fields for creating a cost category.
+func validateCreateCostCategoryRequest(req *CreateCostCategoryDefinitionRequest) error {
 	if req.Name == "" {
-		return nil, &ServiceError{
-			Code:    errValidation,
-			Message: "Name is required",
-		}
+		return &ServiceError{Code: errValidation, Message: "Name is required"}
 	}
 
 	if req.RuleVersion == "" {
-		return nil, &ServiceError{
-			Code:    errValidation,
-			Message: "RuleVersion is required",
-		}
+		return &ServiceError{Code: errValidation, Message: "RuleVersion is required"}
 	}
 
 	if len(req.Rules) == 0 {
-		return nil, &ServiceError{
-			Code:    errValidation,
-			Message: "Rules are required",
-		}
+		return &ServiceError{Code: errValidation, Message: "Rules are required"}
+	}
+
+	return nil
+}
+
+// CreateCostCategoryDefinition creates a cost category definition.
+func (s *MemoryStorage) CreateCostCategoryDefinition(_ context.Context, req *CreateCostCategoryDefinitionRequest) (*CostCategoryDefinition, error) {
+	if err := validateCreateCostCategoryRequest(req); err != nil {
+		return nil, err
 	}
 
 	s.mu.Lock()
@@ -297,6 +306,8 @@ func (s *MemoryStorage) CreateCostCategoryDefinition(_ context.Context, req *Cre
 
 	s.CostCategories[arn] = cc
 
+	s.saveLocked()
+
 	return cc, nil
 }
 
@@ -329,6 +340,8 @@ func (s *MemoryStorage) DeleteCostCategoryDefinition(_ context.Context, arn stri
 	}
 
 	delete(s.CostCategories, arn)
+
+	s.saveLocked()
 
 	return nil
 }

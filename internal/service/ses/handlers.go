@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
-	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -14,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const sesXMLNS = "http://ses.amazonaws.com/doc/2010-12-01/"
@@ -28,7 +29,7 @@ const (
 // VerifyEmailIdentity handles the VerifyEmailIdentity action.
 func (s *Service) VerifyEmailIdentity(w http.ResponseWriter, r *http.Request) {
 	var req VerifyEmailIdentityRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -57,7 +58,7 @@ func (s *Service) VerifyEmailIdentity(w http.ResponseWriter, r *http.Request) {
 // SendEmail handles the SendEmail action.
 func (s *Service) SendEmail(w http.ResponseWriter, r *http.Request) {
 	var req SendEmailRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -97,7 +98,7 @@ func (s *Service) SendEmail(w http.ResponseWriter, r *http.Request) {
 // SendRawEmail handles the SendRawEmail action.
 func (s *Service) SendRawEmail(w http.ResponseWriter, r *http.Request) {
 	var req SendRawEmailRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -178,7 +179,7 @@ func (s *Service) ListIdentities(w http.ResponseWriter, r *http.Request) {
 // DeleteIdentity handles the DeleteIdentity action.
 func (s *Service) DeleteIdentity(w http.ResponseWriter, r *http.Request) {
 	var req DeleteIdentityRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -201,7 +202,7 @@ func (s *Service) DeleteIdentity(w http.ResponseWriter, r *http.Request) {
 // GetIdentityVerificationAttributes handles the GetIdentityVerificationAttributes action.
 func (s *Service) GetIdentityVerificationAttributes(w http.ResponseWriter, r *http.Request) {
 	var req GetIdentityVerificationAttributesRequest
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -295,24 +296,6 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 }
 
 // Helper functions.
-
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
 
 // writeXMLResponse writes an XML response with HTTP 200 OK.
 func writeXMLResponse(w http.ResponseWriter, v any) {

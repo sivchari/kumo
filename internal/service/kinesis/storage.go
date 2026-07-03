@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ const (
 
 // Default values.
 const (
+	defaultRegion           = "us-east-1"
 	defaultShardCount       = 1
 	defaultRetentionHours   = 24
 	maxRecordsPerGet        = 10000
@@ -101,10 +103,15 @@ type shardIteratorData struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Streams:        make(map[string]*StreamData),
 		shardIterators: make(map[string]*shardIteratorData),
-		region:         "us-east-1",
+		region:         region,
 		accountID:      "000000000000",
 	}
 	for _, o := range opts {
@@ -155,6 +162,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "kinesis", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -228,6 +244,8 @@ func (s *MemoryStorage) CreateStream(_ context.Context, req *CreateStreamRequest
 		Shards: shards,
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -241,6 +259,8 @@ func (s *MemoryStorage) DeleteStream(_ context.Context, streamName string) error
 	}
 
 	delete(s.Streams, streamName)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -409,6 +429,8 @@ func (s *MemoryStorage) PutRecord(_ context.Context, streamName string, data []b
 
 	sd.Shards[shardID].Records = append(sd.Shards[shardID].Records, record)
 
+	s.saveLocked()
+
 	return shardID, seqNum, nil
 }
 
@@ -435,6 +457,8 @@ func (s *MemoryStorage) PutRecords(_ context.Context, streamName string, records
 			failedCount++
 		}
 	}
+
+	s.saveLocked()
 
 	return results, failedCount, nil
 }
@@ -516,6 +540,8 @@ func (s *MemoryStorage) GetShardIterator(_ context.Context, streamName, shardID,
 		expiresAt:  time.Now().Add(shardIteratorExpiration),
 	}
 
+	s.saveLocked()
+
 	return encodedIterator, nil
 }
 
@@ -567,6 +593,8 @@ func (s *MemoryStorage) GetRecords(_ context.Context, shardIterator string, limi
 		position:   endPos,
 		expiresAt:  time.Now().Add(shardIteratorExpiration),
 	}
+
+	s.saveLocked()
 
 	return records, nextIterator, 0, nil
 }
