@@ -171,6 +171,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "sqs", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -266,6 +275,8 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 
 	s.Queues[queueURL] = qd
 
+	s.saveLocked()
+
 	return queue, nil
 }
 
@@ -280,6 +291,8 @@ func (s *MemoryStorage) DeleteQueue(_ context.Context, queueURL string) error {
 	}
 
 	delete(s.Queues, storedURL)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -358,6 +371,8 @@ func (s *MemoryStorage) TagQueue(_ context.Context, queueURL string, tags map[st
 
 	qd.Queue.LastModifiedTimestamp = time.Now()
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -376,6 +391,8 @@ func (s *MemoryStorage) UntagQueue(_ context.Context, queueURL string, tagKeys [
 	}
 
 	qd.Queue.LastModifiedTimestamp = time.Now()
+
+	s.saveLocked()
 
 	return nil
 }
@@ -498,9 +515,31 @@ func (s *MemoryStorage) SendMessage(_ context.Context, queueURL, body string, de
 		dedupID = result.DedupID
 	}
 
+	msg := buildMessage(body, now, delay, messageAttributes, messageGroupID, messageDeduplicationID, sequenceNumber)
+
+	if qd.Queue.FifoQueue {
+		qd.updateFIFOCache(dedupID, msg.MessageID)
+	}
+
+	qd.Messages = append(qd.Messages, msg)
+
+	// Notify long-polling receivers.
+	select {
+	case qd.notify <- struct{}{}:
+	default:
+	}
+
+	s.saveLocked()
+
+	return msg, nil
+}
+
+// buildMessage creates a new Message with the given parameters.
+func buildMessage(body string, now time.Time, delay int, messageAttributes map[string]MessageAttributeValue, messageGroupID, messageDeduplicationID, sequenceNumber string) *Message {
 	// MD5 is required by SQS specification for message body hash.
 	md5Hash := md5.Sum([]byte(body)) //nolint:gosec // MD5 is required by SQS spec
-	msg := &Message{
+
+	return &Message{
 		MessageID:              uuid.New().String(),
 		Body:                   body,
 		MD5OfBody:              hex.EncodeToString(md5Hash[:]),
@@ -516,20 +555,6 @@ func (s *MemoryStorage) SendMessage(_ context.Context, queueURL, body string, de
 			"ApproximateFirstReceiveTimestamp": "",
 		},
 	}
-
-	if qd.Queue.FifoQueue {
-		qd.updateFIFOCache(dedupID, msg.MessageID)
-	}
-
-	qd.Messages = append(qd.Messages, msg)
-
-	// Notify long-polling receivers.
-	select {
-	case qd.notify <- struct{}{}:
-	default:
-	}
-
-	return msg, nil
 }
 
 // ReceiveMessage receives messages from a queue.
@@ -584,6 +609,10 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 	}
 
 	now := time.Now()
+
+	// Re-enqueue inflight messages whose visibility timeout has expired.
+	s.requeueExpiredMessages(qd, now)
+
 	result := make([]*Message, 0, maxMessages)
 	remaining := make([]*Message, 0, len(qd.Messages))
 
@@ -619,6 +648,8 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 	}
 
 	qd.Messages = remaining
+
+	s.saveLocked()
 
 	return result, qd.notify, nil
 }
@@ -663,6 +694,8 @@ func (s *MemoryStorage) ChangeMessageVisibility(_ context.Context, queueURL, rec
 
 	msg.VisibleAt = time.Now().Add(time.Duration(visibilityTimeout) * time.Second)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -682,6 +715,8 @@ func (s *MemoryStorage) DeleteMessage(_ context.Context, queueURL, receiptHandle
 
 	delete(qd.Inflight, receiptHandle)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -697,6 +732,8 @@ func (s *MemoryStorage) PurgeQueue(_ context.Context, queueURL string) error {
 
 	qd.Messages = make([]*Message, 0)
 	qd.Inflight = make(map[string]*Message)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -764,6 +801,8 @@ func (s *MemoryStorage) SetQueueAttributes(_ context.Context, queueURL string, a
 	applyQueueAttributes(qd.Queue, attributes)
 	qd.Queue.LastModifiedTimestamp = time.Now()
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -793,8 +832,33 @@ func applyQueueAttributes(q *Queue, attrs map[string]string) {
 
 // redrivePolicy is used for JSON unmarshaling of RedrivePolicy attribute.
 type redrivePolicy struct {
-	DeadLetterTargetArn string `json:"deadLetterTargetArn"`
-	MaxReceiveCount     string `json:"maxReceiveCount"`
+	DeadLetterTargetArn string      `json:"deadLetterTargetArn"`
+	MaxReceiveCount     json.Number `json:"maxReceiveCount"`
+}
+
+// requeueExpiredMessages moves inflight messages whose visibility timeout has
+// expired back to the message queue. If the queue has a DLQ configured and the
+// message's ReceiveCount has reached MaxReceiveCount, the message is moved to the
+// DLQ instead. Must be called under lock.
+func (s *MemoryStorage) requeueExpiredMessages(qd *QueueData, now time.Time) {
+	for handle, msg := range qd.Inflight {
+		if !msg.VisibleAt.Before(now) {
+			continue
+		}
+
+		delete(qd.Inflight, handle)
+
+		// Check DLQ redrive policy: if the message has already been received
+		// MaxReceiveCount times, move it to the DLQ.
+		if qd.Queue.MaxReceiveCount > 0 && msg.ReceiveCount >= qd.Queue.MaxReceiveCount {
+			s.moveToDeadLetterQueue(qd.Queue.DeadLetterTargetArn, msg)
+
+			continue
+		}
+
+		// Prepend the message so it is delivered first.
+		qd.Messages = append([]*Message{msg}, qd.Messages...)
+	}
 }
 
 // moveToDeadLetterQueue moves a message to the dead letter queue. Must be called under lock.
@@ -820,6 +884,12 @@ func (s *MemoryStorage) moveToDeadLetterQueue(dlqArn string, msg *Message) {
 
 			qd.Messages = append(qd.Messages, dlqMsg)
 
+			// Notify long-polling receivers on the DLQ.
+			select {
+			case qd.notify <- struct{}{}:
+			default:
+			}
+
 			return
 		}
 	}
@@ -832,5 +902,13 @@ func parseRedrivePolicy(q *Queue, val string) {
 	}
 
 	q.DeadLetterTargetArn = rp.DeadLetterTargetArn
-	_, _ = fmt.Sscanf(rp.MaxReceiveCount, "%d", &q.MaxReceiveCount)
+
+	if rp.MaxReceiveCount != "" {
+		n, err := rp.MaxReceiveCount.Int64()
+		if err != nil {
+			return
+		}
+
+		q.MaxReceiveCount = int(n)
+	}
 }

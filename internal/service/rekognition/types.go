@@ -1,6 +1,8 @@
 // Package rekognition provides AWS Rekognition service emulation.
 package rekognition
 
+import "github.com/sivchari/kumo/internal/service"
+
 // Image represents an image for Rekognition operations.
 type Image struct {
 	Bytes    []byte    `json:"Bytes,omitempty"`
@@ -477,16 +479,9 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
+type ServiceError = service.CodedError
 
 // Error returns the error message.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
-
 // Error codes.
 const (
 	errResourceNotFound      = "ResourceNotFoundException"

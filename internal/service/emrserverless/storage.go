@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -111,6 +112,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "emrserverless", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -125,9 +135,17 @@ func (m *MemoryStorage) Close() error {
 }
 
 const (
-	accountID = "123456789012"
-	region    = "us-east-1"
+	accountID     = "123456789012"
+	defaultRegion = "us-east-1"
 )
+
+var region = defaultRegion //nolint:gochecknoglobals // set once at init
+
+func init() {
+	if v := os.Getenv("AWS_DEFAULT_REGION"); v != "" {
+		region = v
+	}
+}
 
 // generateApplicationID generates a unique application ID.
 func generateApplicationID() string {
@@ -150,24 +168,17 @@ func generateJobRunArn(applicationID, jobRunID string) string {
 }
 
 // CreateApplication creates a new application.
-//
-//nolint:funlen // validation and struct initialization require more lines
 func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicationInput) (*Application, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Validate required fields.
-	if req.Type == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "Type is required",
-		}
-	}
-
-	if req.ReleaseLabel == "" {
-		return nil, &Error{
-			Code:    errValidationException,
-			Message: "ReleaseLabel is required",
+	// Validate required fields (first empty wins).
+	for _, f := range []struct{ name, value string }{
+		{"Type", req.Type},
+		{"ReleaseLabel", req.ReleaseLabel},
+	} {
+		if f.value == "" {
+			return nil, &Error{Code: errValidationException, Message: f.name + " is required"}
 		}
 	}
 
@@ -175,27 +186,7 @@ func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicat
 	applicationID := generateApplicationID()
 	arn := generateApplicationArn(applicationID)
 
-	architecture := req.Architecture
-	if architecture == "" {
-		architecture = ArchitectureX8664
-	}
-
-	// Default auto stop configuration.
-	autoStopConfig := req.AutoStopConfiguration
-	if autoStopConfig == nil {
-		autoStopConfig = &AutoStopConfiguration{
-			Enabled:            true,
-			IdleTimeoutMinutes: 15,
-		}
-	}
-
-	// Default auto start configuration.
-	autoStartConfig := req.AutoStartConfiguration
-	if autoStartConfig == nil {
-		autoStartConfig = &AutoStartConfiguration{
-			Enabled: true,
-		}
-	}
+	architecture, autoStopConfig, autoStartConfig := applicationDefaults(req)
 
 	app := &Application{
 		ApplicationID:           applicationID,
@@ -219,7 +210,35 @@ func (m *MemoryStorage) CreateApplication(_ context.Context, req *CreateApplicat
 	m.Applications[applicationID] = app
 	m.JobRuns[applicationID] = make(map[string]*JobRun)
 
+	m.saveLocked()
+
 	return app, nil
+}
+
+// applicationDefaults resolves the architecture and auto-start/stop configuration
+// for a new application, applying kumo's defaults when the request omits them.
+func applicationDefaults(req *CreateApplicationInput) (string, *AutoStopConfiguration, *AutoStartConfiguration) {
+	architecture := req.Architecture
+	if architecture == "" {
+		architecture = ArchitectureX8664
+	}
+
+	autoStop := req.AutoStopConfiguration
+	if autoStop == nil {
+		autoStop = &AutoStopConfiguration{
+			Enabled:            true,
+			IdleTimeoutMinutes: 15,
+		}
+	}
+
+	autoStart := req.AutoStartConfiguration
+	if autoStart == nil {
+		autoStart = &AutoStartConfiguration{
+			Enabled: true,
+		}
+	}
+
+	return architecture, autoStop, autoStart
 }
 
 // GetApplication retrieves an application by ID.
@@ -342,6 +361,8 @@ func (m *MemoryStorage) UpdateApplication(_ context.Context, req *UpdateApplicat
 
 	app.UpdatedAt = AWSTimestamp{Time: time.Now()}
 
+	m.saveLocked()
+
 	return app, nil
 }
 
@@ -383,6 +404,8 @@ func (m *MemoryStorage) DeleteApplication(_ context.Context, applicationID strin
 	delete(m.Applications, applicationID)
 	delete(m.JobRuns, applicationID)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -411,6 +434,8 @@ func (m *MemoryStorage) StartApplication(_ context.Context, applicationID string
 	app.State = ApplicationStateStarted
 	app.UpdatedAt = AWSTimestamp{Time: time.Now()}
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -438,6 +463,8 @@ func (m *MemoryStorage) StopApplication(_ context.Context, applicationID string)
 	// For simulation, immediately set to STOPPED.
 	app.State = ApplicationStateStopped
 	app.UpdatedAt = AWSTimestamp{Time: time.Now()}
+
+	m.saveLocked()
 
 	return nil
 }
@@ -516,6 +543,8 @@ func (m *MemoryStorage) StartJobRun(_ context.Context, req *StartJobRunInput) (*
 	}
 
 	m.JobRuns[req.ApplicationID][jobRunID] = jobRun
+
+	m.saveLocked()
 
 	return jobRun, nil
 }
@@ -636,6 +665,8 @@ func (m *MemoryStorage) CancelJobRun(_ context.Context, applicationID, jobRunID 
 	// For simulation, immediately set to CANCELLED.
 	jobRun.State = JobRunStateCancelled
 	jobRun.UpdatedAt = AWSTimestamp{Time: time.Now()}
+
+	m.saveLocked()
 
 	return jobRun, nil
 }

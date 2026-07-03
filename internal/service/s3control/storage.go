@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Storage is the interface for S3 Control storage operations.
 type Storage interface {
@@ -44,14 +48,21 @@ type MemoryStorage struct {
 	mu                 sync.RWMutex                               `json:"-"`
 	PublicAccessBlocks map[string]*PublicAccessBlockConfiguration `json:"publicAccessBlocks"` // key: accountID
 	AccessPoints       map[string]map[string]*AccessPoint         `json:"accessPoints"`       // key: accountID -> name -> AccessPoint
+	region             string
 	dataDir            string
 }
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		PublicAccessBlocks: make(map[string]*PublicAccessBlockConfiguration),
 		AccessPoints:       make(map[string]map[string]*AccessPoint),
+		region:             region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -103,6 +114,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "s3control", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -139,6 +159,8 @@ func (s *MemoryStorage) PutPublicAccessBlock(_ context.Context, accountID string
 
 	s.PublicAccessBlocks[accountID] = config
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -148,6 +170,8 @@ func (s *MemoryStorage) DeletePublicAccessBlock(_ context.Context, accountID str
 	defer s.mu.Unlock()
 
 	delete(s.PublicAccessBlocks, accountID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -170,7 +194,7 @@ func (s *MemoryStorage) CreateAccessPoint(_ context.Context, accountID string, a
 
 	// Generate ARN and alias
 	ap.AccountID = accountID
-	ap.AccessPointArn = fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", "us-east-1", accountID, ap.Name)
+	ap.AccessPointArn = fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", s.region, accountID, ap.Name)
 	ap.Alias = fmt.Sprintf("%s-%s-s3alias", ap.Name, accountID[:12])
 
 	if ap.VpcConfiguration != nil {
@@ -180,10 +204,12 @@ func (s *MemoryStorage) CreateAccessPoint(_ context.Context, accountID string, a
 	}
 
 	ap.Endpoints = map[string]string{
-		"https": fmt.Sprintf("https://%s-%s.s3-accesspoint.us-east-1.amazonaws.com", ap.Name, accountID),
+		"https": fmt.Sprintf("https://%s-%s.s3-accesspoint.%s.amazonaws.com", ap.Name, accountID, s.region),
 	}
 
 	s.AccessPoints[accountID][ap.Name] = ap
+
+	s.saveLocked()
 
 	return ap, nil
 }
@@ -233,6 +259,8 @@ func (s *MemoryStorage) DeleteAccessPoint(_ context.Context, accountID, name str
 	}
 
 	delete(accountAPs, name)
+
+	s.saveLocked()
 
 	return nil
 }

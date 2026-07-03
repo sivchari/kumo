@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -290,44 +290,101 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 		invocationType = "RequestResponse"
 	}
 
-	// When no InvokeEndpoint is configured the function is treated as a
-	// stub: the invocation is accepted but no real code runs. This is the
-	// common shape for terraform integration tests — provider-aws creates
-	// the function via CreateFunction, which has no invoke_endpoint
-	// argument, then never calls Invoke. Returning a benign empty success
-	// here (rather than InvalidParameterValueException) lets ad-hoc CLI /
-	// SDK callers exercise the function without setting up a separate
-	// HTTP listener.
-	if fn.InvokeEndpoint == "" {
-		switch invocationType {
-		case "DryRun":
-			writeInvokeHeaders(w)
-			w.WriteHeader(http.StatusNoContent)
-		case "Event":
-			writeInvokeHeaders(w)
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte("{}"))
-		default:
-			writeInvokeHeaders(w)
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("{}"))
-		}
+	// DryRun validates access without executing the function.
+	if invocationType == "DryRun" {
+		writeInvokeHeaders(w)
+		w.WriteHeader(http.StatusNoContent)
 
 		return
 	}
 
-	switch invocationType {
-	case "DryRun":
-		writeInvokeHeaders(w)
-		w.WriteHeader(http.StatusNoContent)
-	case "Event":
-		s.invokeAsync(functionName, fn.InvokeEndpoint, payload)
-		writeInvokeHeaders(w)
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte("{}"))
+	async := invocationType == "Event"
+
+	// Resolution order: a handler polling the Runtime API wins, then a
+	// configured InvokeEndpoint, otherwise there is nothing to execute.
+	switch {
+	case s.broker.registered(functionName):
+		s.invokeViaRuntime(w, r, functionName, payload, async)
+	case fn.InvokeEndpoint != "":
+		s.invokeViaEndpoint(w, r, functionName, fn.InvokeEndpoint, payload, async)
 	default:
-		s.invokeSync(r.Context(), w, fn.InvokeEndpoint, payload)
+		s.invokeNoBackend(w, functionName, async)
 	}
+}
+
+// invokeViaRuntime dispatches to a handler connected through the Runtime API.
+func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn string, payload []byte, async bool) {
+	if async {
+		_, _ = s.broker.invoke(r.Context(), fn, payload, true)
+
+		writeInvokeAccepted(w)
+
+		return
+	}
+
+	res, err := s.broker.invoke(r.Context(), fn, payload, false)
+	if err != nil {
+		writeFunctionError(w, ErrServiceException, "runtime invocation failed: "+err.Error(), http.StatusBadGateway)
+
+		return
+	}
+
+	writeInvokeHeaders(w)
+
+	if res.errored {
+		w.Header().Set("X-Amz-Function-Error", "Unhandled")
+	}
+
+	w.WriteHeader(http.StatusOK)
+	writeInvokePayload(w, res.payload)
+}
+
+// invokeViaEndpoint forwards to a function's configured InvokeEndpoint.
+// Async invocations are queued on the dispatcher so the 202 means "accepted
+// for delivery": failed deliveries are retried instead of dropped.
+func (s *Service) invokeViaEndpoint(w http.ResponseWriter, r *http.Request, fn, endpoint string, payload []byte, async bool) {
+	if async {
+		s.async.enqueue(fn, endpoint, payload)
+		writeInvokeAccepted(w)
+
+		return
+	}
+
+	s.invokeSync(r.Context(), w, endpoint, payload)
+}
+
+// invokeNoBackend handles a function with neither a Runtime API handler nor an
+// InvokeEndpoint. Async invocations are accepted (and dropped); a
+// RequestResponse invocation has nothing to execute and fails — kumo does not
+// fabricate an echo response.
+func (s *Service) invokeNoBackend(w http.ResponseWriter, fn string, async bool) {
+	if async {
+		writeInvokeAccepted(w)
+
+		return
+	}
+
+	writeFunctionError(w, ErrServiceException,
+		"function "+fn+" has no runtime handler; run it with AWS_LAMBDA_RUNTIME_API=<kumo>/_runtime/"+fn+" or set InvokeEndpoint",
+		http.StatusBadGateway)
+}
+
+// writeInvokeAccepted writes the 202 response for an async invocation.
+func writeInvokeAccepted(w http.ResponseWriter) {
+	writeInvokeHeaders(w)
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte("{}"))
+}
+
+// writeInvokePayload writes a sync invocation payload, defaulting to "null".
+func writeInvokePayload(w http.ResponseWriter, payload []byte) {
+	if len(payload) == 0 {
+		_, _ = w.Write([]byte("null"))
+
+		return
+	}
+
+	_, _ = w.Write(payload)
 }
 
 // handleGetFunctionError writes error response for GetFunction errors.
@@ -352,37 +409,6 @@ func writeInvokeHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Amz-Executed-Version", "$LATEST")
 	w.Header().Set("X-Amz-Request-Id", uuid.New().String())
-}
-
-// invokeAsync invokes the function asynchronously.
-func (s *Service) invokeAsync(functionName, endpoint string, payload []byte) {
-	payloadCopy := make([]byte, len(payload))
-	copy(payloadCopy, payload)
-
-	go func() {
-		req, err := http.NewRequestWithContext(
-			context.Background(),
-			http.MethodPost,
-			endpoint,
-			bytes.NewReader(payloadCopy),
-		)
-		if err != nil {
-			slog.Error("async invoke failed to create request", "function", functionName, "error", err)
-
-			return
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			slog.Error("async invoke failed", "function", functionName, "error", err)
-
-			return
-		}
-
-		_ = resp.Body.Close()
-	}()
 }
 
 // invokeSync invokes the function synchronously and writes the response.
@@ -689,12 +715,382 @@ func handleFunctionError(w http.ResponseWriter, err error) {
 	writeFunctionError(w, ErrServiceException, "Internal server error", http.StatusInternalServerError)
 }
 
-// extractEventSourceMappingUUID extracts UUID from path like /lambda/2015-03-31/event-source-mappings/{UUID}.
+// extractEventSourceMappingUUID extracts UUID from paths like:
+//
+//   - /lambda/2015-03-31/event-source-mappings/{UUID}  (SDK BaseEndpoint = .../lambda)
+//   - /2015-03-31/event-source-mappings/{UUID}          (terraform-provider-aws, single endpoint)
+//
+// Routes are registered under both prefixes, so the helper finds the
+// "event-source-mappings" segment regardless of where it appears in the path.
 func extractEventSourceMappingUUID(path string) string {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 4 && parts[2] == "event-source-mappings" {
-		return parts[3]
+	for i, p := range parts {
+		if p == "event-source-mappings" && i+1 < len(parts) {
+			return parts[i+1]
+		}
 	}
 
 	return ""
+}
+
+// ListVersionsByFunction returns a single $LATEST entry for any existing
+// function. terraform-provider-aws calls this on every refresh of
+// aws_lambda_function and apply errors immediately after CreateFunction
+// without it.
+func (s *Service) ListVersionsByFunction(w http.ResponseWriter, r *http.Request) {
+	name := extractFunctionNameForListChild(r.URL.Path, "versions")
+	if name == "" {
+		writeFunctionError(w, "InvalidParameterValueException", "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	fn, err := s.storage.ListVersionsByFunction(r.Context(), name)
+	if err != nil {
+		writeFunctionError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, listVersionsByFunctionResponse{
+		Versions: []functionConfigurationVersion{
+			{
+				FunctionName: fn.FunctionName,
+				FunctionArn:  fn.FunctionArn,
+				Runtime:      fn.Runtime,
+				Role:         fn.Role,
+				Handler:      fn.Handler,
+				Version:      "$LATEST",
+				LastModified: fn.LastModified.UTC().Format("2006-01-02T15:04:05.000+0000"),
+			},
+		},
+	})
+}
+
+// ListAliases returns an empty Aliases list. terraform-provider-aws calls
+// this on every refresh of aws_lambda_function. Aliases are not modeled.
+func (s *Service) ListAliases(w http.ResponseWriter, r *http.Request) {
+	name := extractFunctionNameForListChild(r.URL.Path, "aliases")
+	if name == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.ListAliases(r.Context(), name); err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, listAliasesResponse{Aliases: []aliasConfiguration{}})
+}
+
+// GetFunctionCodeSigningConfig reports no code-signing config for any
+// function. terraform-provider-aws reads this on every refresh.
+func (s *Service) GetFunctionCodeSigningConfig(w http.ResponseWriter, r *http.Request) {
+	name := extractFunctionNameForListChild(r.URL.Path, "code-signing-config")
+	if name == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	functionName, err := s.storage.GetFunctionCodeSigningConfig(r.Context(), name)
+	if err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, getFunctionCodeSigningConfigResponse{FunctionName: functionName})
+}
+
+// ListFunctionEventInvokeConfigs returns an empty list.
+func (s *Service) ListFunctionEventInvokeConfigs(w http.ResponseWriter, r *http.Request) {
+	name := extractFunctionNameForListChild(r.URL.Path, "event-invoke-config")
+	if name == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.ListFunctionEventInvokeConfigs(r.Context(), name); err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, listFunctionEventInvokeConfigsResponse{
+		FunctionEventInvokeConfigs: []map[string]any{},
+	})
+}
+
+// GetPolicy returns the resource policy for a function. AWS returns 404
+// when a function has no attached policy; terraform-provider-aws expects
+// that and treats it as "no policy".
+func (s *Service) GetPolicy(w http.ResponseWriter, r *http.Request) {
+	name := extractFunctionNameForListChild(r.URL.Path, "policy")
+	if name == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	policy, err := s.storage.GetPolicy(r.Context(), name)
+	if err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	if policy == nil || len(policy.Statements) == 0 {
+		writeFunctionError(w, "ResourceNotFoundException", "The resource you requested does not exist.", http.StatusNotFound)
+
+		return
+	}
+
+	policyJSON, err := json.Marshal(policy)
+	if err != nil {
+		writeFunctionError(w, ErrServiceException, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, getPolicyResponse{
+		Policy:     string(policyJSON),
+		RevisionID: "default",
+	})
+}
+
+// AddPermission adds a permission to a Lambda function's resource policy.
+func (s *Service) AddPermission(w http.ResponseWriter, r *http.Request) {
+	name := extractFunctionNameForListChild(r.URL.Path, "policy")
+	if name == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName is required", http.StatusBadRequest)
+
+		return
+	}
+
+	var req addPermissionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeFunctionError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	// Validate required fields (first empty wins).
+	for _, f := range []struct{ name, value string }{
+		{"StatementId", req.StatementID},
+		{"Action", req.Action},
+		{"Principal", req.Principal},
+	} {
+		if f.value == "" {
+			writeFunctionError(w, ErrInvalidParameterValue, f.name+" is required", http.StatusBadRequest)
+
+			return
+		}
+	}
+
+	fn, err := s.storage.GetFunction(r.Context(), name)
+	if err != nil {
+		handleGetFunctionError(w, err)
+
+		return
+	}
+
+	stmt := buildPermissionStatement(&req, fn.FunctionArn)
+
+	if err := s.storage.AddPermission(r.Context(), name, stmt); err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	stmtJSON, err := json.Marshal(stmt)
+	if err != nil {
+		writeFunctionError(w, ErrServiceException, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusCreated, addPermissionResponse{
+		Statement: string(stmtJSON),
+	})
+}
+
+// buildPermissionStatement builds the resource-policy statement for AddPermission,
+// attaching SourceArn/SourceAccount conditions when present.
+func buildPermissionStatement(req *addPermissionRequest, resourceArn string) *PolicyStatement {
+	stmt := &PolicyStatement{
+		Sid:       req.StatementID,
+		Effect:    "Allow",
+		Principal: map[string]string{"Service": req.Principal},
+		Action:    req.Action,
+		Resource:  resourceArn,
+	}
+
+	if req.SourceArn != "" {
+		stmt.Condition = map[string]any{
+			"ArnLike": map[string]string{
+				"AWS:SourceArn": req.SourceArn,
+			},
+		}
+	}
+
+	if req.SourceAccount != "" {
+		if stmt.Condition == nil {
+			stmt.Condition = make(map[string]any)
+		}
+
+		stmt.Condition["StringEquals"] = map[string]string{
+			"AWS:SourceAccount": req.SourceAccount,
+		}
+	}
+
+	return stmt
+}
+
+// RemovePermission removes a permission from a Lambda function's resource policy.
+func (s *Service) RemovePermission(w http.ResponseWriter, r *http.Request) {
+	name, statementID := extractFunctionNameAndStatementID(r.URL.Path)
+	if name == "" || statementID == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "FunctionName and StatementId are required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.RemovePermission(r.Context(), name, statementID); err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListTags returns the tags for a Lambda function identified by its ARN.
+// The AWS API path is GET /2017-03-31/tags/{ARN}.
+func (s *Service) ListTags(w http.ResponseWriter, r *http.Request) {
+	arn := extractARNFromTagsPath(r.URL.Path)
+	if arn == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "Resource ARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTags(r.Context(), arn)
+	if err != nil {
+		handleGetFunctionError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, listTagsResponse{Tags: tags})
+}
+
+// TagResource adds or overwrites tags on a Lambda function identified by its ARN.
+// The AWS API path is POST /2017-03-31/tags/{ARN}.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	arn := extractARNFromTagsPath(r.URL.Path)
+	if arn == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "Resource ARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	var req tagResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeFunctionError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), arn, req.Tags); err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UntagResource removes tags from a Lambda function identified by its ARN.
+// The AWS API path is DELETE /2017-03-31/tags/{ARN}?tagKeys=key1&tagKeys=key2.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	arn := extractARNFromTagsPath(r.URL.Path)
+	if arn == "" {
+		writeFunctionError(w, ErrInvalidParameterValue, "Resource ARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tagKeys := r.URL.Query()["tagKeys"]
+	if len(tagKeys) == 0 {
+		writeFunctionError(w, ErrInvalidParameterValue, "tagKeys is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), arn, tagKeys); err != nil {
+		handleFunctionError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// extractFunctionNameForListChild returns the function name from a path
+// like /.../functions/{name}/<child>. Empty if the shape does not match.
+func extractFunctionNameForListChild(path, child string) string {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	for i, p := range parts {
+		if p == pathSegmentFunctions && i+2 < len(parts) && parts[i+2] == child {
+			return parts[i+1]
+		}
+	}
+
+	return ""
+}
+
+// extractFunctionNameAndStatementID extracts function name and statement ID
+// from paths like /.../functions/{name}/policy/{statementId}.
+func extractFunctionNameAndStatementID(path string) (string, string) {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	for i, p := range parts {
+		if p == pathSegmentFunctions && i+3 < len(parts) && parts[i+2] == "policy" {
+			return parts[i+1], parts[i+3]
+		}
+	}
+
+	return "", ""
+}
+
+// extractARNFromTagsPath extracts the ARN from a path like
+// /lambda/2017-03-31/tags/{arn} or /2017-03-31/tags/{arn}.
+// The ARN is URL-encoded in the path and contains colons.
+func extractARNFromTagsPath(path string) string {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	for i, p := range parts {
+		if p == "tags" && i+1 < len(parts) {
+			// The ARN may span multiple segments if it contains slashes,
+			// but Lambda ARNs use colons. Join remaining parts.
+			raw := strings.Join(parts[i+1:], "/")
+
+			decoded, err := url.PathUnescape(raw)
+			if err != nil {
+				return raw
+			}
+
+			return decoded
+		}
+	}
+
+	return ""
+}
+
+// policyID returns a deterministic policy ID for a function.
+func policyID(functionName string) string {
+	return fmt.Sprintf("%s-policy", functionName)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ const (
 	errResourceInUse    = "ResourceInUseException"
 	errInvalidParameter = "InvalidParameterException"
 
+	defaultRegion  = "us-east-1"
 	statusDeleting = "DELETING"
 )
 
@@ -70,12 +72,17 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Endpoints:    make(map[string]*ResolverEndpoint),
 		Rules:        make(map[string]*ResolverRule),
 		Associations: make(map[string]*ResolverRuleAssociation),
 		accountID:    "123456789012",
-		region:       "us-east-1",
+		region:       region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -129,6 +136,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "route53resolver", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -204,6 +220,8 @@ func (s *MemoryStorage) CreateResolverEndpoint(_ context.Context, req *CreateRes
 
 	s.Endpoints[id] = endpoint
 
+	s.saveLocked()
+
 	return endpoint, nil
 }
 
@@ -239,6 +257,8 @@ func (s *MemoryStorage) DeleteResolverEndpoint(_ context.Context, id string) (*R
 	endpoint.Status = statusDeleting
 
 	delete(s.Endpoints, id)
+
+	s.saveLocked()
 
 	return endpoint, nil
 }
@@ -299,6 +319,8 @@ func (s *MemoryStorage) CreateResolverRule(_ context.Context, req *CreateResolve
 
 	s.Rules[id] = rule
 
+	s.saveLocked()
+
 	return rule, nil
 }
 
@@ -344,6 +366,8 @@ func (s *MemoryStorage) DeleteResolverRule(_ context.Context, id string) (*Resol
 	rule.Status = statusDeleting
 
 	delete(s.Rules, id)
+
+	s.saveLocked()
 
 	return rule, nil
 }
@@ -403,6 +427,8 @@ func (s *MemoryStorage) AssociateResolverRule(_ context.Context, req *AssociateR
 
 	s.Associations[id] = assoc
 
+	s.saveLocked()
+
 	return assoc, nil
 }
 
@@ -416,6 +442,8 @@ func (s *MemoryStorage) DisassociateResolverRule(_ context.Context, ruleID, vpcI
 			assoc.Status = statusDeleting
 
 			delete(s.Associations, id)
+
+			s.saveLocked()
 
 			return assoc, nil
 		}

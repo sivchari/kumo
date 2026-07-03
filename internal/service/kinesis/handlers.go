@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // handlerFunc is a type alias for handler functions.
@@ -16,15 +18,16 @@ type handlerFunc func(http.ResponseWriter, *http.Request)
 // getActionHandlers returns a map of action names to handler functions.
 func (s *Service) getActionHandlers() map[string]handlerFunc {
 	return map[string]handlerFunc{
-		"CreateStream":     s.CreateStream,
-		"DeleteStream":     s.DeleteStream,
-		"DescribeStream":   s.DescribeStream,
-		"ListStreams":      s.ListStreams,
-		"ListShards":       s.ListShards,
-		"PutRecord":        s.PutRecord,
-		"PutRecords":       s.PutRecords,
-		"GetShardIterator": s.GetShardIterator,
-		"GetRecords":       s.GetRecords,
+		"CreateStream":          s.CreateStream,
+		"DeleteStream":          s.DeleteStream,
+		"DescribeStream":        s.DescribeStream,
+		"ListStreams":           s.ListStreams,
+		"ListShards":            s.ListShards,
+		"PutRecord":             s.PutRecord,
+		"PutRecords":            s.PutRecords,
+		"GetShardIterator":      s.GetShardIterator,
+		"GetRecords":            s.GetRecords,
+		"DescribeStreamSummary": s.DescribeStreamSummary,
 	}
 }
 
@@ -142,6 +145,47 @@ func (s *Service) DescribeStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, resp)
+}
+
+// DescribeStreamSummary handles the DescribeStreamSummary API.
+func (s *Service) DescribeStreamSummary(w http.ResponseWriter, r *http.Request) {
+	var req DescribeStreamSummaryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	streamName := req.StreamName
+	if streamName == "" && req.StreamARN != "" {
+		parts := strings.Split(req.StreamARN, "/")
+		if len(parts) >= 2 {
+			streamName = parts[len(parts)-1]
+		}
+	}
+
+	stream, _, _, err := s.storage.DescribeStream(r.Context(), streamName, 0, "")
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &DescribeStreamSummaryResponse{
+		StreamDescriptionSummary: StreamDescriptionSummary{
+			StreamName:              stream.StreamName,
+			StreamARN:               stream.StreamARN,
+			StreamStatus:            string(stream.StreamStatus),
+			StreamModeDetails:       stream.StreamModeDetails,
+			RetentionPeriodHours:    stream.RetentionPeriodHours,
+			StreamCreationTimestamp: float64(stream.StreamCreationTimestamp.Unix()),
+			EnhancedMonitoring:      stream.EnhancedMonitoring,
+			EncryptionType:          stream.EncryptionType,
+			KeyID:                   stream.KeyID,
+			OpenShardCount:          stream.OpenShardCount,
+			ConsumerCount:           stream.ConsumerCount,
+		},
+	})
 }
 
 // ListStreams handles the ListStreams API.
@@ -379,13 +423,7 @@ func writeResponse(w http.ResponseWriter, resp any) {
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(&ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }
 
 // handleError handles service errors.

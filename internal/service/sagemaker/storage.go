@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -85,12 +86,17 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		NotebookInstances: make(map[string]*NotebookInstance),
 		TrainingJobs:      make(map[string]*TrainingJob),
 		Models:            make(map[string]*Model),
 		Endpoints:         make(map[string]*Endpoint),
-		region:            defaultRegion,
+		region:            region,
 		accountID:         defaultAccountID,
 	}
 	for _, o := range opts {
@@ -149,6 +155,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "sagemaker", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -217,6 +232,8 @@ func (m *MemoryStorage) CreateNotebookInstance(_ context.Context, req *CreateNot
 
 	m.NotebookInstances[req.NotebookInstanceName] = instance
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -233,6 +250,8 @@ func (m *MemoryStorage) DeleteNotebookInstance(_ context.Context, name string) e
 	}
 
 	delete(m.NotebookInstances, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -308,6 +327,8 @@ func (m *MemoryStorage) CreateTrainingJob(_ context.Context, req *CreateTraining
 
 	m.TrainingJobs[req.TrainingJobName] = job
 
+	m.saveLocked()
+
 	return job, nil
 }
 
@@ -353,6 +374,8 @@ func (m *MemoryStorage) CreateModel(_ context.Context, req *CreateModelRequest) 
 
 	m.Models[req.ModelName] = model
 
+	m.saveLocked()
+
 	return model, nil
 }
 
@@ -369,6 +392,8 @@ func (m *MemoryStorage) DeleteModel(_ context.Context, name string) error {
 	}
 
 	delete(m.Models, name)
+
+	m.saveLocked()
 
 	return nil
 }
@@ -399,6 +424,8 @@ func (m *MemoryStorage) CreateEndpoint(_ context.Context, req *CreateEndpointReq
 
 	m.Endpoints[req.EndpointName] = endpoint
 
+	m.saveLocked()
+
 	return endpoint, nil
 }
 
@@ -415,6 +442,8 @@ func (m *MemoryStorage) DeleteEndpoint(_ context.Context, name string) error {
 	}
 
 	delete(m.Endpoints, name)
+
+	m.saveLocked()
 
 	return nil
 }

@@ -359,6 +359,11 @@ type MetricAlarmCBOR struct {
 	AlarmConfigurationUpdatedTimestamp time.Time   `cbor:"AlarmConfigurationUpdatedTimestamp"`
 }
 
+// ListTagsForResourceCBORResponse is the CBOR response for ListTagsForResource.
+type ListTagsForResourceCBORResponse struct {
+	Tags []Tag `cbor:"Tags"`
+}
+
 // GetMetricDataResult is the result for GetMetricData storage operation.
 type GetMetricDataResult struct {
 	MetricDataResults []MetricDataResult
@@ -382,4 +387,27 @@ type ListMetricsResult struct {
 type DescribeAlarmsResult struct {
 	MetricAlarms []MetricAlarm
 	NextToken    string
+}
+
+// Tag represents a CloudWatch resource tag.
+type Tag struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
+}
+
+// ListTagsForResourceRequest is the request for ListTagsForResource.
+type ListTagsForResourceRequest struct {
+	ResourceARN string `json:"ResourceARN"`
+}
+
+// TagResourceRequest is the request for TagResource.
+type TagResourceRequest struct {
+	ResourceARN string `json:"ResourceARN"`
+	Tags        []Tag  `json:"Tags"`
+}
+
+// UntagResourceRequest is the request for UntagResource.
+type UntagResourceRequest struct {
+	ResourceARN string   `json:"ResourceARN"`
+	TagKeys     []string `json:"TagKeys"`
 }

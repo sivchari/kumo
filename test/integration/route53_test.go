@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -585,6 +586,85 @@ func TestRoute53_GetChange_NotFound(t *testing.T) {
 	if !errors.As(err, &nfe) {
 		t.Fatalf("expected NoSuchChange error, got %T: %v", err, err)
 	}
+}
+
+func TestRoute53_TagOperations(t *testing.T) {
+	t.Parallel()
+
+	client := newRoute53Client(t)
+	ctx := t.Context()
+
+	// Create a hosted zone for tagging.
+	createResult, err := client.CreateHostedZone(ctx, &route53.CreateHostedZoneInput{
+		Name:            aws.String("tag-test.example.com"),
+		CallerReference: aws.String(fmt.Sprintf("test-tag-ops-%d", time.Now().UnixNano())),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hostedZoneID := createResult.HostedZone.Id
+	// The SDK does not sanitize ResourceId for tag operations, so we must
+	// pass the bare zone ID (without the "/hostedzone/" prefix) to avoid
+	// percent-encoded slashes in the URL path.
+	bareZoneID := aws.String(strings.TrimPrefix(*hostedZoneID, "/hostedzone/"))
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteHostedZone(context.Background(), &route53.DeleteHostedZoneInput{
+			Id: hostedZoneID,
+		})
+	})
+
+	// Add tags.
+	_, err = client.ChangeTagsForResource(ctx, &route53.ChangeTagsForResourceInput{
+		ResourceType: types.TagResourceTypeHostedzone,
+		ResourceId:   bareZoneID,
+		AddTags: []types.Tag{
+			{Key: aws.String("Environment"), Value: aws.String("test")},
+			{Key: aws.String("Project"), Value: aws.String("kumo")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List tags after adding.
+	listResult, err := client.ListTagsForResource(ctx, &route53.ListTagsForResourceInput{
+		ResourceType: types.TagResourceTypeHostedzone,
+		ResourceId:   bareZoneID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"ResourceId", "ResultMetadata",
+	)).Assert(t.Name()+"_after_add", listResult)
+
+	// Remove one tag.
+	_, err = client.ChangeTagsForResource(ctx, &route53.ChangeTagsForResourceInput{
+		ResourceType: types.TagResourceTypeHostedzone,
+		ResourceId:   bareZoneID,
+		RemoveTagKeys: []string{
+			"Project",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List tags after removing.
+	listResult, err = client.ListTagsForResource(ctx, &route53.ListTagsForResourceInput{
+		ResourceType: types.TagResourceTypeHostedzone,
+		ResourceId:   bareZoneID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"ResourceId", "ResultMetadata",
+	)).Assert(t.Name()+"_after_remove", listResult)
 }
 
 func TestRoute53_ListHostedZonesByName(t *testing.T) {

@@ -84,3 +84,12 @@ func (s *Service) Close() error {
 func (s *Service) Prefix() string {
 	return "/finspace"
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "FinSpace",
+		Category:    "Other Services",
+		Description: "Financial data management",
+	}
+}

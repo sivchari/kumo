@@ -137,6 +137,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "resiliencehub", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -189,6 +198,8 @@ func (s *MemoryStorage) CreateApp(req *CreateAppRequest) (*App, error) {
 	if req.Tags != nil {
 		s.Tags[appARN] = req.Tags
 	}
+
+	s.saveLocked()
 
 	return app, nil
 }
@@ -246,6 +257,8 @@ func (s *MemoryStorage) UpdateApp(req *UpdateAppRequest) (*App, error) {
 		app.PolicyARN = ""
 	}
 
+	s.saveLocked()
+
 	return app, nil
 }
 
@@ -263,6 +276,8 @@ func (s *MemoryStorage) DeleteApp(appARN string) error {
 
 	delete(s.Apps, appARN)
 	delete(s.Tags, appARN)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -340,6 +355,8 @@ func (s *MemoryStorage) CreateResiliencyPolicy(req *CreateResiliencyPolicyReques
 		s.Tags[policyARN] = req.Tags
 	}
 
+	s.saveLocked()
+
 	return policy, nil
 }
 
@@ -392,6 +409,8 @@ func (s *MemoryStorage) UpdateResiliencyPolicy(req *UpdateResiliencyPolicyReques
 		policy.Tier = req.Tier
 	}
 
+	s.saveLocked()
+
 	return policy, nil
 }
 
@@ -409,6 +428,8 @@ func (s *MemoryStorage) DeleteResiliencyPolicy(policyARN string) error {
 
 	delete(s.Policies, policyARN)
 	delete(s.Tags, policyARN)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -472,6 +493,8 @@ func (s *MemoryStorage) StartAppAssessment(req *StartAppAssessmentRequest) (*App
 		s.Tags[assessmentARN] = req.Tags
 	}
 
+	s.saveLocked()
+
 	return assessment, nil
 }
 
@@ -518,6 +541,8 @@ func (s *MemoryStorage) DeleteAppAssessment(assessmentARN string) error {
 
 	delete(s.Assessments, assessmentARN)
 	delete(s.Tags, assessmentARN)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -601,6 +626,8 @@ func (s *MemoryStorage) TagResource(resourceARN string, tags map[string]string) 
 
 	maps.Copy(s.Tags[resourceARN], tags)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -626,6 +653,8 @@ func (s *MemoryStorage) UntagResource(resourceARN string, tagKeys []string) erro
 			delete(s.Tags[resourceARN], key)
 		}
 	}
+
+	s.saveLocked()
 
 	return nil
 }

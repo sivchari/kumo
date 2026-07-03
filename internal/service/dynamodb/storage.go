@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sivchari/kumo/internal/storage"
+	"github.com/sivchari/kumo/internal/streams"
 )
 
 const (
@@ -31,13 +34,17 @@ type Storage interface {
 	DeleteItem(ctx context.Context, tableName string, key Item, returnOld bool, cond ConditionInput) (Item, error)
 	UpdateItem(ctx context.Context, tableName string, key Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, returnValues string, cond ConditionInput) (Item, error)
 	Query(ctx context.Context, tableName, indexName string, keyCondExpr string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, scanForward bool) ([]Item, Item, int, error)
-	Scan(ctx context.Context, tableName string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item) ([]Item, Item, int, error)
+	Scan(ctx context.Context, tableName string, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, segment, totalSegments *int) ([]Item, Item, int, error)
 	TransactWriteItems(ctx context.Context, items []TransactWriteItem) ([]CancellationReason, error)
 	TransactGetItems(ctx context.Context, items []TransactGetItem) ([]Item, error)
 	BatchWriteItem(ctx context.Context, requestItems map[string][]WriteRequest) (map[string][]WriteRequest, error)
 	BatchGetItem(ctx context.Context, requestItems map[string]KeysAndAttributes) (map[string][]Item, error)
 	UpdateTimeToLive(ctx context.Context, tableName, attributeName string, enabled bool) error
 	DescribeTimeToLive(ctx context.Context, tableName string) (string, bool, error)
+	ListTagsOfResource(ctx context.Context, resourceArn string) ([]Tag, error)
+	TagResource(ctx context.Context, resourceArn string, tags []Tag) error
+	UntagResource(ctx context.Context, resourceArn string, tagKeys []string) error
+	DescribeContinuousBackups(ctx context.Context, tableName string) (*ContinuousBackupsDescription, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -58,11 +65,14 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu      sync.RWMutex          `json:"-"`
-	Tables  map[string]*tableData `json:"tables"`
-	baseURL string
-	dataDir string
-	stopTTL chan struct{}
+	mu          sync.RWMutex          `json:"-"`
+	Tables      map[string]*tableData `json:"tables"`
+	Tags        map[string][]Tag      `json:"tags,omitempty"`
+	baseURL     string
+	region      string
+	dataDir     string
+	stopTTL     chan struct{}
+	streamStore *streams.Store
 }
 
 type tableData struct {
@@ -72,10 +82,18 @@ type tableData struct {
 
 // NewMemoryStorage creates a new in-memory DynamoDB storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
-		Tables:  make(map[string]*tableData),
-		baseURL: baseURL,
-		stopTTL: make(chan struct{}),
+		Tables:      make(map[string]*tableData),
+		Tags:        make(map[string][]Tag),
+		baseURL:     baseURL,
+		region:      region,
+		stopTTL:     make(chan struct{}),
+		streamStore: streams.Global,
 	}
 	for _, o := range opts {
 		o(s)
@@ -141,6 +159,8 @@ func (m *MemoryStorage) deleteExpiredItems() {
 			delete(td.Items, key)
 		}
 	}
+
+	m.saveLocked()
 }
 
 // MarshalJSON serializes the storage state to JSON.
@@ -175,7 +195,20 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 		m.Tables = make(map[string]*tableData)
 	}
 
+	if m.Tags == nil {
+		m.Tags = make(map[string][]Tag)
+	}
+
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "dynamodb", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -219,23 +252,51 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		TableStatus:            "ACTIVE",
 		ItemCount:              0,
 		TableSizeBytes:         0,
-		TableARN:               fmt.Sprintf("arn:aws:dynamodb:%s:%s:table/%s", defaultRegion, defaultAccountID, req.TableName),
+		TableARN:               fmt.Sprintf("arn:aws:dynamodb:%s:%s:table/%s", m.region, defaultAccountID, req.TableName),
 		BillingMode:            billingMode,
 		DeletionProtection:     req.DeletionProtectionEnabled,
 	}
 
-	if req.StreamSpecification != nil && req.StreamSpecification.StreamEnabled {
-		table.StreamEnabled = true
-		table.StreamViewType = req.StreamSpecification.StreamViewType
-		table.LatestStreamArn = fmt.Sprintf("%s/stream/%s", table.TableARN, time.Now().Format("2006-01-02T15:04:05.000"))
-	}
+	m.setupTableStream(table, req)
 
 	m.Tables[req.TableName] = &tableData{
 		Table: table,
 		Items: make(map[string]Item),
 	}
 
+	m.saveLocked()
+
 	return table, nil
+}
+
+// setupTableStream enables streams on the table and registers it in the shared
+// event store, when the request asks for streaming.
+func (m *MemoryStorage) setupTableStream(table *Table, req *CreateTableRequest) {
+	if req.StreamSpecification == nil || !req.StreamSpecification.StreamEnabled {
+		return
+	}
+
+	table.StreamEnabled = true
+	table.StreamViewType = req.StreamSpecification.StreamViewType
+	table.LatestStreamArn = fmt.Sprintf("%s/stream/%s", table.TableARN, time.Now().Format("2006-01-02T15:04:05.000"))
+
+	keySchema := make([]streams.KeySchemaElement, len(req.KeySchema))
+	for i, ks := range req.KeySchema {
+		keySchema[i] = streams.KeySchemaElement{
+			AttributeName: ks.AttributeName,
+			KeyType:       ks.KeyType,
+		}
+	}
+
+	m.streamStore.RegisterStream(&streams.StreamInfo{
+		StreamARN:      table.LatestStreamArn,
+		TableName:      table.Name,
+		StreamViewType: table.StreamViewType,
+		StreamLabel:    time.Now().Format("2006-01-02T15:04:05.000"),
+		StreamStatus:   "ENABLED",
+		KeySchema:      keySchema,
+		CreationTime:   time.Now(),
+	})
 }
 
 // DeleteTable deletes a table.
@@ -255,6 +316,8 @@ func (m *MemoryStorage) DeleteTable(_ context.Context, tableName string) (*Table
 	table.TableStatus = "DELETING"
 
 	delete(m.Tables, tableName)
+
+	m.saveLocked()
 
 	return table, nil
 }
@@ -336,6 +399,10 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 		}
 	}
 
+	if err := validateItemKey(td.Table, item); err != nil {
+		return nil, err
+	}
+
 	key := m.serializeKey(td.Table, item)
 
 	// Evaluate condition against existing item (nil if not exists).
@@ -364,6 +431,18 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 
 	td.Items[key] = m.copyItem(item)
 
+	// Emit stream event if streams are enabled for this table.
+	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+		eventName := streams.OperationTypeInsert
+		if existingItem != nil {
+			eventName = streams.OperationTypeModify
+		}
+
+		m.emitStreamEvent(td.Table, eventName, m.extractKey(td.Table, item), existingItem, item)
+	}
+
+	m.saveLocked()
+
 	return oldItem, nil
 }
 
@@ -378,6 +457,10 @@ func (m *MemoryStorage) GetItem(_ context.Context, tableName string, key Item) (
 			Code:    "ResourceNotFoundException",
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
+	}
+
+	if err := validateKey(td.Table, key); err != nil {
+		return nil, err
 	}
 
 	keyStr := m.serializeKey(td.Table, key)
@@ -400,6 +483,10 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 			Code:    "ResourceNotFoundException",
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
+	}
+
+	if err := validateKey(td.Table, key); err != nil {
+		return nil, err
 	}
 
 	keyStr := m.serializeKey(td.Table, key)
@@ -430,7 +517,14 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 		}
 
 		delete(td.Items, keyStr)
+
+		// Emit stream event if streams are enabled for this table.
+		if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+			m.emitStreamEvent(td.Table, streams.OperationTypeRemove, key, existingItem, nil)
+		}
 	}
+
+	m.saveLocked()
 
 	return oldItem, nil
 }
@@ -448,25 +542,21 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 		}
 	}
 
+	if err := validateKey(td.Table, key); err != nil {
+		return nil, err
+	}
+
 	keyStr := m.serializeKey(td.Table, key)
 	item, itemExists := td.Items[keyStr]
 
-	// Evaluate condition against existing item.
+	// Evaluate condition against the existing item (nil for a new item).
 	var condItem Item
 	if itemExists {
 		condItem = item
 	}
 
-	if ok, err := evaluateCondition(condItem, cond); err != nil {
-		return nil, &TableError{
-			Code:    "ValidationException",
-			Message: fmt.Sprintf("Invalid ConditionExpression: %s", err),
-		}
-	} else if !ok {
-		return nil, &TableError{
-			Code:    ErrCodeConditionalCheckFailed,
-			Message: "The conditional request failed",
-		}
+	if err := checkWriteCondition(condItem, cond); err != nil {
+		return nil, err
 	}
 
 	var oldItem Item
@@ -484,22 +574,54 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 
 	td.Items[keyStr] = item
 
-	// Return based on returnValues.
-	switch returnValues {
-	case ReturnValuesAllOld:
-		return oldItem, nil
-	case ReturnValuesAllNew:
-		return m.copyItem(item), nil
-	case ReturnValuesUpdatedOld, ReturnValuesUpdatedNew:
-		// Simplified: return all attributes.
-		if returnValues == ReturnValuesUpdatedOld {
-			return oldItem, nil
+	// Emit stream event if streams are enabled for this table.
+	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
+		eventName := streams.OperationTypeInsert
+		if itemExists {
+			eventName = streams.OperationTypeModify
 		}
 
-		return m.copyItem(item), nil
+		m.emitStreamEvent(td.Table, eventName, key, oldItem, item)
+	}
+
+	m.saveLocked()
+
+	return m.returnUpdateResult(returnValues, oldItem, item), nil
+}
+
+// checkWriteCondition evaluates a write's ConditionExpression against the
+// existing item (nil for a new item), returning a ValidationException for an
+// unparseable expression, a ConditionalCheckFailedException when it evaluates
+// false, or nil when it passes.
+func checkWriteCondition(condItem Item, cond ConditionInput) error {
+	ok, err := evaluateCondition(condItem, cond)
+	if err != nil {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: fmt.Sprintf("Invalid ConditionExpression: %s", err),
+		}
+	}
+
+	if !ok {
+		return &TableError{
+			Code:    ErrCodeConditionalCheckFailed,
+			Message: "The conditional request failed",
+		}
+	}
+
+	return nil
+}
+
+// returnUpdateResult selects the item to return per the ReturnValues option.
+// UPDATED_OLD/UPDATED_NEW are simplified to the full old/new item; NONE returns nil.
+func (m *MemoryStorage) returnUpdateResult(returnValues string, oldItem, newItem Item) Item {
+	switch returnValues {
+	case ReturnValuesAllOld, ReturnValuesUpdatedOld:
+		return oldItem
+	case ReturnValuesAllNew, ReturnValuesUpdatedNew:
+		return m.copyItem(newItem)
 	default:
-		//nolint:nilnil // DynamoDB returns nil when ReturnValues is NONE (valid behavior).
-		return nil, nil
+		return nil
 	}
 }
 
@@ -530,8 +652,6 @@ func resolveKeySchema(table *Table, indexName string) ([]KeySchemaElement, error
 }
 
 // Query queries items from a table.
-//
-//nolint:cyclop,funlen,gocognit // Query has inherent complexity from DynamoDB protocol requirements.
 func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondExpr, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, scanForward bool) ([]Item, Item, int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -550,18 +670,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		return nil, nil, 0, err
 	}
 
-	// Get partition key attribute name from the resolved key schema.
-	var partitionKeyName string
-
-	for _, ks := range keySchema {
-		if ks.KeyType == "HASH" {
-			partitionKeyName = ks.AttributeName
-
-			break
-		}
-	}
-
-	// Parse key condition to extract partition key value.
+	partitionKeyName := keyAttrName(keySchema, "HASH")
 	partitionKeyValue := m.extractPartitionKeyValue(keyCondExpr, partitionKeyName, exprNames, exprValues)
 
 	// Resolve expression attribute names in key condition.
@@ -570,58 +679,25 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		resolvedKeyCondExpr = strings.ReplaceAll(resolvedKeyCondExpr, placeholder, name)
 	}
 
-	// Collect matching items.
-	var results []Item
-
-	scannedCount := 0
-
-	for _, item := range td.Items {
-		scannedCount++
-
-		// Check partition key match.
-		if partitionKeyValue != nil {
-			if itemVal, ok := item[partitionKeyName]; ok {
-				if !m.attributeValuesEqual(itemVal, *partitionKeyValue) {
-					continue
-				}
-			} else {
-				continue
-			}
-		}
-
-		// Evaluate full key condition expression (includes RANGE key conditions like >=, BETWEEN, begins_with).
-		if resolvedKeyCondExpr != "" {
-			keyCond := ConditionInput{
-				Expression: resolvedKeyCondExpr,
-				ExprValues: exprValues,
-			}
-
-			ok, _ := evaluateCondition(item, keyCond)
-			if !ok {
-				continue
-			}
-		}
-
-		// Apply filter expression.
-		if filterExpr != "" && !m.evaluateFilterExpression(item, filterExpr, exprNames, exprValues) {
-			continue
-		}
-
-		results = append(results, m.copyItem(item))
-	}
-
-	// Sort results by sort key (DynamoDB Query always returns sorted by sort key).
-	var sortKeyName string
-
-	for _, ks := range keySchema {
-		if ks.KeyType == "RANGE" {
-			sortKeyName = ks.AttributeName
-
-			break
+	// Validate expressions up front so unparseable ones are rejected even when no
+	// item is evaluated (empty table or no key match).
+	if resolvedKeyCondExpr != "" {
+		if _, err := evaluateCondition(Item{}, ConditionInput{Expression: resolvedKeyCondExpr, ExprValues: exprValues}); err != nil {
+			return nil, nil, 0, invalidKeyConditionExpression(err)
 		}
 	}
 
-	if sortKeyName != "" {
+	if err := m.validateFilterExpression(filterExpr, exprNames, exprValues); err != nil {
+		return nil, nil, 0, err
+	}
+
+	results, scannedCount, err := m.queryCollectMatches(td.Items, partitionKeyName, partitionKeyValue, resolvedKeyCondExpr, filterExpr, exprNames, exprValues)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	// DynamoDB Query always returns items sorted by sort key.
+	if sortKeyName := keyAttrName(keySchema, "RANGE"); sortKeyName != "" {
 		sort.Slice(results, func(i, j int) bool {
 			vi := results[i][sortKeyName]
 			vj := results[j][sortKeyName]
@@ -636,15 +712,90 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		}
 	}
 
-	// Apply pagination.
+	page, lastKey, count := m.paginateResults(td.Table, results, exclusiveStartKey, limit, scannedCount)
+
+	return page, lastKey, count, nil
+}
+
+// keyAttrName returns the attribute name of the key schema element with the
+// given key type ("HASH" or "RANGE"), or "" if absent.
+func keyAttrName(keySchema []KeySchemaElement, keyType string) string {
+	for _, ks := range keySchema {
+		if ks.KeyType == keyType {
+			return ks.AttributeName
+		}
+	}
+
+	return ""
+}
+
+// matchesPartitionKey reports whether the item's partition key equals the
+// queried value. A nil value (no partition key in the condition) matches all.
+func (m *MemoryStorage) matchesPartitionKey(item Item, partitionKeyName string, partitionKeyValue *AttributeValue) bool {
+	if partitionKeyValue == nil {
+		return true
+	}
+
+	itemVal, ok := item[partitionKeyName]
+	if !ok {
+		return false
+	}
+
+	return m.attributeValuesEqual(itemVal, *partitionKeyValue)
+}
+
+// queryCollectMatches walks the table's items, applies the partition-key match,
+// the full key condition, and the filter expression, returning the matched
+// items and the scanned count.
+func (m *MemoryStorage) queryCollectMatches(items map[string]Item, partitionKeyName string, partitionKeyValue *AttributeValue, resolvedKeyCondExpr, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) ([]Item, int, error) {
+	var results []Item
+
+	scannedCount := 0
+
+	for _, item := range items {
+		scannedCount++
+
+		if !m.matchesPartitionKey(item, partitionKeyName, partitionKeyValue) {
+			continue
+		}
+
+		// Full key condition covers RANGE conditions like >=, BETWEEN, begins_with.
+		if resolvedKeyCondExpr != "" {
+			ok, err := evaluateCondition(item, ConditionInput{Expression: resolvedKeyCondExpr, ExprValues: exprValues})
+			if err != nil {
+				return nil, 0, invalidKeyConditionExpression(err)
+			}
+
+			if !ok {
+				continue
+			}
+		}
+
+		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if !match {
+			continue
+		}
+
+		results = append(results, m.copyItem(item))
+	}
+
+	return results, scannedCount, nil
+}
+
+// paginateResults applies ExclusiveStartKey and Limit to an ordered result set,
+// returning the page and the LastEvaluatedKey (nil when the page is the tail).
+func (m *MemoryStorage) paginateResults(table *Table, results []Item, exclusiveStartKey Item, limit, scannedCount int) ([]Item, Item, int) {
 	startIdx := 0
 
 	if exclusiveStartKey != nil {
-		startKeyStr := m.serializeKey(td.Table, exclusiveStartKey)
+		startKeyStr := m.serializeKey(table, exclusiveStartKey)
 
 		for i, item := range results {
-			itemKeyStr := m.serializeKey(td.Table, item)
-			if itemKeyStr == startKeyStr {
+			if m.serializeKey(table, item) == startKeyStr {
 				startIdx = i + 1
 
 				break
@@ -653,7 +804,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 	}
 
 	if startIdx >= len(results) {
-		return []Item{}, nil, scannedCount, nil
+		return []Item{}, nil, scannedCount
 	}
 
 	results = results[startIdx:]
@@ -662,16 +813,14 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 
 	if limit > 0 && len(results) > limit {
 		results = results[:limit]
-		lastEvaluatedKey = m.extractKey(td.Table, results[len(results)-1])
+		lastEvaluatedKey = m.extractKey(table, results[len(results)-1])
 	}
 
-	return results, lastEvaluatedKey, scannedCount, nil
+	return results, lastEvaluatedKey, scannedCount
 }
 
 // Scan scans items from a table.
-//
-//nolint:funlen // Scan requires pagination logic that exceeds line limit.
-func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item) ([]Item, Item, int, error) {
+func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int, exclusiveStartKey Item, segment, totalSegments *int) ([]Item, Item, int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -683,43 +832,47 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		}
 	}
 
-	// Collect all items.
-	var results []Item
-
-	scannedCount := 0
-
-	for _, item := range td.Items {
-		scannedCount++
-
-		// Apply filter expression.
-		if filterExpr != "" && !m.evaluateFilterExpression(item, filterExpr, exprNames, exprValues) {
-			continue
-		}
-
-		results = append(results, m.copyItem(item))
+	if err := validateScanSegment(segment, totalSegments); err != nil {
+		return nil, nil, 0, err
 	}
 
-	// Sort by key for consistent pagination. Pre-compute keys once so the
-	// sort comparator and the pagination lookup don't re-serialize each item
-	// on every comparison (was N log N serializeKey calls; now N).
+	// Validate the filter up front so an unparseable FilterExpression is rejected
+	// even when the table is empty, instead of returning an empty result.
+	if err := m.validateFilterExpression(filterExpr, exprNames, exprValues); err != nil {
+		return nil, nil, 0, err
+	}
+
+	// Collect all items matching the segment and filter.
+	results, scannedCount, err := m.scanCollectMatches(td, filterExpr, exprNames, exprValues, segment, totalSegments)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	page, lastKey, count := m.sortByKeyAndPaginate(td.Table, results, exclusiveStartKey, limit, scannedCount)
+
+	return page, lastKey, count, nil
+}
+
+// sortByKeyAndPaginate orders scan results by serialized primary key (Scan has
+// no sort-key ordering) and applies ExclusiveStartKey/Limit pagination. Keys are
+// pre-computed once so neither the sort nor the start-key lookup re-serializes.
+func (m *MemoryStorage) sortByKeyAndPaginate(table *Table, results []Item, exclusiveStartKey Item, limit, scannedCount int) ([]Item, Item, int) {
 	type keyedItem struct {
 		key  string
 		item Item
 	}
 
 	pairs := make([]keyedItem, len(results))
-
 	for i, it := range results {
-		pairs[i] = keyedItem{key: m.serializeKey(td.Table, it), item: it}
+		pairs[i] = keyedItem{key: m.serializeKey(table, it), item: it}
 	}
 
 	sort.Slice(pairs, func(i, j int) bool { return pairs[i].key < pairs[j].key })
 
-	// Apply pagination.
 	startIdx := 0
 
 	if exclusiveStartKey != nil {
-		startKeyStr := m.serializeKey(td.Table, exclusiveStartKey)
+		startKeyStr := m.serializeKey(table, exclusiveStartKey)
 		for i, p := range pairs {
 			if p.key == startKeyStr {
 				startIdx = i + 1
@@ -729,25 +882,97 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		}
 	}
 
-	results = results[:0:len(pairs)]
+	ordered := make([]Item, 0, len(pairs))
 	for _, p := range pairs {
-		results = append(results, p.item)
+		ordered = append(ordered, p.item)
 	}
 
-	if startIdx >= len(results) {
-		return []Item{}, nil, scannedCount, nil
+	if startIdx >= len(ordered) {
+		return []Item{}, nil, scannedCount
 	}
 
-	results = results[startIdx:]
+	ordered = ordered[startIdx:]
 
 	var lastEvaluatedKey Item
 
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-		lastEvaluatedKey = m.extractKey(td.Table, results[len(results)-1])
+	if limit > 0 && len(ordered) > limit {
+		ordered = ordered[:limit]
+		lastEvaluatedKey = m.extractKey(table, ordered[len(ordered)-1])
 	}
 
-	return results, lastEvaluatedKey, scannedCount, nil
+	return ordered, lastEvaluatedKey, scannedCount
+}
+
+// scanCollectMatches walks every item, applies parallel-scan segment filtering
+// and the filter expression, and returns the matched items plus the scanned
+// count. A filter parse error is returned as a ValidationException.
+func (m *MemoryStorage) scanCollectMatches(td *tableData, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, segment, totalSegments *int) ([]Item, int, error) {
+	var results []Item
+
+	scannedCount := 0
+
+	for _, item := range td.Items {
+		key := m.serializeKey(td.Table, item)
+		if !scanSegmentMatches(key, segment, totalSegments) {
+			continue
+		}
+
+		scannedCount++
+
+		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if !match {
+			continue
+		}
+
+		results = append(results, m.copyItem(item))
+	}
+
+	return results, scannedCount, nil
+}
+
+func validateScanSegment(segment, totalSegments *int) error {
+	if segment == nil && totalSegments == nil {
+		return nil
+	}
+
+	if segment == nil || totalSegments == nil {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "Segment and TotalSegments must be specified together",
+		}
+	}
+
+	if *totalSegments <= 0 {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "TotalSegments must be greater than zero",
+		}
+	}
+
+	if *segment < 0 || *segment >= *totalSegments {
+		return &TableError{
+			Code:    "ValidationException",
+			Message: "Segment must be greater than or equal to zero and less than TotalSegments",
+		}
+	}
+
+	return nil
+}
+
+func scanSegmentMatches(key string, segment, totalSegments *int) bool {
+	if segment == nil || totalSegments == nil {
+		return true
+	}
+
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(key))
+
+	//nolint:gosec // totalSegments is validated to be positive before this helper is called.
+	return int(h.Sum64()%uint64(*totalSegments)) == *segment
 }
 
 // serializeKey creates a string key from the primary key attributes.
@@ -782,6 +1007,70 @@ func (m *MemoryStorage) serializeAttributeValue(av AttributeValue) string {
 	return "NULL:" + uuid.New().String()
 }
 
+func validateItemKey(table *Table, item Item) error {
+	return validateKeyAttributes(table, item, false)
+}
+
+func validateKey(table *Table, key Item) error {
+	return validateKeyAttributes(table, key, true)
+}
+
+func validateKeyAttributes(table *Table, item Item, keyOnly bool) error {
+	if item == nil {
+		return newKeySchemaValidationException()
+	}
+
+	if keyOnly && len(item) != len(table.KeySchema) {
+		return newKeySchemaValidationException()
+	}
+
+	attrTypes := keyAttributeTypes(table)
+
+	for _, ks := range table.KeySchema {
+		av, ok := item[ks.AttributeName]
+		if !ok {
+			return newKeySchemaValidationException()
+		}
+
+		if !matchesKeyAttributeType(av, attrTypes[ks.AttributeName]) {
+			return newKeySchemaValidationException()
+		}
+	}
+
+	return nil
+}
+
+func keyAttributeTypes(table *Table) map[string]string {
+	types := make(map[string]string, len(table.AttributeDefinitions))
+	for _, def := range table.AttributeDefinitions {
+		types[def.AttributeName] = def.AttributeType
+	}
+
+	return types
+}
+
+//nolint:gocritic // AttributeValue is passed by value consistently in storage helpers.
+func matchesKeyAttributeType(av AttributeValue, attrType string) bool {
+	switch attrType {
+	case "S":
+		return av.S != nil
+	case "N":
+		return av.N != nil
+	case "B":
+		return av.B != nil
+	default:
+		return false
+	}
+}
+
+func newKeySchemaValidationException() *TableError {
+	return newValidationException("The provided key element does not match the schema")
+}
+
+func newValidationException(message string) *TableError {
+	return &TableError{Code: "ValidationException", Message: message}
+}
+
 // copyItem creates a deep copy of an item.
 //
 //nolint:gocritic // rangeValCopy: intentional copy for deep clone operation.
@@ -801,50 +1090,58 @@ func (m *MemoryStorage) copyItem(item Item) Item {
 
 // copyAttributeValue creates a deep copy of an attribute value.
 //
-//nolint:funlen,gocritic // Deep copy of all AttributeValue fields requires many statements.
+// clonePtr returns a pointer to a copy of the pointed-to value, or nil.
+func clonePtr[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+
+	v := *p
+
+	return &v
+}
+
+// cloneSlice returns a shallow copy of the slice, preserving nil.
+func cloneSlice[T any](s []T) []T {
+	if s == nil {
+		return nil
+	}
+
+	c := make([]T, len(s))
+	copy(c, s)
+
+	return c
+}
+
+// cloneByteSlices deep-copies a slice of byte slices (DynamoDB BS), preserving nil.
+func cloneByteSlices(s [][]byte) [][]byte {
+	if s == nil {
+		return nil
+	}
+
+	c := make([][]byte, len(s))
+	for i, b := range s {
+		c[i] = cloneSlice(b)
+	}
+
+	return c
+}
+
+//nolint:gocritic // hugeParam: AttributeValue passed by value intentionally.
 func (m *MemoryStorage) copyAttributeValue(av AttributeValue) AttributeValue {
-	result := AttributeValue{}
-
-	if av.S != nil {
-		s := *av.S
-		result.S = &s
-	}
-
-	if av.N != nil {
-		n := *av.N
-		result.N = &n
-	}
-
-	if av.B != nil {
-		b := make([]byte, len(av.B))
-		copy(b, av.B)
-		result.B = b
-	}
-
-	if av.SS != nil {
-		ss := make([]string, len(av.SS))
-		copy(ss, av.SS)
-		result.SS = ss
-	}
-
-	if av.NS != nil {
-		ns := make([]string, len(av.NS))
-		copy(ns, av.NS)
-		result.NS = ns
-	}
-
-	if av.BS != nil {
-		bs := make([][]byte, len(av.BS))
-		for i, b := range av.BS {
-			bs[i] = make([]byte, len(b))
-			copy(bs[i], b)
-		}
-
-		result.BS = bs
+	result := AttributeValue{
+		S:    clonePtr(av.S),
+		N:    clonePtr(av.N),
+		B:    cloneSlice(av.B),
+		SS:   cloneSlice(av.SS),
+		NS:   cloneSlice(av.NS),
+		BS:   cloneByteSlices(av.BS),
+		NULL: clonePtr(av.NULL),
+		BOOL: clonePtr(av.BOOL),
 	}
 
 	if av.M != nil {
-		mapCopy := make(map[string]*AttributeValue)
+		mapCopy := make(map[string]*AttributeValue, len(av.M))
 
 		for k, v := range av.M {
 			copied := m.copyAttributeValue(*v)
@@ -863,16 +1160,6 @@ func (m *MemoryStorage) copyAttributeValue(av AttributeValue) AttributeValue {
 		}
 
 		result.L = listCopy
-	}
-
-	if av.NULL != nil {
-		n := *av.NULL
-		result.NULL = &n
-	}
-
-	if av.BOOL != nil {
-		b := *av.BOOL
-		result.BOOL = &b
 	}
 
 	return result
@@ -908,39 +1195,74 @@ func (m *MemoryStorage) extractPartitionKeyValue(keyCondExpr, partitionKeyName s
 	parts := strings.Split(expr, " AND ")
 
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
+		eqParts := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(eqParts) != 2 {
+			continue
+		}
 
-		//nolint:nestif // Parsing key condition expression requires nested validation.
-		if strings.Contains(part, "=") {
-			eqParts := strings.SplitN(part, "=", 2)
-			if len(eqParts) == 2 {
-				attrName := strings.TrimSpace(eqParts[0])
-				valuePlaceholder := strings.TrimSpace(eqParts[1])
+		if strings.TrimSpace(eqParts[0]) != partitionKeyName {
+			continue
+		}
 
-				if attrName == partitionKeyName {
-					if val, ok := exprValues[valuePlaceholder]; ok {
-						return &val
-					}
-				}
-			}
+		if val, ok := exprValues[strings.TrimSpace(eqParts[1])]; ok {
+			return &val
 		}
 	}
 
 	return nil
 }
 
-// evaluateFilterExpression evaluates a filter expression against an item.
-func (m *MemoryStorage) evaluateFilterExpression(item Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) bool {
+// filterItem reports whether an item passes a filter expression, where an
+// empty expression passes everything.
+func (m *MemoryStorage) filterItem(item Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) (bool, error) {
+	if filterExpr == "" {
+		return true, nil
+	}
+
+	return m.evaluateFilterExpression(item, filterExpr, exprNames, exprValues)
+}
+
+// validateFilterExpression rejects an unparseable FilterExpression up front, so
+// the error surfaces even when no item is evaluated (empty table or zero key
+// matches) rather than only when an item happens to be scanned.
+func (m *MemoryStorage) validateFilterExpression(filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) error {
+	if filterExpr == "" {
+		return nil
+	}
+
+	// evaluateFilterExpression returns a ValidationException TableError on a
+	// parse error; the match result against the synthetic item is discarded.
+	_, err := m.evaluateFilterExpression(Item{}, filterExpr, exprNames, exprValues)
+
+	return err
+}
+
+// invalidKeyConditionExpression builds the ValidationException returned for an
+// unparseable KeyConditionExpression.
+func invalidKeyConditionExpression(err error) *TableError {
+	return &TableError{
+		Code:    "ValidationException",
+		Message: fmt.Sprintf("Invalid KeyConditionExpression: %s", err),
+	}
+}
+
+// evaluateFilterExpression evaluates a filter expression against an item. An
+// expression the parser cannot handle is a ValidationException, matching
+// DynamoDB; it must never silently match (or filter out) items.
+func (m *MemoryStorage) evaluateFilterExpression(item Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) (bool, error) {
 	result, err := evaluateCondition(item, ConditionInput{
 		Expression: filterExpr,
 		ExprNames:  exprNames,
 		ExprValues: exprValues,
 	})
 	if err != nil {
-		return true
+		return false, &TableError{
+			Code:    "ValidationException",
+			Message: fmt.Sprintf("Invalid FilterExpression: %s", err),
+		}
 	}
 
-	return result
+	return result, nil
 }
 
 // attributeValuesEqual compares two attribute values for equality.
@@ -998,7 +1320,7 @@ type updateClause struct {
 // parseUpdateClauses splits an update expression into individual clauses.
 func parseUpdateClauses(expr string) []updateClause {
 	keywords := []string{"SET", "ADD", "DELETE", "REMOVE"}
-	upper := strings.ToUpper(expr)
+	upper := asciiUpper(expr)
 
 	type pos struct {
 		idx    int
@@ -1051,6 +1373,17 @@ func parseUpdateClauses(expr string) []updateClause {
 	}
 
 	return clauses
+}
+
+func asciiUpper(s string) string {
+	out := []byte(s)
+	for i, b := range out {
+		if b >= 'a' && b <= 'z' {
+			out[i] = b - ('a' - 'A')
+		}
+	}
+
+	return string(out)
 }
 
 // applySetClause handles SET attr = :val, SET attr = if_not_exists(attr, :val).
@@ -1454,32 +1787,94 @@ func (m *MemoryStorage) TransactWriteItems(_ context.Context, items []TransactWr
 		m.applyTransactWriteItem(twi)
 	}
 
+	m.saveLocked()
+
 	return nil, nil // Success: nil CancellationReasons means no failures.
+}
+
+func countTransactWriteActions(twi TransactWriteItem) int {
+	count := 0
+	if twi.ConditionCheck != nil {
+		count++
+	}
+
+	if twi.Delete != nil {
+		count++
+	}
+
+	if twi.Put != nil {
+		count++
+	}
+
+	if twi.Update != nil {
+		count++
+	}
+
+	return count
 }
 
 // validateTransactWriteItem validates a single write item's condition without applying changes.
 func (m *MemoryStorage) validateTransactWriteItem(twi TransactWriteItem) (*CancellationReason, error) {
+	if countTransactWriteActions(twi) != 1 {
+		return nil, newValidationException("TransactItems member must contain exactly one action")
+	}
+
 	switch {
 	case twi.Put != nil:
+		td, exists := m.Tables[twi.Put.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Put.TableName)}
+		}
+
+		if err := validateItemKey(td.Table, twi.Put.Item); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.Put.TableName, twi.Put.Item, ConditionInput{
 			Expression: twi.Put.ConditionExpression, ExprNames: twi.Put.ExpressionAttributeNames, ExprValues: twi.Put.ExpressionAttributeValues,
 		})
 	case twi.Delete != nil:
+		td, exists := m.Tables[twi.Delete.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Delete.TableName)}
+		}
+
+		if err := validateKey(td.Table, twi.Delete.Key); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.Delete.TableName, twi.Delete.Key, ConditionInput{
 			Expression: twi.Delete.ConditionExpression, ExprNames: twi.Delete.ExpressionAttributeNames, ExprValues: twi.Delete.ExpressionAttributeValues,
 		})
 	case twi.Update != nil:
+		td, exists := m.Tables[twi.Update.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.Update.TableName)}
+		}
+
+		if err := validateKey(td.Table, twi.Update.Key); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.Update.TableName, twi.Update.Key, ConditionInput{
 			Expression: twi.Update.ConditionExpression, ExprNames: twi.Update.ExpressionAttributeNames, ExprValues: twi.Update.ExpressionAttributeValues,
 		})
 	case twi.ConditionCheck != nil:
+		td, exists := m.Tables[twi.ConditionCheck.TableName]
+		if !exists {
+			return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", twi.ConditionCheck.TableName)}
+		}
+
+		if err := validateKey(td.Table, twi.ConditionCheck.Key); err != nil {
+			return nil, err
+		}
+
 		return m.checkTransactCondition(twi.ConditionCheck.TableName, twi.ConditionCheck.Key, ConditionInput{
 			Expression: twi.ConditionCheck.ConditionExpression, ExprNames: twi.ConditionCheck.ExpressionAttributeNames, ExprValues: twi.ConditionCheck.ExpressionAttributeValues,
 		})
 	}
 
-	//nolint:nilnil // No action specified is valid (returns success).
-	return nil, nil
+	return nil, newValidationException("TransactItems member must contain exactly one action")
 }
 
 // checkTransactCondition checks a condition against the existing item in a table.
@@ -1549,7 +1944,7 @@ func (m *MemoryStorage) TransactGetItems(_ context.Context, items []TransactGetI
 
 	for i, tgi := range items {
 		if tgi.Get == nil {
-			continue
+			return nil, newValidationException("TransactGetItems member must contain Get")
 		}
 
 		td, exists := m.Tables[tgi.Get.TableName]
@@ -1558,6 +1953,10 @@ func (m *MemoryStorage) TransactGetItems(_ context.Context, items []TransactGetI
 				Code:    "ResourceNotFoundException",
 				Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tgi.Get.TableName),
 			}
+		}
+
+		if err := validateKey(td.Table, tgi.Get.Key); err != nil {
+			return nil, err
 		}
 
 		key := m.serializeKey(td.Table, tgi.Get.Key)
@@ -1584,19 +1983,46 @@ func (m *MemoryStorage) BatchWriteItem(_ context.Context, requestItems map[strin
 		}
 
 		for _, req := range requests {
+			if countBatchWriteActions(req) != 1 {
+				return nil, newValidationException("WriteRequest must contain exactly one action")
+			}
+
 			switch {
 			case req.PutRequest != nil:
+				if err := validateItemKey(td.Table, req.PutRequest.Item); err != nil {
+					return nil, err
+				}
+
 				key := m.serializeKey(td.Table, req.PutRequest.Item)
 				td.Items[key] = m.copyItem(req.PutRequest.Item)
 			case req.DeleteRequest != nil:
+				if err := validateKey(td.Table, req.DeleteRequest.Key); err != nil {
+					return nil, err
+				}
+
 				key := m.serializeKey(td.Table, req.DeleteRequest.Key)
 				delete(td.Items, key)
 			}
 		}
 	}
 
+	m.saveLocked()
+
 	// kumo processes all items; never returns UnprocessedItems.
 	return nil, nil //nolint:nilnil // Intentional: nil UnprocessedItems means all items were processed.
+}
+
+func countBatchWriteActions(req WriteRequest) int {
+	count := 0
+	if req.PutRequest != nil {
+		count++
+	}
+
+	if req.DeleteRequest != nil {
+		count++
+	}
+
+	return count
 }
 
 // BatchGetItem retrieves multiple items across tables.
@@ -1618,6 +2044,10 @@ func (m *MemoryStorage) BatchGetItem(_ context.Context, requestItems map[string]
 		var items []Item
 
 		for _, key := range ka.Keys {
+			if err := validateKey(td.Table, key); err != nil {
+				return nil, err
+			}
+
 			keyStr := m.serializeKey(td.Table, key)
 			if item, ok := td.Items[keyStr]; ok {
 				items = append(items, m.copyItem(item))
@@ -1644,6 +2074,8 @@ func (m *MemoryStorage) UpdateTimeToLive(_ context.Context, tableName, attribute
 
 	td.Table.TTLAttributeName = attributeName
 	td.Table.TTLEnabled = enabled
+
+	m.saveLocked()
 
 	return nil
 }
@@ -1677,4 +2109,193 @@ func (m *MemoryStorage) compareForSort(a, b *AttributeValue) bool {
 	}
 
 	return false
+}
+
+// emitStreamEvent publishes a stream record to the shared event store.
+// Must be called under m.mu lock since it reads table metadata.
+func (m *MemoryStorage) emitStreamEvent(table *Table, eventName streams.OperationType, keyItem, oldItem, newItem Item) {
+	record := &streams.StreamRecord{
+		EventID:        uuid.New().String(),
+		EventName:      eventName,
+		AwsRegion:      m.region,
+		StreamViewType: table.StreamViewType,
+		TableName:      table.Name,
+		StreamARN:      table.LatestStreamArn,
+		Keys:           convertItemToStreamAttrs(keyItem),
+		SizeBytes:      100, // Approximate size.
+	}
+
+	// Include old/new images based on stream view type.
+	switch table.StreamViewType {
+	case "NEW_AND_OLD_IMAGES":
+		record.OldImage = convertItemToStreamAttrs(oldItem)
+		record.NewImage = convertItemToStreamAttrs(newItem)
+	case "NEW_IMAGE":
+		record.NewImage = convertItemToStreamAttrs(newItem)
+	case "OLD_IMAGE":
+		record.OldImage = convertItemToStreamAttrs(oldItem)
+	case "KEYS_ONLY":
+		// Only keys are included; already set above.
+	} //nolint:wsl // Intentional empty case with comment.
+
+	m.streamStore.PutRecord(record)
+}
+
+// convertItemToStreamAttrs converts DynamoDB Item to streams.AttributeValue map.
+//
+//nolint:gocritic // rangeValCopy: copy needed for value conversion.
+func convertItemToStreamAttrs(item Item) map[string]streams.AttributeValue {
+	if item == nil {
+		return nil
+	}
+
+	result := make(map[string]streams.AttributeValue, len(item))
+
+	for k, v := range item {
+		result[k] = convertAttrToStreamAttr(v)
+	}
+
+	return result
+}
+
+// convertAttrToStreamAttr converts a single DynamoDB AttributeValue to streams.AttributeValue.
+//
+//nolint:gocritic // hugeParam: AttributeValue passed by value intentionally.
+func convertAttrToStreamAttr(av AttributeValue) streams.AttributeValue {
+	result := streams.AttributeValue{
+		S:    clonePtr(av.S),
+		N:    clonePtr(av.N),
+		B:    cloneSlice(av.B),
+		SS:   cloneSlice(av.SS),
+		NS:   cloneSlice(av.NS),
+		BS:   cloneByteSlices(av.BS),
+		NULL: clonePtr(av.NULL),
+		BOOL: clonePtr(av.BOOL),
+	}
+
+	if av.M != nil {
+		m := make(map[string]*streams.AttributeValue, len(av.M))
+
+		for k, v := range av.M {
+			converted := convertAttrToStreamAttr(*v)
+			m[k] = &converted
+		}
+
+		result.M = m
+	}
+
+	if av.L != nil {
+		l := make([]*streams.AttributeValue, len(av.L))
+
+		for i, v := range av.L {
+			converted := convertAttrToStreamAttr(*v)
+			l[i] = &converted
+		}
+
+		result.L = l
+	}
+
+	return result
+}
+
+const continuousBackupsDisabled = "DISABLED"
+
+// ListTagsOfResource returns the tags for a given resource ARN.
+func (m *MemoryStorage) ListTagsOfResource(_ context.Context, resourceArn string) ([]Tag, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	tags, ok := m.Tags[resourceArn]
+	if !ok {
+		return []Tag{}, nil
+	}
+
+	// Return a copy to avoid external mutation.
+	result := make([]Tag, len(tags))
+	copy(result, tags)
+
+	return result, nil
+}
+
+// TagResource adds or overwrites tags on a resource ARN.
+func (m *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags []Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing := m.Tags[resourceArn]
+
+	// Build a map of existing tags for efficient lookup.
+	tagMap := make(map[string]int, len(existing))
+	for i, tag := range existing {
+		tagMap[tag.Key] = i
+	}
+
+	for _, newTag := range tags {
+		if idx, ok := tagMap[newTag.Key]; ok {
+			existing[idx].Value = newTag.Value
+		} else {
+			existing = append(existing, newTag)
+			tagMap[newTag.Key] = len(existing) - 1
+		}
+	}
+
+	m.Tags[resourceArn] = existing
+
+	m.saveLocked()
+
+	return nil
+}
+
+// UntagResource removes tags by key from a resource ARN.
+func (m *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tagKeys []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing := m.Tags[resourceArn]
+	if len(existing) == 0 {
+		return nil
+	}
+
+	removeSet := make(map[string]struct{}, len(tagKeys))
+	for _, key := range tagKeys {
+		removeSet[key] = struct{}{}
+	}
+
+	var remaining []Tag
+
+	for _, tag := range existing {
+		if _, ok := removeSet[tag.Key]; !ok {
+			remaining = append(remaining, tag)
+		}
+	}
+
+	if len(remaining) == 0 {
+		delete(m.Tags, resourceArn)
+	} else {
+		m.Tags[resourceArn] = remaining
+	}
+
+	m.saveLocked()
+
+	return nil
+}
+
+// DescribeContinuousBackups returns the continuous backups status for a table.
+func (m *MemoryStorage) DescribeContinuousBackups(_ context.Context, tableName string) (*ContinuousBackupsDescription, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if _, exists := m.Tables[tableName]; !exists {
+		return nil, &TableError{
+			Code:    "TableNotFoundException",
+			Message: "Table not found: " + tableName,
+		}
+	}
+
+	return &ContinuousBackupsDescription{
+		ContinuousBackupsStatus: continuousBackupsDisabled,
+		PointInTimeRecoveryDescription: PointInTimeRecoveryDescription{
+			PointInTimeRecoveryStatus: continuousBackupsDisabled,
+		},
+	}, nil
 }

@@ -33,6 +33,9 @@ type Storage interface {
 	ListSecrets(ctx context.Context, maxResults int, nextToken string, includePlannedDeletion bool) ([]*Secret, string, error)
 	DescribeSecret(ctx context.Context, secretID string) (*Secret, error)
 	UpdateSecret(ctx context.Context, req *UpdateSecretRequest) (*Secret, *SecretVersion, error)
+	GetResourcePolicy(ctx context.Context, secretID string) (*Secret, string, error)
+	PutResourcePolicy(ctx context.Context, secretID, policy string) (*Secret, error)
+	DeleteResourcePolicy(ctx context.Context, secretID string) (*Secret, error)
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -53,17 +56,19 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu      sync.RWMutex       `json:"-"`
-	Secrets map[string]*Secret `json:"secrets"` // keyed by name
-	baseURL string
-	dataDir string
+	mu       sync.RWMutex       `json:"-"`
+	Secrets  map[string]*Secret `json:"secrets"`  // keyed by name
+	Policies map[string]string  `json:"policies"` // keyed by secret name
+	baseURL  string
+	dataDir  string
 }
 
 // NewMemoryStorage creates a new in-memory Secrets Manager storage.
 func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
-		Secrets: make(map[string]*Secret),
-		baseURL: baseURL,
+		Secrets:  make(map[string]*Secret),
+		Policies: make(map[string]string),
+		baseURL:  baseURL,
 	}
 	for _, o := range opts {
 		o(s)
@@ -108,7 +113,20 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 		m.Secrets = make(map[string]*Secret)
 	}
 
+	if m.Policies == nil {
+		m.Policies = make(map[string]string)
+	}
+
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "secretsmanager", m.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -167,6 +185,8 @@ func (m *MemoryStorage) CreateSecret(_ context.Context, req *CreateSecretRequest
 	}
 
 	m.Secrets[req.Name] = secret
+
+	m.saveLocked()
 
 	return secret, nil
 }
@@ -258,20 +278,7 @@ func (m *MemoryStorage) PutSecretValue(_ context.Context, secretID, clientToken,
 	}
 
 	// Remove AWSCURRENT stage from previous version.
-	for _, v := range secret.VersionIDs {
-		newStages := make([]string, 0)
-
-		for _, stage := range v.VersionStages {
-			if stage != stageCurrent {
-				newStages = append(newStages, stage)
-			} else {
-				// Add AWSPREVIOUS to the old current version.
-				newStages = append(newStages, stagePrevious)
-			}
-		}
-
-		v.VersionStages = newStages
-	}
+	m.rotateVersionStages(secret)
 
 	version := &SecretVersion{
 		VersionID:     versionID,
@@ -287,6 +294,8 @@ func (m *MemoryStorage) PutSecretValue(_ context.Context, secretID, clientToken,
 	secret.SecretString = secretString
 	secret.SecretBinary = secretBinary
 	secret.LastChangedDate = now
+
+	m.saveLocked()
 
 	return secret, version, nil
 }
@@ -309,7 +318,10 @@ func (m *MemoryStorage) DeleteSecret(_ context.Context, secretID string, recover
 	if forceDelete {
 		// Immediately delete.
 		delete(m.Secrets, secret.Name)
+		delete(m.Policies, secret.Name)
 		secret.DeletedDate = &now
+
+		m.saveLocked()
 
 		return secret, nil
 	}
@@ -322,6 +334,8 @@ func (m *MemoryStorage) DeleteSecret(_ context.Context, secretID string, recover
 	secret.DeletedDate = &now
 	secret.ScheduledDeletionDate = &deletionDate
 	secret.RecoveryWindowInDays = recoveryWindow
+
+	m.saveLocked()
 
 	return secret, nil
 }
@@ -425,6 +439,8 @@ func (m *MemoryStorage) UpdateSecret(_ context.Context, req *UpdateSecretRequest
 	version := m.createNewVersionIfNeeded(secret, req, now)
 	secret.LastChangedDate = now
 
+	m.saveLocked()
+
 	return secret, version, nil
 }
 
@@ -503,6 +519,63 @@ func (m *MemoryStorage) findSecret(secretID string) *Secret {
 	}
 
 	return nil
+}
+
+// GetResourcePolicy returns the resource policy for a secret.
+func (m *MemoryStorage) GetResourcePolicy(_ context.Context, secretID string) (*Secret, string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	secret := m.findSecret(secretID)
+	if secret == nil {
+		return nil, "", m.secretNotFoundError(secretID)
+	}
+
+	policy := m.Policies[secret.Name]
+
+	return secret, policy, nil
+}
+
+// PutResourcePolicy attaches a resource policy to a secret.
+func (m *MemoryStorage) PutResourcePolicy(_ context.Context, secretID, policy string) (*Secret, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	secret := m.findSecret(secretID)
+	if secret == nil {
+		return nil, m.secretNotFoundError(secretID)
+	}
+
+	m.Policies[secret.Name] = policy
+
+	m.saveLocked()
+
+	return secret, nil
+}
+
+// DeleteResourcePolicy removes the resource policy from a secret.
+func (m *MemoryStorage) DeleteResourcePolicy(_ context.Context, secretID string) (*Secret, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	secret := m.findSecret(secretID)
+	if secret == nil {
+		return nil, m.secretNotFoundError(secretID)
+	}
+
+	delete(m.Policies, secret.Name)
+
+	m.saveLocked()
+
+	return secret, nil
+}
+
+// secretNotFoundError returns a ResourceNotFoundException for the given secret ID.
+func (m *MemoryStorage) secretNotFoundError(secretID string) *SecretError {
+	return &SecretError{
+		Code:    errResourceNotFound,
+		Message: fmt.Sprintf("Secrets Manager can't find the specified secret: %s", secretID),
+	}
 }
 
 // buildARN builds an ARN for a secret.

@@ -119,6 +119,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "rds", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -147,6 +156,8 @@ func (m *MemoryStorage) CreateDBInstance(_ context.Context, input *CreateDBInsta
 	instance := m.buildDBInstance(input)
 	m.Instances[input.DBInstanceIdentifier] = instance
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -165,6 +176,8 @@ func (m *MemoryStorage) buildDBInstance(input *CreateDBInstanceInput) *DBInstanc
 	if availabilityZone == "" {
 		availabilityZone = defaultRegion + "a"
 	}
+
+	endpointAddr, endpointPort := endpointFor(input.Engine, input.DBInstanceIdentifier, m.getDefaultPort(input.Engine))
 
 	instance := &DBInstance{
 		DBInstanceIdentifier:       input.DBInstanceIdentifier,
@@ -188,10 +201,7 @@ func (m *MemoryStorage) buildDBInstance(input *CreateDBInstanceInput) *DBInstanc
 		DeletionProtection:         input.DeletionProtection,
 		Tags:                       input.Tags,
 		VpcSecurityGroups:          buildVpcSecurityGroups(input.VpcSecurityGroupIDs),
-		Endpoint: &Endpoint{
-			Address: fmt.Sprintf("%s.%s.%s.rds.amazonaws.com", input.DBInstanceIdentifier, generateID(), defaultRegion),
-			Port:    m.getDefaultPort(input.Engine),
-		},
+		Endpoint:                   &Endpoint{Address: endpointAddr, Port: endpointPort},
 	}
 
 	return instance
@@ -213,6 +223,8 @@ func (m *MemoryStorage) DeleteDBInstance(_ context.Context, identifier string, _
 	instance.DBInstanceStatus = DBInstanceStatusDeleting
 
 	delete(m.Instances, identifier)
+
+	m.saveLocked()
 
 	return instance, nil
 }
@@ -256,6 +268,8 @@ func (m *MemoryStorage) ModifyDBInstance(_ context.Context, input *ModifyDBInsta
 	}
 
 	applyDBInstanceModifications(instance, input)
+
+	m.saveLocked()
 
 	return instance, nil
 }
@@ -328,6 +342,8 @@ func (m *MemoryStorage) StartDBInstance(_ context.Context, identifier string) (*
 
 	instance.DBInstanceStatus = DBInstanceStatusAvailable
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -353,6 +369,8 @@ func (m *MemoryStorage) StopDBInstance(_ context.Context, identifier string) (*D
 
 	instance.DBInstanceStatus = DBInstanceStatusStopped
 
+	m.saveLocked()
+
 	return instance, nil
 }
 
@@ -375,6 +393,9 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 		port = m.getDefaultPort(input.Engine)
 	}
 
+	clusterAddr, clusterPort := endpointFor(input.Engine, input.DBClusterIdentifier, port)
+	readerAddr, _ := endpointFor(input.Engine, input.DBClusterIdentifier+"-ro", port)
+
 	cluster := &DBCluster{
 		DBClusterIdentifier: input.DBClusterIdentifier,
 		DBClusterArn:        m.dbClusterArn(input.DBClusterIdentifier),
@@ -383,9 +404,9 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 		Status:              DBClusterStatusAvailable,
 		MasterUsername:      input.MasterUsername,
 		DatabaseName:        input.DatabaseName,
-		Endpoint:            fmt.Sprintf("%s.cluster-%s.%s.rds.amazonaws.com", input.DBClusterIdentifier, generateID(), defaultRegion),
-		ReaderEndpoint:      fmt.Sprintf("%s.cluster-ro-%s.%s.rds.amazonaws.com", input.DBClusterIdentifier, generateID(), defaultRegion),
-		Port:                port,
+		Endpoint:            clusterAddr,
+		ReaderEndpoint:      readerAddr,
+		Port:                clusterPort,
 		AllocatedStorage:    input.AllocatedStorage,
 		ClusterCreateTime:   now,
 		AvailabilityZones:   input.AvailabilityZones,
@@ -409,6 +430,8 @@ func (m *MemoryStorage) CreateDBCluster(_ context.Context, input *CreateDBCluste
 
 	m.Clusters[input.DBClusterIdentifier] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -428,6 +451,8 @@ func (m *MemoryStorage) DeleteDBCluster(_ context.Context, identifier string, _ 
 	cluster.Status = DBClusterStatusDeleting
 
 	delete(m.Clusters, identifier)
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -486,6 +511,8 @@ func (m *MemoryStorage) ModifyDBCluster(_ context.Context, input *ModifyDBCluste
 		cluster.VpcSecurityGroups = buildVpcSecurityGroups(input.VpcSecurityGroupIDs)
 	}
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -530,6 +557,8 @@ func (m *MemoryStorage) CreateDBSnapshot(_ context.Context, input *CreateDBSnaps
 
 	m.Snapshots[input.DBSnapshotIdentifier] = snapshot
 
+	m.saveLocked()
+
 	return snapshot, nil
 }
 
@@ -547,6 +576,8 @@ func (m *MemoryStorage) DeleteDBSnapshot(_ context.Context, identifier string) (
 	}
 
 	delete(m.Snapshots, identifier)
+
+	m.saveLocked()
 
 	return snapshot, nil
 }

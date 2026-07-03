@@ -25,6 +25,9 @@ const (
 	errInvalidParameter       = "InvalidParameterException"
 )
 
+// Default values.
+const defaultMfaConfiguration = "OFF"
+
 // Storage defines the Cognito storage interface.
 type Storage interface {
 	// User Pool operations.
@@ -49,6 +52,10 @@ type Storage interface {
 	SignUp(ctx context.Context, req *SignUpRequest) (*User, error)
 	ConfirmSignUp(ctx context.Context, clientID, username, code string) error
 	InitiateAuth(ctx context.Context, req *InitiateAuthRequest) (*InitiateAuthResponse, error)
+
+	// MFA configuration operations.
+	GetUserPoolMfaConfig(ctx context.Context, userPoolID string) (*MfaConfig, error)
+	SetUserPoolMfaConfig(ctx context.Context, userPoolID string, config *MfaConfig) error
 
 	// Helper operations.
 	GetUserPoolByClientID(ctx context.Context, clientID string) (*UserPool, error)
@@ -78,6 +85,7 @@ type MemoryStorage struct {
 	UserPoolClients   map[string]*UserPoolClient  `json:"userPoolClients"`
 	Users             map[string]map[string]*User `json:"users"`             // userPoolID -> username -> User
 	ConfirmationCodes map[string]string           `json:"confirmationCodes"` // username -> code
+	MfaConfigs        map[string]*MfaConfig       `json:"mfaConfigs"`        // userPoolID -> MfaConfig
 	dataDir           string
 }
 
@@ -88,6 +96,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		UserPoolClients:   make(map[string]*UserPoolClient),
 		Users:             make(map[string]map[string]*User),
 		ConfirmationCodes: make(map[string]string),
+		MfaConfigs:        make(map[string]*MfaConfig),
 	}
 	for _, o := range opts {
 		o(s)
@@ -144,7 +153,20 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.ConfirmationCodes = make(map[string]string)
 	}
 
+	if s.MfaConfigs == nil {
+		s.MfaConfigs = make(map[string]*MfaConfig)
+	}
+
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "cognito-idp", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -214,6 +236,8 @@ func (s *MemoryStorage) CreateUserPool(_ context.Context, req *CreateUserPoolReq
 	s.UserPools[poolID] = pool
 	s.Users[poolID] = make(map[string]*User)
 
+	s.saveLocked()
+
 	return pool, nil
 }
 
@@ -272,6 +296,8 @@ func (s *MemoryStorage) DeleteUserPool(_ context.Context, userPoolID string) err
 	delete(s.Users, userPoolID)
 	delete(s.UserPools, userPoolID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -323,6 +349,8 @@ func (s *MemoryStorage) CreateUserPoolClient(_ context.Context, req *CreateUserP
 	}
 
 	s.UserPoolClients[clientID] = client
+
+	s.saveLocked()
 
 	return client, nil
 }
@@ -376,6 +404,8 @@ func (s *MemoryStorage) DeleteUserPoolClient(_ context.Context, userPoolID, clie
 
 	delete(s.UserPoolClients, clientID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -413,6 +443,8 @@ func (s *MemoryStorage) AdminCreateUser(_ context.Context, req *AdminCreateUserR
 
 	s.Users[req.UserPoolID][req.Username] = user
 
+	s.saveLocked()
+
 	return user, nil
 }
 
@@ -449,6 +481,8 @@ func (s *MemoryStorage) AdminDeleteUser(_ context.Context, userPoolID, username 
 	}
 
 	delete(users, username)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -528,6 +562,8 @@ func (s *MemoryStorage) SignUp(_ context.Context, req *SignUpRequest) (*User, er
 	// Generate confirmation code (simulated).
 	s.ConfirmationCodes[req.Username] = "123456"
 
+	s.saveLocked()
+
 	return user, nil
 }
 
@@ -567,6 +603,8 @@ func (s *MemoryStorage) ConfirmSignUp(_ context.Context, clientID, username, cod
 	user.UserLastModified = time.Now()
 
 	delete(s.ConfirmationCodes, username)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -668,6 +706,39 @@ func generateToken() string {
 	_, _ = rand.Read(b)
 
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// GetUserPoolMfaConfig retrieves the MFA configuration for a user pool.
+func (s *MemoryStorage) GetUserPoolMfaConfig(_ context.Context, userPoolID string) (*MfaConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, ok := s.UserPools[userPoolID]; !ok {
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	cfg, ok := s.MfaConfigs[userPoolID]
+	if !ok {
+		return &MfaConfig{MfaConfiguration: defaultMfaConfiguration}, nil
+	}
+
+	return cfg, nil
+}
+
+// SetUserPoolMfaConfig sets the MFA configuration for a user pool.
+func (s *MemoryStorage) SetUserPoolMfaConfig(_ context.Context, userPoolID string, config *MfaConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.UserPools[userPoolID]; !ok {
+		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+	}
+
+	s.MfaConfigs[userPoolID] = config
+
+	s.saveLocked()
+
+	return nil
 }
 
 // convertLambdaConfigInputToLambdaConfig converts LambdaConfigInput to LambdaConfig.

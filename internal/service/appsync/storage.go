@@ -114,6 +114,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "appsync", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -181,6 +190,8 @@ func (s *MemoryStorage) CreateGraphqlAPI(_ context.Context, input *CreateGraphql
 		Resolvers:   make(map[string]*Resolver),
 	}
 
+	s.saveLocked()
+
 	return api, nil
 }
 
@@ -197,6 +208,8 @@ func (s *MemoryStorage) DeleteGraphqlAPI(_ context.Context, apiID string) error 
 	}
 
 	delete(s.APIs, apiID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -337,6 +350,8 @@ func (s *MemoryStorage) CreateDataSource(_ context.Context, input *CreateDataSou
 
 	data.DataSources[input.Name] = dataSource
 
+	s.saveLocked()
+
 	return dataSource, nil
 }
 
@@ -398,6 +413,8 @@ func (s *MemoryStorage) CreateResolver(_ context.Context, input *CreateResolverI
 
 	data.Resolvers[resolverKey] = resolver
 
+	s.saveLocked()
+
 	return resolver, nil
 }
 
@@ -422,6 +439,8 @@ func (s *MemoryStorage) StartSchemaCreation(_ context.Context, apiID string, _ [
 	}
 
 	data.Schema = status
+
+	s.saveLocked()
 
 	return status, nil
 }

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // PutParameter handles the PutParameter API.
@@ -277,10 +279,62 @@ func handleSSMError(w http.ResponseWriter, err error) {
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-	w.Header().Set("X-Amzn-Requestid", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponse(w, service.ContentTypeAmzJSON11, v)
+}
+
+// ListTagsForResource handles the ListTagsForResource API.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeSSMError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceType, req.ResourceID)
+	if err != nil {
+		handleSSMError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, &ListTagsForResourceResponse{TagList: tags})
+}
+
+// AddTagsToResource handles the AddTagsToResource API.
+func (s *Service) AddTagsToResource(w http.ResponseWriter, r *http.Request) {
+	var req AddTagsToResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeSSMError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AddTagsToResource(r.Context(), req.ResourceType, req.ResourceID, req.Tags); err != nil {
+		handleSSMError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// RemoveTagsFromResource handles the RemoveTagsFromResource API.
+func (s *Service) RemoveTagsFromResource(w http.ResponseWriter, r *http.Request) {
+	var req RemoveTagsFromResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeSSMError(w, ErrInvalidParameterValue, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.RemoveTagsFromResource(r.Context(), req.ResourceType, req.ResourceID, req.TagKeys); err != nil {
+		handleSSMError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
 }
 
 // writeSSMError writes an SSM error response.

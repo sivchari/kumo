@@ -1,5 +1,7 @@
 package ce
 
+import "github.com/sivchari/kumo/internal/service"
+
 // DateInterval represents a time period.
 type DateInterval struct {
 	Start string `json:"Start"`
@@ -281,15 +283,7 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
-}
+type ServiceError = service.CodedError
 
 // Error codes.
 const (

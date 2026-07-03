@@ -2,7 +2,9 @@
 package s3
 
 import (
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"time"
 )
 
@@ -31,16 +33,87 @@ type LoggingEnabledStatus struct {
 
 // Object represents an S3 object.
 type Object struct {
-	Key            string
-	Body           []byte
-	ETag           string
-	Size           int64
-	LastModified   time.Time
-	ContentType    string
-	Metadata       map[string]string
-	Tags           map[string]string
-	VersionID      string
-	IsDeleteMarker bool
+	Key                  string
+	Body                 []byte
+	ETag                 string
+	Size                 int64
+	LastModified         time.Time
+	ContentType          string
+	Metadata             map[string]string
+	Tags                 map[string]string
+	VersionID            string
+	IsDeleteMarker       bool
+	ServerSideEncryption string
+	SSEKMSKeyID          string
+
+	// bodyRef is the content-address of Body in the on-disk blob store. It is
+	// computed once when the object is created (or loaded) and is persistence
+	// metadata only: it is never read on the request path. Keeping it on the
+	// object lets the snapshot emit a reference instead of the raw body, so the
+	// whole-store marshal no longer carries every body inline.
+	bodyRef string
+}
+
+// effectiveRef returns the blob content-address for this object's body, falling
+// back to hashing the body if bodyRef was not pre-computed (e.g. an object
+// loaded from a legacy inline snapshot before its first re-save). It is a pure
+// read, safe to call while only holding the storage read lock.
+func (o *Object) effectiveRef() string {
+	if o.bodyRef != "" {
+		return o.bodyRef
+	}
+
+	if len(o.Body) == 0 {
+		return ""
+	}
+
+	return bodyRefOf(o.Body)
+}
+
+// MarshalJSON serializes the object for the metadata snapshot, dropping the raw
+// Body and emitting a content reference (bodyRef) instead. The body itself is
+// persisted separately as a blob file (see blob.go); excluding it here is what
+// keeps the whole-store snapshot small and bounds its peak memory.
+func (o *Object) MarshalJSON() ([]byte, error) {
+	type alias Object
+
+	data, err := json.Marshal(&struct {
+		*alias
+		Body    []byte `json:"-"`
+		BodyRef string `json:"bodyRef,omitempty"`
+	}{
+		alias:   (*alias)(o),
+		BodyRef: o.effectiveRef(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal object: %w", err)
+	}
+
+	return data, nil
+}
+
+// UnmarshalJSON restores an object from the metadata snapshot. It reads the
+// content reference (bodyRef) into the unexported field; the body is filled
+// from the blob store afterwards by MemoryStorage.UnmarshalJSON. For backward
+// compatibility it also accepts a legacy inline Body (base64) written by older
+// snapshots, which is migrated to a blob on the next save.
+func (o *Object) UnmarshalJSON(data []byte) error {
+	type alias Object
+
+	aux := &struct {
+		*alias
+		Body    []byte `json:"Body"` //nolint:tagliatelle // legacy snapshots wrote the body under the PascalCase "Body" key
+		BodyRef string `json:"bodyRef"`
+	}{alias: (*alias)(o)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return fmt.Errorf("failed to unmarshal object: %w", err)
+	}
+
+	o.Body = aux.Body
+	o.bodyRef = aux.BodyRef
+
+	return nil
 }
 
 // Tagging represents the XML structure for S3 object tagging.
@@ -149,6 +222,16 @@ type ErrorResponse struct {
 	RequestID  string   `xml:"RequestId"`
 	BucketName string   `xml:"BucketName,omitempty"`
 	Key        string   `xml:"Key,omitempty"`
+}
+
+// PostResponse is the body returned for a POST Object request when
+// success_action_status is set to 201.
+type PostResponse struct {
+	XMLName  xml.Name `xml:"PostResponse"`
+	Location string   `xml:"Location"`
+	Bucket   string   `xml:"Bucket"`
+	Key      string   `xml:"Key"`
+	ETag     string   `xml:"ETag"`
 }
 
 // Versioning Types
@@ -356,12 +439,60 @@ type CopyRange struct {
 
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
-	XMLName           xml.Name           `xml:"NotificationConfiguration"`
-	EventBridgeConfig *EventBridgeConfig `xml:"EventBridgeConfiguration,omitempty"`
+	XMLName             xml.Name             `xml:"NotificationConfiguration"`
+	EventBridgeConfig   *EventBridgeConfig   `xml:"EventBridgeConfiguration,omitempty"`
+	QueueConfigurations []QueueConfiguration `xml:"QueueConfiguration,omitempty"`
 }
 
 // EventBridgeConfig represents EventBridge notification configuration.
 type EventBridgeConfig struct{}
+
+// QueueConfiguration represents an SQS queue destination in the bucket
+// notification configuration.
+type QueueConfiguration struct {
+	ID       string   `xml:"Id,omitempty"       json:"id,omitempty"`
+	QueueArn string   `xml:"Queue"              json:"queue"`
+	Events   []string `xml:"Event"              json:"events"`
+}
+
+// EventNotification is the top-level wrapper sent to SQS when an S3
+// event fires. AWS calls this the "event message structure".
+type EventNotification struct {
+	Records []EventRecord `json:"Records"` //nolint:tagliatelle // AWS S3 event format
+}
+
+// EventRecord represents a single record inside the Records array of
+// an S3 event notification message delivered to SQS.
+type EventRecord struct {
+	EventVersion string              `json:"eventVersion"`
+	EventSource  string              `json:"eventSource"`
+	AWSRegion    string              `json:"awsRegion"`
+	EventTime    string              `json:"eventTime"`
+	EventName    string              `json:"eventName"`
+	S3           EventRecordS3Detail `json:"s3"`
+	UserIdentity map[string]string   `json:"userIdentity"`
+}
+
+// EventRecordS3Detail holds the s3-specific portion of an event record.
+type EventRecordS3Detail struct {
+	SchemaVersion   string            `json:"s3SchemaVersion"`
+	ConfigurationID string            `json:"configurationId"`
+	Bucket          EventRecordBucket `json:"bucket"`
+	Object          EventRecordObject `json:"object"`
+}
+
+// EventRecordBucket describes the bucket in an S3 event record.
+type EventRecordBucket struct {
+	Name string `json:"name"`
+	Arn  string `json:"arn"`
+}
+
+// EventRecordObject describes the object in an S3 event record.
+type EventRecordObject struct {
+	Key  string `json:"key"`
+	Size int64  `json:"size"`
+	ETag string `json:"eTag"`
+}
 
 // CORSConfiguration represents S3 bucket CORS configuration (XML request body).
 type CORSConfiguration struct {

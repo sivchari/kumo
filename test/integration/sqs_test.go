@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -800,4 +801,234 @@ func TestSQS_ChangeMessageVisibilityBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), batchOutput)
+}
+
+func TestSQS_VisibilityTimeoutRedelivery(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-visibility-redelivery"
+
+	// Create queue with a short visibility timeout (1 second).
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+		Attributes: map[string]string{
+			"VisibilityTimeout": "1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	// Send a message.
+	_, err = client.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    createOutput.QueueUrl,
+		MessageBody: aws.String("visibility-timeout-test"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First receive: message becomes invisible.
+	recvOutput1, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput1.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(recvOutput1.Messages))
+	}
+
+	firstBody := aws.ToString(recvOutput1.Messages[0].Body)
+	if firstBody != "visibility-timeout-test" {
+		t.Fatalf("expected body %q, got %q", "visibility-timeout-test", firstBody)
+	}
+
+	// Immediate receive: message should still be invisible.
+	recvOutput2, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput2.Messages) != 0 {
+		t.Fatalf("expected 0 messages while invisible, got %d", len(recvOutput2.Messages))
+	}
+
+	// Wait for visibility timeout to expire.
+	time.Sleep(1500 * time.Millisecond)
+
+	// Second receive: message should be redelivered.
+	recvOutput3, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput3.Messages) != 1 {
+		t.Fatalf("expected 1 redelivered message, got %d", len(recvOutput3.Messages))
+	}
+
+	redeliveredBody := aws.ToString(recvOutput3.Messages[0].Body)
+	if redeliveredBody != "visibility-timeout-test" {
+		t.Fatalf("expected body %q, got %q", "visibility-timeout-test", redeliveredBody)
+	}
+
+	// Receive count should be "2" after redelivery.
+	if recvOutput3.Messages[0].Attributes["ApproximateReceiveCount"] != "2" {
+		t.Errorf("expected ApproximateReceiveCount=2, got %s", recvOutput3.Messages[0].Attributes["ApproximateReceiveCount"])
+	}
+
+	// Delete the message so it doesn't interfere with other tests.
+	_, err = client.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+		QueueUrl:      createOutput.QueueUrl,
+		ReceiptHandle: recvOutput3.Messages[0].ReceiptHandle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSQS_VisibilityTimeoutDLQRedrive(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	dlqName := "test-queue-dlq-redrive"
+	sourceName := "test-queue-redrive-source"
+
+	// Create DLQ.
+	dlqOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(dlqName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: dlqOutput.QueueUrl,
+		})
+	})
+
+	// Get DLQ ARN.
+	dlqAttrs, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       dlqOutput.QueueUrl,
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameQueueArn},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dlqArn := dlqAttrs.Attributes["QueueArn"]
+
+	// Create source queue with redrive policy (maxReceiveCount=2, visibility timeout=1s).
+	redrivePolicy := fmt.Sprintf(`{"deadLetterTargetArn":"%s","maxReceiveCount":"2"}`, dlqArn)
+	sourceOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(sourceName),
+		Attributes: map[string]string{
+			"VisibilityTimeout": "1",
+			"RedrivePolicy":     redrivePolicy,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: sourceOutput.QueueUrl,
+		})
+	})
+
+	// Send a message.
+	_, err = client.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    sourceOutput.QueueUrl,
+		MessageBody: aws.String("dlq-redrive-test"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First receive (ReceiveCount becomes 1).
+	recvOutput1, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            sourceOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput1.Messages) != 1 {
+		t.Fatalf("expected 1 message on first receive, got %d", len(recvOutput1.Messages))
+	}
+
+	// Wait for visibility timeout to expire.
+	time.Sleep(1500 * time.Millisecond)
+
+	// Second receive (ReceiveCount becomes 2, matches maxReceiveCount).
+	recvOutput2, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            sourceOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput2.Messages) != 1 {
+		t.Fatalf("expected 1 message on second receive, got %d", len(recvOutput2.Messages))
+	}
+
+	// Wait for visibility timeout to expire again.
+	time.Sleep(1500 * time.Millisecond)
+
+	// Third receive from source: should be empty because message was moved to DLQ.
+	recvOutput3, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            sourceOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvOutput3.Messages) != 0 {
+		t.Fatalf("expected 0 messages from source (should be in DLQ), got %d", len(recvOutput3.Messages))
+	}
+
+	// Receive from DLQ: message should be there.
+	recvDLQ, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            dlqOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recvDLQ.Messages) != 1 {
+		t.Fatalf("expected 1 message in DLQ, got %d", len(recvDLQ.Messages))
+	}
+
+	dlqBody := aws.ToString(recvDLQ.Messages[0].Body)
+	if dlqBody != "dlq-redrive-test" {
+		t.Fatalf("expected DLQ body %q, got %q", "dlq-redrive-test", dlqBody)
+	}
+
+	// Clean up DLQ message.
+	_, err = client.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+		QueueUrl:      dlqOutput.QueueUrl,
+		ReceiptHandle: recvDLQ.Messages[0].ReceiptHandle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

@@ -61,6 +61,8 @@ func TestEngineLoadsConfigAndMatchesServiceAlias(t *testing.T) {
 	decision := engine.Evaluate(&awsapi.RequestInfo{Service: "dynamodb", Action: "PutItem"})
 	if decision == nil {
 		t.Fatal("expected latency decision")
+
+		return
 	}
 
 	if decision.Delay != 25*time.Millisecond {

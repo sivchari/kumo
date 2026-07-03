@@ -15,6 +15,9 @@ import (
 	"github.com/sivchari/kumo/internal/servicecatalog"
 )
 
+// localhostHost is the loopback host label used by kumo virtual-hosted URLs.
+const localhostHost = "localhost"
+
 // Route represents a registered HTTP route.
 type Route struct {
 	Method  string
@@ -23,16 +26,27 @@ type Route struct {
 	Handler http.HandlerFunc
 }
 
+// executeAPIDispatch handles a virtual-hosted execute-api request. It returns
+// false when apiID is not owned by the handler.
+type executeAPIDispatch func(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
+
 // Router is the HTTP router for kumo.
 type Router struct {
-	mux           *http.ServeMux
-	routes        []Route
-	prefixRouters map[string]*http.ServeMux // Separate routers for services with prefixes
-	logger        *slog.Logger
-	catalog       *servicecatalog.Catalog
-	latencyEngine *latency.Engine
-	jsonPrefixes  map[string]string
-	cborNames     map[string]string
+	mux                *http.ServeMux
+	routes             []Route
+	prefixRouters      map[string]*http.ServeMux // Separate routers for services with prefixes
+	executeAPIHandlers []executeAPIDispatch
+	logger             *slog.Logger
+	catalog            *servicecatalog.Catalog
+	latencyEngine      *latency.Engine
+	jsonPrefixes       map[string]string
+	cborNames          map[string]string
+}
+
+// AddExecuteAPIHandler registers a handler for virtual-hosted execute-api
+// requests ({apiId}.execute-api.<host>).
+func (r *Router) AddExecuteAPIHandler(fn executeAPIDispatch) {
+	r.executeAPIHandlers = append(r.executeAPIHandlers, fn)
 }
 
 // NewRouter creates a new router.
@@ -95,7 +109,8 @@ func extractRoutePrefix(pattern string) string {
 	// /service is for RPC v2 CBOR protocol
 	// EventBridge Pipes uses /v1/pipes and /tags paths
 	// EMR Serverless uses /applications paths
-	prefixes := []string{"/kumo", "/lambda", "/2015-03-31", "/2019-09-25", "/2020-06-30", "/eks", "/iam", "/buckets", "/namespaces", "/tables", "/get-table", "/apigateway", "/restapis", "/ses", "/2020-05-31", "/2013-04-01", "/service", "/appsync", "/v1", "/tags", "/applications", "/v20190125", "/scheduler", "/dlm", "/mq", "/v20180820", "/kx", "/kafka", "/create-app", "/describe-app", "/update-app", "/delete-app", "/list-apps", "/create-resiliency-policy", "/describe-resiliency-policy", "/update-resiliency-policy", "/delete-resiliency-policy", "/list-resiliency-policies", "/start-app-assessment", "/describe-app-assessment", "/delete-app-assessment", "/list-app-assessments", "/tag-resource", "/untag-resource", "/list-tags-for-resource", "/schemas", "/matchingworkflows", "/idmappingworkflows", "/providerservices", "/-", "/snapshots", "/apps", "/backup-vaults", "/backup", "/associations", "/codereviews", "/feedback", "/profilingGroups", "/maps", "/places", "/routes", "/geofencing", "/tracking", "/metadata", "/macie", "/allow-lists", "/jobs", "/custom-data-identifiers", "/findingsfilters", "/findings", "/managed-data-identifiers"}
+	// API Gateway v2 (HTTP API) uses /v2/apis and /v2/tags paths.
+	prefixes := []string{"/_aws", "/_runtime", "/kumo", "/lambda", "/2015-03-31", "/2017-03-31", "/2019-09-25", "/2020-06-30", "/eks", "/iam", "/buckets", "/namespaces", "/tables", "/get-table", "/apigatewayv2", "/v2", "/apigateway", "/restapis", "/ses", "/2020-05-31", "/2013-04-01", "/service", "/appsync", "/v1", "/tags", "/applications", "/v20190125", "/scheduler", "/dlm", "/mq", "/v20180820", "/kx", "/kafka", "/create-app", "/describe-app", "/update-app", "/delete-app", "/list-apps", "/create-resiliency-policy", "/describe-resiliency-policy", "/update-resiliency-policy", "/delete-resiliency-policy", "/list-resiliency-policies", "/start-app-assessment", "/describe-app-assessment", "/delete-app-assessment", "/list-app-assessments", "/tag-resource", "/untag-resource", "/list-tags-for-resource", "/schemas", "/matchingworkflows", "/idmappingworkflows", "/providerservices", "/-", "/snapshots", "/apps", "/backup-vaults", "/backup", "/associations", "/codereviews", "/feedback", "/profilingGroups", "/maps", "/places", "/routes", "/geofencing", "/tracking", "/metadata", "/macie", "/allow-lists", "/jobs", "/custom-data-identifiers", "/findingsfilters", "/findings", "/managed-data-identifiers"}
 
 	for _, prefix := range prefixes {
 		if hasPathPrefix(pattern, prefix) {
@@ -238,6 +253,24 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Virtual-hosted execute-api: a deployed API stage is invoked at
+	// {apiId}.execute-api.<host>/{stage}/{path}. Dispatch to the service
+	// that owns apiID (API Gateway v1 or v2).
+	if apiID, ok := extractExecuteAPIHost(req.Host); ok {
+		for _, h := range r.executeAPIHandlers {
+			if h(w, req, apiID, req.URL.Path) {
+				return
+			}
+		}
+
+		// No service owns this API id: real API Gateway answers 403.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Forbidden"}`))
+
+		return
+	}
+
 	// Rewrite AWS S3 virtual-hosted-style requests so the rest of the
 	// router only deals with path-style. terraform / aws-sdk-go-v2
 	// default to virtual-hosted-style: the bucket goes in the Host
@@ -292,6 +325,44 @@ func (r *Router) Routes() []Route {
 	return r.routes
 }
 
+// extractExecuteAPIHost recognises API Gateway execute-api virtual-hosted
+// hosts and returns the API id. Empty/false means it is not such a host.
+//
+// Recognised shapes (the kumo-local form resolves to loopback):
+//
+//	{apiId}.execute-api.localhost(:port)
+//	{apiId}.execute-api.{region}.amazonaws.com
+func extractExecuteAPIHost(host string) (string, bool) {
+	if host == "" {
+		return "", false
+	}
+
+	if idx := strings.LastIndex(host, ":"); idx >= 0 {
+		host = host[:idx]
+	}
+
+	const marker = ".execute-api."
+
+	i := strings.Index(host, marker)
+	if i <= 0 {
+		return "", false
+	}
+
+	apiID := host[:i]
+	rest := host[i+len(marker):]
+
+	// The API id is a single label.
+	if apiID == "" || strings.Contains(apiID, ".") {
+		return "", false
+	}
+
+	if rest == localhostHost || strings.HasSuffix(rest, ".amazonaws.com") {
+		return apiID, true
+	}
+
+	return "", false
+}
+
 // extractBucketFromHost recognises AWS S3 virtual-hosted-style hosts
 // and returns the bucket name. Empty result means path-style (or a
 // non-S3 host) — caller leaves the URL untouched.
@@ -313,7 +384,7 @@ func extractBucketFromHost(host string) string {
 	}
 
 	// Localhost / loopback IPs are never virtual-hosted.
-	if host == "localhost" || host == "127.0.0.1" {
+	if host == localhostHost || host == "127.0.0.1" {
 		return ""
 	}
 
@@ -333,7 +404,7 @@ func extractBucketFromHost(host string) string {
 	}
 
 	switch {
-	case rest == "localhost":
+	case rest == localhostHost:
 		return bucket
 	case rest == "s3.amazonaws.com":
 		return bucket

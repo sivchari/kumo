@@ -115,6 +115,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "backup", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -153,6 +162,8 @@ func (m *MemoryStorage) CreateVault(name string, input *CreateBackupVaultInput) 
 	}
 
 	m.Vaults[name] = vault
+
+	m.saveLocked()
 
 	return vault, nil
 }
@@ -194,6 +205,8 @@ func (m *MemoryStorage) DeleteVault(name string) error {
 
 	delete(m.Vaults, name)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -230,6 +243,8 @@ func (m *MemoryStorage) CreatePlan(input *CreateBackupPlanInput) (*Plan, error) 
 	}
 
 	m.Plans[planID] = plan
+
+	m.saveLocked()
 
 	return plan, nil
 }
@@ -278,6 +293,8 @@ func (m *MemoryStorage) DeletePlan(planID string) error {
 	delete(m.Plans, planID)
 	delete(m.Selections, planID)
 
+	m.saveLocked()
+
 	return nil
 }
 
@@ -308,6 +325,8 @@ func (m *MemoryStorage) CreateSelection(planID string, input *CreateBackupSelect
 	}
 
 	m.Selections[planID][selectionID] = selection
+
+	m.saveLocked()
 
 	return selection, nil
 }
@@ -366,6 +385,8 @@ func (m *MemoryStorage) DeleteSelection(planID, selectionID string) error {
 	}
 
 	delete(planSelections, selectionID)
+
+	m.saveLocked()
 
 	return nil
 }

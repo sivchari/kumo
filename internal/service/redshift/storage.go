@@ -111,6 +111,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "redshift", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -169,6 +178,8 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, input *CreateClusterInp
 
 	m.Clusters[input.ClusterIdentifier] = cluster
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -188,6 +199,8 @@ func (m *MemoryStorage) DeleteCluster(_ context.Context, input *DeleteClusterInp
 	cluster.ClusterStatus = clusterStatusDeleting
 
 	delete(m.Clusters, input.ClusterIdentifier)
+
+	m.saveLocked()
 
 	return cluster, nil
 }
@@ -239,6 +252,8 @@ func (m *MemoryStorage) ModifyCluster(_ context.Context, input *ModifyClusterInp
 		cluster.NumberOfNodes = input.NumberOfNodes
 	}
 
+	m.saveLocked()
+
 	return cluster, nil
 }
 
@@ -276,6 +291,8 @@ func (m *MemoryStorage) CreateClusterSnapshot(_ context.Context, input *CreateCl
 
 	m.Snapshots[input.SnapshotIdentifier] = snapshot
 
+	m.saveLocked()
+
 	return snapshot, nil
 }
 
@@ -293,6 +310,8 @@ func (m *MemoryStorage) DeleteClusterSnapshot(_ context.Context, identifier stri
 	}
 
 	delete(m.Snapshots, identifier)
+
+	m.saveLocked()
 
 	return snapshot, nil
 }

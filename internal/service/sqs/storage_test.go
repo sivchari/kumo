@@ -162,6 +162,8 @@ func TestMemoryStorage_ReceiveMessageAfterPersistedReload(t *testing.T) {
 
 	s2 := NewMemoryStorage("http://localhost:4566", WithDataDir(dir))
 
+	t.Cleanup(func() { _ = s2.Close() })
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("ReceiveMessage() panicked after reload: %v", r)
@@ -201,6 +203,8 @@ func TestMemoryStorage_FIFODeduplicationCacheAfterReload(t *testing.T) {
 	}
 
 	s2 := NewMemoryStorage("http://localhost:4566", WithDataDir(dir))
+
+	t.Cleanup(func() { _ = s2.Close() })
 
 	defer func() {
 		if r := recover(); r != nil {

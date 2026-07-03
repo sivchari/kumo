@@ -1,20 +1,17 @@
 package appsync
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 
-	"github.com/google/uuid"
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CreateGraphqlAPI handles the CreateGraphqlAPI operation.
 func (s *Service) CreateGraphqlAPI(w http.ResponseWriter, r *http.Request) {
 	var req CreateGraphqlAPIInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -130,7 +127,7 @@ func (s *Service) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateDataSourceInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -179,7 +176,7 @@ func (s *Service) CreateResolver(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateResolverInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -216,7 +213,7 @@ func (s *Service) StartSchemaCreation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req StartSchemaCreationInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -259,44 +256,14 @@ func extractPathParam(r *http.Request, param string) string {
 	return ""
 }
 
-// readJSONRequest reads and decodes JSON request body.
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
-}
-
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
-
-	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
-	}
+	service.WriteJSONResponse(w, service.ContentTypeJSON, v)
 }
 
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
-		Type:    code,
-		Message: message,
-	})
+	service.WriteJSONError(w, service.ContentTypeJSON, code, message, status)
 }
 
 // handleStorageError handles storage errors and writes appropriate response.

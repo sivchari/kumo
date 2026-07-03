@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -18,14 +19,7 @@ const (
 )
 
 // ServiceError represents a Glacier service error.
-type ServiceError struct {
-	Code    string
-	Message string
-}
-
-func (e *ServiceError) Error() string {
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
-}
+type ServiceError = service.CodedError
 
 // Storage defines the Glacier storage interface.
 type Storage interface {
@@ -109,6 +103,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "glacier", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -142,6 +145,8 @@ func (m *MemoryStorage) CreateVault(_ context.Context, vaultName string) (*Vault
 
 	m.Vaults[vaultName] = vault
 
+	m.saveLocked()
+
 	return vault, nil
 }
 
@@ -174,6 +179,8 @@ func (m *MemoryStorage) DeleteVault(_ context.Context, vaultName string) error {
 	}
 
 	delete(m.Vaults, vaultName)
+
+	m.saveLocked()
 
 	return nil
 }

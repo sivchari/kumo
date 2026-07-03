@@ -126,6 +126,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "s3tables", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -169,6 +178,8 @@ func (s *MemoryStorage) CreateTableBucket(_ context.Context, name string) (*Tabl
 	s.TableBuckets[arn] = bucket
 	s.Namespaces[arn] = make(map[string]*Namespace)
 
+	s.saveLocked()
+
 	return bucket, nil
 }
 
@@ -194,6 +205,8 @@ func (s *MemoryStorage) DeleteTableBucket(_ context.Context, arn string) error {
 
 	delete(s.TableBuckets, arn)
 	delete(s.Namespaces, arn)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -314,6 +327,8 @@ func (s *MemoryStorage) CreateNamespace(_ context.Context, tableBucketArn string
 
 	s.Namespaces[tableBucketArn][namespaceKey] = ns
 
+	s.saveLocked()
+
 	return ns, nil
 }
 
@@ -346,6 +361,8 @@ func (s *MemoryStorage) DeleteNamespace(_ context.Context, tableBucketArn, names
 	}
 
 	delete(s.Namespaces[tableBucketArn], namespace)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -468,6 +485,8 @@ func (s *MemoryStorage) CreateTable(_ context.Context, tableBucketArn, namespace
 
 	s.Tables[tableKey][name] = table
 
+	s.saveLocked()
+
 	return table, nil
 }
 
@@ -492,6 +511,8 @@ func (s *MemoryStorage) DeleteTable(_ context.Context, tableBucketArn, namespace
 	}
 
 	delete(s.Tables[tableKey], name)
+
+	s.saveLocked()
 
 	return nil
 }

@@ -2,6 +2,8 @@ package cognito
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // UserPoolStatus represents the status of a user pool.
@@ -627,28 +629,77 @@ type ErrorResponse struct {
 }
 
 // ServiceError represents a Cognito service error.
-type ServiceError struct {
-	Code    string
-	Message string
+type ServiceError = service.CodedError
+
+// MfaConfig represents the stored MFA configuration for a user pool.
+type MfaConfig struct {
+	MfaConfiguration              string                         `json:"MfaConfiguration"`
+	SmsMfaConfiguration           *SmsMfaConfiguration           `json:"SmsMfaConfiguration,omitempty"`
+	SoftwareTokenMfaConfiguration *SoftwareTokenMfaConfiguration `json:"SoftwareTokenMfaConfiguration,omitempty"`
 }
 
-// Error implements the error interface.
-func (e *ServiceError) Error() string {
-	return e.Message
+// SmsMfaConfiguration represents SMS MFA configuration.
+type SmsMfaConfiguration struct {
+	SmsAuthenticationMessage string                        `json:"SmsAuthenticationMessage,omitempty"`
+	SmsConfiguration         *SmsMfaConfigSmsConfiguration `json:"SmsConfiguration,omitempty"`
 }
 
-// getUserPoolMFAConfigResponse mirrors AWS's GetUserPoolMfaConfigResponse /
-// SetUserPoolMfaConfigResponse.
-type getUserPoolMFAConfigResponse struct {
-	MfaConfiguration              string                        `json:"MfaConfiguration"`
-	SmsMfaConfiguration           *smsMfaConfigOutput           `json:"SmsMfaConfiguration,omitempty"`
-	SoftwareTokenMfaConfiguration *softwareTokenMfaConfigOutput `json:"SoftwareTokenMfaConfiguration,omitempty"`
+// SmsMfaConfigSmsConfiguration represents the SMS configuration within SMS MFA.
+type SmsMfaConfigSmsConfiguration struct {
+	SnsCallerArn string `json:"SnsCallerArn,omitempty"`
+	ExternalID   string `json:"ExternalId,omitempty"`
 }
 
-type smsMfaConfigOutput struct {
-	SmsAuthenticationMessage string `json:"SmsAuthenticationMessage,omitempty"`
-}
-
-type softwareTokenMfaConfigOutput struct {
+// SoftwareTokenMfaConfiguration represents software token MFA configuration.
+type SoftwareTokenMfaConfiguration struct {
 	Enabled bool `json:"Enabled"`
+}
+
+// GetUserPoolMfaConfigRequest is the request for GetUserPoolMfaConfig.
+type GetUserPoolMfaConfigRequest struct {
+	UserPoolID string `json:"UserPoolId"`
+}
+
+// GetUserPoolMfaConfigResponse is the response for GetUserPoolMfaConfig.
+type GetUserPoolMfaConfigResponse struct {
+	MfaConfiguration              string                               `json:"MfaConfiguration"`
+	SmsMfaConfiguration           *SmsMfaConfigurationOutput           `json:"SmsMfaConfiguration,omitempty"`
+	SoftwareTokenMfaConfiguration *SoftwareTokenMfaConfigurationOutput `json:"SoftwareTokenMfaConfiguration,omitempty"`
+}
+
+// SmsMfaConfigurationOutput represents SMS MFA configuration in responses.
+type SmsMfaConfigurationOutput struct {
+	SmsAuthenticationMessage string                        `json:"SmsAuthenticationMessage,omitempty"`
+	SmsConfiguration         *SmsMfaConfigSmsConfiguration `json:"SmsConfiguration,omitempty"`
+}
+
+// SoftwareTokenMfaConfigurationOutput represents software token MFA configuration in responses.
+type SoftwareTokenMfaConfigurationOutput struct {
+	Enabled bool `json:"Enabled"`
+}
+
+// SetUserPoolMfaConfigRequest is the request for SetUserPoolMfaConfig.
+type SetUserPoolMfaConfigRequest struct {
+	UserPoolID                    string                              `json:"UserPoolId"`
+	MfaConfiguration              string                              `json:"MfaConfiguration"`
+	SmsMfaConfiguration           *SmsMfaConfigurationInput           `json:"SmsMfaConfiguration,omitempty"`
+	SoftwareTokenMfaConfiguration *SoftwareTokenMfaConfigurationInput `json:"SoftwareTokenMfaConfiguration,omitempty"`
+}
+
+// SmsMfaConfigurationInput represents SMS MFA configuration in requests.
+type SmsMfaConfigurationInput struct {
+	SmsAuthenticationMessage string                        `json:"SmsAuthenticationMessage,omitempty"`
+	SmsConfiguration         *SmsMfaConfigSmsConfiguration `json:"SmsConfiguration,omitempty"`
+}
+
+// SoftwareTokenMfaConfigurationInput represents software token MFA configuration in requests.
+type SoftwareTokenMfaConfigurationInput struct {
+	Enabled bool `json:"Enabled"`
+}
+
+// SetUserPoolMfaConfigResponse is the response for SetUserPoolMfaConfig.
+type SetUserPoolMfaConfigResponse struct {
+	MfaConfiguration              string                               `json:"MfaConfiguration"`
+	SmsMfaConfiguration           *SmsMfaConfigurationOutput           `json:"SmsMfaConfiguration,omitempty"`
+	SoftwareTokenMfaConfiguration *SoftwareTokenMfaConfigurationOutput `json:"SoftwareTokenMfaConfiguration,omitempty"`
 }

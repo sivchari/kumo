@@ -134,6 +134,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "apigateway", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -182,6 +191,8 @@ func (s *MemoryStorage) CreateRestAPI(_ context.Context, req *CreateRestAPIReque
 		Deployments: make(map[string]*Deployment),
 		Stages:      make(map[string]*Stage),
 	}
+
+	s.saveLocked()
 
 	return api, nil
 }
@@ -232,6 +243,8 @@ func (s *MemoryStorage) DeleteRestAPI(_ context.Context, restAPIID string) error
 
 	delete(s.RestAPIs, restAPIID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -262,6 +275,8 @@ func (s *MemoryStorage) CreateResource(_ context.Context, restAPIID, parentID, p
 	}
 
 	data.Resources[id] = resource
+
+	s.saveLocked()
 
 	return resource, nil
 }
@@ -333,6 +348,8 @@ func (s *MemoryStorage) DeleteResource(_ context.Context, restAPIID, resourceID 
 
 	delete(data.Resources, resourceID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -359,6 +376,8 @@ func (s *MemoryStorage) PutMethod(_ context.Context, restAPIID, resourceID, http
 	}
 
 	resource.ResourceMethods[httpMethod] = method
+
+	s.saveLocked()
 
 	return &method, nil
 }
@@ -407,6 +426,8 @@ func (s *MemoryStorage) DeleteMethod(_ context.Context, restAPIID, resourceID, h
 
 	delete(resource.ResourceMethods, httpMethod)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -447,6 +468,8 @@ func (s *MemoryStorage) PutIntegration(_ context.Context, restAPIID, resourceID,
 
 	method.MethodIntegration = integration
 	resource.ResourceMethods[httpMethod] = method
+
+	s.saveLocked()
 
 	return integration, nil
 }
@@ -509,6 +532,8 @@ func (s *MemoryStorage) CreateDeployment(_ context.Context, restAPIID string, re
 		}
 		data.Stages[req.StageName] = stage
 	}
+
+	s.saveLocked()
 
 	return deployment, nil
 }
@@ -574,6 +599,8 @@ func (s *MemoryStorage) DeleteDeployment(_ context.Context, restAPIID, deploymen
 
 	delete(data.Deployments, deploymentID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -606,6 +633,8 @@ func (s *MemoryStorage) CreateStage(_ context.Context, restAPIID string, req *Cr
 	}
 
 	data.Stages[req.StageName] = stage
+
+	s.saveLocked()
 
 	return stage, nil
 }
@@ -662,6 +691,8 @@ func (s *MemoryStorage) DeleteStage(_ context.Context, restAPIID, stageName stri
 	}
 
 	delete(data.Stages, stageName)
+
+	s.saveLocked()
 
 	return nil
 }

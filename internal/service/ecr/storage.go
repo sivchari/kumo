@@ -6,12 +6,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Error codes.
 const (
@@ -73,9 +77,14 @@ type repositoryData struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Repositories: make(map[string]*repositoryData),
-		region:       "us-east-1",
+		region:       region,
 		accountID:    "000000000000",
 	}
 	for _, o := range opts {
@@ -124,6 +133,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "ecr", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -168,6 +186,8 @@ func (s *MemoryStorage) CreateRepository(_ context.Context, req *CreateRepositor
 		Images:     make(map[string]*Image),
 	}
 
+	s.saveLocked()
+
 	return repo, nil
 }
 
@@ -186,6 +206,8 @@ func (s *MemoryStorage) DeleteRepository(_ context.Context, repositoryName strin
 	}
 
 	delete(s.Repositories, repositoryName)
+
+	s.saveLocked()
 
 	return rd.Repository, nil
 }
@@ -310,6 +332,8 @@ func (s *MemoryStorage) PutImage(_ context.Context, repositoryName, imageManifes
 
 	rd.Images[digest] = img
 
+	s.saveLocked()
+
 	return img, nil
 }
 
@@ -393,6 +417,8 @@ func (s *MemoryStorage) BatchDeleteImage(_ context.Context, repositoryName strin
 		}
 	}
 
+	s.saveLocked()
+
 	return deleted, failures, nil
 }
 
@@ -439,6 +465,8 @@ func (s *MemoryStorage) PutLifecyclePolicy(_ context.Context, repositoryName, po
 
 	repo.LifecyclePolicyText = policyText
 	repo.LifecyclePolicyAt = time.Now().UTC()
+
+	s.saveLocked()
 
 	return policyText, nil
 }
@@ -492,6 +520,8 @@ func (s *MemoryStorage) DeleteLifecyclePolicy(_ context.Context, repositoryName 
 	at := repo.LifecyclePolicyAt
 	repo.LifecyclePolicyText = ""
 	repo.LifecyclePolicyAt = time.Time{}
+
+	s.saveLocked()
 
 	return prev, at, nil
 }

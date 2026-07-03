@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -66,14 +67,21 @@ type MemoryStorage struct {
 	mu       sync.RWMutex                  `json:"-"`
 	Apps     map[string]*App               `json:"apps"`
 	Branches map[string]map[string]*Branch `json:"branches"` // appID -> branchName -> Branch
+	region   string
 	dataDir  string
 }
 
 // NewMemoryStorage creates a new MemoryStorage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Apps:     make(map[string]*App),
 		Branches: make(map[string]map[string]*Branch),
+		region:   region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -125,6 +133,15 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (m *MemoryStorage) saveLocked() {
+	if m.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(m.dataDir, "amplify", m.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
 	if m.dataDir == "" {
@@ -152,7 +169,7 @@ func (m *MemoryStorage) CreateApp(_ context.Context, input *CreateAppInput) (*Ap
 	}
 
 	app := &App{
-		AppArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s", defaultRegion, defaultAccountID, appID),
+		AppArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s", m.region, defaultAccountID, appID),
 		AppID:                 appID,
 		CreateTime:            now,
 		DefaultDomain:         fmt.Sprintf("%s.amplifyapp.com", appID),
@@ -169,6 +186,8 @@ func (m *MemoryStorage) CreateApp(_ context.Context, input *CreateAppInput) (*Ap
 
 	m.Apps[appID] = app
 	m.Branches[appID] = make(map[string]*Branch)
+
+	m.saveLocked()
 
 	return app, nil
 }
@@ -243,6 +262,8 @@ func (m *MemoryStorage) UpdateApp(_ context.Context, appID string, input *Update
 
 	app.UpdateTime = epochNow()
 
+	m.saveLocked()
+
 	return app, nil
 }
 
@@ -263,6 +284,8 @@ func (m *MemoryStorage) DeleteApp(_ context.Context, appID string) (*App, error)
 	delete(m.Apps, appID)
 
 	delete(m.Branches, appID)
+
+	m.saveLocked()
 
 	return app, nil
 }
@@ -289,7 +312,7 @@ func (m *MemoryStorage) CreateBranch(_ context.Context, appID string, input *Cre
 
 	branch := &Branch{
 		ActiveJobID:              "",
-		BranchArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s/branches/%s", defaultRegion, defaultAccountID, appID, input.BranchName),
+		BranchArn:                fmt.Sprintf("arn:aws:amplify:%s:%s:apps/%s/branches/%s", m.region, defaultAccountID, appID, input.BranchName),
 		BranchName:               input.BranchName,
 		CreateTime:               now,
 		CustomDomains:            []string{},
@@ -308,6 +331,8 @@ func (m *MemoryStorage) CreateBranch(_ context.Context, appID string, input *Cre
 	}
 
 	m.Branches[appID][input.BranchName] = branch
+
+	m.saveLocked()
 
 	return branch, nil
 }
@@ -385,6 +410,8 @@ func (m *MemoryStorage) DeleteBranch(_ context.Context, appID, branchName string
 	}
 
 	delete(appBranches, branchName)
+
+	m.saveLocked()
 
 	return branch, nil
 }

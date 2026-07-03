@@ -6,8 +6,10 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -21,6 +23,12 @@ const (
 	defaultAccountID = "000000000000"
 )
 
+// defaultKeyPolicy is the AWS-default key policy returned for any key when
+// no explicit policy has been set. terraform-provider-aws hashes this for
+// drift detection so it must be a stable JSON document with the standard
+// AccountRootEnable statement.
+const defaultKeyPolicy = `{"Version":"2012-10-17","Id":"key-default-1","Statement":[{"Sid":"Enable IAM User Permissions","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::000000000000:root"},"Action":"kms:*","Resource":"*"}]}`
+
 // Error codes.
 const (
 	errNotFound          = "NotFoundException"
@@ -32,6 +40,7 @@ const (
 	errIncorrectKey      = "IncorrectKeyException"
 	errDisabled          = "DisabledException"
 	errInvalidKeyUsage   = "InvalidKeyUsageException"
+	errInvalidSignature  = "KMSInvalidSignatureException"
 )
 
 // determineKeySize returns the key size based on key spec or number of bytes.
@@ -64,6 +73,23 @@ type Storage interface {
 	Encrypt(ctx context.Context, keyID string, plaintext []byte, encryptionContext map[string]string) ([]byte, error)
 	Decrypt(ctx context.Context, ciphertextBlob []byte, encryptionContext map[string]string, keyID string) ([]byte, string, error)
 	GenerateDataKey(ctx context.Context, keyID string, keySpec string, numberOfBytes int32, encryptionContext map[string]string) ([]byte, []byte, error)
+
+	// Asymmetric operations.
+	Sign(ctx context.Context, keyID string, message []byte, algorithm SigningAlgorithm, messageType MessageType) ([]byte, *Key, error)
+	Verify(ctx context.Context, keyID string, message, signature []byte, algorithm SigningAlgorithm, messageType MessageType) (bool, *Key, error)
+	GetPublicKey(ctx context.Context, keyID string) ([]byte, *Key, error)
+
+	// Policy operations.
+	GetKeyPolicy(ctx context.Context, keyID string) (string, error)
+	PutKeyPolicy(ctx context.Context, keyID, policy string) error
+
+	// Tag operations.
+	ListResourceTags(ctx context.Context, keyID string) ([]Tag, error)
+	TagResource(ctx context.Context, keyID string, tags []Tag) error
+	UntagResource(ctx context.Context, keyID string, tagKeys []string) error
+
+	// Rotation operations.
+	GetKeyRotationStatus(ctx context.Context, keyID string) (bool, error)
 
 	// Alias operations.
 	CreateAlias(ctx context.Context, aliasName, targetKeyID string) error
@@ -99,10 +125,15 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Keys:    make(map[string]*Key),
 		Aliases: make(map[string]*Alias),
-		region:  defaultRegion,
+		region:  region,
 	}
 	for _, o := range opts {
 		o(s)
@@ -154,6 +185,16 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// saveLocked persists the current state to disk while the caller holds the lock.
+// It uses a type alias to avoid calling MarshalJSON (which would deadlock).
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "kms", s.MarshalJSON)
+}
+
 // Close saves the storage state to disk if persistence is enabled.
 func (s *MemoryStorage) Close() error {
 	if s.dataDir == "" {
@@ -167,6 +208,26 @@ func (s *MemoryStorage) Close() error {
 	return nil
 }
 
+// generateKeyMaterial produces the key material for a new key. Asymmetric specs
+// return a PKCS#8 DER private key; symmetric specs return a 256-bit AES key.
+func generateKeyMaterial(keySpec KeySpec) (symmetric, asymmetric []byte, err error) {
+	if isAsymmetricSpec(keySpec) {
+		der, genErr := generateAsymmetricKey(keySpec)
+		if genErr != nil {
+			return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Failed to generate key material"}
+		}
+
+		return nil, der, nil
+	}
+
+	material := make([]byte, 32)
+	if _, readErr := io.ReadFull(rand.Reader, material); readErr != nil {
+		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Failed to generate key material"}
+	}
+
+	return material, nil, nil
+}
+
 // CreateKey creates a new KMS key.
 func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Key, error) {
 	s.mu.Lock()
@@ -174,12 +235,6 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 
 	keyID := uuid.New().String()
 	arn := fmt.Sprintf("arn:aws:kms:%s:%s:key/%s", s.region, defaultAccountID, keyID)
-
-	// Generate random key material (256-bit for AES-256).
-	keyMaterial := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, keyMaterial); err != nil {
-		return nil, &ServiceError{Code: errDependencyTimeout, Message: "Failed to generate key material"}
-	}
 
 	keyUsage := KeyUsageEncryptDecrypt
 	if req.KeyUsage != "" {
@@ -189,6 +244,11 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 	keySpec := KeySpecSymmetricDefault
 	if req.KeySpec != "" {
 		keySpec = KeySpec(req.KeySpec)
+	}
+
+	keyMaterial, asymmetricKey, err := generateKeyMaterial(keySpec)
+	if err != nil {
+		return nil, err
 	}
 
 	origin := "AWS_KMS"
@@ -207,23 +267,25 @@ func (s *MemoryStorage) CreateKey(_ context.Context, req *CreateKeyRequest) (*Ke
 	}
 
 	key := &Key{
-		KeyID:        keyID,
-		Arn:          arn,
-		Description:  req.Description,
-		KeyState:     KeyStateEnabled,
-		KeyUsage:     keyUsage,
-		KeySpec:      keySpec,
-		KeyManager:   KeyManagerCustomer,
-		CreationDate: time.Now(),
-		Enabled:      true,
-		Origin:       origin,
-		MultiRegion:  req.MultiRegion,
-		Tags:         tags,
-		Policy:       policy,
-		KeyMaterial:  keyMaterial,
+		KeyID:         keyID,
+		Arn:           arn,
+		Description:   req.Description,
+		KeyState:      KeyStateEnabled,
+		KeyUsage:      keyUsage,
+		KeySpec:       keySpec,
+		KeyManager:    KeyManagerCustomer,
+		CreationDate:  time.Now(),
+		Enabled:       true,
+		Origin:        origin,
+		MultiRegion:   req.MultiRegion,
+		Tags:          tags,
+		Policy:        policy,
+		KeyMaterial:   keyMaterial,
+		AsymmetricKey: asymmetricKey,
 	}
 
 	s.Keys[keyID] = key
+	s.saveLocked()
 
 	return key, nil
 }
@@ -312,6 +374,8 @@ func (s *MemoryStorage) EnableKey(_ context.Context, keyID string) error {
 	key.KeyState = KeyStateEnabled
 	key.Enabled = true
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -334,6 +398,8 @@ func (s *MemoryStorage) DisableKey(_ context.Context, keyID string) error {
 
 	key.KeyState = KeyStateDisabled
 	key.Enabled = false
+
+	s.saveLocked()
 
 	return nil
 }
@@ -364,6 +430,8 @@ func (s *MemoryStorage) ScheduleKeyDeletion(_ context.Context, keyID string, pen
 	key.Enabled = false
 	key.DeletionDate = &deletionDate
 	key.PendingDeletionWindow = pendingWindowInDays
+
+	s.saveLocked()
 
 	return key, nil
 }
@@ -538,6 +606,91 @@ func (s *MemoryStorage) GenerateDataKey(_ context.Context, keyID, keySpec string
 	return plaintext, encryptedKey, nil
 }
 
+// Sign signs a message with an asymmetric key.
+func (s *MemoryStorage) Sign(_ context.Context, keyID string, message []byte, algorithm SigningAlgorithm, messageType MessageType) ([]byte, *Key, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if key.KeyState != KeyStateEnabled {
+		return nil, nil, &ServiceError{Code: errDisabled, Message: "Key " + keyID + " is disabled."}
+	}
+
+	if key.KeyUsage != KeyUsageSignVerify || len(key.AsymmetricKey) == 0 {
+		return nil, nil, &ServiceError{Code: errInvalidKeyUsage, Message: "Key " + keyID + " is not configured for signing."}
+	}
+
+	signature, err := signDigest(key.AsymmetricKey, message, algorithm, messageType)
+	if err != nil {
+		return nil, nil, wrapSigningError(err)
+	}
+
+	return signature, key, nil
+}
+
+// Verify verifies a signature against a message with an asymmetric key.
+func (s *MemoryStorage) Verify(_ context.Context, keyID string, message, signature []byte, algorithm SigningAlgorithm, messageType MessageType) (bool, *Key, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if key.KeyState != KeyStateEnabled {
+		return false, nil, &ServiceError{Code: errDisabled, Message: "Key " + keyID + " is disabled."}
+	}
+
+	if key.KeyUsage != KeyUsageSignVerify || len(key.AsymmetricKey) == 0 {
+		return false, nil, &ServiceError{Code: errInvalidKeyUsage, Message: "Key " + keyID + " is not configured for verification."}
+	}
+
+	valid, err := verifyDigest(key.AsymmetricKey, message, signature, algorithm, messageType)
+	if err != nil {
+		return false, nil, wrapSigningError(err)
+	}
+
+	return valid, key, nil
+}
+
+// GetPublicKey returns the DER-encoded public key of an asymmetric key.
+func (s *MemoryStorage) GetPublicKey(_ context.Context, keyID string) ([]byte, *Key, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(key.AsymmetricKey) == 0 {
+		return nil, nil, &ServiceError{Code: errInvalidKeyUsage, Message: "Key " + keyID + " is not an asymmetric key."}
+	}
+
+	der, err := publicKeyDER(key.AsymmetricKey)
+	if err != nil {
+		return nil, nil, wrapSigningError(err)
+	}
+
+	return der, key, nil
+}
+
+// wrapSigningError returns the error as-is when it is already a ServiceError,
+// otherwise wraps it in an InvalidKeyUsage ServiceError.
+func wrapSigningError(err error) error {
+	var svcErr *ServiceError
+	if errors.As(err, &svcErr) {
+		return svcErr
+	}
+
+	return &ServiceError{Code: errInvalidKeyUsage, Message: err.Error()}
+}
+
 // CreateAlias creates an alias for a key.
 func (s *MemoryStorage) CreateAlias(_ context.Context, aliasName, targetKeyID string) error {
 	s.mu.Lock()
@@ -569,6 +722,7 @@ func (s *MemoryStorage) CreateAlias(_ context.Context, aliasName, targetKeyID st
 		CreationDate:    now,
 		LastUpdatedDate: now,
 	}
+	s.saveLocked()
 
 	return nil
 }
@@ -583,6 +737,7 @@ func (s *MemoryStorage) DeleteAlias(_ context.Context, aliasName string) error {
 	}
 
 	delete(s.Aliases, aliasName)
+	s.saveLocked()
 
 	return nil
 }
@@ -634,4 +789,113 @@ func (s *MemoryStorage) GetAlias(_ context.Context, aliasName string) (*Alias, e
 	}
 
 	return alias, nil
+}
+
+// GetKeyPolicy returns the policy for a key.
+func (s *MemoryStorage) GetKeyPolicy(_ context.Context, keyID string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return "", err
+	}
+
+	policy := key.Policy
+	if policy == "" {
+		policy = defaultKeyPolicy
+	}
+
+	return policy, nil
+}
+
+// PutKeyPolicy sets the policy for a key.
+func (s *MemoryStorage) PutKeyPolicy(_ context.Context, keyID, policy string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return err
+	}
+
+	key.Policy = policy
+
+	s.saveLocked()
+
+	return nil
+}
+
+// ListResourceTags returns the tags for a key.
+func (s *MemoryStorage) ListResourceTags(_ context.Context, keyID string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return nil, err
+	}
+
+	tags := make([]Tag, 0, len(key.Tags))
+	for k, v := range key.Tags {
+		tags = append(tags, Tag{TagKey: k, TagValue: v})
+	}
+
+	return tags, nil
+}
+
+// TagResource adds tags to a key.
+func (s *MemoryStorage) TagResource(_ context.Context, keyID string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return err
+	}
+
+	if key.Tags == nil {
+		key.Tags = make(map[string]string)
+	}
+
+	for _, tag := range tags {
+		key.Tags[tag.TagKey] = tag.TagValue
+	}
+
+	s.saveLocked()
+
+	return nil
+}
+
+// UntagResource removes tags from a key.
+func (s *MemoryStorage) UntagResource(_ context.Context, keyID string, tagKeys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return err
+	}
+
+	for _, tagKey := range tagKeys {
+		delete(key.Tags, tagKey)
+	}
+
+	s.saveLocked()
+
+	return nil
+}
+
+// GetKeyRotationStatus returns the rotation status for a key.
+func (s *MemoryStorage) GetKeyRotationStatus(_ context.Context, keyID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	_, err := s.getKeyLocked(keyID)
+	if err != nil {
+		return false, err
+	}
+
+	// Rotation is not modeled in storage; always report disabled.
+	return false, nil
 }

@@ -2,14 +2,14 @@
 package sts
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const (
@@ -43,7 +43,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // handleAssumeRole handles the AssumeRole action.
 func (s *Service) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 	var req AssumeRoleInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParam, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -80,7 +80,7 @@ func (s *Service) handleAssumeRole(w http.ResponseWriter, r *http.Request) {
 // handleAssumeRoleWithSAML handles the AssumeRoleWithSAML action.
 func (s *Service) handleAssumeRoleWithSAML(w http.ResponseWriter, r *http.Request) {
 	var req AssumeRoleWithSAMLInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParam, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -123,7 +123,7 @@ func (s *Service) handleAssumeRoleWithSAML(w http.ResponseWriter, r *http.Reques
 // handleAssumeRoleWithWebIdentity handles the AssumeRoleWithWebIdentity action.
 func (s *Service) handleAssumeRoleWithWebIdentity(w http.ResponseWriter, r *http.Request) {
 	var req AssumeRoleWithWebIdentityInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParam, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -185,7 +185,7 @@ func (s *Service) handleGetCallerIdentity(w http.ResponseWriter, r *http.Request
 func (s *Service) handleGetSessionToken(w http.ResponseWriter, r *http.Request) {
 	var req GetSessionTokenInput
 
-	_ = readJSONRequest(r, &req)
+	_ = service.ReadJSONRequest(r, &req)
 
 	creds, err := s.storage.GetSessionToken(r.Context(), &req)
 	if err != nil {
@@ -204,7 +204,7 @@ func (s *Service) handleGetSessionToken(w http.ResponseWriter, r *http.Request) 
 // handleGetFederationToken handles the GetFederationToken action.
 func (s *Service) handleGetFederationToken(w http.ResponseWriter, r *http.Request) {
 	var req GetFederationTokenInput
-	if err := readJSONRequest(r, &req); err != nil {
+	if err := service.ReadJSONRequest(r, &req); err != nil {
 		writeError(w, errInvalidParam, "Failed to parse request body", http.StatusBadRequest)
 
 		return
@@ -243,23 +243,6 @@ func extractAction(r *http.Request) string {
 	}
 
 	return r.URL.Query().Get("Action")
-}
-
-func readJSONRequest(r *http.Request, v any) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if len(body) == 0 {
-		return nil
-	}
-
-	if err := json.Unmarshal(body, v); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
 
 func writeXMLResponse(w http.ResponseWriter, v any) {

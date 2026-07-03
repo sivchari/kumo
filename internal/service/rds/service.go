@@ -86,3 +86,12 @@ func (s *Service) Close() error {
 
 	return nil
 }
+
+// Meta returns the service's documentation metadata.
+func (s *Service) Meta() service.Meta {
+	return service.Meta{
+		Display:     "RDS",
+		Category:    "Database",
+		Description: "Relational database service",
+	}
+}

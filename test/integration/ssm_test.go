@@ -495,6 +495,11 @@ func TestSSM_ListTagsForResource(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
+		_, _ = client.RemoveTagsFromResource(context.Background(), &ssm.RemoveTagsFromResourceInput{
+			ResourceType: types.ResourceTypeForTaggingParameter,
+			ResourceId:   aws.String(paramName),
+			TagKeys:      []string{"env", "team"},
+		})
 		_, _ = client.DeleteParameter(context.Background(), &ssm.DeleteParameterInput{
 			Name: aws.String(paramName),
 		})
@@ -508,23 +513,35 @@ func TestSSM_ListTagsForResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), listOutput)
 
-	// AddTagsToResource should succeed (no-op stub).
-	addOutput, err := client.AddTagsToResource(ctx, &ssm.AddTagsToResourceInput{
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_empty", listOutput)
+
+	// AddTagsToResource should persist tags.
+	_, err = client.AddTagsToResource(ctx, &ssm.AddTagsToResourceInput{
 		ResourceType: types.ResourceTypeForTaggingParameter,
 		ResourceId:   aws.String(paramName),
 		Tags: []types.Tag{
 			{Key: aws.String("env"), Value: aws.String("test")},
+			{Key: aws.String("team"), Value: aws.String("platform")},
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_add", addOutput)
 
-	// RemoveTagsFromResource should succeed (no-op stub).
-	removeOutput, err := client.RemoveTagsFromResource(ctx, &ssm.RemoveTagsFromResourceInput{
+	// Verify tags are persisted.
+	listAfterAdd, err := client.ListTagsForResource(ctx, &ssm.ListTagsForResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_add", listAfterAdd)
+
+	// RemoveTagsFromResource should remove the specified tag.
+	_, err = client.RemoveTagsFromResource(ctx, &ssm.RemoveTagsFromResourceInput{
 		ResourceType: types.ResourceTypeForTaggingParameter,
 		ResourceId:   aws.String(paramName),
 		TagKeys:      []string{"env"},
@@ -532,5 +549,15 @@ func TestSSM_ListTagsForResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_remove", removeOutput)
+
+	// Verify only the remaining tag is present.
+	listAfterRemove, err := client.ListTagsForResource(ctx, &ssm.ListTagsForResourceInput{
+		ResourceType: types.ResourceTypeForTaggingParameter,
+		ResourceId:   aws.String(paramName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_remove", listAfterRemove)
 }

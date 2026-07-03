@@ -136,6 +136,8 @@ func New(config Config) *Server {
 
 	// Cross-service wiring (must happen after all services are registered).
 	wireSNStoSQS(registry)
+	wireS3toSQS(registry)
+	wireCloudWatchToSNS(registry)
 
 	// Register unified protocol dispatcher for POST /
 	hasJSONServices := len(jsonDispatcher.handlers) > 0
@@ -192,6 +194,12 @@ func (s *Server) RegisterService(svc service.Service) {
 		s.jsonDispatcher.Register(jsonSvc.TargetPrefix(), jsonSvc.DispatchAction)
 		s.router.RegisterJSONPrefix(jsonSvc.TargetPrefix(), svc.Name())
 		s.logger.Debug("registered JSON protocol service", "name", svc.Name(), "prefix", jsonSvc.TargetPrefix())
+	}
+
+	// Check if service exposes an execute-api invoke surface.
+	if execSvc, ok := svc.(service.ExecuteAPIHandler); ok {
+		s.router.AddExecuteAPIHandler(execSvc.HandleExecuteAPI)
+		s.logger.Debug("registered execute-api handler", "name", svc.Name())
 	}
 
 	// Check if service implements Query protocol.
@@ -270,17 +278,20 @@ func (s *Server) Start(readyCh ...chan struct{}) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("shutting down server")
 
-	// Save snapshots for services that implement io.Closer.
+	// Drain in-flight requests first so no handler mutates state after we take
+	// the final snapshot. Persistence is now debounced (see internal/storage), so
+	// a mutation that lands after Close would otherwise be lost on exit.
+	if err := s.server.Shutdown(ctx); err != nil {
+		return fmt.Errorf("failed to shutdown server: %w", err)
+	}
+
+	// Save final snapshots for services that implement io.Closer.
 	for _, svc := range s.registry.All() {
 		if c, ok := svc.(io.Closer); ok {
 			if err := c.Close(); err != nil {
 				s.logger.Error("failed to save snapshot", "service", svc.Name(), "error", err)
 			}
 		}
-	}
-
-	if err := s.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("failed to shutdown server: %w", err)
 	}
 
 	return nil

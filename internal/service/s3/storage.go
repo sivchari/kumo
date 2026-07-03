@@ -51,7 +51,7 @@ type Storage interface {
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
 	ListMultipartUploads(ctx context.Context, bucket, prefix string, maxUploads int) ([]*MultipartUpload, error)
 	ListParts(ctx context.Context, bucket, key, uploadID string, maxParts int) ([]*Part, error)
-	UploadPartCopy(ctx context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey string, copyRange *CopyRange) (*Part, error)
+	UploadPartCopy(ctx context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey, srcVersionID string, copyRange *CopyRange) (*Part, error)
 
 	// Object tagging
 	PutObjectTagging(ctx context.Context, bucket, key string, tags map[string]string) error
@@ -64,6 +64,8 @@ type Storage interface {
 	// Notification and CORS
 	SetEventBridgeNotification(ctx context.Context, bucket string, enabled bool)
 	IsEventBridgeEnabled(ctx context.Context, bucket string) bool
+	SetQueueConfigurations(ctx context.Context, bucket string, configs []QueueConfiguration)
+	GetQueueConfigurations(ctx context.Context, bucket string) []QueueConfiguration
 	SetCORSConfiguration(ctx context.Context, bucket string, rules []CORSRule)
 	GetCORSRules(ctx context.Context, bucket string) []CORSRule
 
@@ -118,23 +120,24 @@ type MemoryStorage struct {
 
 // MemoryBucket holds the data for a single S3 bucket.
 type MemoryBucket struct {
-	Name               string                      `json:"name"`
-	CreationDate       time.Time                   `json:"creationDate"`
-	Objects            map[string]*Object          `json:"objects"`                     // current/latest version per key
-	Versions           map[string][]*Object        `json:"versions"`                    // all versions per key (newest first)
-	VersioningStatus   string                      `json:"versioningStatus"`            // "", "Enabled", "Suspended"
-	VersionIDCounter   uint64                      `json:"versionIdcounter"`            // counter for generating version IDs
-	MultipartUploads   map[string]*MultipartUpload `json:"-"`                           // uploadID -> MultipartUpload
-	EventBridgeEnabled bool                        `json:"eventBridgeEnabled"`          // EventBridge notification
-	CORSRules          []CORSRule                  `json:"corsRules,omitempty"`         // CORS configuration
-	PublicAccessBlock  *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"` // public access block configuration
-	Encryption         *ServerSideEncryptionConfig `json:"encryption,omitempty"`        // server-side encryption configuration
-	Policy             string                      `json:"policy,omitempty"`            // bucket policy JSON document (empty == not configured)
-	Logging            *BucketLoggingConfig        `json:"logging,omitempty"`           // server access logging target (nil == disabled)
-	ObjectACLs         map[string]*ObjectACL       `json:"objectAcls,omitempty"`        // per-object ACL (key -> ACL)
-	Website            *WebsiteConfiguration       `json:"website,omitempty"`           // static-site-hosting configuration
-	Lifecycle          *LifecycleConfiguration     `json:"lifecycle,omitempty"`         // expiration / transition rules
-	ObjectRestores     map[string]*RestoreState    `json:"objectRestores,omitempty"`    // per-object restore state (key -> state)
+	Name                string                      `json:"name"`
+	CreationDate        time.Time                   `json:"creationDate"`
+	Objects             map[string]*Object          `json:"objects"`                       // current/latest version per key
+	Versions            map[string][]*Object        `json:"versions"`                      // all versions per key (newest first)
+	VersioningStatus    string                      `json:"versioningStatus"`              // "", "Enabled", "Suspended"
+	VersionIDCounter    uint64                      `json:"versionIdcounter"`              // counter for generating version IDs
+	MultipartUploads    map[string]*MultipartUpload `json:"-"`                             // uploadID -> MultipartUpload
+	EventBridgeEnabled  bool                        `json:"eventBridgeEnabled"`            // EventBridge notification
+	QueueConfigurations []QueueConfiguration        `json:"queueConfigurations,omitempty"` // SQS queue notification destinations
+	CORSRules           []CORSRule                  `json:"corsRules,omitempty"`           // CORS configuration
+	PublicAccessBlock   *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"`   // public access block configuration
+	Encryption          *ServerSideEncryptionConfig `json:"encryption,omitempty"`          // server-side encryption configuration
+	Policy              string                      `json:"policy,omitempty"`              // bucket policy JSON document (empty == not configured)
+	Logging             *BucketLoggingConfig        `json:"logging,omitempty"`             // server access logging target (nil == disabled)
+	ObjectACLs          map[string]*ObjectACL       `json:"objectAcls,omitempty"`          // per-object ACL (key -> ACL)
+	Website             *WebsiteConfiguration       `json:"website,omitempty"`             // static-site-hosting configuration
+	Lifecycle           *LifecycleConfiguration     `json:"lifecycle,omitempty"`           // expiration / transition rules
+	ObjectRestores      map[string]*RestoreState    `json:"objectRestores,omitempty"`      // per-object restore state (key -> state)
 }
 
 // BucketLoggingConfig stores the destination for server access logs.
@@ -183,10 +186,21 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	return s
 }
 
-// MarshalJSON serializes the storage state to JSON.
+// MarshalJSON serializes the storage metadata to JSON. Object bodies are NOT
+// inlined: when persistence is enabled they are written to the blob store first
+// and the snapshot carries only a content reference per object (see blob.go and
+// Object.MarshalJSON). This keeps the whole-store marshal small and bounds its
+// peak memory, which is what stops the snapshot path from driving the process
+// into the OOM killer as the dataset grows.
 func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	if s.dataDir != "" {
+		if err := s.persistBodiesLocked(); err != nil {
+			return nil, err
+		}
+	}
 
 	type Alias MemoryStorage
 
@@ -198,7 +212,8 @@ func (s *MemoryStorage) MarshalJSON() ([]byte, error) {
 	return data, nil
 }
 
-// UnmarshalJSON restores the storage state from JSON.
+// UnmarshalJSON restores the storage metadata from JSON and, when persistence is
+// enabled, fills each object body from the blob store.
 func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -215,7 +230,113 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Buckets = make(map[string]*MemoryBucket)
 	}
 
+	if s.dataDir != "" {
+		if err := s.loadBodiesLocked(); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// persistBodiesLocked writes every object body to the blob store and prunes
+// orphaned blobs. The caller must hold at least the read lock; bodies are only
+// read (never mutated), so snapshotting never blocks concurrent reads.
+func (s *MemoryStorage) persistBodiesLocked() error {
+	referenced := make(map[string]struct{})
+
+	for _, b := range s.Buckets {
+		for _, obj := range b.Objects {
+			if err := s.persistObjectBody(obj, referenced); err != nil {
+				return err
+			}
+		}
+
+		for _, versions := range b.Versions {
+			for _, obj := range versions {
+				if err := s.persistObjectBody(obj, referenced); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	gcBlobs(s.dataDir, referenced)
+
+	return nil
+}
+
+// persistObjectBody writes one object's body to the blob store, recording its
+// reference in referenced (the live set used to GC orphans). Empty bodies carry
+// no blob: an empty or delete-marker object round-trips with a nil body.
+func (s *MemoryStorage) persistObjectBody(obj *Object, referenced map[string]struct{}) error {
+	if len(obj.Body) == 0 {
+		return nil
+	}
+
+	ref := obj.effectiveRef()
+	referenced[ref] = struct{}{}
+
+	return writeBlob(s.dataDir, ref, obj.Body)
+}
+
+// loadBodiesLocked fills each object's body from the blob store. The caller must
+// hold the write lock.
+func (s *MemoryStorage) loadBodiesLocked() error {
+	for _, b := range s.Buckets {
+		for _, obj := range b.Objects {
+			if err := s.loadObjectBody(obj); err != nil {
+				return err
+			}
+		}
+
+		for _, versions := range b.Versions {
+			for _, obj := range versions {
+				if err := s.loadObjectBody(obj); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// loadObjectBody populates one object's body from its blob. An object carrying a
+// legacy inline body (bodyRef empty, Body already set by an older snapshot) is
+// left untouched and gets a freshly computed ref so the next save migrates it to
+// a blob. The current-version object is shared by pointer between Objects and
+// Versions, so this may be called twice on it; the second call is a no-op.
+func (s *MemoryStorage) loadObjectBody(obj *Object) error {
+	if obj.bodyRef == "" {
+		if len(obj.Body) > 0 {
+			obj.bodyRef = bodyRefOf(obj.Body)
+		}
+
+		return nil
+	}
+
+	if len(obj.Body) > 0 {
+		return nil
+	}
+
+	data, err := readBlob(s.dataDir, obj.bodyRef)
+	if err != nil {
+		return err
+	}
+
+	obj.Body = data
+
+	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "s3", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -249,6 +370,8 @@ func (s *MemoryStorage) CreateBucket(_ context.Context, name string) error {
 		MultipartUploads: make(map[string]*MultipartUpload),
 	}
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -267,6 +390,8 @@ func (s *MemoryStorage) DeleteBucket(_ context.Context, name string) error {
 	}
 
 	delete(s.Buckets, name)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -322,6 +447,7 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 	obj := &Object{
 		Key:          key,
 		Body:         data,
+		bodyRef:      bodyRefOf(data),
 		ETag:         fmt.Sprintf("%q", etag),
 		Size:         int64(len(data)),
 		LastModified: time.Now(),
@@ -332,13 +458,26 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 		if ct, ok := metadata["Content-Type"]; ok {
 			obj.ContentType = ct
 		}
+
+		applySSEMetadata(obj, metadata)
 	}
 
 	if obj.ContentType == "" {
 		obj.ContentType = "application/octet-stream"
 	}
 
-	// Handle versioning
+	putObjectVersion(b, key, obj)
+
+	// Always update current object
+	b.Objects[key] = obj
+
+	s.saveLocked()
+
+	return obj, nil
+}
+
+// putObjectVersion handles versioning for a newly stored object.
+func putObjectVersion(b *MemoryBucket, key string, obj *Object) {
 	switch b.VersioningStatus {
 	case VersioningEnabled:
 		// Generate version ID
@@ -363,11 +502,15 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 
 		b.Versions[key] = append([]*Object{obj}, newVersions...)
 	}
+}
 
-	// Always update current object
-	b.Objects[key] = obj
+// applySSEMetadata extracts SSE headers from metadata and sets them on the object.
+func applySSEMetadata(obj *Object, metadata map[string]string) {
+	obj.ServerSideEncryption = metadata["x-amz-server-side-encryption"]
+	delete(metadata, "x-amz-server-side-encryption")
 
-	return obj, nil
+	obj.SSEKMSKeyID = metadata["x-amz-server-side-encryption-aws-kms-key-id"]
+	delete(metadata, "x-amz-server-side-encryption-aws-kms-key-id")
 }
 
 // GetObject retrieves an object.
@@ -435,6 +578,8 @@ func (s *MemoryStorage) PutObjectTagging(_ context.Context, bucket, key string, 
 	obj.Tags = tags
 	bd.Objects[key] = obj
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -485,6 +630,8 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 		b.Versions[key] = append([]*Object{deleteMarker}, b.Versions[key]...)
 		b.Objects[key] = deleteMarker
 
+		s.saveLocked()
+
 		return deleteMarker, nil
 	}
 
@@ -508,6 +655,8 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 			b.Versions[key] = newVersions
 		}
 	}
+
+	s.saveLocked()
 
 	// Return empty object for non-versioned delete (S3 returns 204 with no body)
 	return &Object{Key: key}, nil
@@ -539,6 +688,8 @@ func (s *MemoryStorage) DeleteObjectVersion(_ context.Context, bucket, key, vers
 		// Update current object to the newest version
 		b.Objects[key] = newVersions[0]
 	}
+
+	s.saveLocked()
 
 	return deletedObj, nil
 }
@@ -577,12 +728,15 @@ func (s *MemoryStorage) HeadObject(_ context.Context, bucket, key string) (*Obje
 
 	// Return metadata only (no body)
 	return &Object{
-		Key:          obj.Key,
-		ContentType:  obj.ContentType,
-		ETag:         obj.ETag,
-		Size:         obj.Size,
-		LastModified: obj.LastModified,
-		Metadata:     obj.Metadata,
+		Key:                  obj.Key,
+		ContentType:          obj.ContentType,
+		ETag:                 obj.ETag,
+		Size:                 obj.Size,
+		LastModified:         obj.LastModified,
+		Metadata:             obj.Metadata,
+		VersionID:            obj.VersionID,
+		ServerSideEncryption: obj.ServerSideEncryption,
+		SSEKMSKeyID:          obj.SSEKMSKeyID,
 	}, nil
 }
 
@@ -669,6 +823,8 @@ func (s *MemoryStorage) PutBucketVersioning(_ context.Context, bucket, status st
 	}
 
 	b.VersioningStatus = status
+
+	s.saveLocked()
 
 	return nil
 }
@@ -877,6 +1033,8 @@ func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key str
 
 	b.MultipartUploads[uploadID] = upload
 
+	s.saveLocked()
+
 	return upload, nil
 }
 
@@ -917,24 +1075,21 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 
 	upload.Parts[partNumber] = part
 
+	s.saveLocked()
+
 	return part, nil
 }
 
 // UploadPartCopy copies bytes from an existing object into a part of an
 // in-progress multipart upload. RFC-equivalent: AWS S3 UploadPartCopy.
 // `copyRange` may be nil to copy the entire source object.
-func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey string, copyRange *CopyRange) (*Part, error) {
+func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, uploadID string, partNumber int, srcBucket, srcKey, srcVersionID string, copyRange *CopyRange) (*Part, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	srcB, exists := s.Buckets[srcBucket]
-	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: srcBucket}
-	}
-
-	srcObj, exists := srcB.Objects[srcKey]
-	if !exists {
-		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: srcKey}
+	srcObj, err := s.objectForCopySourceLocked(srcBucket, srcKey, srcVersionID)
+	if err != nil {
+		return nil, err
 	}
 
 	dstB, exists := s.Buckets[dstBucket]
@@ -970,7 +1125,39 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 
 	upload.Parts[partNumber] = part
 
+	s.saveLocked()
+
 	return part, nil
+}
+
+func (s *MemoryStorage) objectForCopySourceLocked(bucket, key, versionID string) (*Object, error) {
+	srcB, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if versionID == "" {
+		srcObj, exists := srcB.Objects[key]
+		if !exists || srcObj.IsDeleteMarker {
+			return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		}
+
+		return srcObj, nil
+	}
+
+	for _, obj := range srcB.Versions[key] {
+		if obj.VersionID != versionID {
+			continue
+		}
+
+		if obj.IsDeleteMarker {
+			return nil, &ObjectError{Code: "MethodNotAllowed", Message: "The specified method is not allowed against this resource.", Key: key}
+		}
+
+		return obj, nil
+	}
+
+	return nil, &ObjectError{Code: "NoSuchVersion", Message: "The specified version does not exist.", Key: key}
 }
 
 // CompleteMultipartUpload completes a multipart upload by assembling parts.
@@ -995,7 +1182,15 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 	// Validate and assemble parts
 	var combinedBody []byte
 
+	previousPartNumber := 0
+
 	for _, pr := range parts {
+		if pr.PartNumber <= previousPartNumber {
+			return nil, &MultipartError{Code: "InvalidPartOrder", Message: "The list of parts was not in ascending order. Parts must be ordered by part number.", UploadID: uploadID}
+		}
+
+		previousPartNumber = pr.PartNumber
+
 		part, ok := upload.Parts[pr.PartNumber]
 		if !ok {
 			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
@@ -1015,6 +1210,7 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 	obj := &Object{
 		Key:          key,
 		Body:         combinedBody,
+		bodyRef:      bodyRefOf(combinedBody),
 		ETag:         etag,
 		Size:         int64(len(combinedBody)),
 		LastModified: time.Now(),
@@ -1023,6 +1219,8 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 
 	b.Objects[key] = obj
 	delete(b.MultipartUploads, uploadID)
+
+	s.saveLocked()
 
 	return obj, nil
 }
@@ -1047,6 +1245,8 @@ func (s *MemoryStorage) AbortMultipartUpload(_ context.Context, bucket, key, upl
 	}
 
 	delete(b.MultipartUploads, uploadID)
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1178,6 +1378,8 @@ func (s *MemoryStorage) SetEventBridgeNotification(_ context.Context, bucket str
 	if b, exists := s.Buckets[bucket]; exists {
 		b.EventBridgeEnabled = enabled
 	}
+
+	s.saveLocked()
 }
 
 // IsEventBridgeEnabled returns whether EventBridge notification is enabled for a bucket.
@@ -1192,6 +1394,30 @@ func (s *MemoryStorage) IsEventBridgeEnabled(_ context.Context, bucket string) b
 	return false
 }
 
+// SetQueueConfigurations stores the SQS queue notification destinations for a bucket.
+func (s *MemoryStorage) SetQueueConfigurations(_ context.Context, bucket string, configs []QueueConfiguration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		b.QueueConfigurations = configs
+	}
+
+	s.saveLocked()
+}
+
+// GetQueueConfigurations returns the SQS queue notification destinations for a bucket.
+func (s *MemoryStorage) GetQueueConfigurations(_ context.Context, bucket string) []QueueConfiguration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		return b.QueueConfigurations
+	}
+
+	return nil
+}
+
 // SetCORSConfiguration sets the CORS configuration for a bucket.
 func (s *MemoryStorage) SetCORSConfiguration(_ context.Context, bucket string, rules []CORSRule) {
 	s.mu.Lock()
@@ -1200,6 +1426,8 @@ func (s *MemoryStorage) SetCORSConfiguration(_ context.Context, bucket string, r
 	if b, exists := s.Buckets[bucket]; exists {
 		b.CORSRules = rules
 	}
+
+	s.saveLocked()
 }
 
 // GetCORSRules returns the CORS rules for a bucket.
@@ -1226,6 +1454,8 @@ func (s *MemoryStorage) PutPublicAccessBlock(_ context.Context, bucket string, c
 
 	c := cfg
 	b.PublicAccessBlock = &c
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1265,6 +1495,8 @@ func (s *MemoryStorage) DeletePublicAccessBlock(_ context.Context, bucket string
 
 	b.PublicAccessBlock = nil
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1280,6 +1512,8 @@ func (s *MemoryStorage) PutBucketEncryption(_ context.Context, bucket string, cf
 
 	c := ServerSideEncryptionConfig{Rules: append([]ServerSideEncryptionRule(nil), cfg.Rules...)}
 	b.Encryption = &c
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1319,6 +1553,8 @@ func (s *MemoryStorage) DeleteBucketEncryption(_ context.Context, bucket string)
 
 	b.Encryption = nil
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1335,6 +1571,8 @@ func (s *MemoryStorage) PutBucketPolicy(_ context.Context, bucket, document stri
 	}
 
 	b.Policy = document
+
+	s.saveLocked()
 
 	return nil
 }
@@ -1375,6 +1613,8 @@ func (s *MemoryStorage) DeleteBucketPolicy(_ context.Context, bucket string) err
 
 	b.Policy = ""
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -1394,11 +1634,15 @@ func (s *MemoryStorage) PutBucketLogging(_ context.Context, bucket string, cfg B
 	if cfg.TargetBucket == "" {
 		b.Logging = nil
 
+		s.saveLocked()
+
 		return nil
 	}
 
 	c := cfg
 	b.Logging = &c
+
+	s.saveLocked()
 
 	return nil
 }

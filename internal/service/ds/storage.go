@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+// Default values.
+const defaultRegion = "us-east-1"
 
 // Storage defines the Directory Service storage interface.
 type Storage interface {
@@ -51,10 +55,15 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates a new in-memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = defaultRegion
+	}
+
 	s := &MemoryStorage{
 		Directories: make(map[string]*Directory),
 		Snapshots:   make(map[string]*Snapshot),
-		region:      "us-east-1",
+		region:      region,
 		accountID:   "123456789012",
 	}
 	for _, o := range opts {
@@ -105,6 +114,15 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// saveLocked persists the current state to disk while the caller holds the lock.
+func (s *MemoryStorage) saveLocked() {
+	if s.dataDir == "" {
+		return
+	}
+
+	storage.ScheduleSave(s.dataDir, "ds", s.MarshalJSON)
 }
 
 // Close saves the storage state to disk if persistence is enabled.
@@ -171,6 +189,8 @@ func (s *MemoryStorage) CreateDirectory(_ context.Context, req *CreateDirectoryR
 	}
 
 	s.Directories[directoryID] = directory
+
+	s.saveLocked()
 
 	return directory, nil
 }
@@ -243,6 +263,8 @@ func (s *MemoryStorage) DeleteDirectory(_ context.Context, directoryID string) e
 
 	delete(s.Directories, directoryID)
 
+	s.saveLocked()
+
 	return nil
 }
 
@@ -271,6 +293,8 @@ func (s *MemoryStorage) CreateSnapshot(_ context.Context, directoryID, name stri
 	}
 
 	s.Snapshots[snapshotID] = snapshot
+
+	s.saveLocked()
 
 	return snapshot, nil
 }
@@ -353,6 +377,8 @@ func (s *MemoryStorage) DeleteSnapshot(_ context.Context, snapshotID string) err
 	}
 
 	delete(s.Snapshots, snapshotID)
+
+	s.saveLocked()
 
 	return nil
 }

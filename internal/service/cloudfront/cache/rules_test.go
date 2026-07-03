@@ -399,3 +399,11 @@ func TestParseRange(t *testing.T) {
 		})
 	}
 }
+
+func TestParseRangeRejectsSuffixRangeForEmptyObject(t *testing.T) {
+	t.Parallel()
+
+	if start, end, ok := ParseRange("bytes=-1", 0); ok {
+		t.Fatalf("got (%d, %d, true), want unsatisfiable", start, end)
+	}
+}
