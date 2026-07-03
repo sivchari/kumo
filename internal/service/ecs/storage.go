@@ -37,12 +37,14 @@ type Storage interface {
 
 	RegisterTaskDefinition(ctx context.Context, req *RegisterTaskDefinitionRequest) (*TaskDefinition, error)
 	DeregisterTaskDefinition(ctx context.Context, taskDefinition string) (*TaskDefinition, error)
+	DescribeTaskDefinition(ctx context.Context, taskDefinition string) (*TaskDefinition, error)
 
 	RunTask(ctx context.Context, req *RunTaskRequest) ([]Task, []Failure, error)
 	StopTask(ctx context.Context, cluster, task, reason string) (*Task, error)
 	DescribeTasks(ctx context.Context, cluster string, tasks []string) ([]Task, []Failure, error)
 
 	CreateService(ctx context.Context, req *CreateServiceRequest) (*ServiceResource, error)
+	DescribeServices(ctx context.Context, cluster string, services []string) ([]ServiceResource, []Failure, error)
 	DeleteService(ctx context.Context, cluster, service string, force bool) (*ServiceResource, error)
 	UpdateService(ctx context.Context, req *UpdateServiceRequest) (*ServiceResource, error)
 }
@@ -219,6 +221,7 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 		ClusterArn:  arn,
 		ClusterName: name,
 		Status:      statusActive,
+		Settings:    req.Settings,
 		Tags:        req.Tags,
 	}
 
@@ -341,6 +344,7 @@ func (m *MemoryStorage) RegisterTaskDefinition(_ context.Context, req *RegisterT
 		RequiresCompatibilities: req.RequiresCompatibilities,
 		ExecutionRoleArn:        req.ExecutionRoleArn,
 		TaskRoleArn:             req.TaskRoleArn,
+		EphemeralStorage:        req.EphemeralStorage,
 		Tags:                    req.Tags,
 	}
 
@@ -370,6 +374,24 @@ func (m *MemoryStorage) DeregisterTaskDefinition(_ context.Context, taskDefiniti
 	td.Status = statusInactive
 
 	m.saveLocked()
+
+	return td, nil
+}
+
+// DescribeTaskDefinition describes a task definition.
+func (m *MemoryStorage) DescribeTaskDefinition(_ context.Context, taskDefinition string) (*TaskDefinition, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	arn := m.resolveTaskDefinitionArn(taskDefinition)
+
+	td, ok := m.TaskDefinitions[arn]
+	if !ok {
+		return nil, &Error{
+			Code:    "ClientException",
+			Message: "The specified task definition was not found",
+		}
+	}
 
 	return td, nil
 }
@@ -610,25 +632,42 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 		launchType = "EC2"
 	}
 
+	schedulingStrategy := req.SchedulingStrategy
+	if schedulingStrategy == "" {
+		schedulingStrategy = "REPLICA"
+	}
+
+	availabilityZoneRebalancing := req.AvailabilityZoneRebalancing
+	if availabilityZoneRebalancing == "" {
+		availabilityZoneRebalancing = "DISABLED"
+	}
+
 	ts := newTimestamp()
 	svc := &ServiceResource{
-		ServiceArn:     arn,
-		ServiceName:    req.ServiceName,
-		ClusterArn:     clusterArn,
-		TaskDefinition: m.resolveTaskDefinitionArn(req.TaskDefinition),
-		DesiredCount:   req.DesiredCount,
-		RunningCount:   0,
-		PendingCount:   req.DesiredCount,
-		LaunchType:     launchType,
-		Status:         statusActive,
+		ServiceArn:                  arn,
+		ServiceName:                 req.ServiceName,
+		ClusterArn:                  clusterArn,
+		TaskDefinition:              m.resolveTaskDefinitionArn(req.TaskDefinition),
+		DesiredCount:                req.DesiredCount,
+		RunningCount:                req.DesiredCount,
+		PendingCount:                0,
+		LaunchType:                  launchType,
+		Status:                      statusActive,
+		SchedulingStrategy:          schedulingStrategy,
+		AvailabilityZoneRebalancing: availabilityZoneRebalancing,
+		LoadBalancers:               req.LoadBalancers,
+		NetworkConfiguration:        req.NetworkConfiguration,
+		PlatformVersion:             req.PlatformVersion,
+		PropagateTags:               req.PropagateTags,
+		EnableExecuteCommand:        req.EnableExecuteCommand,
 		Deployments: []Deployment{
 			{
 				ID:             generateID(),
 				Status:         statusPrimary,
 				TaskDefinition: m.resolveTaskDefinitionArn(req.TaskDefinition),
 				DesiredCount:   req.DesiredCount,
-				RunningCount:   0,
-				PendingCount:   req.DesiredCount,
+				RunningCount:   req.DesiredCount,
+				PendingCount:   0,
 				CreatedAt:      ts,
 				UpdatedAt:      ts,
 			},
@@ -642,6 +681,39 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 	m.saveLocked()
 
 	return svc, nil
+}
+
+// DescribeServices describes ECS services.
+func (m *MemoryStorage) DescribeServices(_ context.Context, cluster string, services []string) ([]ServiceResource, []Failure, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	clusterArn := m.resolveClusterArn(cluster)
+	result := make([]ServiceResource, 0, len(services))
+	failures := make([]Failure, 0)
+
+	if len(services) == 0 {
+		for _, svc := range m.Services {
+			if svc.ClusterArn == clusterArn {
+				result = append(result, *svc)
+			}
+		}
+
+		return result, failures, nil
+	}
+
+	for _, service := range services {
+		svc, ok := m.findServiceLocked(clusterArn, service)
+		if !ok {
+			failures = append(failures, Failure{Arn: service, Reason: "MISSING"})
+
+			continue
+		}
+
+		result = append(result, *svc)
+	}
+
+	return result, failures, nil
 }
 
 // DeleteService deletes an ECS service.
@@ -732,6 +804,27 @@ func (m *MemoryStorage) UpdateService(_ context.Context, req *UpdateServiceReque
 }
 
 // Helper methods.
+
+func (m *MemoryStorage) findServiceLocked(clusterArn, service string) (*ServiceResource, bool) {
+	clusterName := extractClusterName(clusterArn)
+	svcArn := m.serviceArn(clusterName, service)
+
+	if svc, ok := m.Services[svcArn]; ok {
+		return svc, true
+	}
+
+	if svc, ok := m.Services[service]; ok && svc.ClusterArn == clusterArn {
+		return svc, true
+	}
+
+	for _, svc := range m.Services {
+		if svc.ClusterArn == clusterArn && svc.ServiceName == service {
+			return svc, true
+		}
+	}
+
+	return nil, false
+}
 
 func (m *MemoryStorage) resolveClusterArn(cluster string) string {
 	if cluster == "" {

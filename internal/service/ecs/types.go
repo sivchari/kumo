@@ -41,14 +41,21 @@ func (t *Timestamp) UnmarshalJSON(data []byte) error {
 
 // Cluster represents an ECS cluster.
 type Cluster struct {
-	ClusterArn                        string `json:"clusterArn"`
-	ClusterName                       string `json:"clusterName"`
-	Status                            string `json:"status"`
-	RegisteredContainerInstancesCount int    `json:"registeredContainerInstancesCount"`
-	RunningTasksCount                 int    `json:"runningTasksCount"`
-	PendingTasksCount                 int    `json:"pendingTasksCount"`
-	ActiveServicesCount               int    `json:"activeServicesCount"`
-	Tags                              []Tag  `json:"tags,omitempty"`
+	ClusterArn                        string    `json:"clusterArn"`
+	ClusterName                       string    `json:"clusterName"`
+	Status                            string    `json:"status"`
+	RegisteredContainerInstancesCount int       `json:"registeredContainerInstancesCount"`
+	RunningTasksCount                 int       `json:"runningTasksCount"`
+	PendingTasksCount                 int       `json:"pendingTasksCount"`
+	ActiveServicesCount               int       `json:"activeServicesCount"`
+	Settings                          []Setting `json:"settings,omitempty"`
+	Tags                              []Tag     `json:"tags,omitempty"`
+}
+
+// Setting represents an ECS cluster setting.
+type Setting struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // TaskDefinition represents an ECS task definition.
@@ -64,20 +71,56 @@ type TaskDefinition struct {
 	RequiresCompatibilities []string              `json:"requiresCompatibilities,omitempty"`
 	ExecutionRoleArn        string                `json:"executionRoleArn,omitempty"`
 	TaskRoleArn             string                `json:"taskRoleArn,omitempty"`
+	EphemeralStorage        *EphemeralStorage     `json:"ephemeralStorage,omitempty"`
 	Tags                    []Tag                 `json:"tags,omitempty"`
 }
 
 // ContainerDefinition represents a container in a task definition.
 type ContainerDefinition struct {
-	Name         string         `json:"name"`
-	Image        string         `json:"image"`
-	CPU          int            `json:"cpu,omitempty"`
-	Memory       int            `json:"memory,omitempty"`
-	Essential    bool           `json:"essential"`
-	PortMappings []PortMapping  `json:"portMappings,omitempty"`
-	Environment  []KeyValuePair `json:"environment,omitempty"`
-	Command      []string       `json:"command,omitempty"`
-	EntryPoint   []string       `json:"entryPoint,omitempty"`
+	Name                   string            `json:"name"`
+	Image                  string            `json:"image"`
+	CPU                    int               `json:"cpu,omitempty"`
+	Memory                 int               `json:"memory,omitempty"`
+	Essential              bool              `json:"essential"`
+	PortMappings           []PortMapping     `json:"portMappings,omitempty"`
+	Environment            []KeyValuePair    `json:"environment,omitempty"`
+	Command                []string          `json:"command,omitempty"`
+	EntryPoint             []string          `json:"entryPoint,omitempty"`
+	User                   string            `json:"user,omitempty"`
+	ReadonlyRootFilesystem bool              `json:"readonlyRootFilesystem,omitempty"`
+	MountPoints            []MountPoint      `json:"mountPoints"`
+	LinuxParameters        *LinuxParameters  `json:"linuxParameters,omitempty"`
+	LogConfiguration       *LogConfiguration `json:"logConfiguration,omitempty"`
+}
+
+// MountPoint represents a container volume mount.
+type MountPoint struct {
+	SourceVolume  string `json:"sourceVolume"`
+	ContainerPath string `json:"containerPath"`
+	ReadOnly      bool   `json:"readOnly"`
+}
+
+// LinuxParameters represents Linux-specific container settings.
+type LinuxParameters struct {
+	InitProcessEnabled bool                `json:"initProcessEnabled,omitempty"`
+	Capabilities       *KernelCapabilities `json:"capabilities,omitempty"`
+}
+
+// KernelCapabilities represents Linux capability changes.
+type KernelCapabilities struct {
+	Drop []string `json:"drop"`
+	Add  []string `json:"add"`
+}
+
+// LogConfiguration represents a container log driver configuration.
+type LogConfiguration struct {
+	LogDriver string            `json:"logDriver"`
+	Options   map[string]string `json:"options,omitempty"`
+}
+
+// EphemeralStorage represents Fargate ephemeral storage.
+type EphemeralStorage struct {
+	SizeInGiB int `json:"sizeInGiB"`
 }
 
 // PortMapping represents a port mapping.
@@ -133,17 +176,44 @@ type NetworkBinding struct {
 
 // ServiceResource represents an ECS service.
 type ServiceResource struct {
-	ServiceArn     string       `json:"serviceArn"`
-	ServiceName    string       `json:"serviceName"`
-	ClusterArn     string       `json:"clusterArn"`
-	TaskDefinition string       `json:"taskDefinition"`
-	DesiredCount   int          `json:"desiredCount"`
-	RunningCount   int          `json:"runningCount"`
-	PendingCount   int          `json:"pendingCount"`
-	LaunchType     string       `json:"launchType,omitempty"`
-	Status         string       `json:"status"`
-	Deployments    []Deployment `json:"deployments,omitempty"`
-	Tags           []Tag        `json:"tags,omitempty"`
+	ServiceArn                  string                `json:"serviceArn"`
+	ServiceName                 string                `json:"serviceName"`
+	ClusterArn                  string                `json:"clusterArn"`
+	TaskDefinition              string                `json:"taskDefinition"`
+	DesiredCount                int                   `json:"desiredCount"`
+	RunningCount                int                   `json:"runningCount"`
+	PendingCount                int                   `json:"pendingCount"`
+	LaunchType                  string                `json:"launchType,omitempty"`
+	Status                      string                `json:"status"`
+	SchedulingStrategy          string                `json:"schedulingStrategy,omitempty"`
+	AvailabilityZoneRebalancing string                `json:"availabilityZoneRebalancing,omitempty"`
+	LoadBalancers               []ServiceLoadBalancer `json:"loadBalancers,omitempty"`
+	NetworkConfiguration        *NetworkConfiguration `json:"networkConfiguration,omitempty"`
+	PlatformVersion             string                `json:"platformVersion,omitempty"`
+	PropagateTags               string                `json:"propagateTags,omitempty"`
+	EnableExecuteCommand        bool                  `json:"enableExecuteCommand"`
+	Deployments                 []Deployment          `json:"deployments,omitempty"`
+	Tags                        []Tag                 `json:"tags,omitempty"`
+}
+
+// ServiceLoadBalancer represents an ECS service load balancer attachment.
+type ServiceLoadBalancer struct {
+	TargetGroupArn   string `json:"targetGroupArn,omitempty"`
+	LoadBalancerName string `json:"loadBalancerName,omitempty"`
+	ContainerName    string `json:"containerName,omitempty"`
+	ContainerPort    int    `json:"containerPort,omitempty"`
+}
+
+// NetworkConfiguration represents an ECS service network configuration.
+type NetworkConfiguration struct {
+	AwsvpcConfiguration *AwsVpcConfiguration `json:"awsvpcConfiguration,omitempty"`
+}
+
+// AwsVpcConfiguration represents awsvpc networking settings.
+type AwsVpcConfiguration struct {
+	Subnets        []string `json:"subnets,omitempty"`
+	SecurityGroups []string `json:"securityGroups,omitempty"`
+	AssignPublicIP string   `json:"assignPublicIp,omitempty"`
 }
 
 // Deployment represents a service deployment.
@@ -168,8 +238,9 @@ type Tag struct {
 
 // CreateClusterRequest represents a CreateCluster request.
 type CreateClusterRequest struct {
-	ClusterName string `json:"clusterName"`
-	Tags        []Tag  `json:"tags,omitempty"`
+	ClusterName string    `json:"clusterName"`
+	Settings    []Setting `json:"settings,omitempty"`
+	Tags        []Tag     `json:"tags,omitempty"`
 }
 
 // DeleteClusterRequest represents a DeleteCluster request.
@@ -198,11 +269,17 @@ type RegisterTaskDefinitionRequest struct {
 	RequiresCompatibilities []string              `json:"requiresCompatibilities,omitempty"`
 	ExecutionRoleArn        string                `json:"executionRoleArn,omitempty"`
 	TaskRoleArn             string                `json:"taskRoleArn,omitempty"`
+	EphemeralStorage        *EphemeralStorage     `json:"ephemeralStorage,omitempty"`
 	Tags                    []Tag                 `json:"tags,omitempty"`
 }
 
 // DeregisterTaskDefinitionRequest represents a DeregisterTaskDefinition request.
 type DeregisterTaskDefinitionRequest struct {
+	TaskDefinition string `json:"taskDefinition"`
+}
+
+// DescribeTaskDefinitionRequest represents a DescribeTaskDefinition request.
+type DescribeTaskDefinitionRequest struct {
 	TaskDefinition string `json:"taskDefinition"`
 }
 
@@ -231,12 +308,25 @@ type DescribeTasksRequest struct {
 
 // CreateServiceRequest represents a CreateService request.
 type CreateServiceRequest struct {
-	Cluster        string `json:"cluster,omitempty"`
-	ServiceName    string `json:"serviceName"`
-	TaskDefinition string `json:"taskDefinition"`
-	DesiredCount   int    `json:"desiredCount"`
-	LaunchType     string `json:"launchType,omitempty"`
-	Tags           []Tag  `json:"tags,omitempty"`
+	Cluster                     string                `json:"cluster,omitempty"`
+	ServiceName                 string                `json:"serviceName"`
+	TaskDefinition              string                `json:"taskDefinition"`
+	DesiredCount                int                   `json:"desiredCount"`
+	LaunchType                  string                `json:"launchType,omitempty"`
+	SchedulingStrategy          string                `json:"schedulingStrategy,omitempty"`
+	AvailabilityZoneRebalancing string                `json:"availabilityZoneRebalancing,omitempty"`
+	LoadBalancers               []ServiceLoadBalancer `json:"loadBalancers,omitempty"`
+	NetworkConfiguration        *NetworkConfiguration `json:"networkConfiguration,omitempty"`
+	PlatformVersion             string                `json:"platformVersion,omitempty"`
+	PropagateTags               string                `json:"propagateTags,omitempty"`
+	EnableExecuteCommand        bool                  `json:"enableExecuteCommand,omitempty"`
+	Tags                        []Tag                 `json:"tags,omitempty"`
+}
+
+// DescribeServicesRequest represents a DescribeServices request.
+type DescribeServicesRequest struct {
+	Cluster  string   `json:"cluster,omitempty"`
+	Services []string `json:"services"`
 }
 
 // DeleteServiceRequest represents a DeleteService request.
@@ -289,6 +379,12 @@ type DeregisterTaskDefinitionResponse struct {
 	TaskDefinition *TaskDefinition `json:"taskDefinition"`
 }
 
+// DescribeTaskDefinitionResponse represents a DescribeTaskDefinition response.
+type DescribeTaskDefinitionResponse struct {
+	TaskDefinition *TaskDefinition `json:"taskDefinition"`
+	Tags           []Tag           `json:"tags,omitempty"`
+}
+
 // RunTaskResponse represents a RunTask response.
 type RunTaskResponse struct {
 	Tasks    []Task    `json:"tasks"`
@@ -309,6 +405,12 @@ type DescribeTasksResponse struct {
 // CreateServiceResponse represents a CreateService response.
 type CreateServiceResponse struct {
 	Service *ServiceResource `json:"service"`
+}
+
+// DescribeServicesResponse represents a DescribeServices response.
+type DescribeServicesResponse struct {
+	Services []ServiceResource `json:"services"`
+	Failures []Failure         `json:"failures,omitempty"`
 }
 
 // DeleteServiceResponse represents a DeleteService response.
