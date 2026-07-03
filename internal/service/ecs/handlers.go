@@ -15,37 +15,32 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
 	action := strings.TrimPrefix(target, "AmazonEC2ContainerServiceV20141113.")
 
-	switch action {
-	case "CreateCluster":
-		s.CreateCluster(w, r)
-	case "DeleteCluster":
-		s.DeleteCluster(w, r)
-	case "DescribeClusters":
-		s.DescribeClusters(w, r)
-	case "ListClusters":
-		s.ListClusters(w, r)
-	case "RegisterTaskDefinition":
-		s.RegisterTaskDefinition(w, r)
-	case "DeregisterTaskDefinition":
-		s.DeregisterTaskDefinition(w, r)
-	case "DescribeTaskDefinition":
-		s.DescribeTaskDefinition(w, r)
-	case "RunTask":
-		s.RunTask(w, r)
-	case "StopTask":
-		s.StopTask(w, r)
-	case "DescribeTasks":
-		s.DescribeTasks(w, r)
-	case "CreateService":
-		s.CreateService(w, r)
-	case "DescribeServices":
-		s.DescribeServices(w, r)
-	case "DeleteService":
-		s.DeleteService(w, r)
-	case "UpdateService":
-		s.UpdateService(w, r)
-	default:
+	handler, ok := s.actionHandlers()[action]
+	if !ok {
 		writeECSError(w, "UnknownOperationException", "The action "+action+" is not valid", http.StatusBadRequest)
+
+		return
+	}
+
+	handler(w, r)
+}
+
+func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
+	return map[string]func(http.ResponseWriter, *http.Request){
+		"CreateCluster":            s.CreateCluster,
+		"DeleteCluster":            s.DeleteCluster,
+		"DescribeClusters":         s.DescribeClusters,
+		"ListClusters":             s.ListClusters,
+		"RegisterTaskDefinition":   s.RegisterTaskDefinition,
+		"DeregisterTaskDefinition": s.DeregisterTaskDefinition,
+		"DescribeTaskDefinition":   s.DescribeTaskDefinition,
+		"RunTask":                  s.RunTask,
+		"StopTask":                 s.StopTask,
+		"DescribeTasks":            s.DescribeTasks,
+		"CreateService":            s.CreateService,
+		"DescribeServices":         s.DescribeServices,
+		"DeleteService":            s.DeleteService,
+		"UpdateService":            s.UpdateService,
 	}
 }
 

@@ -627,53 +627,7 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 		}
 	}
 
-	launchType := req.LaunchType
-	if launchType == "" {
-		launchType = "EC2"
-	}
-
-	schedulingStrategy := req.SchedulingStrategy
-	if schedulingStrategy == "" {
-		schedulingStrategy = "REPLICA"
-	}
-
-	availabilityZoneRebalancing := req.AvailabilityZoneRebalancing
-	if availabilityZoneRebalancing == "" {
-		availabilityZoneRebalancing = "DISABLED"
-	}
-
-	ts := newTimestamp()
-	svc := &ServiceResource{
-		ServiceArn:                  arn,
-		ServiceName:                 req.ServiceName,
-		ClusterArn:                  clusterArn,
-		TaskDefinition:              m.resolveTaskDefinitionArn(req.TaskDefinition),
-		DesiredCount:                req.DesiredCount,
-		RunningCount:                req.DesiredCount,
-		PendingCount:                0,
-		LaunchType:                  launchType,
-		Status:                      statusActive,
-		SchedulingStrategy:          schedulingStrategy,
-		AvailabilityZoneRebalancing: availabilityZoneRebalancing,
-		LoadBalancers:               req.LoadBalancers,
-		NetworkConfiguration:        req.NetworkConfiguration,
-		PlatformVersion:             req.PlatformVersion,
-		PropagateTags:               req.PropagateTags,
-		EnableExecuteCommand:        req.EnableExecuteCommand,
-		Deployments: []Deployment{
-			{
-				ID:             generateID(),
-				Status:         statusPrimary,
-				TaskDefinition: m.resolveTaskDefinitionArn(req.TaskDefinition),
-				DesiredCount:   req.DesiredCount,
-				RunningCount:   req.DesiredCount,
-				PendingCount:   0,
-				CreatedAt:      ts,
-				UpdatedAt:      ts,
-			},
-		},
-		Tags: req.Tags,
-	}
+	svc := m.buildServiceResource(clusterArn, arn, req, defaultCreateServiceOptions(req))
 
 	m.Services[arn] = svc
 	cluster.ActiveServicesCount++
@@ -681,6 +635,79 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 	m.saveLocked()
 
 	return svc, nil
+}
+
+type createServiceOptions struct {
+	launchType                  string
+	schedulingStrategy          string
+	availabilityZoneRebalancing string
+}
+
+func defaultCreateServiceOptions(req *CreateServiceRequest) createServiceOptions {
+	options := createServiceOptions{
+		launchType:                  req.LaunchType,
+		schedulingStrategy:          req.SchedulingStrategy,
+		availabilityZoneRebalancing: req.AvailabilityZoneRebalancing,
+	}
+	if options.launchType == "" {
+		options.launchType = "EC2"
+	}
+
+	if options.schedulingStrategy == "" {
+		options.schedulingStrategy = "REPLICA"
+	}
+
+	if options.availabilityZoneRebalancing == "" {
+		options.availabilityZoneRebalancing = "DISABLED"
+	}
+
+	return options
+}
+
+func (m *MemoryStorage) buildServiceResource(
+	clusterArn string,
+	arn string,
+	req *CreateServiceRequest,
+	options createServiceOptions,
+) *ServiceResource {
+	ts := newTimestamp()
+	taskDefinitionArn := m.resolveTaskDefinitionArn(req.TaskDefinition)
+
+	return &ServiceResource{
+		ServiceArn:                  arn,
+		ServiceName:                 req.ServiceName,
+		ClusterArn:                  clusterArn,
+		TaskDefinition:              taskDefinitionArn,
+		DesiredCount:                req.DesiredCount,
+		RunningCount:                req.DesiredCount,
+		PendingCount:                0,
+		LaunchType:                  options.launchType,
+		Status:                      statusActive,
+		SchedulingStrategy:          options.schedulingStrategy,
+		AvailabilityZoneRebalancing: options.availabilityZoneRebalancing,
+		LoadBalancers:               req.LoadBalancers,
+		NetworkConfiguration:        req.NetworkConfiguration,
+		PlatformVersion:             req.PlatformVersion,
+		PropagateTags:               req.PropagateTags,
+		EnableExecuteCommand:        req.EnableExecuteCommand,
+		Deployments:                 initialServiceDeployments(taskDefinitionArn, req.DesiredCount, ts),
+		Tags:                        req.Tags,
+	}
+}
+
+func initialServiceDeployments(taskDefinitionArn string, desiredCount int, ts *Timestamp) []Deployment {
+	return []Deployment{
+		{
+			ID:             generateID(),
+			Status:         statusPrimary,
+			TaskDefinition: taskDefinitionArn,
+			DesiredCount:   desiredCount,
+			RunningCount:   desiredCount,
+			PendingCount:   0,
+			CreatedAt:      ts,
+			UpdatedAt:      ts,
+		},
+	}
 }
 
 // DescribeServices describes ECS services.
