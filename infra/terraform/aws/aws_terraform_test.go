@@ -54,15 +54,18 @@ func TestKumoAwsTerraformDefinesFargateServiceWithPersistentData(t *testing.T) {
 
 func readTerraformFile(t *testing.T, name string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(".", name))
+
+	b, err := os.ReadFile(filepath.Join(".", name)) //nolint:gosec // Test fixture names are fixed by callers in this file.
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return string(b)
 }
 
-func assertContains(t *testing.T, text string, want string) {
+func assertContains(t *testing.T, text, want string) {
 	t.Helper()
+
 	if !strings.Contains(text, want) {
 		t.Fatalf("expected file to contain %q", want)
 	}
