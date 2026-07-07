@@ -21,7 +21,7 @@ const (
 
 // SQSPublisher is an interface for publishing messages to SQS.
 type SQSPublisher interface {
-	PublishToSQS(ctx context.Context, queueURL, messageBody, messageGroupID, messageDeduplicationID string, attributes map[string]string) error
+	PublishToSQS(ctx context.Context, queueURL, messageBody, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error
 }
 
 // Storage defines the SNS storage interface.
@@ -624,26 +624,7 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 
 	switch sub.Protocol {
 	case "sqs":
-		if m.SqsPublisher != nil {
-			// Build the message body based on RawMessageDelivery setting.
-			body := message
-			if !isRawMessageDelivery(sub) {
-				body = buildSNSNotificationEnvelope(sub.TopicARN, message, subject, messageID, attributes)
-			}
-
-			attrs := map[string]string{
-				"MessageId": messageID,
-			}
-			if subject != "" {
-				attrs["Subject"] = subject
-			}
-
-			if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, body, messageGroupID, messageDeduplicationID, attrs); err != nil {
-				return fmt.Errorf("failed to publish to SQS: %w", err)
-			}
-
-			return nil
-		}
+		return m.deliverToSQS(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes)
 	case "http", "https":
 		// HTTP delivery not implemented in emulator.
 		return nil
@@ -651,8 +632,67 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 		// Other protocols not implemented.
 		return nil
 	}
+}
+
+// deliverToSQS delivers a message to an sqs-protocol subscription. It
+// builds the message body (raw or enveloped, depending on the
+// subscription's RawMessageDelivery attribute) and the SQS message
+// attributes, then hands both to the configured SQSPublisher.
+func (m *MemoryStorage) deliverToSQS(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
+	if m.SqsPublisher == nil {
+		return nil
+	}
+
+	raw := isRawMessageDelivery(sub)
+
+	// Build the message body based on RawMessageDelivery setting.
+	body := message
+	if !raw {
+		body = buildSNSNotificationEnvelope(sub.TopicARN, message, subject, messageID, attributes)
+	}
+
+	attrs := sqsDeliveryAttributes(messageID, subject, attributes, raw)
+
+	if err := m.SqsPublisher.PublishToSQS(ctx, sub.Endpoint, body, messageGroupID, messageDeduplicationID, attrs); err != nil {
+		return fmt.Errorf("failed to publish to SQS: %w", err)
+	}
 
 	return nil
+}
+
+// sqsDeliveryAttributes builds the SQS message attributes for a delivery.
+// MessageId (and Subject, when non-empty) are always included for
+// backward compatibility with kumo's existing behavior. When raw is true,
+// the publisher-supplied attributes are merged in by presence (not by
+// value) so that Number/Binary attributes and empty StringValues are
+// still forwarded; a missing DataType defaults to "String". Envelope-mode
+// deliveries already carry attributes inside the JSON body, so they are
+// not duplicated as SQS attributes.
+func sqsDeliveryAttributes(messageID, subject string, attributes map[string]MessageAttribute, raw bool) map[string]MessageAttribute {
+	attrs := map[string]MessageAttribute{
+		"MessageId": {DataType: "String", StringValue: messageID},
+	}
+	if subject != "" {
+		attrs["Subject"] = MessageAttribute{DataType: "String", StringValue: subject}
+	}
+
+	if !raw {
+		return attrs
+	}
+
+	for name, attr := range attributes {
+		if _, exists := attrs[name]; exists {
+			continue
+		}
+
+		if attr.DataType == "" {
+			attr.DataType = "String"
+		}
+
+		attrs[name] = attr
+	}
+
+	return attrs
 }
 
 // isRawMessageDelivery checks whether the subscription has RawMessageDelivery enabled.
