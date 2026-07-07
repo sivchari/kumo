@@ -48,6 +48,7 @@ func buildEventV1(r *http.Request, req *Request, body []byte) ([]byte, error) {
 		QueryStringParameters:           emptyToNil(query),
 		MultiValueQueryStringParameters: emptyMultiToNil(multiQuery),
 		PathParameters:                  emptyToNil(req.PathParameters),
+		StageVariables:                  emptyToNil(req.StageVariables),
 		Body:                            string(body),
 		RequestContext: requestContextV1{
 			ResourcePath: req.ResourcePath,
@@ -112,6 +113,7 @@ func buildEventV2(r *http.Request, req *Request, body []byte) ([]byte, error) {
 		Headers:               headers,
 		QueryStringParameters: emptyToNil(query),
 		PathParameters:        emptyToNil(req.PathParameters),
+		StageVariables:        emptyToNil(req.StageVariables),
 		Body:                  string(body),
 		RequestContext: requestContextV2{
 			APIID:     req.APIID,

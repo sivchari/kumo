@@ -24,7 +24,7 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 		return false
 	}
 
-	stage, routePath := s.resolveStage(r, apiID, invokePath)
+	stage, stageObj, routePath := s.resolveStage(r, apiID, invokePath)
 	if stage == "" {
 		writeExecuteErrorV2(w, http.StatusNotFound, "Not Found")
 
@@ -70,28 +70,30 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 			ResourcePath:   routePath,
 			RouteKey:       route.RouteKey,
 			PathParameters: pathParams,
+			StageVariables: stageObj.StageVariables,
 		},
 	)
 
 	return true
 }
 
-// resolveStage determines the stage and the route path from the invoke path.
-// The path is /{stage}/{route} for a named stage, or /{route} for $default.
-func (s *Service) resolveStage(r *http.Request, apiID, invokePath string) (stage, routePath string) {
+// resolveStage determines the stage, the resolved stage object, and the
+// route path from the invoke path. The path is /{stage}/{route} for a named
+// stage, or /{route} for $default.
+func (s *Service) resolveStage(r *http.Request, apiID, invokePath string) (stage string, stageObj *Stage, routePath string) {
 	segs := execapi.SplitPath(invokePath)
 
 	if len(segs) > 0 {
-		if _, err := s.storage.GetStage(r.Context(), apiID, segs[0]); err == nil {
-			return segs[0], normalizeRoutePath(segs[1:])
+		if st, err := s.storage.GetStage(r.Context(), apiID, segs[0]); err == nil {
+			return segs[0], st, normalizeRoutePath(segs[1:])
 		}
 	}
 
-	if _, err := s.storage.GetStage(r.Context(), apiID, defaultStageName); err == nil {
-		return defaultStageName, normalizeRoutePath(segs)
+	if st, err := s.storage.GetStage(r.Context(), apiID, defaultStageName); err == nil {
+		return defaultStageName, st, normalizeRoutePath(segs)
 	}
 
-	return "", ""
+	return "", nil, ""
 }
 
 // integrationForRoute resolves the integration referenced by a route's target

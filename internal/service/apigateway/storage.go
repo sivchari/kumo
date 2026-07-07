@@ -630,6 +630,7 @@ func (s *MemoryStorage) CreateStage(_ context.Context, restAPIID string, req *Cr
 		CreatedDate:         now,
 		LastUpdatedDate:     now,
 		Tags:                req.Tags,
+		Variables:           req.Variables,
 	}
 
 	data.Stages[req.StageName] = stage

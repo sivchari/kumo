@@ -489,6 +489,7 @@ func toStageResponse(s *Stage) *StageResponse {
 		CreatedDate:         float64(s.CreatedDate.Unix()),
 		LastUpdatedDate:     float64(s.LastUpdatedDate.Unix()),
 		Tags:                s.Tags,
+		Variables:           s.Variables,
 	}
 }
 
