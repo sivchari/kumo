@@ -49,7 +49,7 @@ func createMultipartOrderTestParts(t *testing.T, store *MemoryStorage) multipart
 		t.Fatalf("CreateBucket: %v", err)
 	}
 
-	upload, err := store.CreateMultipartUpload(ctx, "mpu-order-test", "object")
+	upload, err := store.CreateMultipartUpload(ctx, "mpu-order-test", "object", nil)
 	if err != nil {
 		t.Fatalf("CreateMultipartUpload: %v", err)
 	}

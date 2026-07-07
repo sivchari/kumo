@@ -2078,7 +2078,7 @@ func (s *Service) CreateMultipartUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	upload, err := s.storage.CreateMultipartUpload(r.Context(), bucket, key)
+	upload, err := s.storage.CreateMultipartUpload(r.Context(), bucket, key, extractObjectMetadata(r.Header))
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {

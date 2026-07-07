@@ -45,7 +45,7 @@ type Storage interface {
 	ListObjectVersions(ctx context.Context, bucket, prefix, delimiter string, maxKeys int) ([]Object, []string, error)
 
 	// Multipart upload operations
-	CreateMultipartUpload(ctx context.Context, bucket, key string) (*MultipartUpload, error)
+	CreateMultipartUpload(ctx context.Context, bucket, key string, metadata map[string]string) (*MultipartUpload, error)
 	UploadPart(ctx context.Context, bucket, key, uploadID string, partNumber int, body io.Reader) (*Part, error)
 	CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []PartRequest) (*Object, error)
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
@@ -1013,7 +1013,7 @@ func (e *MultipartError) Error() string {
 }
 
 // CreateMultipartUpload creates a new multipart upload.
-func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key string) (*MultipartUpload, error) {
+func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key string, metadata map[string]string) (*MultipartUpload, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1029,6 +1029,7 @@ func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key str
 		UploadID:  uploadID,
 		Initiated: time.Now(),
 		Parts:     make(map[int]*Part),
+		Metadata:  metadata,
 	}
 
 	b.MultipartUploads[uploadID] = upload
@@ -1179,7 +1180,37 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
 	}
 
-	// Validate and assemble parts
+	combinedBody, err := assembleMultipartBody(upload, parts, uploadID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate final ETag (MD5 of MD5s + "-" + number of parts)
+	etag := calculateMultipartETag(parts, upload.Parts)
+
+	obj := &Object{
+		Key:          key,
+		Body:         combinedBody,
+		bodyRef:      bodyRefOf(combinedBody),
+		ETag:         etag,
+		Size:         int64(len(combinedBody)),
+		LastModified: time.Now(),
+		ContentType:  "application/octet-stream",
+	}
+
+	applyMultipartUploadMetadata(obj, upload.Metadata)
+
+	b.Objects[key] = obj
+	delete(b.MultipartUploads, uploadID)
+
+	s.saveLocked()
+
+	return obj, nil
+}
+
+// assembleMultipartBody validates the part list (ascending order, no
+// duplicates, ETag match) and concatenates the part bodies in order.
+func assembleMultipartBody(upload *MultipartUpload, parts []PartRequest, uploadID string) ([]byte, error) {
 	var combinedBody []byte
 
 	previousPartNumber := 0
@@ -1204,25 +1235,27 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 		combinedBody = append(combinedBody, part.Body...)
 	}
 
-	// Calculate final ETag (MD5 of MD5s + "-" + number of parts)
-	etag := calculateMultipartETag(parts, upload.Parts)
+	return combinedBody, nil
+}
 
-	obj := &Object{
-		Key:          key,
-		Body:         combinedBody,
-		bodyRef:      bodyRefOf(combinedBody),
-		ETag:         etag,
-		Size:         int64(len(combinedBody)),
-		LastModified: time.Now(),
-		ContentType:  "application/octet-stream",
+// applyMultipartUploadMetadata carries the Content-Type, user metadata, and
+// SSE headers captured at CreateMultipartUpload time onto the completed
+// object, mirroring PutObject's metadata/SSE handling. Operates on a clone
+// of upload.Metadata since applySSEMetadata mutates its argument and
+// CompleteMultipartUpload can in principle be retried.
+func applyMultipartUploadMetadata(obj *Object, metadata map[string]string) {
+	if metadata == nil {
+		return
 	}
 
-	b.Objects[key] = obj
-	delete(b.MultipartUploads, uploadID)
+	m := cloneStringMap(metadata)
+	obj.Metadata = m
 
-	s.saveLocked()
+	if ct, ok := m["Content-Type"]; ok {
+		obj.ContentType = ct
+	}
 
-	return obj, nil
+	applySSEMetadata(obj, m)
 }
 
 // AbortMultipartUpload aborts a multipart upload.

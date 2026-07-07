@@ -328,7 +328,8 @@ type MultipartUpload struct {
 	Key       string
 	UploadID  string
 	Initiated time.Time
-	Parts     map[int]*Part // partNumber -> Part
+	Parts     map[int]*Part     // partNumber -> Part
+	Metadata  map[string]string // Content-Type, x-amz-meta-*, and SSE headers captured at CreateMultipartUpload time
 }
 
 // Part represents a part in a multipart upload.

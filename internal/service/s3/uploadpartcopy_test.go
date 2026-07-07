@@ -123,7 +123,7 @@ func setupUploadPartCopyFixture(t *testing.T, srcPayload string) (*MemoryStorage
 		t.Fatalf("PutObject: %v", err)
 	}
 
-	upload, err := store.CreateMultipartUpload(ctx, "dst", "out.txt")
+	upload, err := store.CreateMultipartUpload(ctx, "dst", "out.txt", nil)
 	if err != nil {
 		t.Fatalf("CreateMultipartUpload: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestUploadPartCopy_RoundTripsThroughComplete(t *testing.T) {
 	_ = store.CreateBucket(ctx, "dst")
 	_, _ = store.PutObject(ctx, "src", "blob", strings.NewReader("ABCDEFGHIJ"), nil)
 
-	upload, err := store.CreateMultipartUpload(ctx, "dst", "joined")
+	upload, err := store.CreateMultipartUpload(ctx, "dst", "joined", nil)
 	if err != nil {
 		t.Fatalf("CreateMultipartUpload: %v", err)
 	}
