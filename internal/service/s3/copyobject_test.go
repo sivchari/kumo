@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+const sseAlgorithmAWSKMS = "aws:kms"
+
 func TestCopyObjectReplacesMetadataWhenDirectiveIsReplace(t *testing.T) {
 	t.Parallel()
 
@@ -77,6 +79,109 @@ func TestCopyObjectRejectsInvalidMetadataDirective(t *testing.T) {
 
 	if _, err := store.GetObject(context.Background(), "dst", "copied.txt"); err == nil {
 		t.Fatal("destination object was stored for invalid metadata directive")
+	}
+}
+
+func TestCopyObjectUsesRequestSSEHeadersRegardlessOfSource(t *testing.T) {
+	t.Parallel()
+
+	store, svc := setupCopyObjectMetadataFixture(t)
+	w := issueCopyObject(svc, map[string]string{
+		"X-Amz-Server-Side-Encryption":                sseAlgorithmAWSKMS,
+		"X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id": "request-key",
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("CopyObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	dstObj, err := store.GetObject(context.Background(), "dst", "copied.txt")
+	if err != nil {
+		t.Fatalf("GetObject dst: %v", err)
+	}
+
+	if dstObj.ServerSideEncryption != sseAlgorithmAWSKMS {
+		t.Fatalf("ServerSideEncryption: got %q, want aws:kms", dstObj.ServerSideEncryption)
+	}
+
+	if dstObj.SSEKMSKeyID != "request-key" {
+		t.Fatalf("SSEKMSKeyID: got %q, want request-key", dstObj.SSEKMSKeyID)
+	}
+}
+
+func TestCopyObjectFallsBackToDestinationBucketDefaultEncryption(t *testing.T) {
+	t.Parallel()
+
+	store, svc := setupCopyObjectMetadataFixture(t)
+
+	if err := store.PutBucketEncryption(context.Background(), "dst", ServerSideEncryptionConfig{
+		Rules: []ServerSideEncryptionRule{
+			{SSEAlgorithm: sseAlgorithmAWSKMS, KMSMasterKeyID: "bucket-default-key"},
+		},
+	}); err != nil {
+		t.Fatalf("PutBucketEncryption: %v", err)
+	}
+
+	w := issueCopyObject(svc, map[string]string{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("CopyObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	dstObj, err := store.GetObject(context.Background(), "dst", "copied.txt")
+	if err != nil {
+		t.Fatalf("GetObject dst: %v", err)
+	}
+
+	if dstObj.ServerSideEncryption != sseAlgorithmAWSKMS {
+		t.Fatalf("ServerSideEncryption: got %q, want aws:kms", dstObj.ServerSideEncryption)
+	}
+
+	if dstObj.SSEKMSKeyID != "bucket-default-key" {
+		t.Fatalf("SSEKMSKeyID: got %q, want bucket-default-key", dstObj.SSEKMSKeyID)
+	}
+}
+
+func TestCopyObjectDoesNotInheritSourceEncryptionWithNoDefault(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store, "")
+	ctx := context.Background()
+
+	if err := store.CreateBucket(ctx, "src"); err != nil {
+		t.Fatalf("CreateBucket src: %v", err)
+	}
+
+	if err := store.CreateBucket(ctx, "dst"); err != nil {
+		t.Fatalf("CreateBucket dst: %v", err)
+	}
+
+	_, err := store.PutObject(ctx, "src", "source.txt", strings.NewReader("copy me"), map[string]string{
+		"x-amz-server-side-encryption":                sseAlgorithmAWSKMS,
+		"x-amz-server-side-encryption-aws-kms-key-id": "source-key",
+	})
+	if err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+
+	w := issueCopyObject(svc, map[string]string{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("CopyObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	dstObj, err := store.GetObject(ctx, "dst", "copied.txt")
+	if err != nil {
+		t.Fatalf("GetObject dst: %v", err)
+	}
+
+	if dstObj.ServerSideEncryption != "" {
+		t.Fatalf("ServerSideEncryption: got %q, want empty (no inheritance from source)", dstObj.ServerSideEncryption)
+	}
+
+	if dstObj.SSEKMSKeyID != "" {
+		t.Fatalf("SSEKMSKeyID: got %q, want empty (no inheritance from source)", dstObj.SSEKMSKeyID)
 	}
 }
 
