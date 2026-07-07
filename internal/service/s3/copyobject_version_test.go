@@ -52,7 +52,7 @@ func TestUploadPartCopyCopiesSpecifiedSourceVersion(t *testing.T) {
 
 	v1, v2 := setupVersionedSourceObject(t, store)
 
-	upload, err := store.CreateMultipartUpload(ctx, "dst", "joined.txt")
+	upload, err := store.CreateMultipartUpload(ctx, "dst", "joined.txt", nil)
 	if err != nil {
 		t.Fatalf("CreateMultipartUpload: %v", err)
 	}
