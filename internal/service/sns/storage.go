@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -436,7 +437,13 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject,
 	// Deliver to all subscriptions.
 	for _, sub := range subscriptions {
 		if err := m.deliverMessage(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
-			// Log error but continue delivering to other subscriptions.
+			slog.Default().Error("sns: failed to deliver to subscription",
+				"endpoint", sub.Endpoint,
+				"protocol", sub.Protocol,
+				"topicArn", sub.TopicARN,
+				"error", err,
+			)
+
 			continue
 		}
 	}
