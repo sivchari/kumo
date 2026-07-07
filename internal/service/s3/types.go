@@ -439,9 +439,10 @@ type CopyRange struct {
 
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
-	XMLName             xml.Name             `xml:"NotificationConfiguration"`
-	EventBridgeConfig   *EventBridgeConfig   `xml:"EventBridgeConfiguration,omitempty"`
-	QueueConfigurations []QueueConfiguration `xml:"QueueConfiguration,omitempty"`
+	XMLName                      xml.Name                      `xml:"NotificationConfiguration"`
+	EventBridgeConfig            *EventBridgeConfig            `xml:"EventBridgeConfiguration,omitempty"`
+	QueueConfigurations          []QueueConfiguration          `xml:"QueueConfiguration,omitempty"`
+	LambdaFunctionConfigurations []LambdaFunctionConfiguration `xml:"CloudFunctionConfiguration,omitempty"`
 }
 
 // EventBridgeConfig represents EventBridge notification configuration.
@@ -453,6 +454,14 @@ type QueueConfiguration struct {
 	ID       string   `xml:"Id,omitempty"       json:"id,omitempty"`
 	QueueArn string   `xml:"Queue"              json:"queue"`
 	Events   []string `xml:"Event"              json:"events"`
+}
+
+// LambdaFunctionConfiguration represents a Lambda destination in the bucket
+// notification configuration.
+type LambdaFunctionConfiguration struct {
+	ID                string   `xml:"Id,omitempty" json:"id,omitempty"`
+	LambdaFunctionArn string   `xml:"CloudFunction" json:"lambdaFunctionArn"`
+	Events            []string `xml:"Event"         json:"events"`
 }
 
 // EventNotification is the top-level wrapper sent to SQS when an S3

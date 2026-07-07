@@ -66,6 +66,8 @@ type Storage interface {
 	IsEventBridgeEnabled(ctx context.Context, bucket string) bool
 	SetQueueConfigurations(ctx context.Context, bucket string, configs []QueueConfiguration)
 	GetQueueConfigurations(ctx context.Context, bucket string) []QueueConfiguration
+	SetLambdaConfigurations(ctx context.Context, bucket string, configs []LambdaFunctionConfiguration)
+	GetLambdaConfigurations(ctx context.Context, bucket string) []LambdaFunctionConfiguration
 	SetCORSConfiguration(ctx context.Context, bucket string, rules []CORSRule)
 	GetCORSRules(ctx context.Context, bucket string) []CORSRule
 
@@ -120,24 +122,25 @@ type MemoryStorage struct {
 
 // MemoryBucket holds the data for a single S3 bucket.
 type MemoryBucket struct {
-	Name                string                      `json:"name"`
-	CreationDate        time.Time                   `json:"creationDate"`
-	Objects             map[string]*Object          `json:"objects"`                       // current/latest version per key
-	Versions            map[string][]*Object        `json:"versions"`                      // all versions per key (newest first)
-	VersioningStatus    string                      `json:"versioningStatus"`              // "", "Enabled", "Suspended"
-	VersionIDCounter    uint64                      `json:"versionIdcounter"`              // counter for generating version IDs
-	MultipartUploads    map[string]*MultipartUpload `json:"-"`                             // uploadID -> MultipartUpload
-	EventBridgeEnabled  bool                        `json:"eventBridgeEnabled"`            // EventBridge notification
-	QueueConfigurations []QueueConfiguration        `json:"queueConfigurations,omitempty"` // SQS queue notification destinations
-	CORSRules           []CORSRule                  `json:"corsRules,omitempty"`           // CORS configuration
-	PublicAccessBlock   *PublicAccessBlockConfig    `json:"publicAccessBlock,omitempty"`   // public access block configuration
-	Encryption          *ServerSideEncryptionConfig `json:"encryption,omitempty"`          // server-side encryption configuration
-	Policy              string                      `json:"policy,omitempty"`              // bucket policy JSON document (empty == not configured)
-	Logging             *BucketLoggingConfig        `json:"logging,omitempty"`             // server access logging target (nil == disabled)
-	ObjectACLs          map[string]*ObjectACL       `json:"objectAcls,omitempty"`          // per-object ACL (key -> ACL)
-	Website             *WebsiteConfiguration       `json:"website,omitempty"`             // static-site-hosting configuration
-	Lifecycle           *LifecycleConfiguration     `json:"lifecycle,omitempty"`           // expiration / transition rules
-	ObjectRestores      map[string]*RestoreState    `json:"objectRestores,omitempty"`      // per-object restore state (key -> state)
+	Name                 string                        `json:"name"`
+	CreationDate         time.Time                     `json:"creationDate"`
+	Objects              map[string]*Object            `json:"objects"`                        // current/latest version per key
+	Versions             map[string][]*Object          `json:"versions"`                       // all versions per key (newest first)
+	VersioningStatus     string                        `json:"versioningStatus"`               // "", "Enabled", "Suspended"
+	VersionIDCounter     uint64                        `json:"versionIdcounter"`               // counter for generating version IDs
+	MultipartUploads     map[string]*MultipartUpload   `json:"-"`                              // uploadID -> MultipartUpload
+	EventBridgeEnabled   bool                          `json:"eventBridgeEnabled"`             // EventBridge notification
+	QueueConfigurations  []QueueConfiguration          `json:"queueConfigurations,omitempty"`  // SQS queue notification destinations
+	LambdaConfigurations []LambdaFunctionConfiguration `json:"lambdaConfigurations,omitempty"` // Lambda notification destinations
+	CORSRules            []CORSRule                    `json:"corsRules,omitempty"`            // CORS configuration
+	PublicAccessBlock    *PublicAccessBlockConfig      `json:"publicAccessBlock,omitempty"`    // public access block configuration
+	Encryption           *ServerSideEncryptionConfig   `json:"encryption,omitempty"`           // server-side encryption configuration
+	Policy               string                        `json:"policy,omitempty"`               // bucket policy JSON document (empty == not configured)
+	Logging              *BucketLoggingConfig          `json:"logging,omitempty"`              // server access logging target (nil == disabled)
+	ObjectACLs           map[string]*ObjectACL         `json:"objectAcls,omitempty"`           // per-object ACL (key -> ACL)
+	Website              *WebsiteConfiguration         `json:"website,omitempty"`              // static-site-hosting configuration
+	Lifecycle            *LifecycleConfiguration       `json:"lifecycle,omitempty"`            // expiration / transition rules
+	ObjectRestores       map[string]*RestoreState      `json:"objectRestores,omitempty"`       // per-object restore state (key -> state)
 }
 
 // BucketLoggingConfig stores the destination for server access logs.
@@ -1413,6 +1416,30 @@ func (s *MemoryStorage) GetQueueConfigurations(_ context.Context, bucket string)
 
 	if b, exists := s.Buckets[bucket]; exists {
 		return b.QueueConfigurations
+	}
+
+	return nil
+}
+
+// SetLambdaConfigurations stores the Lambda notification destinations for a bucket.
+func (s *MemoryStorage) SetLambdaConfigurations(_ context.Context, bucket string, configs []LambdaFunctionConfiguration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		b.LambdaConfigurations = configs
+	}
+
+	s.saveLocked()
+}
+
+// GetLambdaConfigurations returns the Lambda notification destinations for a bucket.
+func (s *MemoryStorage) GetLambdaConfigurations(_ context.Context, bucket string) []LambdaFunctionConfiguration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		return append([]LambdaFunctionConfiguration(nil), b.LambdaConfigurations...)
 	}
 
 	return nil

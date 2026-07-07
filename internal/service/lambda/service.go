@@ -45,6 +45,9 @@ func (s *Service) Name() string {
 	return "lambda"
 }
 
+// BaseURL returns the kumo server base URL the service self-calls against.
+func (s *Service) BaseURL() string { return s.baseURL }
+
 // RegisterRoutes registers the Lambda routes.
 // Routes are registered under both /lambda/... (for SDK BaseEndpoint) and /2015-03-31/... (for CLI).
 func (s *Service) RegisterRoutes(r service.Router) {
