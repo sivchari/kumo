@@ -1,11 +1,16 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sivchari/kumo/internal/service"
+	"github.com/sivchari/kumo/internal/service/lambda"
 	"github.com/sivchari/kumo/internal/service/s3"
 	"github.com/sivchari/kumo/internal/service/sns"
 	"github.com/sivchari/kumo/internal/service/sqs"
@@ -193,6 +198,98 @@ func (p *s3ToSQSPublisher) arnToQueueURL(arn string) string {
 	name := parts[5]
 
 	return p.baseURL + "/" + account + "/" + name
+}
+
+// wireS3toLambda connects the S3 service to the Lambda service so that
+// S3 bucket notification configurations with LambdaFunctionConfigurations
+// actually invoke the target Lambda function.
+//
+// Without this wiring, PutObject/CopyObject/CompleteMultipartUpload
+// silently ignore LambdaFunctionConfiguration entries because
+// s3.Service.lambdaInvoker is nil. The pattern mirrors wireS3toSQS.
+func wireS3toLambda(registry *service.Registry) {
+	s3Svc, ok := registry.Get("s3")
+	if !ok {
+		return
+	}
+
+	lambdaSvc, ok := registry.Get("lambda")
+	if !ok {
+		return
+	}
+
+	s3Typed, ok := s3Svc.(*s3.Service)
+	if !ok {
+		return
+	}
+
+	lambdaTyped, ok := lambdaSvc.(*lambda.Service)
+	if !ok {
+		return
+	}
+
+	s3Typed.SetLambdaInvoker(&s3ToLambdaInvoker{
+		baseURL:    lambdaTyped.BaseURL(),
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+	})
+}
+
+// s3ToLambdaInvoker adapts the Lambda service's HTTP invoke endpoint to
+// the S3 LambdaInvoker interface. It POSTs the S3 event notification
+// payload to the Lambda invoke endpoint with the async invocation-type
+// header so the request rides Lambda's async dispatch queue instead of
+// blocking for a response.
+type s3ToLambdaInvoker struct {
+	baseURL    string
+	httpClient *http.Client
+}
+
+// InvokeAsync invokes the Lambda function identified by functionArn,
+// asynchronously delivering the S3 event notification payload.
+func (inv *s3ToLambdaInvoker) InvokeAsync(ctx context.Context, functionArn string, payload []byte) error {
+	functionName := lambdaFunctionNameFromArn(functionArn)
+
+	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", inv.baseURL, functionName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create Lambda invoke request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Amz-Invocation-Type", "Event")
+
+	resp, err := inv.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to invoke Lambda function %s: %w", functionName, err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+		return fmt.Errorf("invoke lambda %s returned %d: %s", functionName, resp.StatusCode, body)
+	}
+
+	return nil
+}
+
+// lambdaFunctionNameFromArn extracts the bare function name from a Lambda
+// function ARN (arn:aws:lambda:region:account:function:name[:qualifier]),
+// dropping any qualifier. If the input has no ":" it is assumed to
+// already be a bare function name and is returned unchanged.
+func lambdaFunctionNameFromArn(arn string) string {
+	if !strings.Contains(arn, ":") {
+		return arn
+	}
+
+	parts := strings.Split(arn, ":")
+	if len(parts) >= 7 && parts[5] == "function" {
+		return parts[6]
+	}
+
+	return arn
 }
 
 // wireCloudWatchToSNS connects the CloudWatch service to the SNS service

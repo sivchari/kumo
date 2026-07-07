@@ -84,6 +84,7 @@ func (s *Service) PostObject(w http.ResponseWriter, r *http.Request) {
 
 	go s.emitObjectCreatedEvent(context.Background(), bucket, upload.key, obj.Size, obj.ETag)
 	go s.emitSQSNotifications(context.Background(), bucket, upload.key, "s3:ObjectCreated:Post", obj.Size, obj.ETag)
+	go s.emitLambdaNotifications(context.Background(), bucket, upload.key, "s3:ObjectCreated:Post", obj.Size, obj.ETag)
 
 	writePostObjectResponse(w, r, bucket, upload.key, obj)
 }

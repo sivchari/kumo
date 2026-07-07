@@ -27,6 +27,13 @@ type SQSPublisher interface {
 	PublishToSQS(ctx context.Context, queueARN, body string) error
 }
 
+// LambdaInvoker is the interface the S3 service uses to invoke Lambda
+// functions for bucket notifications. Implemented by the server wiring so
+// the s3 package does not import the lambda service.
+type LambdaInvoker interface {
+	InvokeAsync(ctx context.Context, functionArn string, payload []byte) error
+}
+
 const defaultBaseURL = "http://localhost:4566"
 
 // Compile-time check that Service implements io.Closer.
@@ -49,10 +56,11 @@ func init() {
 
 // Service implements the S3 service.
 type Service struct {
-	storage      Storage
-	baseURL      string
-	logger       *slog.Logger
-	sqsPublisher SQSPublisher
+	storage       Storage
+	baseURL       string
+	logger        *slog.Logger
+	sqsPublisher  SQSPublisher
+	lambdaInvoker LambdaInvoker
 }
 
 // New creates a new S3 service.
@@ -118,6 +126,41 @@ func (s *Service) SetSQSPublisher(p SQSPublisher) {
 	s.sqsPublisher = p
 }
 
+// SetLambdaInvoker installs the adapter that invokes Lambda functions for
+// S3 bucket notifications. Called by the server wiring layer after all
+// services have been registered.
+func (s *Service) SetLambdaInvoker(inv LambdaInvoker) {
+	s.lambdaInvoker = inv
+}
+
+// buildEventNotification constructs the S3 event notification message
+// body shared by every notification destination (SQS, Lambda, ...).
+func buildEventNotification(bucket, key, eventName string, size int64, etag, configID string) EventNotification {
+	return EventNotification{
+		Records: []EventRecord{{
+			EventVersion: "2.1",
+			EventSource:  "aws:s3",
+			AWSRegion:    "us-east-1",
+			EventTime:    time.Now().UTC().Format(time.RFC3339),
+			EventName:    eventName,
+			UserIdentity: map[string]string{"principalId": "EXAMPLE"},
+			S3: EventRecordS3Detail{
+				SchemaVersion:   "1.0",
+				ConfigurationID: configID,
+				Bucket: EventRecordBucket{
+					Name: bucket,
+					Arn:  "arn:aws:s3:::" + bucket,
+				},
+				Object: EventRecordObject{
+					Key:  url.QueryEscape(key),
+					Size: size,
+					ETag: strings.Trim(etag, "\""),
+				},
+			},
+		}},
+	}
+}
+
 // emitSQSNotifications delivers S3 event notification messages to
 // every SQS queue configured in the bucket's notification configuration
 // whose event filter matches the given eventName.
@@ -136,29 +179,7 @@ func (s *Service) emitSQSNotifications(ctx context.Context, bucket, key, eventNa
 			continue
 		}
 
-		record := EventNotification{
-			Records: []EventRecord{{
-				EventVersion: "2.1",
-				EventSource:  "aws:s3",
-				AWSRegion:    "us-east-1",
-				EventTime:    time.Now().UTC().Format(time.RFC3339),
-				EventName:    eventName,
-				UserIdentity: map[string]string{"principalId": "EXAMPLE"},
-				S3: EventRecordS3Detail{
-					SchemaVersion:   "1.0",
-					ConfigurationID: cfg.ID,
-					Bucket: EventRecordBucket{
-						Name: bucket,
-						Arn:  "arn:aws:s3:::" + bucket,
-					},
-					Object: EventRecordObject{
-						Key:  url.QueryEscape(key),
-						Size: size,
-						ETag: strings.Trim(etag, "\""),
-					},
-				},
-			}},
-		}
+		record := buildEventNotification(bucket, key, eventName, size, etag, cfg.ID)
 
 		body, err := json.Marshal(record)
 		if err != nil {
@@ -170,6 +191,41 @@ func (s *Service) emitSQSNotifications(ctx context.Context, bucket, key, eventNa
 		if err := s.sqsPublisher.PublishToSQS(ctx, cfg.QueueArn, string(body)); err != nil {
 			s.logger.Error("failed to deliver S3 notification to SQS",
 				"bucket", bucket, "key", key, "queueArn", cfg.QueueArn, "error", err)
+		}
+	}
+}
+
+// emitLambdaNotifications invokes every Lambda function configured in the
+// bucket's notification configuration whose event filter matches the
+// given eventName, asynchronously delivering the S3 event notification
+// payload.
+func (s *Service) emitLambdaNotifications(ctx context.Context, bucket, key, eventName string, size int64, etag string) {
+	if s.lambdaInvoker == nil {
+		return
+	}
+
+	configs := s.storage.GetLambdaConfigurations(ctx, bucket)
+	if len(configs) == 0 {
+		return
+	}
+
+	for _, cfg := range configs {
+		if !matchesEventFilter(cfg.Events, eventName) {
+			continue
+		}
+
+		record := buildEventNotification(bucket, key, eventName, size, etag, cfg.ID)
+
+		body, err := json.Marshal(record)
+		if err != nil {
+			s.logger.Error("failed to marshal S3 event notification", "error", err)
+
+			continue
+		}
+
+		if err := s.lambdaInvoker.InvokeAsync(ctx, cfg.LambdaFunctionArn, body); err != nil {
+			s.logger.Error("failed to invoke Lambda for S3 notification",
+				"bucket", bucket, "key", key, "functionArn", cfg.LambdaFunctionArn, "error", err)
 		}
 	}
 }
