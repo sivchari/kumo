@@ -1,6 +1,6 @@
 {
   "AssumedRoleUser": {
-    "Arn": "arn:aws:sts::000000000000:assumed-role/emulated-role/test-session",
+    "Arn": "arn:aws:sts::000000000000:assumed-role/test-role/test-session",
     "AssumedRoleId": "AROA612aa82d-8cf:test-session"
   },
   "Credentials": {

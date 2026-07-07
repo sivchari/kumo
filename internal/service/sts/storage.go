@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -117,10 +119,11 @@ func (m *MemoryStorage) AssumeRole(_ context.Context, input *AssumeRoleInput) (*
 	creds := generateCredentials(duration)
 	roleSessionName := input.RoleSessionName
 	assumedRoleID := generateAssumedRoleID(roleSessionName)
+	partition, accountID, roleName := roleArnParts(input.RoleArn)
 
 	return &AssumeRoleResult{
 		AssumedRoleUser: &AssumedRoleUser{
-			Arn:           fmt.Sprintf("arn:aws:sts::%s:assumed-role/emulated-role/%s", defaultAccountID, roleSessionName),
+			Arn:           fmt.Sprintf("arn:%s:sts::%s:assumed-role/%s/%s", partition, accountID, roleName, roleSessionName),
 			AssumedRoleID: assumedRoleID,
 		},
 		Credentials:      creds,
@@ -133,10 +136,11 @@ func (m *MemoryStorage) AssumeRoleWithSAML(_ context.Context, input *AssumeRoleW
 	duration := resolveDuration(input.DurationSeconds)
 	creds := generateCredentials(duration)
 	assumedRoleID := generateAssumedRoleID("SAMLSession")
+	partition, accountID, roleName := roleArnParts(input.RoleArn)
 
 	return &AssumeRoleResult{
 		AssumedRoleUser: &AssumedRoleUser{
-			Arn:           fmt.Sprintf("arn:aws:sts::%s:assumed-role/emulated-role/SAMLSession", defaultAccountID),
+			Arn:           fmt.Sprintf("arn:%s:sts::%s:assumed-role/%s/SAMLSession", partition, accountID, roleName),
 			AssumedRoleID: assumedRoleID,
 		},
 		Credentials:      creds,
@@ -150,10 +154,11 @@ func (m *MemoryStorage) AssumeRoleWithWebIdentity(_ context.Context, input *Assu
 	creds := generateCredentials(duration)
 	roleSessionName := input.RoleSessionName
 	assumedRoleID := generateAssumedRoleID(roleSessionName)
+	partition, accountID, roleName := roleArnParts(input.RoleArn)
 
 	return &AssumeRoleResult{
 		AssumedRoleUser: &AssumedRoleUser{
-			Arn:           fmt.Sprintf("arn:aws:sts::%s:assumed-role/emulated-role/%s", defaultAccountID, roleSessionName),
+			Arn:           fmt.Sprintf("arn:%s:sts::%s:assumed-role/%s/%s", partition, accountID, roleName, roleSessionName),
 			AssumedRoleID: assumedRoleID,
 		},
 		Credentials:      creds,
@@ -193,6 +198,38 @@ func (m *MemoryStorage) GetFederationToken(_ context.Context, input *GetFederati
 }
 
 // Helper functions.
+
+// roleArnParts extracts the partition, account ID, and role name from an IAM
+// role ARN (arn:<partition>:iam::<account>:role/<path...>/<name>). Fallbacks
+// keep AssumeRole permissive: unparseable input yields "aws" / defaultAccountID
+// / "emulated-role", and an empty partition segment also defaults to "aws".
+func roleArnParts(roleArn string) (string, string, string) {
+	partition, accountID, roleName := "aws", defaultAccountID, "emulated-role"
+
+	parts := strings.SplitN(roleArn, ":", 6)
+	if len(parts) != 6 || parts[2] != "iam" {
+		return partition, accountID, roleName
+	}
+
+	if parts[1] != "" {
+		partition = parts[1]
+	}
+
+	if parts[4] != "" {
+		accountID = parts[4]
+	}
+
+	res, ok := strings.CutPrefix(parts[5], "role/")
+	if !ok || res == "" {
+		return partition, accountID, roleName
+	}
+
+	if name := path.Base(res); name != "." && name != "/" {
+		roleName = name
+	}
+
+	return partition, accountID, roleName
+}
 
 func resolveDuration(durationSeconds int32) int32 {
 	if durationSeconds <= 0 {

@@ -1,6 +1,6 @@
 {
   "AssumedRoleUser": {
-    "Arn": "arn:aws:sts::000000000000:assumed-role/emulated-role/web-session",
+    "Arn": "arn:aws:sts::000000000000:assumed-role/web-identity-role/web-session",
     "AssumedRoleId": "AROAfeee8289-c58:web-session"
   },
   "Audience": null,
