@@ -51,6 +51,7 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 			Stage:          stage,
 			ResourcePath:   resolved.resource.Path,
 			PathParameters: resolved.pathParams,
+			StageVariables: resolved.stage.Variables,
 		},
 	)
 
@@ -62,13 +63,15 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 type resolvedTarget struct {
 	resource   *Resource
 	method     Method
+	stage      *Stage
 	pathParams map[string]string
 }
 
 // resolveExecuteTarget validates the stage and resolves the resource, method,
 // and path parameters. A non-zero status is the HTTP error to return.
 func (s *Service) resolveExecuteTarget(r *http.Request, apiID, stage, reqPath string) (resolvedTarget, int) {
-	if _, err := s.storage.GetStage(r.Context(), apiID, stage); err != nil {
+	stageObj, err := s.storage.GetStage(r.Context(), apiID, stage)
+	if err != nil {
 		return resolvedTarget{}, http.StatusNotFound
 	}
 
@@ -91,7 +94,7 @@ func (s *Service) resolveExecuteTarget(r *http.Request, apiID, stage, reqPath st
 		return resolvedTarget{}, http.StatusInternalServerError
 	}
 
-	return resolvedTarget{resource: resource, method: method, pathParams: pathParams}, 0
+	return resolvedTarget{resource: resource, method: method, stage: stageObj, pathParams: pathParams}, 0
 }
 
 // executeErrorMessage maps an execute-api error status to its AWS message.

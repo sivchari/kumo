@@ -78,6 +78,7 @@ type Stage struct {
 	CreatedDate         time.Time         `json:"createdDate"`
 	LastUpdatedDate     time.Time         `json:"lastUpdatedDate"`
 	Tags                map[string]string `json:"tags,omitempty"`
+	Variables           map[string]string `json:"variables,omitempty"`
 }
 
 // CreateRestAPIRequest represents a CreateRestApi request.
@@ -206,6 +207,7 @@ type CreateStageRequest struct {
 	CacheClusterEnabled bool              `json:"cacheClusterEnabled,omitempty"`
 	CacheClusterSize    string            `json:"cacheClusterSize,omitempty"`
 	Tags                map[string]string `json:"tags,omitempty"`
+	Variables           map[string]string `json:"variables,omitempty"`
 }
 
 // StageResponse represents a Stage response.
@@ -218,6 +220,7 @@ type StageResponse struct {
 	CreatedDate         float64           `json:"createdDate"`
 	LastUpdatedDate     float64           `json:"lastUpdatedDate"`
 	Tags                map[string]string `json:"tags,omitempty"`
+	Variables           map[string]string `json:"variables,omitempty"`
 }
 
 // GetStagesResponse represents a GetStages response.

@@ -46,6 +46,7 @@ type Request struct {
 	ResourcePath   string // matched resource path template (v1) or route path
 	RouteKey       string // v2 route key, e.g. "GET /items" or "$default"
 	PathParameters map[string]string
+	StageVariables map[string]string
 }
 
 // Dispatch resolves the integration target and writes the HTTP response. It is
