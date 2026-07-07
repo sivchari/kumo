@@ -811,6 +811,8 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.applyCopyEncryption(r.Context(), r.Header, dstBucket, metadata)
+
 	tags, err := s.copyObjectTags(r.Context(), r.Header, srcBucket, srcKey)
 	if err != nil {
 		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
@@ -908,6 +910,34 @@ func copyObjectMetadata(header http.Header, src map[string]string) (map[string]s
 		return extractObjectMetadata(header), nil
 	default:
 		return nil, errors.New("invalid metadata directive")
+	}
+}
+
+// applyCopyEncryption sets the destination object's SSE following AWS
+// CopyObject semantics: request headers win, else the destination bucket's
+// default encryption. The source object's SSE is intentionally NOT
+// inherited (issue #714 asks for "preservation", but AWS does not preserve
+// SSE across copies; see the PR description).
+func (s *Service) applyCopyEncryption(ctx context.Context, header http.Header, dstBucket string, metadata map[string]string) {
+	if sse := header.Get("X-Amz-Server-Side-Encryption"); sse != "" {
+		metadata["x-amz-server-side-encryption"] = sse
+		if key := header.Get("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"); key != "" {
+			metadata["x-amz-server-side-encryption-aws-kms-key-id"] = key
+		}
+
+		return
+	}
+
+	cfg, err := s.storage.GetBucketEncryption(ctx, dstBucket)
+	if err != nil || cfg == nil || len(cfg.Rules) == 0 {
+		return
+	}
+
+	rule := cfg.Rules[0]
+	metadata["x-amz-server-side-encryption"] = rule.SSEAlgorithm
+
+	if rule.KMSMasterKeyID != "" {
+		metadata["x-amz-server-side-encryption-aws-kms-key-id"] = rule.KMSMasterKeyID
 	}
 }
 
