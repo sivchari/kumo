@@ -315,14 +315,13 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 // invokeViaRuntime dispatches to a handler connected through the Runtime API.
 func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn string, payload []byte, async bool) {
 	if async {
-		_, _ = s.broker.invoke(r.Context(), fn, payload, true)
-
+		s.async.enqueue(fn, &runtimeDeliverer{broker: s.broker, fn: fn}, payload)
 		writeInvokeAccepted(w)
 
 		return
 	}
 
-	res, err := s.broker.invoke(r.Context(), fn, payload, false)
+	res, err := s.broker.invoke(r.Context(), fn, payload, runtimeInvokeTimeout)
 	if err != nil {
 		writeFunctionError(w, ErrServiceException, "runtime invocation failed: "+err.Error(), http.StatusBadGateway)
 
@@ -344,7 +343,7 @@ func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn st
 // for delivery": failed deliveries are retried instead of dropped.
 func (s *Service) invokeViaEndpoint(w http.ResponseWriter, r *http.Request, fn, endpoint string, payload []byte, async bool) {
 	if async {
-		s.async.enqueue(fn, endpoint, payload)
+		s.async.enqueue(fn, &endpointDeliverer{client: s.async.client, endpoint: endpoint}, payload)
 		writeInvokeAccepted(w)
 
 		return
