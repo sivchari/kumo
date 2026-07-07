@@ -18,9 +18,16 @@ import (
 // a polling handler and to receive its response.
 const runtimeInvokeTimeout = 30 * time.Second
 
-// errRuntimeTimeout is returned when no polling handler services an
-// invocation within runtimeInvokeTimeout.
-var errRuntimeTimeout = errors.New("no runtime handler available")
+// errRuntimeNoPoller is returned when no handler polls next and picks up an
+// invocation within the wait timeout — nobody ever started the work, which
+// AWS treats as a system-level delivery failure (retried with backoff).
+var errRuntimeNoPoller = errors.New("no runtime handler available to poll the invocation")
+
+// errRuntimeResponseTimeout is returned when a handler polled next and took
+// the invocation but never posted a response or error within the wait
+// timeout — the handler picked up the work but its function timed out,
+// which AWS treats as a function error (limited retries).
+var errRuntimeResponseTimeout = errors.New("runtime handler did not respond before the timeout")
 
 // runtimeBroker bridges kumo invocations to handlers that speak the AWS
 // Lambda Runtime API (lambda.Start). A handler polls next for its function;
@@ -79,22 +86,15 @@ func (b *runtimeBroker) get(fn string) *funcRuntime {
 	return fr
 }
 
-// invoke hands an invocation to a polling handler. For async it returns once
-// queued; for sync it waits for the handler's response.
-func (b *runtimeBroker) invoke(ctx context.Context, fn string, payload []byte, async bool) (runtimeResult, error) {
+// invoke hands an invocation to a polling handler and waits for its
+// response, up to timeout for each of the two phases (waiting to be picked
+// up by next, then waiting for a response/error). Callers that want async
+// (fire-and-forget-but-not-really) semantics should queue a runtimeDeliverer
+// on the asyncDispatcher instead of calling invoke directly — see
+// invokeViaRuntime.
+func (b *runtimeBroker) invoke(ctx context.Context, fn string, payload []byte, timeout time.Duration) (runtimeResult, error) {
 	fr := b.get(fn)
 	inv := &runtimeInvocation{id: uuid.New().String(), payload: payload}
-
-	if async {
-		go func() {
-			select {
-			case fr.invocations <- inv:
-			case <-time.After(runtimeInvokeTimeout):
-			}
-		}()
-
-		return runtimeResult{}, nil
-	}
 
 	resCh := make(chan runtimeResult, 1)
 
@@ -112,8 +112,8 @@ func (b *runtimeBroker) invoke(ctx context.Context, fn string, payload []byte, a
 	case fr.invocations <- inv:
 	case <-ctx.Done():
 		return runtimeResult{}, fmt.Errorf("invocation canceled: %w", ctx.Err())
-	case <-time.After(runtimeInvokeTimeout):
-		return runtimeResult{}, errRuntimeTimeout
+	case <-time.After(timeout):
+		return runtimeResult{}, errRuntimeNoPoller
 	}
 
 	select {
@@ -121,9 +121,54 @@ func (b *runtimeBroker) invoke(ctx context.Context, fn string, payload []byte, a
 		return res, nil
 	case <-ctx.Done():
 		return runtimeResult{}, fmt.Errorf("invocation canceled: %w", ctx.Err())
-	case <-time.After(runtimeInvokeTimeout):
-		return runtimeResult{}, errRuntimeTimeout
+	case <-time.After(timeout):
+		return runtimeResult{}, errRuntimeResponseTimeout
 	}
+}
+
+// runtimeDeliverer delivers an event by handing it to a Runtime API handler
+// through runtimeBroker's synchronous path — the async queue itself now
+// provides the asynchrony, so the deliverer only ever waits for one poll/
+// response round trip per attempt. Counterpart of endpointDeliverer
+// (async.go) for functions backed by an InvokeEndpoint.
+type runtimeDeliverer struct {
+	broker *runtimeBroker
+	fn     string
+
+	// waitTimeout bounds how long one delivery attempt waits for a handler
+	// to pick up and respond to the invocation. Zero means
+	// runtimeInvokeTimeout; tests inject a short value so retry scenarios
+	// don't need to wait out the real 30s default.
+	waitTimeout time.Duration
+}
+
+// deliver hands the event to a polling handler and waits for its response.
+// errRuntimeResponseTimeout means a handler took the invocation but never
+// responded — the function itself timed out, so this is a function error
+// with limited retries, matching AWS async semantics. Any other failure
+// (nobody polled, context canceled, ...) means the work was never picked up,
+// so it is a system error retried with backoff until the event's deadline. A
+// handler-reported error is likewise a function error.
+func (r *runtimeDeliverer) deliver(ctx context.Context, _ string, payload []byte) deliveryResult {
+	timeout := r.waitTimeout
+	if timeout == 0 {
+		timeout = runtimeInvokeTimeout
+	}
+
+	res, err := r.broker.invoke(ctx, r.fn, payload, timeout)
+	if err != nil {
+		if errors.Is(err, errRuntimeResponseTimeout) {
+			return asyncFunctionError
+		}
+
+		return asyncSystemError
+	}
+
+	if res.errored {
+		return asyncFunctionError
+	}
+
+	return asyncDelivered
 }
 
 // next blocks until an invocation is queued for the function or ctx is done.

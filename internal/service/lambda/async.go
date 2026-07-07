@@ -31,18 +31,26 @@ const (
 	asyncMaxFunctionErrorRetries = 2
 )
 
-// asyncEvent is one queued asynchronous (InvocationType: Event) invocation.
-type asyncEvent struct {
-	endpoint string
-	payload  []byte
-	deadline time.Time
+// asyncDeliverer delivers one queued event to its execution target. It
+// reports whether the attempt succeeded, failed as a function error (limited
+// retries), or failed as a system error (retried until the event's
+// deadline), mirroring AWS async invocation semantics. Implementations:
+// endpointDeliverer (InvokeEndpoint) and runtimeDeliverer (Runtime API).
+type asyncDeliverer interface {
+	deliver(ctx context.Context, functionName string, payload []byte) deliveryResult
 }
 
-// asyncDispatcher queues Event invocations per function and delivers them to
-// the function's InvokeEndpoint in FIFO order. Delivery is retried with
-// exponential backoff, so a 202 from Invoke means "accepted for delivery"
-// rather than "attempted once" (issue #803). Counterpart of runtimeBroker for
-// the InvokeEndpoint execution path.
+// asyncEvent is one queued asynchronous (InvocationType: Event) invocation.
+type asyncEvent struct {
+	deliverer asyncDeliverer
+	payload   []byte
+	deadline  time.Time
+}
+
+// asyncDispatcher queues Event invocations per function and delivers them in
+// FIFO order via each event's asyncDeliverer (InvokeEndpoint or Runtime API).
+// Delivery is retried with exponential backoff, so a 202 from Invoke means
+// "accepted for delivery" rather than "attempted once" (issue #803).
 type asyncDispatcher struct {
 	client *http.Client
 	done   chan struct{}
@@ -69,14 +77,14 @@ func newAsyncDispatcher() *asyncDispatcher {
 
 // enqueue places an event on the function's FIFO queue without blocking the
 // caller. The drain goroutine for the function is started on first use.
-func (d *asyncDispatcher) enqueue(functionName, endpoint string, payload []byte) {
+func (d *asyncDispatcher) enqueue(functionName string, deliverer asyncDeliverer, payload []byte) {
 	payloadCopy := make([]byte, len(payload))
 	copy(payloadCopy, payload)
 
 	ev := &asyncEvent{
-		endpoint: endpoint,
-		payload:  payloadCopy,
-		deadline: time.Now().Add(d.maxEventAge),
+		deliverer: deliverer,
+		payload:   payloadCopy,
+		deadline:  time.Now().Add(d.maxEventAge),
 	}
 
 	d.mu.Lock()
@@ -139,24 +147,24 @@ func (d *asyncDispatcher) drain(functionName string, q chan *asyncEvent) {
 type deliveryResult int
 
 const (
-	// asyncDelivered: the endpoint accepted the event.
+	// asyncDelivered: the deliverer accepted the event.
 	asyncDelivered deliveryResult = iota
-	// asyncFunctionError: the endpoint responded with an error status.
+	// asyncFunctionError: the target responded with an error.
 	asyncFunctionError
-	// asyncSystemError: the endpoint could not be reached.
+	// asyncSystemError: the target could not be reached.
 	asyncSystemError
-	// asyncPermanentFailure: the event can never be delivered (bad endpoint).
+	// asyncPermanentFailure: the event can never be delivered (e.g. bad endpoint URL).
 	asyncPermanentFailure
 )
 
-// deliver posts the event to its endpoint, retrying failures until the event
+// deliver hands the event to its deliverer, retrying failures until the event
 // is delivered, exhausts its function-error retries, or expires.
 func (d *asyncDispatcher) deliver(ctx context.Context, functionName string, ev *asyncEvent) {
 	backoff := d.initialBackoff
 	functionErrorRetries := 0
 
 	for {
-		switch d.post(ctx, functionName, ev) {
+		switch ev.deliverer.deliver(ctx, functionName, ev.payload) {
 		case asyncDelivered, asyncPermanentFailure:
 			return
 		case asyncFunctionError:
@@ -186,9 +194,17 @@ func (d *asyncDispatcher) deliver(ctx context.Context, functionName string, ev *
 	}
 }
 
-// post performs a single delivery attempt.
-func (d *asyncDispatcher) post(ctx context.Context, functionName string, ev *asyncEvent) deliveryResult {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ev.endpoint, bytes.NewReader(ev.payload))
+// endpointDeliverer delivers an event by POSTing it to a function's
+// InvokeEndpoint. Counterpart of runtimeDeliverer (runtime.go) for functions
+// backed by a Runtime API handler.
+type endpointDeliverer struct {
+	client   *http.Client
+	endpoint string
+}
+
+// deliver performs a single delivery attempt.
+func (e *endpointDeliverer) deliver(ctx context.Context, functionName string, payload []byte) deliveryResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(payload))
 	if err != nil {
 		slog.Error("async invoke failed to create request", "function", functionName, "error", err)
 
@@ -197,7 +213,7 @@ func (d *asyncDispatcher) post(ctx context.Context, functionName string, ev *asy
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := d.client.Do(req)
+	resp, err := e.client.Do(req)
 	if err != nil {
 		slog.Warn("async invoke attempt failed, will retry", "function", functionName, "error", err)
 
