@@ -73,14 +73,20 @@ type snsToSQSPublisher struct {
 }
 
 // PublishToSQS hands a single message to the SQS storage layer. The
-// MessageId / Subject attributes the SNS layer attaches are forwarded as
-// SQS message attributes (String type) so subscribers can read them.
-func (p *snsToSQSPublisher) PublishToSQS(ctx context.Context, endpoint, body, messageGroupID, messageDeduplicationID string, attrs map[string]string) error {
+// MessageId / Subject attributes the SNS layer attaches, along with any
+// publisher-supplied message attributes forwarded for RawMessageDelivery,
+// are mapped field-for-field into SQS message attributes so subscribers
+// can read them.
+func (p *snsToSQSPublisher) PublishToSQS(ctx context.Context, endpoint, body, messageGroupID, messageDeduplicationID string, attrs map[string]sns.MessageAttribute) error {
 	queueURL := p.endpointToQueueURL(endpoint)
 
 	mAttrs := make(map[string]sqs.MessageAttributeValue, len(attrs))
 	for k, v := range attrs {
-		mAttrs[k] = sqs.MessageAttributeValue{DataType: "String", StringValue: v}
+		mAttrs[k] = sqs.MessageAttributeValue{
+			DataType:    v.DataType,
+			StringValue: v.StringValue,
+			BinaryValue: v.BinaryValue,
+		}
 	}
 
 	_, err := p.storage.SendMessage(ctx, queueURL, body, 0, mAttrs, messageGroupID, messageDeduplicationID)
