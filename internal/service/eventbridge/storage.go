@@ -21,6 +21,10 @@ import (
 // Default event bus name.
 const defaultEventBusName = "default"
 
+// maxDeliveredEvents bounds the kumo-specific delivery-verification log so a
+// long-running emulator session cannot grow it (and its allocations) forever.
+const maxDeliveredEvents = 1000
+
 // Error codes.
 const (
 	errEventBusNotFound      = "ResourceNotFoundException"
@@ -103,7 +107,7 @@ type MemoryStorage struct {
 	Connections     map[string]*Connection          `json:"connections"`
 	APIDestinations map[string]*APIDestination      `json:"apiDestinations"`
 	Tags            map[string][]Tag                `json:"tags"`
-	DeliveredEvents []DeliveredEvent                `json:"deliveredEvents"`
+	DeliveredEvents []DeliveredEvent                `json:"-"`
 	region          string
 	accountID       string
 	dataDir         string
@@ -681,6 +685,16 @@ func (s *MemoryStorage) matchAndDeliver(eventID, eventBusName string, entry *Put
 				go s.deliverToLambda(target, payload)
 			}
 		}
+
+		s.trimDeliveredEventsLocked()
+	}
+}
+
+// trimDeliveredEventsLocked drops the oldest entries beyond the cap.
+// Caller must hold s.mu.
+func (s *MemoryStorage) trimDeliveredEventsLocked() {
+	if excess := len(s.DeliveredEvents) - maxDeliveredEvents; excess > 0 {
+		s.DeliveredEvents = append([]DeliveredEvent(nil), s.DeliveredEvents[excess:]...)
 	}
 }
 

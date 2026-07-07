@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -580,5 +581,101 @@ func TestPutEvents_APIDestinationPathParameters(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not receive dispatched event within timeout")
+	}
+}
+
+// TestDeliveredEventsCapped verifies that DeliveredEvents never grows past
+// maxDeliveredEvents and that the oldest entries are the ones dropped.
+func TestDeliveredEventsCapped(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage()
+	ctx := context.Background()
+
+	if _, err := s.PutRule(ctx, &PutRuleRequest{
+		Name:         "cap-test-rule",
+		EventPattern: `{"source":["cap.test"]}`,
+		State:        "ENABLED",
+	}); err != nil {
+		t.Fatalf("PutRule: %v", err)
+	}
+
+	// A target ARN that matches none of the SQS/Lambda/API-destination
+	// dispatch paths, so PutEvents only records the delivery without
+	// spawning any goroutine delivery.
+	if _, err := s.PutTargets(ctx, "", "cap-test-rule", []TargetInput{
+		{ID: "target-1", Arn: "arn:aws:events:us-east-1:000000000000:target/cap-test"},
+	}); err != nil {
+		t.Fatalf("PutTargets: %v", err)
+	}
+
+	const totalEvents = maxDeliveredEvents + 50
+
+	var firstEventID string
+
+	for i := range totalEvents {
+		result, err := s.PutEvents(ctx, []PutEventsRequestEntry{
+			{Source: "cap.test", DetailType: "CapEvent", Detail: `{"i":` + strconv.Itoa(i) + `}`},
+		})
+		if err != nil {
+			t.Fatalf("PutEvents[%d]: %v", i, err)
+		}
+
+		if i == 0 {
+			firstEventID = result[0].EventID
+		}
+	}
+
+	got := s.GetDeliveredEvents(ctx)
+	if len(got) != maxDeliveredEvents {
+		t.Fatalf("len(DeliveredEvents) = %d, want %d", len(got), maxDeliveredEvents)
+	}
+
+	// The first surviving entry should not be the very first published event
+	// (EventID differs), since the oldest 50 entries must have been dropped.
+	if len(got) > 0 && got[0].EventID == firstEventID {
+		t.Fatalf("expected oldest entries to be dropped, but first entry still matches the very first published event")
+	}
+}
+
+// TestDeliveredEventsNotPersisted verifies that DeliveredEvents is excluded
+// from the storage snapshot.
+func TestDeliveredEventsNotPersisted(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage()
+	ctx := context.Background()
+
+	if _, err := s.PutRule(ctx, &PutRuleRequest{
+		Name:         "persist-test-rule",
+		EventPattern: `{"source":["persist.test"]}`,
+		State:        "ENABLED",
+	}); err != nil {
+		t.Fatalf("PutRule: %v", err)
+	}
+
+	if _, err := s.PutTargets(ctx, "", "persist-test-rule", []TargetInput{
+		{ID: "target-1", Arn: "arn:aws:events:us-east-1:000000000000:target/persist-test"},
+	}); err != nil {
+		t.Fatalf("PutTargets: %v", err)
+	}
+
+	if _, err := s.PutEvents(ctx, []PutEventsRequestEntry{
+		{Source: "persist.test", DetailType: "PersistEvent", Detail: `{}`},
+	}); err != nil {
+		t.Fatalf("PutEvents: %v", err)
+	}
+
+	if len(s.GetDeliveredEvents(ctx)) == 0 {
+		t.Fatal("precondition failed: expected at least one delivered event")
+	}
+
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	if strings.Contains(string(data), `"deliveredEvents"`) {
+		t.Fatalf("snapshot must not contain deliveredEvents key, got: %s", string(data))
 	}
 }
