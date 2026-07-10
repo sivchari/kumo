@@ -52,7 +52,7 @@ func TestSTS_AssumeRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration", "AssumedRoleId", "Arn", "ResultMetadata")).Assert(t.Name(), result)
+	golden.New(t, golden.WithIgnoreFields("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration", "AssumedRoleId", "ResultMetadata")).Assert(t.Name(), result)
 }
 
 func TestSTS_AssumeRoleWithWebIdentity(t *testing.T) {
@@ -67,7 +67,7 @@ func TestSTS_AssumeRoleWithWebIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration", "AssumedRoleId", "Arn", "ResultMetadata")).Assert(t.Name(), result)
+	golden.New(t, golden.WithIgnoreFields("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration", "AssumedRoleId", "ResultMetadata")).Assert(t.Name(), result)
 }
 
 func TestSTS_GetSessionToken(t *testing.T) {
