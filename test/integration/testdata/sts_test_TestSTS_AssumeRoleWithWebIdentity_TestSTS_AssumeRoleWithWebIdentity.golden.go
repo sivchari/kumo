@@ -1,14 +1,14 @@
 {
   "AssumedRoleUser": {
     "Arn": "arn:aws:sts::000000000000:assumed-role/web-identity-role/web-session",
-    "AssumedRoleId": "AROAfeee8289-c58:web-session"
+    "AssumedRoleId": "AROA598b80eb-99b:web-session"
   },
   "Audience": null,
   "Credentials": {
-    "AccessKeyId": "ASIA4baa795ec4cb50a5",
-    "Expiration": "2026-03-23T08:45:28Z",
-    "SecretAccessKey": "e4e80e3901e72a7cf0b1ddb237aff1d64169fef0",
-    "SessionToken": "d0d71a51041bf91638830928c092ddfb61a49ef9e79a0ab213dcf484facca73a"
+    "AccessKeyId": "ASIAf97b1ed155b7ac7a",
+    "Expiration": "2026-07-10T09:39:02Z",
+    "SecretAccessKey": "30f36ca6e95a1aef09a4ca05769526e6545f394e",
+    "SessionToken": "7ea868ac6fcb3405af52a404fd7abb2be3761d7d345643b9a98d8910a7f7ba3d"
   },
   "PackedPolicySize": 0,
   "Provider": null,

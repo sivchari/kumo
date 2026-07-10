@@ -268,7 +268,7 @@ func TestLambdaNotification_CompleteMultipartUploadFiresAllEmitters(t *testing.T
 
 	ctx := context.Background()
 
-	upload, err := store.CreateMultipartUpload(ctx, bucket, "big.bin")
+	upload, err := store.CreateMultipartUpload(ctx, bucket, "big.bin", nil)
 	if err != nil {
 		t.Fatalf("CreateMultipartUpload: %v", err)
 	}

@@ -1337,8 +1337,60 @@ func TestS3_CopyObject(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields(
 		"ETag", "LastModified", "ResultMetadata",
-		"ServerSideEncryption", "CopySourceVersionId",
+		"CopySourceVersionId",
 	)).Assert(t.Name(), copyOutput)
+}
+
+// TestS3_CopyObjectPreservesSSEKMS verifies that CopyObject applies the
+// SSE-KMS settings from the copy request itself to the destination object,
+// matching AWS's CopyObject SSE semantics.
+func TestS3_CopyObjectPreservesSSEKMS(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucketName := "test-copy-object-sse-bucket"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("source.txt"),
+		Body:   bytes.NewReader([]byte("copy me")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:               aws.String(bucketName),
+		Key:                  aws.String("dest.txt"),
+		CopySource:           aws.String(bucketName + "/source.txt"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String("arn:aws:kms:us-east-1:000000000000:key/test-key"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	headOutput, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("dest.txt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if headOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Errorf("expected persisted SSE algorithm aws:kms, got %s", headOutput.ServerSideEncryption)
+	}
+
+	if aws.ToString(headOutput.SSEKMSKeyId) == "" {
+		t.Error("expected persisted SSEKMSKeyId to be set")
+	}
 }
 
 // TestS3_CopyObject_URLEncodedSource verifies that the URL-encoded
