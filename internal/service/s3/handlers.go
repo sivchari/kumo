@@ -740,7 +740,10 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, extractObjectMetadata(r.Header))
+	metadata := extractObjectMetadata(r.Header)
+	s.resolveEncryptionMetadata(r.Context(), r.Header, bucket, metadata)
+
+	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, metadata)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -814,7 +817,7 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.applyCopyEncryption(r.Context(), r.Header, dstBucket, metadata)
+	s.resolveEncryptionMetadata(r.Context(), r.Header, dstBucket, metadata)
 
 	tags, err := s.copyObjectTags(r.Context(), r.Header, srcBucket, srcKey)
 	if err != nil {
@@ -917,12 +920,12 @@ func copyObjectMetadata(header http.Header, src map[string]string) (map[string]s
 	}
 }
 
-// applyCopyEncryption sets the destination object's SSE following AWS
-// CopyObject semantics: request headers win, else the destination bucket's
-// default encryption. The source object's SSE is intentionally NOT
-// inherited (issue #714 asks for "preservation", but AWS does not preserve
-// SSE across copies; see the PR description).
-func (s *Service) applyCopyEncryption(ctx context.Context, header http.Header, dstBucket string, metadata map[string]string) {
+// resolveEncryptionMetadata sets an object's SSE following AWS semantics:
+// request headers win, else the destination bucket's default encryption.
+// Used by PutObject, CopyObject, and CreateMultipartUpload. For CopyObject,
+// the source object's SSE is intentionally NOT inherited (issue #714 asks
+// for "preservation", but AWS does not preserve SSE across copies).
+func (s *Service) resolveEncryptionMetadata(ctx context.Context, header http.Header, dstBucket string, metadata map[string]string) {
 	if sse := header.Get("X-Amz-Server-Side-Encryption"); sse != "" {
 		metadata["x-amz-server-side-encryption"] = sse
 		if key := header.Get("X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"); key != "" {
@@ -2082,7 +2085,10 @@ func (s *Service) CreateMultipartUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	upload, err := s.storage.CreateMultipartUpload(r.Context(), bucket, key, extractObjectMetadata(r.Header))
+	metadata := extractObjectMetadata(r.Header)
+	s.resolveEncryptionMetadata(r.Context(), r.Header, bucket, metadata)
+
+	upload, err := s.storage.CreateMultipartUpload(r.Context(), bucket, key, metadata)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {

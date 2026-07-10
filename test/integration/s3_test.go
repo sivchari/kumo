@@ -1908,6 +1908,69 @@ func TestS3_PutObjectWithSSEKMS(t *testing.T) {
 	}
 }
 
+// TestS3_PutObjectFallsBackToBucketDefaultEncryption verifies that, absent
+// SSE headers on the request, PutObject applies the destination bucket's
+// default encryption, matching AWS's PutObject semantics.
+func TestS3_PutObjectFallsBackToBucketDefaultEncryption(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-bucket-default-sse"
+	key := "encrypted.txt"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	if _, err := client.PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
+		Bucket: aws.String(bucket),
+		ServerSideEncryptionConfiguration: &types.ServerSideEncryptionConfiguration{
+			Rules: []types.ServerSideEncryptionRule{
+				{
+					ApplyServerSideEncryptionByDefault: &types.ServerSideEncryptionByDefault{
+						SSEAlgorithm:   types.ServerSideEncryptionAwsKms,
+						KMSMasterKeyID: aws.String("bucket-default-key"),
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("failed to put bucket encryption: %v", err)
+	}
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+		Body:   strings.NewReader("secret"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	headOutput, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if headOutput.ServerSideEncryption != types.ServerSideEncryptionAwsKms {
+		t.Errorf("expected SSE algorithm aws:kms, got %s", headOutput.ServerSideEncryption)
+	}
+
+	if aws.ToString(headOutput.SSEKMSKeyId) == "" {
+		t.Error("expected SSEKMSKeyId to be set")
+	}
+}
+
 // postPresignedForm builds a multipart/form-data body from the presigned POST
 // fields plus the object content (the file field is written last, as AWS
 // requires) and sends it to the presigned URL.

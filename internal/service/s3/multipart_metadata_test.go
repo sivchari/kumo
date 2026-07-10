@@ -23,7 +23,7 @@ func TestMultipartUploadCarriesContentTypeMetadataAndSSE(t *testing.T) {
 	uploadID := issueCreateMultipartUpload(t, svc, map[string]string{
 		"Content-Type":                                "image/jpeg",
 		"X-Amz-Meta-Origin":                           "cam1",
-		"X-Amz-Server-Side-Encryption":                "aws:kms",
+		"X-Amz-Server-Side-Encryption":                sseAlgorithmAWSKMS,
 		"X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id": "mpu-key",
 	})
 
@@ -46,8 +46,8 @@ func TestMultipartUploadCarriesContentTypeMetadataAndSSE(t *testing.T) {
 		t.Fatalf("Metadata[origin]: got %q, want cam1", got)
 	}
 
-	if dstObj.ServerSideEncryption != "aws:kms" {
-		t.Fatalf("ServerSideEncryption: got %q, want aws:kms", dstObj.ServerSideEncryption)
+	if dstObj.ServerSideEncryption != sseAlgorithmAWSKMS {
+		t.Fatalf("ServerSideEncryption: got %q, want %s", dstObj.ServerSideEncryption, sseAlgorithmAWSKMS)
 	}
 
 	if dstObj.SSEKMSKeyID != "mpu-key" {
@@ -84,6 +84,43 @@ func TestMultipartUploadWithNoHeadersFallsBackToOctetStream(t *testing.T) {
 
 	if dstObj.ServerSideEncryption != "" {
 		t.Fatalf("ServerSideEncryption: got %q, want empty", dstObj.ServerSideEncryption)
+	}
+}
+
+// TestCreateMultipartUploadFallsBackToDestinationBucketDefaultEncryption
+// verifies that, absent SSE headers on the initiate request, a multipart
+// upload picks up the destination bucket's default encryption, matching
+// AWS's CreateMultipartUpload semantics.
+func TestCreateMultipartUploadFallsBackToDestinationBucketDefaultEncryption(t *testing.T) {
+	t.Parallel()
+
+	store, svc := setupMultipartMetadataFixture(t)
+
+	if err := store.PutBucketEncryption(context.Background(), "mpu-metadata-test", ServerSideEncryptionConfig{
+		Rules: []ServerSideEncryptionRule{
+			{SSEAlgorithm: sseAlgorithmAWSKMS, KMSMasterKeyID: testBucketDefaultKMSKeyID},
+		},
+	}); err != nil {
+		t.Fatalf("PutBucketEncryption: %v", err)
+	}
+
+	uploadID := issueCreateMultipartUpload(t, svc, map[string]string{})
+	etag := issueUploadPart(t, svc, uploadID, 1, "hello multipart")
+	issueCompleteMultipartUpload(t, svc, uploadID, []PartRequest{
+		{PartNumber: 1, ETag: etag},
+	})
+
+	dstObj, err := store.GetObject(context.Background(), "mpu-metadata-test", "object")
+	if err != nil {
+		t.Fatalf("GetObject: %v", err)
+	}
+
+	if dstObj.ServerSideEncryption != sseAlgorithmAWSKMS {
+		t.Fatalf("ServerSideEncryption: got %q, want %s", dstObj.ServerSideEncryption, sseAlgorithmAWSKMS)
+	}
+
+	if dstObj.SSEKMSKeyID != testBucketDefaultKMSKeyID {
+		t.Fatalf("SSEKMSKeyID: got %q, want %s", dstObj.SSEKMSKeyID, testBucketDefaultKMSKeyID)
 	}
 }
 
