@@ -222,6 +222,107 @@ func TestExecuteAPI_LambdaProxy(t *testing.T) {
 	}
 }
 
+// TestExecuteAPI_LambdaProxy_StageVariables proves stage variables
+// configured on a deployed stage are injected into the Lambda proxy event
+// as "stageVariables", matching AWS's APIGatewayProxyRequest schema.
+func TestExecuteAPI_LambdaProxy_StageVariables(t *testing.T) {
+	client := executeAPIClient(t)
+
+	// Mock Lambda handler: echoes the received event's stageVariables back
+	// as the response body so the test can assert on it.
+	lambda := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var event map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&event)
+
+		body, _ := json.Marshal(event["stageVariables"])
+		resp := map[string]any{
+			"statusCode": 200,
+			"headers":    map[string]string{"Content-Type": "application/json"},
+			"body":       string(body),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(lambda.Close)
+
+	fn := "executeapi-lambda-stagevars-fn"
+	createLambdaWithEndpoint(t, fn, lambda.URL)
+
+	api, err := client.CreateRestApi(t.Context(), &apigateway.CreateRestApiInput{Name: aws.String("executeapi-lambda-stagevars")})
+	if err != nil {
+		t.Fatalf("CreateRestApi: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteRestApi(context.Background(), &apigateway.DeleteRestApiInput{RestApiId: api.Id})
+	})
+
+	root := rootResourceID(t, client, api.Id)
+
+	res, err := client.CreateResource(t.Context(), &apigateway.CreateResourceInput{
+		RestApiId: api.Id,
+		ParentId:  aws.String(root),
+		PathPart:  aws.String("items"),
+	})
+	if err != nil {
+		t.Fatalf("CreateResource: %v", err)
+	}
+
+	if _, err := client.PutMethod(t.Context(), &apigateway.PutMethodInput{
+		RestApiId:         api.Id,
+		ResourceId:        res.Id,
+		HttpMethod:        aws.String("GET"),
+		AuthorizationType: aws.String("NONE"),
+	}); err != nil {
+		t.Fatalf("PutMethod: %v", err)
+	}
+
+	uri := fmt.Sprintf(
+		"arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:000000000000:function:%s/invocations",
+		fn,
+	)
+
+	if _, err := client.PutIntegration(t.Context(), &apigateway.PutIntegrationInput{
+		RestApiId:             api.Id,
+		ResourceId:            res.Id,
+		HttpMethod:            aws.String("GET"),
+		Type:                  types.IntegrationTypeAwsProxy,
+		IntegrationHttpMethod: aws.String("POST"),
+		Uri:                   aws.String(uri),
+	}); err != nil {
+		t.Fatalf("PutIntegration: %v", err)
+	}
+
+	deployment, err := client.CreateDeployment(t.Context(), &apigateway.CreateDeploymentInput{RestApiId: api.Id})
+	if err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+
+	if _, err := client.CreateStage(t.Context(), &apigateway.CreateStageInput{
+		RestApiId:    api.Id,
+		StageName:    aws.String("dev"),
+		DeploymentId: deployment.Id,
+		Variables:    map[string]string{"env": "staging"},
+	}); err != nil {
+		t.Fatalf("CreateStage: %v", err)
+	}
+
+	status, body := callStage(t, http.MethodGet, *api.Id, "dev", "/items")
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", status, body)
+	}
+
+	var stageVars map[string]string
+	if err := json.Unmarshal([]byte(body), &stageVars); err != nil {
+		t.Fatalf("decode stageVariables from response body %q: %v", body, err)
+	}
+
+	if got := stageVars["env"]; got != "staging" {
+		t.Errorf("stageVariables[env] = %q, want %q", got, "staging")
+	}
+}
+
 // TestExecuteAPI_HTTPProxy proves an HTTP_PROXY integration forwards the
 // request to the backend and returns its response.
 func TestExecuteAPI_HTTPProxy(t *testing.T) {
