@@ -437,7 +437,7 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject,
 	// Deliver to all subscriptions.
 	for _, sub := range subscriptions {
 		if err := m.deliverMessage(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
-			slog.Default().Error("sns: failed to deliver to subscription",
+			slog.Error("sns: failed to deliver to subscription",
 				"endpoint", sub.Endpoint,
 				"protocol", sub.Protocol,
 				"topicArn", sub.TopicARN,
