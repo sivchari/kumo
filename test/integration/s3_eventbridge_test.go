@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -280,6 +281,133 @@ func TestS3_NotificationToSQS(t *testing.T) {
 
 	if err := json.Unmarshal([]byte(msgBody), &notification); err != nil {
 		t.Fatalf("failed to parse SQS message body as S3 event notification: %v", err)
+	}
+
+	if len(notification.Records) == 0 {
+		t.Fatal("expected at least one record in the notification")
+	}
+
+	record := notification.Records[0]
+
+	if record.EventSource != "aws:s3" {
+		t.Errorf("expected eventSource=aws:s3, got %q", record.EventSource)
+	}
+
+	if record.EventName != "s3:ObjectCreated:Put" {
+		t.Errorf("expected eventName=s3:ObjectCreated:Put, got %q", record.EventName)
+	}
+
+	if record.S3.Bucket.Name != bucketName {
+		t.Errorf("expected bucket name=%q, got %q", bucketName, record.S3.Bucket.Name)
+	}
+
+	if !strings.Contains(record.S3.Object.Key, "notif-test.txt") {
+		t.Errorf("expected object key to contain notif-test.txt, got %q", record.S3.Object.Key)
+	}
+}
+
+// TestS3_NotificationToLambda proves a Lambda function configured via
+// LambdaFunctionConfiguration is actually invoked (with the S3 event
+// notification payload) when a matching object is created.
+func TestS3_NotificationToLambda(t *testing.T) {
+	s3Client := newS3Client(t)
+	ctx := t.Context()
+
+	bucketName := "s3-notif-lambda-test"
+	fn := "s3-notif-lambda-fn"
+
+	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, _ = s3Client.DeleteObject(cleanupCtx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("notif-test.txt"),
+		})
+		_, _ = s3Client.DeleteBucket(cleanupCtx, &s3.DeleteBucketInput{
+			Bucket: aws.String(bucketName),
+		})
+	})
+
+	received := make(chan []byte, 1)
+	lambda := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received <- body
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(lambda.Close)
+
+	createLambdaWithEndpoint(t, fn, lambda.URL)
+
+	functionArn := "arn:aws:lambda:us-east-1:000000000000:function:" + fn
+	notifXML := `<NotificationConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+		`<CloudFunctionConfiguration>` +
+		`<Id>lambda-notif</Id>` +
+		`<CloudFunction>` + functionArn + `</CloudFunction>` +
+		`<Event>s3:ObjectCreated:*</Event>` +
+		`</CloudFunctionConfiguration>` +
+		`</NotificationConfiguration>`
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		"http://localhost:4566/"+bucketName+"?notification",
+		bytes.NewReader([]byte(notifXML)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PutBucketNotificationConfiguration returned %d", resp.StatusCode)
+	}
+
+	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String("notif-test.txt"),
+		Body:   bytes.NewReader([]byte("hello lambda notification")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var body []byte
+
+	select {
+	case body = <-received:
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected S3 event notification to invoke Lambda, but it was never called")
+	}
+
+	var notification struct {
+		Records []struct {
+			EventSource string `json:"eventSource"`
+			EventName   string `json:"eventName"`
+			S3          struct {
+				Bucket struct {
+					Name string `json:"name"`
+				} `json:"bucket"`
+				Object struct {
+					Key string `json:"key"`
+				} `json:"object"`
+			} `json:"s3"`
+		} `json:"Records"`
+	}
+
+	if err := json.Unmarshal(body, &notification); err != nil {
+		t.Fatalf("failed to parse Lambda invocation payload as S3 event notification: %v", err)
 	}
 
 	if len(notification.Records) == 0 {
