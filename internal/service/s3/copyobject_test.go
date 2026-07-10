@@ -116,7 +116,7 @@ func TestCopyObjectFallsBackToDestinationBucketDefaultEncryption(t *testing.T) {
 
 	if err := store.PutBucketEncryption(context.Background(), "dst", ServerSideEncryptionConfig{
 		Rules: []ServerSideEncryptionRule{
-			{SSEAlgorithm: sseAlgorithmAWSKMS, KMSMasterKeyID: "bucket-default-key"},
+			{SSEAlgorithm: sseAlgorithmAWSKMS, KMSMasterKeyID: testBucketDefaultKMSKeyID},
 		},
 	}); err != nil {
 		t.Fatalf("PutBucketEncryption: %v", err)
@@ -137,8 +137,8 @@ func TestCopyObjectFallsBackToDestinationBucketDefaultEncryption(t *testing.T) {
 		t.Fatalf("ServerSideEncryption: got %q, want aws:kms", dstObj.ServerSideEncryption)
 	}
 
-	if dstObj.SSEKMSKeyID != "bucket-default-key" {
-		t.Fatalf("SSEKMSKeyID: got %q, want bucket-default-key", dstObj.SSEKMSKeyID)
+	if dstObj.SSEKMSKeyID != testBucketDefaultKMSKeyID {
+		t.Fatalf("SSEKMSKeyID: got %q, want %s", dstObj.SSEKMSKeyID, testBucketDefaultKMSKeyID)
 	}
 }
 
