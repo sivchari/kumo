@@ -1,6 +1,6 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/E83995c30-bffb",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/Ef434e2f1-4cce",
     "DistributionConfig": {
       "CallerReference": "test-create-distribution",
       "Comment": "Test distribution",
@@ -13,9 +13,15 @@
         "DefaultTTL": null,
         "FieldLevelEncryptionId": null,
         "ForwardedValues": null,
-        "FunctionAssociations": null,
+        "FunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "GrpcConfig": null,
-        "LambdaFunctionAssociations": null,
+        "LambdaFunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "MaxTTL": null,
         "MinTTL": null,
         "OriginRequestPolicyId": null,
@@ -67,7 +73,10 @@
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
       "Logging": null,
-      "OriginGroups": null,
+      "OriginGroups": {
+        "Quantity": 0,
+        "Items": null
+      },
       "PriceClass": "PriceClass_All",
       "Restrictions": null,
       "Staging": null,
@@ -84,10 +93,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "E83995c30-bffb.cloudfront.net",
-    "Id": "E83995c30-bffb",
+    "DomainName": "Ef434e2f1-4cce.cloudfront.net",
+    "Id": "Ef434e2f1-4cce",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-06-12T15:24:36+09:00",
+    "LastModifiedTime": "2026-06-12T16:37:13+09:00",
     "Status": "InProgress",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -101,7 +110,7 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "Eaa2213fb-5145-4942-aa21-4b518eaa",
-  "Location": "/2020-05-31/distribution/E83995c30-bffb",
+  "ETag": "E6a2f40e1-1152-498a-9f08-9c93014e",
+  "Location": "/2020-05-31/distribution/Ef434e2f1-4cce",
   "ResultMetadata": {}
 }

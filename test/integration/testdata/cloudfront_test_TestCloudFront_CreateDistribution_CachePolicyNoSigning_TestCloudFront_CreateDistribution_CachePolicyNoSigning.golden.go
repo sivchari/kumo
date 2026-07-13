@@ -1,6 +1,6 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/E22a9ded2-8524",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/Eab931381-edab",
     "DistributionConfig": {
       "CallerReference": "test-cache-policy-no-signing",
       "Comment": "Test distribution cache policy no signing",
@@ -26,9 +26,15 @@
         "DefaultTTL": null,
         "FieldLevelEncryptionId": null,
         "ForwardedValues": null,
-        "FunctionAssociations": null,
+        "FunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "GrpcConfig": null,
-        "LambdaFunctionAssociations": null,
+        "LambdaFunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "MaxTTL": null,
         "MinTTL": null,
         "OriginRequestPolicyId": null,
@@ -80,7 +86,10 @@
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
       "Logging": null,
-      "OriginGroups": null,
+      "OriginGroups": {
+        "Quantity": 0,
+        "Items": null
+      },
       "PriceClass": "PriceClass_All",
       "Restrictions": null,
       "Staging": null,
@@ -97,10 +106,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "E22a9ded2-8524.cloudfront.net",
-    "Id": "E22a9ded2-8524",
+    "DomainName": "Eab931381-edab.cloudfront.net",
+    "Id": "Eab931381-edab",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-06-12T15:24:36+09:00",
+    "LastModifiedTime": "2026-06-12T16:37:13+09:00",
     "Status": "InProgress",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -114,7 +123,7 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "E418f8ba0-a03c-40c5-95ec-e2f5f4c1",
-  "Location": "/2020-05-31/distribution/E22a9ded2-8524",
+  "ETag": "E78e549d9-e2b9-45e5-aa1d-80fd5ca8",
+  "Location": "/2020-05-31/distribution/Eab931381-edab",
   "ResultMetadata": {}
 }

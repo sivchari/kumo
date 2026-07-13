@@ -460,6 +460,11 @@ func buildDistributionConfigXML(config *DistributionConfig) *DistributionConfigX
 	result.Aliases = buildAliasesConfigXML(config.Aliases)
 	result.ViewerCertificate = buildViewerCertificateConfigXML(config.ViewerCertificate)
 
+	// kumo does not store origin groups, but real CloudFront always returns an
+	// (empty) OriginGroups element. Emitting it keeps the Terraform AWS provider's
+	// resourceDistributionRead from nil-dereferencing distributionConfig.OriginGroups.Quantity.
+	result.OriginGroups = &OriginGroupsXML{Quantity: 0}
+
 	return result
 }
 
@@ -561,6 +566,13 @@ func buildDefaultCacheBehaviorXML(dcb *DefaultCacheBehavior) *DefaultCacheBehavi
 	buildForwardedValuesXML(dcb.ForwardedValues, result)
 	buildTrustedSignersXML(dcb.TrustedSigners, result)
 	buildTrustedKeyGroupsXML(dcb.TrustedKeyGroups, result)
+
+	// kumo does not store function/Lambda associations, but real CloudFront
+	// always returns both elements (empty, Quantity=0). Emitting them keeps the
+	// Terraform AWS provider's flattenDefaultCacheBehavior from nil-dereferencing
+	// apiObject.FunctionAssociations.Items / apiObject.LambdaFunctionAssociations.Items.
+	result.FunctionAssociations = &FunctionAssociationsXML{Quantity: 0}
+	result.LambdaFunctionAssociations = &LambdaFunctionAssociationsXML{Quantity: 0}
 
 	return result
 }

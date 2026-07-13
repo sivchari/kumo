@@ -267,10 +267,15 @@ type ActiveTrustedKeyGroupsXML struct {
 
 // DistributionConfigXML represents distribution config in XML format.
 type DistributionConfigXML struct {
-	CallerReference      string                   `xml:"CallerReference"`
-	Aliases              *AliasesXML              `xml:"Aliases,omitempty"`
-	DefaultRootObject    string                   `xml:"DefaultRootObject,omitempty"`
-	Origins              *OriginsXML              `xml:"Origins"`
+	CallerReference   string      `xml:"CallerReference"`
+	Aliases           *AliasesXML `xml:"Aliases,omitempty"`
+	DefaultRootObject string      `xml:"DefaultRootObject,omitempty"`
+	Origins           *OriginsXML `xml:"Origins"`
+	// OriginGroups is emitted unconditionally (no omitempty). Real CloudFront
+	// always returns it even empty (Quantity=0); the Terraform AWS provider's
+	// resourceDistributionRead does aws.ToInt32(distributionConfig.OriginGroups.Quantity)
+	// without a nil-check (distribution.go:1000), so omitting it crashes the provider.
+	OriginGroups         *OriginGroupsXML         `xml:"OriginGroups"`
 	DefaultCacheBehavior *DefaultCacheBehaviorXML `xml:"DefaultCacheBehavior"`
 	CacheBehaviors       *CacheBehaviorsXML       `xml:"CacheBehaviors,omitempty"`
 	Comment              string                   `xml:"Comment"`
@@ -349,6 +354,27 @@ type DefaultCacheBehaviorXML struct {
 	CachePolicyID        string               `xml:"CachePolicyId,omitempty"`
 	TrustedSigners       *TrustedSignersXML   `xml:"TrustedSigners,omitempty"`
 	TrustedKeyGroups     *TrustedKeyGroupsXML `xml:"TrustedKeyGroups,omitempty"`
+	// FunctionAssociations and LambdaFunctionAssociations are emitted
+	// unconditionally (no omitempty). Real CloudFront always returns both
+	// elements, even empty (Quantity=0); the Terraform AWS provider's
+	// flattenDefaultCacheBehavior dereferences apiObject.FunctionAssociations.Items
+	// and apiObject.LambdaFunctionAssociations.Items without nil-checking the
+	// parent pointer, so omitting them crashes the provider.
+	FunctionAssociations       *FunctionAssociationsXML       `xml:"FunctionAssociations"`
+	LambdaFunctionAssociations *LambdaFunctionAssociationsXML `xml:"LambdaFunctionAssociations"`
+}
+
+// FunctionAssociationsXML represents CloudFront function associations in XML.
+// kumo does not store associations, so only the empty (Quantity=0) shape is
+// emitted; the parent element must always be present.
+type FunctionAssociationsXML struct {
+	Quantity int `xml:"Quantity"`
+}
+
+// LambdaFunctionAssociationsXML represents Lambda@Edge associations in XML.
+// Same rationale as FunctionAssociationsXML.
+type LambdaFunctionAssociationsXML struct {
+	Quantity int `xml:"Quantity"`
 }
 
 // AllowedMethodsXML represents allowed methods in XML format.
@@ -398,6 +424,13 @@ type TrustedKeyGroupsXML struct {
 
 // CacheBehaviorsXML represents cache behaviors in XML format.
 type CacheBehaviorsXML struct {
+	Quantity int `xml:"Quantity"`
+}
+
+// OriginGroupsXML represents origin groups in XML format. kumo does not store
+// origin groups, so only the empty (Quantity=0) shape is emitted; the parent
+// element must always be present for the provider's read.
+type OriginGroupsXML struct {
 	Quantity int `xml:"Quantity"`
 }
 

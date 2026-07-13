@@ -75,6 +75,68 @@ func assertCachedMethods(t *testing.T, dcb *DefaultCacheBehaviorXML) {
 	}
 }
 
+func assertAssociationDefaults(t *testing.T, dcb *DefaultCacheBehaviorXML) {
+	t.Helper()
+
+	if dcb == nil {
+		t.Fatal("DefaultCacheBehavior is nil")
+	}
+
+	if dcb.FunctionAssociations == nil {
+		t.Fatal("FunctionAssociations is nil, want present with Quantity=0")
+	}
+
+	if dcb.FunctionAssociations.Quantity != 0 {
+		t.Errorf("FunctionAssociations.Quantity: got %d, want 0", dcb.FunctionAssociations.Quantity)
+	}
+
+	if dcb.LambdaFunctionAssociations == nil {
+		t.Fatal("LambdaFunctionAssociations is nil, want present with Quantity=0")
+	}
+
+	if dcb.LambdaFunctionAssociations.Quantity != 0 {
+		t.Errorf("LambdaFunctionAssociations.Quantity: got %d, want 0", dcb.LambdaFunctionAssociations.Quantity)
+	}
+}
+
+// TestDefaultCacheBehavior_AssociationsAlwaysPresent verifies that a distribution
+// response always carries FunctionAssociations and LambdaFunctionAssociations
+// (empty, Quantity=0), matching real CloudFront. Omitting them leaves the SDK
+// pointers nil and crashes the Terraform provider's flattenDefaultCacheBehavior,
+// which dereferences .Items without a parent nil-check.
+func TestDefaultCacheBehavior_AssociationsAlwaysPresent(t *testing.T) {
+	t.Parallel()
+
+	svc := New(NewMemoryStorage())
+
+	created := createDistViaHandler(t, svc, marshalXML(minimalConfig("assoc-ref")), false)
+	assertAssociationDefaults(t, created.DistributionConfig.DefaultCacheBehavior)
+
+	got := getDistViaHandler(t, svc, created.ID)
+	assertAssociationDefaults(t, got.DistributionConfig.DefaultCacheBehavior)
+}
+
+// TestDistribution_OriginGroupsAlwaysPresent verifies that a distribution
+// response always carries an (empty) OriginGroups element. Real CloudFront
+// always returns it, and the Terraform provider's resourceDistributionRead
+// dereferences distributionConfig.OriginGroups.Quantity without a nil-check
+// (distribution.go:1000); omitting it crashes the provider.
+func TestDistribution_OriginGroupsAlwaysPresent(t *testing.T) {
+	t.Parallel()
+
+	svc := New(NewMemoryStorage())
+
+	created := createDistViaHandler(t, svc, marshalXML(minimalConfig("origin-groups-ref")), false)
+	if created.DistributionConfig.OriginGroups == nil || created.DistributionConfig.OriginGroups.Quantity != 0 {
+		t.Errorf("create OriginGroups: got %+v, want present with Quantity=0", created.DistributionConfig.OriginGroups)
+	}
+
+	got := getDistViaHandler(t, svc, created.ID)
+	if got.DistributionConfig.OriginGroups == nil || got.DistributionConfig.OriginGroups.Quantity != 0 {
+		t.Errorf("get OriginGroups: got %+v, want present with Quantity=0", got.DistributionConfig.OriginGroups)
+	}
+}
+
 // TestDefaultCacheBehavior_TrustedDefaultsWhenSigningAbsent verifies that a
 // CachePolicy-style distribution without TrustedSigners/TrustedKeyGroups still
 // returns both elements with Enabled=false/Quantity=0, matching real CloudFront
