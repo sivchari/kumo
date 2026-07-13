@@ -544,10 +544,18 @@ func buildDefaultCacheBehaviorXML(dcb *DefaultCacheBehavior) *DefaultCacheBehavi
 	}
 
 	if dcb.AllowedMethods != nil {
-		result.AllowedMethods = &AllowedMethodsXML{
+		am := &AllowedMethodsXML{
 			Quantity: dcb.AllowedMethods.Quantity,
 			Items:    dcb.AllowedMethods.Items,
 		}
+		if dcb.CachedMethods != nil {
+			am.CachedMethods = &CachedMethodsXML{
+				Quantity: dcb.CachedMethods.Quantity,
+				Items:    dcb.CachedMethods.Items,
+			}
+		}
+
+		result.AllowedMethods = am
 	}
 
 	buildForwardedValuesXML(dcb.ForwardedValues, result)
@@ -582,6 +590,8 @@ func buildForwardedValuesXML(fv *ForwardedValues, result *DefaultCacheBehaviorXM
 
 func buildTrustedSignersXML(ts *TrustedSigners, result *DefaultCacheBehaviorXML) {
 	if ts == nil {
+		result.TrustedSigners = &TrustedSignersXML{Enabled: false, Quantity: 0}
+
 		return
 	}
 
@@ -594,6 +604,8 @@ func buildTrustedSignersXML(ts *TrustedSigners, result *DefaultCacheBehaviorXML)
 
 func buildTrustedKeyGroupsXML(tkg *TrustedKeyGroups, result *DefaultCacheBehaviorXML) {
 	if tkg == nil {
+		result.TrustedKeyGroups = &TrustedKeyGroupsXML{Enabled: false, Quantity: 0}
+
 		return
 	}
 

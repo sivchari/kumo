@@ -510,3 +510,71 @@ func TestCloudFront_GetInvalidation(t *testing.T) {
 		"ResultMetadata",
 	)).Assert(t.Name(), getResult)
 }
+
+// TestCloudFront_CreateDistribution_CachePolicyNoSigning provisions a
+// CachePolicy-based distribution without trusted signers/key groups but with
+// CachedMethods, a common shape for an SPA frontend distribution. It guards
+// the DefaultCacheBehavior response shape the Terraform AWS provider flattens:
+// the response must always carry TrustedSigners and
+// TrustedKeyGroups (Enabled=false), and must preserve CachedMethods.
+func TestCloudFront_CreateDistribution_CachePolicyNoSigning(t *testing.T) {
+	t.Parallel()
+
+	client := newCloudFrontClient(t)
+	ctx := t.Context()
+
+	result, err := client.CreateDistribution(ctx, &cloudfront.CreateDistributionInput{
+		DistributionConfig: &types.DistributionConfig{
+			CallerReference: aws.String("test-cache-policy-no-signing"),
+			Origins: &types.Origins{
+				Quantity: aws.Int32(1),
+				Items: []types.Origin{
+					{
+						Id:         aws.String("myS3Origin"),
+						DomainName: aws.String("mybucket.s3.amazonaws.com"),
+						S3OriginConfig: &types.S3OriginConfig{
+							OriginAccessIdentity: aws.String(""),
+						},
+					},
+				},
+			},
+			DefaultCacheBehavior: &types.DefaultCacheBehavior{
+				TargetOriginId:       aws.String("myS3Origin"),
+				ViewerProtocolPolicy: types.ViewerProtocolPolicyRedirectToHttps,
+				CachePolicyId:        aws.String("658327ea-f89d-4fab-a63d-7e88639e58f6"),
+				AllowedMethods: &types.AllowedMethods{
+					Quantity: aws.Int32(2),
+					Items:    []types.Method{types.MethodGet, types.MethodHead},
+					CachedMethods: &types.CachedMethods{
+						Quantity: aws.Int32(2),
+						Items:    []types.Method{types.MethodGet, types.MethodHead},
+					},
+				},
+			},
+			Comment: aws.String("Test distribution cache policy no signing"),
+			Enabled: aws.Bool(true),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"Id",
+		"ARN",
+		"DomainName",
+		"LastModifiedTime",
+		"ETag",
+		"Location",
+		"ResultMetadata",
+	)).Assert(t.Name(), result)
+
+	// Clean up.
+	_, err = client.DeleteDistribution(ctx, &cloudfront.DeleteDistributionInput{
+		Id:      result.Distribution.Id,
+		IfMatch: result.ETag,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
