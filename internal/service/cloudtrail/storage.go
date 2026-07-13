@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,9 @@ type Storage interface {
 	StopLogging(ctx context.Context, name string) error
 	LookupEvents(ctx context.Context, req *LookupEventsRequest) ([]*Event, string, error)
 	GetTrailStatus(ctx context.Context, name string) (*Trail, error)
+	ListTrailTags(ctx context.Context, name string) []Tag
+	AddTrailTags(ctx context.Context, name string, tags []Tag) error
+	RemoveTrailTags(ctx context.Context, name string, tags []Tag) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -178,6 +182,7 @@ func (m *MemoryStorage) CreateTrail(_ context.Context, req *CreateTrailRequest) 
 		HasInsightSelectors:        false,
 		IsOrganizationTrail:        false,
 		CreationTime:               time.Now(),
+		Tags:                       tagsToMap(req.TagsList),
 	}
 
 	if req.IncludeGlobalServiceEvents != nil {
@@ -339,4 +344,89 @@ func normalizeTrailName(name string) string {
 
 func generateTrailARN(region, accountID, trailName string) string {
 	return "arn:aws:cloudtrail:" + region + ":" + accountID + ":trail/" + trailName
+}
+
+// ListTrailTags returns the tags of the trail named by a short name or ARN.
+// A missing trail (or one without tags) yields an empty list rather than an
+// error, so the Terraform provider's read-time ListTags stays stable even when
+// no tags were ever set.
+func (m *MemoryStorage) ListTrailTags(_ context.Context, name string) []Tag {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	trail, exists := m.Trails[normalizeTrailName(name)]
+	if !exists {
+		return []Tag{}
+	}
+
+	return mapToTags(trail.Tags)
+}
+
+// AddTrailTags merges the given tags into the trail's tag set.
+func (m *MemoryStorage) AddTrailTags(_ context.Context, name string, tags []Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	trail, exists := m.Trails[normalizeTrailName(name)]
+	if !exists {
+		return &Error{Code: errTrailNotFound, Message: "Trail not found"}
+	}
+
+	if trail.Tags == nil {
+		trail.Tags = make(map[string]string, len(tags))
+	}
+
+	for _, t := range tags {
+		trail.Tags[t.Key] = t.Value
+	}
+
+	m.saveLocked()
+
+	return nil
+}
+
+// RemoveTrailTags deletes the given tags (matched by key) from the trail.
+func (m *MemoryStorage) RemoveTrailTags(_ context.Context, name string, tags []Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	trail, exists := m.Trails[normalizeTrailName(name)]
+	if !exists {
+		return &Error{Code: errTrailNotFound, Message: "Trail not found"}
+	}
+
+	for _, t := range tags {
+		delete(trail.Tags, t.Key)
+	}
+
+	m.saveLocked()
+
+	return nil
+}
+
+// tagsToMap folds a tag list into a map, returning nil for an empty list so the
+// trail's Tags field stays absent until tags are actually set.
+func tagsToMap(list []Tag) map[string]string {
+	if len(list) == 0 {
+		return nil
+	}
+
+	m := make(map[string]string, len(list))
+	for _, t := range list {
+		m[t.Key] = t.Value
+	}
+
+	return m
+}
+
+// mapToTags renders a tag map as a key-sorted list for deterministic responses.
+func mapToTags(m map[string]string) []Tag {
+	tags := make([]Tag, 0, len(m))
+	for k, v := range m {
+		tags = append(tags, Tag{Key: k, Value: v})
+	}
+
+	sort.Slice(tags, func(i, j int) bool { return tags[i].Key < tags[j].Key })
+
+	return tags
 }
