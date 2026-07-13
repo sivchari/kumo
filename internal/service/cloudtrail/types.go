@@ -20,6 +20,14 @@ type Trail struct {
 	HasInsightSelectors        bool
 	IsOrganizationTrail        bool
 	CreationTime               time.Time
+	Tags                       map[string]string
+}
+
+// Tag is a single CloudTrail resource tag. CloudTrail represents tags as a list
+// of key/value pairs (unlike Verified Permissions, which uses a map).
+type Tag struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value,omitempty"`
 }
 
 // Event represents a CloudTrail event for LookupEvents.
@@ -55,6 +63,7 @@ type CreateTrailRequest struct {
 	CloudWatchLogsRoleArn      string `json:"CloudWatchLogsRoleArn,omitempty"`
 	KMSKeyID                   string `json:"KmsKeyId,omitempty"`
 	IsOrganizationTrail        *bool  `json:"IsOrganizationTrail,omitempty"`
+	TagsList                   []Tag  `json:"TagsList,omitempty"`
 }
 
 // CreateTrailResponse represents the CreateTrail API response.
@@ -185,6 +194,42 @@ type GetTrailStatusResponse struct {
 	LatestNotificationError           string  `json:"LatestNotificationError,omitempty"`
 	LatestCloudWatchLogsDeliveryError string  `json:"LatestCloudWatchLogsDeliveryError,omitempty"`
 }
+
+// ListTagsRequest represents the ListTags API request.
+type ListTagsRequest struct {
+	ResourceIDList []string `json:"ResourceIdList"`
+	NextToken      string   `json:"NextToken,omitempty"`
+}
+
+// ListTagsResponse represents the ListTags API response.
+type ListTagsResponse struct {
+	ResourceTagList []ResourceTag `json:"ResourceTagList"`
+	NextToken       string        `json:"NextToken,omitempty"`
+}
+
+// ResourceTag pairs a resource ARN with its tag list in the ListTags response.
+type ResourceTag struct {
+	ResourceID string `json:"ResourceId"`
+	TagsList   []Tag  `json:"TagsList"`
+}
+
+// AddTagsRequest represents the AddTags API request.
+type AddTagsRequest struct {
+	ResourceID string `json:"ResourceId"`
+	TagsList   []Tag  `json:"TagsList"`
+}
+
+// AddTagsResponse represents the AddTags API response.
+type AddTagsResponse struct{}
+
+// RemoveTagsRequest represents the RemoveTags API request.
+type RemoveTagsRequest struct {
+	ResourceID string `json:"ResourceId"`
+	TagsList   []Tag  `json:"TagsList"`
+}
+
+// RemoveTagsResponse represents the RemoveTags API response.
+type RemoveTagsResponse struct{}
 
 // ErrorResponse represents an error response.
 type ErrorResponse struct {

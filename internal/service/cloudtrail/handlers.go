@@ -25,6 +25,9 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"StopLogging":    s.StopLogging,
 		"LookupEvents":   s.LookupEvents,
 		"GetTrailStatus": s.GetTrailStatus,
+		"ListTags":       s.ListTags,
+		"AddTags":        s.AddTags,
+		"RemoveTags":     s.RemoveTags,
 	}
 }
 
@@ -268,6 +271,76 @@ func (s *Service) GetTrailStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeResponse(w, resp)
+}
+
+// ListTags handles the ListTags API. It returns the tags of each requested
+// resource ARN; an unknown or untagged trail yields an empty tag list so the
+// Terraform provider's read-time tag fetch stays stable.
+func (s *Service) ListTags(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	resourceTags := make([]ResourceTag, 0, len(req.ResourceIDList))
+	for _, arn := range req.ResourceIDList {
+		resourceTags = append(resourceTags, ResourceTag{
+			ResourceID: arn,
+			TagsList:   s.storage.ListTrailTags(r.Context(), arn),
+		})
+	}
+
+	writeResponse(w, &ListTagsResponse{ResourceTagList: resourceTags})
+}
+
+// AddTags handles the AddTags API.
+func (s *Service) AddTags(w http.ResponseWriter, r *http.Request) {
+	var req AddTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceID == "" {
+		writeError(w, "ValidationException", "ResourceId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AddTrailTags(r.Context(), req.ResourceID, req.TagsList); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &AddTagsResponse{})
+}
+
+// RemoveTags handles the RemoveTags API.
+func (s *Service) RemoveTags(w http.ResponseWriter, r *http.Request) {
+	var req RemoveTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceID == "" {
+		writeError(w, "ValidationException", "ResourceId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.RemoveTrailTags(r.Context(), req.ResourceID, req.TagsList); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &RemoveTagsResponse{})
 }
 
 // Helper functions.
