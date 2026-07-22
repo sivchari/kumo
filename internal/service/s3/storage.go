@@ -233,6 +233,16 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Buckets = make(map[string]*MemoryBucket)
 	}
 
+	// MultipartUploads is tagged json:"-", so it is never present in the
+	// snapshot and comes back nil for every restored bucket. Re-initialize it
+	// here; otherwise the first CreateMultipartUpload against a restored bucket
+	// panics with "assignment to entry in nil map".
+	for _, b := range s.Buckets {
+		if b.MultipartUploads == nil {
+			b.MultipartUploads = make(map[string]*MultipartUpload)
+		}
+	}
+
 	if s.dataDir != "" {
 		if err := s.loadBodiesLocked(); err != nil {
 			return err
