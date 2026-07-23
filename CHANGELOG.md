@@ -1,5 +1,22 @@
 # Changelog
 
+## [v0.26.0](https://github.com/sivchari/kumo/compare/v0.25.3...v0.26.0) - 2026-07-23
+- fix(apigateway): inject stage variables into Lambda proxy events by @wakame1367 in https://github.com/sivchari/kumo/pull/836
+- fix(sts): derive AssumedRoleUser ARN from the requested RoleArn by @wakame1367 in https://github.com/sivchari/kumo/pull/837
+- fix(sns): forward message attributes on RawMessageDelivery and log delivery failures by @wakame1367 in https://github.com/sivchari/kumo/pull/838
+- fix(eventbridge): cap DeliveredEvents and exclude it from the snapshot by @wakame1367 in https://github.com/sivchari/kumo/pull/839
+- fix(lambda): queue async Event invocations for Runtime API functions by @wakame1367 in https://github.com/sivchari/kumo/pull/840
+- fix(s3): preserve SSE and metadata through CopyObject and multipart uploads by @wakame1367 in https://github.com/sivchari/kumo/pull/841
+- feat(s3): invoke Lambda on ObjectCreated events via LambdaFunctionConfiguration by @wakame1367 in https://github.com/sivchari/kumo/pull/842
+- test: assert on real values in sts/s3 golden tests instead of ignoring them by @sivchari in https://github.com/sivchari/kumo/pull/844
+- fix(sns): use slog.Error instead of slog.Default().Error() by @sivchari in https://github.com/sivchari/kumo/pull/845
+- fix(s3): apply bucket default encryption to PutObject and CreateMultipartUpload by @sivchari in https://github.com/sivchari/kumo/pull/846
+- test: assert stageVariables are injected into the Lambda proxy event by @sivchari in https://github.com/sivchari/kumo/pull/847
+- test: add SNS to SQS raw-delivery attribute-forwarding integration test by @sivchari in https://github.com/sivchari/kumo/pull/848
+- test: add S3 to Lambda notification integration test by @sivchari in https://github.com/sivchari/kumo/pull/849
+- fix(s3): initialize MultipartUploads map for restored buckets by @shiv3 in https://github.com/sivchari/kumo/pull/852
+- release v0.26.0 by @sivchari in https://github.com/sivchari/kumo/pull/853
+
 ## [v0.25.3](https://github.com/sivchari/kumo/compare/v0.25.2...v0.25.3) - 2026-06-18
 - fix testcase by @sivchari in https://github.com/sivchari/kumo/pull/821
 - fix(s3): externalize object bodies from snapshot to bound persistence memory by @sivchari in https://github.com/sivchari/kumo/pull/823
