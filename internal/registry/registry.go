@@ -6,6 +6,7 @@ package registry
 
 import (
 	_ "github.com/sivchari/kumo/internal/service/acm"
+	_ "github.com/sivchari/kumo/internal/service/amp"
 	_ "github.com/sivchari/kumo/internal/service/amplify"
 	_ "github.com/sivchari/kumo/internal/service/apigateway"
 	_ "github.com/sivchari/kumo/internal/service/apigatewayv2"
