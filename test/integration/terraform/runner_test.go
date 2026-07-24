@@ -67,7 +67,7 @@ func TestTerraformFixtures(t *testing.T) {
 		t.Skip("no tofu or terraform binary on PATH (set KUMO_TF_BIN to override)")
 	}
 
-	warmPluginCache(t, bin)
+	lockFile := warmPluginCache(t, bin)
 
 	entries, err := os.ReadDir(fixturesDir)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestTerraformFixtures(t *testing.T) {
 
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			runFixture(t, bin, srcDir)
+			runFixture(t, bin, srcDir, lockFile)
 		})
 	}
 }
@@ -118,12 +118,13 @@ func resolveTFBinary(t *testing.T) string {
 }
 
 // warmPluginCache runs a throwaway `terraform init` before the fixtures run
-// in parallel. Terraform's plugin cache is not safe for concurrent writers
-// while a provider is still being downloaded into it, so letting every
-// fixture race to populate a cold cache can hand one of them a
-// partially-written provider binary; downloading it once up front avoids
-// the race entirely.
-func warmPluginCache(t *testing.T, bin string) {
+// in parallel and returns the generated dependency lock file. Terraform only
+// trusts the plugin cache for providers already recorded in
+// .terraform.lock.hcl; without a lock entry every init re-installs the
+// provider into the cache, which fails with ETXTBSY while another fixture's
+// provider process is executing that binary. Seeding each fixture with this
+// lock file makes init link straight from the warmed cache.
+func warmPluginCache(t *testing.T, bin string) []byte {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -144,11 +145,19 @@ func warmPluginCache(t *testing.T, bin string) {
 	if err := tf.Init(t.Context()); err != nil {
 		t.Fatalf("warm up terraform init: %v", err)
 	}
+
+	lockFile, err := os.ReadFile(filepath.Join(dir, ".terraform.lock.hcl"))
+	if err != nil {
+		t.Fatalf("read warmed dependency lock file: %v", err)
+	}
+
+	return lockFile
 }
 
-// runFixture copies a fixture into a scratch dir, writes provider.tf, then
-// drives init -> apply -> plan (idempotency check) -> destroy.
-func runFixture(t *testing.T, bin, srcDir string) {
+// runFixture copies a fixture into a scratch dir, writes provider.tf and the
+// warmed dependency lock file, then drives init -> apply -> plan
+// (idempotency check) -> destroy.
+func runFixture(t *testing.T, bin, srcDir string, lockFile []byte) {
 	t.Helper()
 
 	workDir := t.TempDir()
@@ -157,6 +166,10 @@ func runFixture(t *testing.T, bin, srcDir string) {
 
 	if err := os.WriteFile(filepath.Join(workDir, "provider.tf"), []byte(providerTF), 0o600); err != nil {
 		t.Fatalf("write provider.tf: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(workDir, ".terraform.lock.hcl"), lockFile, 0o600); err != nil {
+		t.Fatalf("write dependency lock file: %v", err)
 	}
 
 	tf, err := tfexec.NewTerraform(workDir, bin)
