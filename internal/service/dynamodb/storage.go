@@ -268,6 +268,10 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		Items: make(map[string]Item),
 	}
 
+	if len(req.Tags) > 0 {
+		m.Tags[table.TableARN] = req.Tags
+	}
+
 	m.saveLocked()
 
 	return table, nil

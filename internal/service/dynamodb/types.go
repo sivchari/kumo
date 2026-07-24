@@ -263,6 +263,7 @@ type CreateTableRequest struct {
 	BillingMode               string                 `json:"BillingMode,omitempty"`
 	DeletionProtectionEnabled bool                   `json:"DeletionProtectionEnabled,omitempty"`
 	StreamSpecification       *StreamSpecification   `json:"StreamSpecification,omitempty"`
+	Tags                      []Tag                  `json:"Tags,omitempty"`
 }
 
 // CreateTableResponse is the response for CreateTable.

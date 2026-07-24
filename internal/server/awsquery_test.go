@@ -1,8 +1,11 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -249,5 +252,72 @@ func TestQueryDispatcher_UnknownAction(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), "UnknownAction") {
 		t.Errorf("expected UnknownAction error, got %s", rec.Body.String())
+	}
+}
+
+// formToJSONTests covers the form-to-JSON conversions that
+// QueryProtocolDispatcher relies on before dispatching to a JSON protocol
+// handler.
+var formToJSONTests = []struct {
+	name string
+	form url.Values
+	want map[string]any
+}{
+	{
+		name: "scalar member list",
+		form: url.Values{
+			"Subnets.member.1": {"subnet-1"},
+			"Subnets.member.2": {"subnet-2"},
+		},
+		want: map[string]any{
+			"Subnets": []any{"subnet-1", "subnet-2"},
+		},
+	},
+	{
+		name: "struct member list (Tags)",
+		form: url.Values{
+			"Action":              {"CreateTopic"},
+			"Tags.member.1.Key":   {"env"},
+			"Tags.member.1.Value": {"terraform"},
+			"Tags.member.2.Key":   {"team"},
+			"Tags.member.2.Value": {"platform"},
+		},
+		want: map[string]any{
+			"Tags": []any{
+				map[string]any{"Key": "env", "Value": "terraform"},
+				map[string]any{"Key": "team", "Value": "platform"},
+			},
+		},
+	},
+	{
+		name: "Attributes.entry still works",
+		form: url.Values{
+			"Attributes.entry.1.key":   {"VisibilityTimeout"},
+			"Attributes.entry.1.value": {"30"},
+		},
+		want: map[string]any{
+			"Attributes": map[string]any{"VisibilityTimeout": "30"},
+		},
+	},
+}
+
+func TestFormToJSON(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range formToJSONTests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := formToJSON(tt.form)
+
+			var gotMap map[string]any
+			if err := json.Unmarshal(got, &gotMap); err != nil {
+				t.Fatalf("failed to unmarshal formToJSON output %s: %v", got, err)
+			}
+
+			if !reflect.DeepEqual(gotMap, tt.want) {
+				t.Errorf("formToJSON(%v) = %v, want %v", tt.form, gotMap, tt.want)
+			}
+		})
 	}
 }

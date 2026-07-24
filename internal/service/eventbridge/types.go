@@ -185,6 +185,7 @@ type PutRuleRequest struct {
 	State              string `json:"State,omitempty"`
 	Description        string `json:"Description,omitempty"`
 	RoleArn            string `json:"RoleArn,omitempty"`
+	Tags               []Tag  `json:"Tags,omitempty"`
 }
 
 // PutRuleResponse is the response for PutRule.

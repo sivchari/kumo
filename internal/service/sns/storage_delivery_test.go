@@ -35,7 +35,7 @@ func newTopicWithSQSSubscription(t *testing.T, publisher SQSPublisher, subAttrs 
 
 	ctx := context.Background()
 
-	topic, err := storage.CreateTopic(ctx, "test-topic", nil)
+	topic, err := storage.CreateTopic(ctx, "test-topic", nil, nil)
 	if err != nil {
 		t.Fatalf("CreateTopic() error = %v", err)
 	}
