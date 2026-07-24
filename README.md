@@ -19,7 +19,7 @@
 - **AWS SDK v2 compatible** - Works seamlessly with Go AWS SDK v2
 - **Optional data persistence** - Survive restarts with `KUMO_DATA_DIR`
 
-## Supported Services (81 services)
+## Supported Services (82 services)
 
 <!-- BEGIN SERVICES: auto-generated from each service's Meta(); run `make readme` to update. Do not edit by hand. -->
 ### Storage
@@ -85,6 +85,7 @@
 ### Monitoring & Logging
 | Service | Description |
 |---------|-------------|
+| Amazon Managed Service for Prometheus | Managed Prometheus workspaces with data-plane passthrough |
 | CloudTrail | API audit logging |
 | CloudWatch | Metrics and alarms |
 | CloudWatch Logs | Log management |
