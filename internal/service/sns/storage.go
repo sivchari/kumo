@@ -28,7 +28,7 @@ type SQSPublisher interface {
 
 // Storage defines the SNS storage interface.
 type Storage interface {
-	CreateTopic(ctx context.Context, name string, attributes map[string]string) (*Topic, error)
+	CreateTopic(ctx context.Context, name string, attributes map[string]string, tags []Tag) (*Topic, error)
 	GetTopic(ctx context.Context, topicARN string) (*Topic, error)
 	SetTopicAttribute(ctx context.Context, topicARN, name, value string) error
 	DeleteTopic(ctx context.Context, topicARN string) error
@@ -40,6 +40,9 @@ type Storage interface {
 	Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error)
 	ListSubscriptions(ctx context.Context, nextToken string) ([]*Subscription, string, error)
 	ListSubscriptionsByTopic(ctx context.Context, topicARN, nextToken string) ([]*Subscription, string, error)
+	ListTagsForResource(ctx context.Context, resourceArn string) ([]Tag, error)
+	TagResource(ctx context.Context, resourceArn string, tags []Tag) error
+	UntagResource(ctx context.Context, resourceArn string, tagKeys []string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -61,8 +64,9 @@ var (
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
 	mu            sync.RWMutex             `json:"-"`
-	Topics        map[string]*Topic        `json:"topics"`        // keyed by ARN
-	Subscriptions map[string]*Subscription `json:"subscriptions"` // keyed by ARN
+	Topics        map[string]*Topic        `json:"topics"`         // keyed by ARN
+	Subscriptions map[string]*Subscription `json:"subscriptions"`  // keyed by ARN
+	Tags          map[string][]Tag         `json:"tags,omitempty"` // keyed by resource ARN
 	baseURL       string
 	SqsPublisher  SQSPublisher `json:"-"`
 	dataDir       string
@@ -73,6 +77,7 @@ func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Topics:        make(map[string]*Topic),
 		Subscriptions: make(map[string]*Subscription),
+		Tags:          make(map[string][]Tag),
 		baseURL:       baseURL,
 	}
 	for _, o := range opts {
@@ -122,6 +127,10 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 		m.Subscriptions = make(map[string]*Subscription)
 	}
 
+	if m.Tags == nil {
+		m.Tags = make(map[string][]Tag)
+	}
+
 	return nil
 }
 
@@ -153,7 +162,7 @@ func (m *MemoryStorage) SetSQSPublisher(publisher SQSPublisher) {
 }
 
 // CreateTopic creates a new topic.
-func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes map[string]string) (*Topic, error) {
+func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes map[string]string, tags []Tag) (*Topic, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -177,6 +186,10 @@ func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes m
 		CreatedTime:   time.Now(),
 		Attributes:    attributes,
 		Subscriptions: make(map[string]*Subscription),
+	}
+
+	if len(tags) > 0 {
+		m.Tags[arn] = tags
 	}
 
 	if attributes != nil {
@@ -256,6 +269,90 @@ func (m *MemoryStorage) DeleteTopic(_ context.Context, topicARN string) error {
 	}
 
 	delete(m.Topics, topicARN)
+	delete(m.Tags, topicARN)
+
+	m.saveLocked()
+
+	return nil
+}
+
+// ListTagsForResource returns the tags for a given resource ARN.
+func (m *MemoryStorage) ListTagsForResource(_ context.Context, resourceArn string) ([]Tag, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	tags, ok := m.Tags[resourceArn]
+	if !ok {
+		return []Tag{}, nil
+	}
+
+	result := make([]Tag, len(tags))
+	copy(result, tags)
+
+	return result, nil
+}
+
+// TagResource adds or overwrites tags on a resource ARN.
+func (m *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags []Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing := m.Tags[resourceArn]
+
+	for _, tag := range tags {
+		replaced := false
+
+		for i, e := range existing {
+			if e.Key == tag.Key {
+				existing[i] = tag
+				replaced = true
+
+				break
+			}
+		}
+
+		if !replaced {
+			existing = append(existing, tag)
+		}
+	}
+
+	m.Tags[resourceArn] = existing
+
+	m.saveLocked()
+
+	return nil
+}
+
+// UntagResource removes the given tag keys from a resource ARN.
+func (m *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tagKeys []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing, exists := m.Tags[resourceArn]
+	if !exists {
+		return nil
+	}
+
+	remove := make(map[string]struct{}, len(tagKeys))
+	for _, k := range tagKeys {
+		remove[k] = struct{}{}
+	}
+
+	remaining := make([]Tag, 0, len(existing))
+
+	for _, tag := range existing {
+		if _, drop := remove[tag.Key]; drop {
+			continue
+		}
+
+		remaining = append(remaining, tag)
+	}
+
+	if len(remaining) == 0 {
+		delete(m.Tags, resourceArn)
+	} else {
+		m.Tags[resourceArn] = remaining
+	}
 
 	m.saveLocked()
 

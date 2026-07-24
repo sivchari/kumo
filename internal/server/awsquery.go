@@ -239,6 +239,9 @@ func formToJSON(form map[string][]string) []byte {
 		result[keyName] = arr
 	}
 
+	// Handle struct-list patterns like Tags.member.N.Key/Value.
+	result = flattenMemberStructs(result)
+
 	// Handle nested attributes (like Attributes.entry.N.key/value).
 	result = flattenAttributes(result)
 
@@ -265,6 +268,91 @@ func parseFormValue(s string) any {
 
 	// Return as string.
 	return s
+}
+
+// flattenMemberStructs converts "<Base>.member.<N>.<Field>" form keys into an
+// array of objects, e.g. Tags.member.1.Key / Tags.member.1.Value becomes
+// {"Tags": [{"Key": "...", "Value": "..."}]}.
+//
+// Plain scalar member lists (e.g. Subnets.member.1) are already consumed by
+// the numeric indexed-array pass in formToJSON and never reach this
+// function. Entry-based patterns (Attributes.entry.N, MessageAttributes.entry.N)
+// use ".entry." rather than ".member." and are handled by their own flatten
+// functions, so there is no overlap.
+func flattenMemberStructs(data map[string]any) map[string]any {
+	result := make(map[string]any)
+	groups := make(map[string]map[int]map[string]any) // base -> index -> field -> value
+
+	for key, value := range data {
+		base, idx, field, ok := parseMemberStructKey(key)
+		if !ok {
+			result[key] = value
+
+			continue
+		}
+
+		if groups[base] == nil {
+			groups[base] = make(map[int]map[string]any)
+		}
+
+		if groups[base][idx] == nil {
+			groups[base][idx] = make(map[string]any)
+		}
+
+		groups[base][idx][field] = value
+	}
+
+	for base, byIndex := range groups {
+		indices := make([]int, 0, len(byIndex))
+		for i := range byIndex {
+			indices = append(indices, i)
+		}
+
+		sort.Ints(indices)
+
+		arr := make([]map[string]any, 0, len(indices))
+		for _, i := range indices {
+			arr = append(arr, byIndex[i])
+		}
+
+		result[base] = arr
+	}
+
+	return result
+}
+
+// parseMemberStructKey parses a "<Base>.member.<N>.<Field>" key, where Field
+// is a single path segment with no further dots. ok is false for any other
+// shape of key.
+func parseMemberStructKey(key string) (base string, index int, field string, ok bool) {
+	const marker = ".member."
+
+	memberIdx := strings.Index(key, marker)
+	if memberIdx < 0 {
+		return "", 0, "", false
+	}
+
+	base = key[:memberIdx]
+	rest := key[memberIdx+len(marker):] // "<N>.<Field>"
+
+	dotIdx := strings.Index(rest, ".")
+	if dotIdx < 0 {
+		return "", 0, "", false
+	}
+
+	idxStr := rest[:dotIdx]
+	field = rest[dotIdx+1:]
+
+	if strings.Contains(field, ".") {
+		return "", 0, "", false
+	}
+
+	n, err := strconv.Atoi(idxStr)
+	if err != nil {
+		return "", 0, "", false
+	}
+
+	return base, n, field, true
 }
 
 // flattenAttributes converts nested Query protocol attributes to JSON format.

@@ -378,6 +378,10 @@ func (s *MemoryStorage) PutRule(_ context.Context, req *PutRuleRequest) (*Rule, 
 
 	s.Rules[eventBusName][req.Name] = rule
 
+	if len(req.Tags) > 0 {
+		s.Tags[rule.Arn] = req.Tags
+	}
+
 	s.saveLocked()
 
 	return rule, nil

@@ -36,7 +36,7 @@ func (s *Service) CreateTopic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topic, err := s.storage.CreateTopic(r.Context(), req.Name, req.Attributes)
+	topic, err := s.storage.CreateTopic(r.Context(), req.Name, req.Attributes, req.Tags)
 	if err != nil {
 		var sErr *TopicError
 		if errors.As(err, &sErr) {

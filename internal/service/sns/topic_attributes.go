@@ -143,24 +143,90 @@ func (s *Service) GetTopicAttributes(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListTagsForResource returns an empty tag list for any topic.
-func (s *Service) ListTagsForResource(w http.ResponseWriter, _ *http.Request) {
+// ListTagsForResource returns the tags stored for the given resource ARN.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req listTagsForResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceArn == "" {
+		writeTopicError(w, errInvalidParameter, "ResourceArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceArn)
+	if err != nil {
+		handleTopicError(w, err)
+
+		return
+	}
+
+	members := make([]XMLTag, 0, len(tags))
+	for _, t := range tags {
+		members = append(members, XMLTag(t))
+	}
+
 	writeXMLResponse(w, XMLListTagsForResourceResponse{
-		Xmlns:            snsXMLNS,
+		Xmlns: snsXMLNS,
+		ListTagsForResourceResult: XMLListTagsForResourceResult{
+			Tags: XMLTagList{Member: members},
+		},
 		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
 
-// TagResource accepts and discards tag attachments.
-func (s *Service) TagResource(w http.ResponseWriter, _ *http.Request) {
+// TagResource adds or overwrites tags on a resource ARN.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req tagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceArn == "" {
+		writeTopicError(w, errInvalidParameter, "ResourceArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), req.ResourceArn, req.Tags); err != nil {
+		handleTopicError(w, err)
+
+		return
+	}
+
 	writeXMLResponse(w, XMLTagResourceResponse{
 		Xmlns:            snsXMLNS,
 		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
 
-// UntagResource accepts and discards tag detachments.
-func (s *Service) UntagResource(w http.ResponseWriter, _ *http.Request) {
+// UntagResource removes tags from a resource ARN.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req untagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeTopicError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceArn == "" {
+		writeTopicError(w, errInvalidParameter, "ResourceArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), req.ResourceArn, req.TagKeys); err != nil {
+		handleTopicError(w, err)
+
+		return
+	}
+
 	writeXMLResponse(w, XMLUntagResourceResponse{
 		Xmlns:            snsXMLNS,
 		ResponseMetadata: ResponseMetadata{RequestID: uuid.New().String()},

@@ -332,8 +332,7 @@ type XMLAttributeEntry struct {
 	Value string `xml:"value"`
 }
 
-// XMLListTagsForResourceResponse mirrors the AWS shape; the Tags member is
-// always an empty member list because tag storage is not modeled.
+// XMLListTagsForResourceResponse is the XML response for ListTagsForResource.
 type XMLListTagsForResourceResponse struct {
 	XMLName                   struct{}                     `xml:"ListTagsForResourceResponse"`
 	Xmlns                     string                       `xml:"xmlns,attr"`
@@ -341,7 +340,7 @@ type XMLListTagsForResourceResponse struct {
 	ResponseMetadata          ResponseMetadata             `xml:"ResponseMetadata"`
 }
 
-// XMLListTagsForResourceResult contains the (always empty) tag list.
+// XMLListTagsForResourceResult contains the tag list.
 type XMLListTagsForResourceResult struct {
 	Tags XMLTagList `xml:"Tags"`
 }
@@ -421,6 +420,23 @@ type setTopicAttributesRequest struct {
 // dispatcher converts the form-encoded body to JSON.
 type getTopicAttributesRequest struct {
 	TopicArn string `json:"TopicArn"`
+}
+
+// listTagsForResourceRequest is the request for ListTagsForResource.
+type listTagsForResourceRequest struct {
+	ResourceArn string `json:"ResourceArn"`
+}
+
+// tagResourceRequest is the request for TagResource.
+type tagResourceRequest struct {
+	ResourceArn string `json:"ResourceArn"`
+	Tags        []Tag  `json:"Tags"`
+}
+
+// untagResourceRequest is the request for UntagResource.
+type untagResourceRequest struct {
+	ResourceArn string   `json:"ResourceArn"`
+	TagKeys     []string `json:"TagKeys"`
 }
 
 // snsNotificationEnvelope is the JSON envelope AWS wraps around messages
