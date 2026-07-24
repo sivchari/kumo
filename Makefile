@@ -1,4 +1,4 @@
-.PHONY: build run test test-fuzz test-integration test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme
+.PHONY: build run test test-fuzz test-integration test-terraform test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme
 
 BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
@@ -23,7 +23,10 @@ test-cover:
 	go tool cover -html=coverage.out -o coverage.html
 
 test-integration:
-	go test -C test -v -tags=integration ./integration/...
+	go test -C test -v -tags=integration ./integration
+
+test-terraform:
+	go test -C test -v -race -tags=integration -parallel 4 ./integration/terraform/...
 
 test-fuzz:
 	@grep -rl '^func Fuzz' internal/ | xargs -I{} dirname {} | sort -u | while read pkg; do \

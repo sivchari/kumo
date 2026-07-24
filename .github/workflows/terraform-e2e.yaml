@@ -1,0 +1,83 @@
+name: Terraform E2E
+
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-e2e:
+    name: Terraform e2e (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: opentofu
+            bin: tofu
+          - name: terraform
+            bin: terraform
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: |
+            go.sum
+            test/go.sum
+
+      - if: matrix.name == 'opentofu'
+        uses: opentofu/setup-opentofu@592200bd4b9bbf4772ace78f887668b1aee8f716 # v1.0.5
+        with:
+          tofu_version: 1.11.6
+          tofu_wrapper: false
+
+      - if: matrix.name == 'terraform'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.9"
+          terraform_wrapper: false
+
+      - name: Build kumo
+        run: |
+          mkdir -p bin
+          go build -o bin/kumo ./cmd/kumo
+
+      - name: Start kumo
+        run: |
+          bin/kumo --host 0.0.0.0 --port 4566 &
+          echo $! > kumo.pid
+
+      - name: Wait for kumo to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:4566/health | grep -q "healthy"; then
+              echo "kumo is ready"
+              exit 0
+            fi
+            echo "Waiting for kumo..."
+            sleep 1
+          done
+          echo "kumo failed to start"
+          exit 1
+
+      - name: Run terraform e2e tests
+        env:
+          KUMO_TF_BIN: ${{ matrix.bin }}
+        run: make test-terraform
+
+      - name: Stop kumo
+        if: always()
+        run: |
+          if [ -f kumo.pid ]; then
+            kill $(cat kumo.pid) 2>/dev/null || true
+            sleep 2
+          fi
