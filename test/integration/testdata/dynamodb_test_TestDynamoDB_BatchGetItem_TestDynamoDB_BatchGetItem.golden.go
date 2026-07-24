@@ -20,6 +20,6 @@
       }
     ]
   },
-  "UnprocessedKeys": null,
+  "UnprocessedKeys": {},
   "ResultMetadata": {}
 }

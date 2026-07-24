@@ -841,7 +841,10 @@ func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSONResponse(w, BatchGetItemResponse{Responses: responses})
+	writeJSONResponse(w, BatchGetItemResponse{
+		Responses:       responses,
+		UnprocessedKeys: map[string]KeysAndAttributes{},
+	})
 }
 
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.

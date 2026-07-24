@@ -2154,7 +2154,9 @@ func (m *MemoryStorage) BatchGetItem(_ context.Context, requestItems map[string]
 			}
 		}
 
-		var items []Item
+		// DynamoDB includes every requested table in Responses, as an empty
+		// list when none of the keys matched.
+		items := make([]Item, 0, len(ka.Keys))
 
 		for _, key := range ka.Keys {
 			if err := validateKey(td.Table, key); err != nil {
@@ -2167,9 +2169,7 @@ func (m *MemoryStorage) BatchGetItem(_ context.Context, requestItems map[string]
 			}
 		}
 
-		if len(items) > 0 {
-			responses[tableName] = items
-		}
+		responses[tableName] = items
 	}
 
 	return responses, nil
