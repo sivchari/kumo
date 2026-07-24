@@ -181,6 +181,55 @@ func TestBucketLifecycle_PutGetDelete(t *testing.T) {
 	}
 }
 
+// --- BucketNotification ---------------------------------------------
+
+func TestBucketNotification_EventBridgeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	svc := New(NewMemoryStorage(), "")
+	ctx := context.Background()
+
+	store, ok := svc.storage.(*MemoryStorage)
+	if !ok {
+		t.Fatalf("storage is not *MemoryStorage")
+	}
+
+	_ = store.CreateBucket(ctx, "nb")
+
+	putReq := httptest.NewRequest(
+		http.MethodPut,
+		"/nb?notification",
+		strings.NewReader(`<NotificationConfiguration><EventBridgeConfiguration></EventBridgeConfiguration></NotificationConfiguration>`),
+	)
+	putReq.SetPathValue("bucket", "nb")
+
+	putW := httptest.NewRecorder()
+	svc.handleBucketPut(putW, putReq)
+
+	if putW.Code != http.StatusOK {
+		t.Fatalf("PUT status: got %d, want 200 (body=%s)", putW.Code, putW.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/nb?notification", http.NoBody)
+	getReq.SetPathValue("bucket", "nb")
+
+	getW := httptest.NewRecorder()
+	svc.handleBucketGet(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET status: got %d, want 200 (body=%s)", getW.Code, getW.Body.String())
+	}
+
+	var got NotificationConfiguration
+	if err := xml.Unmarshal(getW.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, getW.Body.String())
+	}
+
+	if got.EventBridgeConfig == nil {
+		t.Fatalf("EventBridgeConfiguration was not returned: body=%s", getW.Body.String())
+	}
+}
+
 // --- Object Restore --------------------------------------------------
 
 func TestObjectRestore_FirstRequestReturns202(t *testing.T) {

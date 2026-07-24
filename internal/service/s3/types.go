@@ -441,6 +441,7 @@ type CopyRange struct {
 // NotificationConfiguration represents S3 bucket notification configuration.
 type NotificationConfiguration struct {
 	XMLName                      xml.Name                      `xml:"NotificationConfiguration"`
+	Xmlns                        string                        `xml:"xmlns,attr,omitempty"`
 	EventBridgeConfig            *EventBridgeConfig            `xml:"EventBridgeConfiguration,omitempty"`
 	QueueConfigurations          []QueueConfiguration          `xml:"QueueConfiguration,omitempty"`
 	LambdaFunctionConfigurations []LambdaFunctionConfiguration `xml:"CloudFunctionConfiguration,omitempty"`
