@@ -2525,7 +2525,9 @@ func handleMultipartError(w http.ResponseWriter, r *http.Request, err error) {
 	var multipartErr *MultipartError
 	if errors.As(err, &multipartErr) {
 		status := http.StatusNotFound
-		if multipartErr.Code == "InvalidPart" || multipartErr.Code == "InvalidPartOrder" || multipartErr.Code == "InvalidArgument" {
+
+		switch multipartErr.Code {
+		case "InvalidPart", "InvalidPartOrder", "InvalidArgument", "MalformedXML":
 			status = http.StatusBadRequest
 		}
 

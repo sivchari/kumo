@@ -1224,6 +1224,10 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 // assembleMultipartBody validates the part list (ascending order, no
 // duplicates, ETag match) and concatenates the part bodies in order.
 func assembleMultipartBody(upload *MultipartUpload, parts []PartRequest, uploadID string) ([]byte, error) {
+	if len(parts) == 0 {
+		return nil, &MultipartError{Code: "MalformedXML", Message: "CompleteMultipartUpload requires at least one part", UploadID: uploadID}
+	}
+
 	var combinedBody []byte
 
 	previousPartNumber := 0

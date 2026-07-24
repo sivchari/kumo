@@ -114,6 +114,8 @@ func TestMemoryStorage_VersionedBodiesRoundTrip(t *testing.T) {
 }
 
 func TestMemoryStorage_LegacyInlineBodyMigrates(t *testing.T) {
+	const legacyBody = "hello"
+
 	ctx := context.Background()
 	dir := t.TempDir()
 
@@ -132,8 +134,8 @@ func TestMemoryStorage_LegacyInlineBodyMigrates(t *testing.T) {
 		t.Fatalf("get object from legacy snapshot: %v", err)
 	}
 
-	if got := string(obj.Body); got != "hello" {
-		t.Fatalf("legacy body = %q, want %q", got, "hello")
+	if got := string(obj.Body); got != legacyBody {
+		t.Fatalf("legacy body = %q, want %q", got, legacyBody)
 	}
 
 	// On the next save the inline body is migrated to a blob.
@@ -141,7 +143,7 @@ func TestMemoryStorage_LegacyInlineBodyMigrates(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	if _, err := os.Stat(blobPath(dir, bodyRefOf([]byte("hello")))); err != nil {
+	if _, err := os.Stat(blobPath(dir, bodyRefOf([]byte(legacyBody)))); err != nil {
 		t.Errorf("body not migrated to blob: %v", err)
 	}
 }
