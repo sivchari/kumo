@@ -133,6 +133,7 @@ var bucketGetSubresources = []struct {
 	{"website", (*Service).GetBucketWebsite},
 	{"lifecycle", (*Service).GetBucketLifecycleConfiguration},
 	{"cors", (*Service).GetBucketCors},
+	{"notification", (*Service).GetBucketNotificationConfiguration},
 }
 
 func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
@@ -2452,6 +2453,34 @@ func (s *Service) ListParts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeXMLResponse(w, result)
+}
+
+// GetBucketNotificationConfiguration handles GET /{bucket}?notification.
+func (s *Service) GetBucketNotificationConfiguration(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	exists, err := s.storage.BucketExists(r.Context(), bucket)
+	if err != nil {
+		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if !exists {
+		writeS3Error(w, r, "NoSuchBucket", "The specified bucket does not exist", http.StatusNotFound)
+
+		return
+	}
+
+	resp := NotificationConfiguration{Xmlns: s3Namespace}
+	if s.storage.IsEventBridgeEnabled(r.Context(), bucket) {
+		resp.EventBridgeConfig = &EventBridgeConfig{}
+	}
+
+	resp.QueueConfigurations = s.storage.GetQueueConfigurations(r.Context(), bucket)
+	resp.LambdaFunctionConfigurations = s.storage.GetLambdaConfigurations(r.Context(), bucket)
+
+	writeXMLResponse(w, resp)
 }
 
 // PutBucketNotificationConfiguration handles PUT /{bucket}?notification.
