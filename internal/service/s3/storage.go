@@ -1213,6 +1213,8 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 
 	applyMultipartUploadMetadata(obj, upload.Metadata)
 
+	putObjectVersion(b, key, obj)
+
 	b.Objects[key] = obj
 	delete(b.MultipartUploads, uploadID)
 
