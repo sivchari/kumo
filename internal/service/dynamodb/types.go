@@ -597,9 +597,10 @@ type KeysAndAttributes struct {
 }
 
 // BatchGetItemResponse is the response for BatchGetItem.
+// DynamoDB always serializes both fields, even when empty.
 type BatchGetItemResponse struct {
-	Responses       map[string][]Item            `json:"Responses,omitempty"`
-	UnprocessedKeys map[string]KeysAndAttributes `json:"UnprocessedKeys,omitempty"`
+	Responses       map[string][]Item            `json:"Responses"`
+	UnprocessedKeys map[string]KeysAndAttributes `json:"UnprocessedKeys"`
 }
 
 // ErrorResponse represents a DynamoDB error response in JSON format.
