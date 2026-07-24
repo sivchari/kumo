@@ -2295,6 +2295,10 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 		ETag:     obj.ETag,
 	}
 
+	if obj.VersionID != "" {
+		w.Header().Set("x-amz-version-id", obj.VersionID)
+	}
+
 	writeXMLResponse(w, result)
 
 	// Emit EventBridge notification if enabled.
