@@ -704,30 +704,21 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		return nil, nil, 0, err
 	}
 
-	results, scannedCount, err := m.queryCollectMatches(td.Items, partitionKeyName, partitionKeyValue, resolvedKeyCondExpr, filterExpr, exprNames, exprValues)
+	candidates, err := m.queryMatchingItems(td.Items, partitionKeyName, partitionKeyValue, resolvedKeyCondExpr, exprValues)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	// DynamoDB Query always returns items sorted by sort key.
-	if sortKeyName := keyAttrName(keySchema, "RANGE"); sortKeyName != "" {
-		sort.Slice(results, func(i, j int) bool {
-			vi := results[i][sortKeyName]
-			vj := results[j][sortKeyName]
+	m.orderQueryCandidates(candidates, keyAttrName(keySchema, "RANGE"), scanForward)
 
-			return m.compareForSort(&vi, &vj)
-		})
+	startIdx := m.startIndexAfterKey(td.Table, candidates, exclusiveStartKey)
+
+	items, lastKey, scannedCount, err := m.evaluatePage(td.Table, candidates[startIdx:], filterExpr, exprNames, exprValues, limit)
+	if err != nil {
+		return nil, nil, 0, err
 	}
 
-	if !scanForward {
-		for i, j := 0, len(results)-1; i < j; i, j = i+1, j-1 {
-			results[i], results[j] = results[j], results[i]
-		}
-	}
-
-	page, lastKey, count := m.paginateResults(td.Table, results, exclusiveStartKey, limit, scannedCount)
-
-	return page, lastKey, count, nil
+	return items, lastKey, scannedCount, nil
 }
 
 // keyAttrName returns the attribute name of the key schema element with the
@@ -757,17 +748,15 @@ func (m *MemoryStorage) matchesPartitionKey(item Item, partitionKeyName string, 
 	return m.attributeValuesEqual(itemVal, *partitionKeyValue)
 }
 
-// queryCollectMatches walks the table's items, applies the partition-key match,
-// the full key condition, and the filter expression, returning the matched
-// items and the scanned count.
-func (m *MemoryStorage) queryCollectMatches(items map[string]Item, partitionKeyName string, partitionKeyValue *AttributeValue, resolvedKeyCondExpr, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) ([]Item, int, error) {
-	var results []Item
-
-	scannedCount := 0
+// queryMatchingItems walks the table's items and returns those that match the
+// partition key and the full key condition, in table order. Filtering and
+// Limit are applied afterward, once the candidates are sorted by sort key and
+// positioned past ExclusiveStartKey, so that Limit bounds evaluated items
+// rather than post-filter matches (see evaluatePage).
+func (m *MemoryStorage) queryMatchingItems(items map[string]Item, partitionKeyName string, partitionKeyValue *AttributeValue, resolvedKeyCondExpr string, exprValues map[string]AttributeValue) ([]Item, error) {
+	var candidates []Item
 
 	for _, item := range items {
-		scannedCount++
-
 		if !m.matchesPartitionKey(item, partitionKeyName, partitionKeyValue) {
 			continue
 		}
@@ -776,7 +765,7 @@ func (m *MemoryStorage) queryCollectMatches(items map[string]Item, partitionKeyN
 		if resolvedKeyCondExpr != "" {
 			ok, err := evaluateCondition(item, ConditionInput{Expression: resolvedKeyCondExpr, ExprValues: exprValues})
 			if err != nil {
-				return nil, 0, invalidKeyConditionExpression(err)
+				return nil, invalidKeyConditionExpression(err)
 			}
 
 			if !ok {
@@ -784,52 +773,87 @@ func (m *MemoryStorage) queryCollectMatches(items map[string]Item, partitionKeyN
 			}
 		}
 
-		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		if !match {
-			continue
-		}
-
-		results = append(results, m.copyItem(item))
+		candidates = append(candidates, item)
 	}
 
-	return results, scannedCount, nil
+	return candidates, nil
 }
 
-// paginateResults applies ExclusiveStartKey and Limit to an ordered result set,
-// returning the page and the LastEvaluatedKey (nil when the page is the tail).
-func (m *MemoryStorage) paginateResults(table *Table, results []Item, exclusiveStartKey Item, limit, scannedCount int) ([]Item, Item, int) {
-	startIdx := 0
+// orderQueryCandidates sorts query candidates by sort key (DynamoDB Query
+// always returns items in sort-key order) and reverses them in place when
+// scanForward is false. A table/index without a sort key is left in its
+// original (arbitrary map iteration) order.
+func (m *MemoryStorage) orderQueryCandidates(candidates []Item, sortKeyName string, scanForward bool) {
+	if sortKeyName != "" {
+		sort.Slice(candidates, func(i, j int) bool {
+			vi := candidates[i][sortKeyName]
+			vj := candidates[j][sortKeyName]
 
-	if exclusiveStartKey != nil {
-		startKeyStr := m.serializeKey(table, exclusiveStartKey)
+			return m.compareForSort(&vi, &vj)
+		})
+	}
 
-		for i, item := range results {
-			if m.serializeKey(table, item) == startKeyStr {
-				startIdx = i + 1
+	if !scanForward {
+		for i, j := 0, len(candidates)-1; i < j; i, j = i+1, j-1 {
+			candidates[i], candidates[j] = candidates[j], candidates[i]
+		}
+	}
+}
 
-				break
-			}
+// startIndexAfterKey returns the index in ordered immediately following the
+// item whose primary key matches exclusiveStartKey, or 0 when
+// exclusiveStartKey is nil or not found among ordered.
+func (m *MemoryStorage) startIndexAfterKey(table *Table, ordered []Item, exclusiveStartKey Item) int {
+	if exclusiveStartKey == nil {
+		return 0
+	}
+
+	startKeyStr := m.serializeKey(table, exclusiveStartKey)
+
+	for i, item := range ordered {
+		if m.serializeKey(table, item) == startKeyStr {
+			return i + 1
 		}
 	}
 
-	if startIdx >= len(results) {
-		return []Item{}, nil, scannedCount
+	return 0
+}
+
+// evaluatePage evaluates candidates in order, up to Limit items when limit is
+// positive (all of them otherwise), applying FilterExpression only to the
+// evaluated page. Per AWS semantics, Limit bounds the number of EVALUATED
+// items rather than the number of post-filter matches: the returned
+// scannedCount counts every evaluated item, while items only contains the
+// ones that also pass the filter. lastEvaluatedKey is set to the last
+// evaluated item's key when evaluation stopped early because Limit was
+// reached while candidates remained, and is nil once candidates are
+// exhausted (even if that happens to coincide with Limit).
+func (m *MemoryStorage) evaluatePage(table *Table, candidates []Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
+	items := []Item{}
+
+	for i, item := range candidates {
+		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+
+		if match {
+			items = append(items, m.copyItem(item))
+		}
+
+		scannedCount := i + 1
+		if limit > 0 && scannedCount >= limit {
+			var lastEvaluatedKey Item
+
+			if i+1 < len(candidates) {
+				lastEvaluatedKey = m.extractKey(table, item)
+			}
+
+			return items, lastEvaluatedKey, scannedCount, nil
+		}
 	}
 
-	results = results[startIdx:]
-
-	var lastEvaluatedKey Item
-
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-		lastEvaluatedKey = m.extractKey(table, results[len(results)-1])
-	}
-
-	return results, lastEvaluatedKey, scannedCount
+	return items, nil, len(candidates), nil
 }
 
 // Scan scans items from a table.
@@ -855,28 +879,31 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 		return nil, nil, 0, err
 	}
 
-	// Collect all items matching the segment and filter.
-	results, scannedCount, err := m.scanCollectMatches(td, filterExpr, exprNames, exprValues, segment, totalSegments)
+	// Collect the segment's candidate items; filtering and Limit are applied
+	// once the candidates are ordered by primary key and positioned past
+	// ExclusiveStartKey (see evaluatePage).
+	candidates := m.scanCandidateItems(td, segment, totalSegments)
+
+	items, lastKey, scannedCount, err := m.sortByKeyAndEvaluate(td.Table, candidates, exclusiveStartKey, filterExpr, exprNames, exprValues, limit)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	page, lastKey, count := m.sortByKeyAndPaginate(td.Table, results, exclusiveStartKey, limit, scannedCount)
-
-	return page, lastKey, count, nil
+	return items, lastKey, scannedCount, nil
 }
 
-// sortByKeyAndPaginate orders scan results by serialized primary key (Scan has
-// no sort-key ordering) and applies ExclusiveStartKey/Limit pagination. Keys are
+// sortByKeyAndEvaluate orders scan candidates by serialized primary key (Scan
+// has no sort-key ordering), positions past ExclusiveStartKey, and then
+// evaluates up to Limit items against the filter via evaluatePage. Keys are
 // pre-computed once so neither the sort nor the start-key lookup re-serializes.
-func (m *MemoryStorage) sortByKeyAndPaginate(table *Table, results []Item, exclusiveStartKey Item, limit, scannedCount int) ([]Item, Item, int) {
+func (m *MemoryStorage) sortByKeyAndEvaluate(table *Table, candidates []Item, exclusiveStartKey Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
 	type keyedItem struct {
 		key  string
 		item Item
 	}
 
-	pairs := make([]keyedItem, len(results))
-	for i, it := range results {
+	pairs := make([]keyedItem, len(candidates))
+	for i, it := range candidates {
 		pairs[i] = keyedItem{key: m.serializeKey(table, it), item: it}
 	}
 
@@ -901,28 +928,17 @@ func (m *MemoryStorage) sortByKeyAndPaginate(table *Table, results []Item, exclu
 	}
 
 	if startIdx >= len(ordered) {
-		return []Item{}, nil, scannedCount
+		return []Item{}, nil, 0, nil
 	}
 
-	ordered = ordered[startIdx:]
-
-	var lastEvaluatedKey Item
-
-	if limit > 0 && len(ordered) > limit {
-		ordered = ordered[:limit]
-		lastEvaluatedKey = m.extractKey(table, ordered[len(ordered)-1])
-	}
-
-	return ordered, lastEvaluatedKey, scannedCount
+	return m.evaluatePage(table, ordered[startIdx:], filterExpr, exprNames, exprValues, limit)
 }
 
-// scanCollectMatches walks every item, applies parallel-scan segment filtering
-// and the filter expression, and returns the matched items plus the scanned
-// count. A filter parse error is returned as a ValidationException.
-func (m *MemoryStorage) scanCollectMatches(td *tableData, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, segment, totalSegments *int) ([]Item, int, error) {
-	var results []Item
-
-	scannedCount := 0
+// scanCandidateItems walks every item and applies parallel-scan segment
+// filtering, returning the segment's candidate items in table order.
+// FilterExpression and Limit are applied afterward by the caller.
+func (m *MemoryStorage) scanCandidateItems(td *tableData, segment, totalSegments *int) []Item {
+	var candidates []Item
 
 	for _, item := range td.Items {
 		key := m.serializeKey(td.Table, item)
@@ -930,21 +946,10 @@ func (m *MemoryStorage) scanCollectMatches(td *tableData, filterExpr string, exp
 			continue
 		}
 
-		scannedCount++
-
-		match, err := m.filterItem(item, filterExpr, exprNames, exprValues)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		if !match {
-			continue
-		}
-
-		results = append(results, m.copyItem(item))
+		candidates = append(candidates, item)
 	}
 
-	return results, scannedCount, nil
+	return candidates
 }
 
 func validateScanSegment(segment, totalSegments *int) error {
