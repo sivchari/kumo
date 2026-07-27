@@ -347,7 +347,7 @@ func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string
 
 	output, err := s.engine.execute(ctx, def, input)
 	if err != nil {
-		s.failExecution(ed, lastEventID, executionErrorCode(err), err.Error())
+		s.failExecution(ed, lastEventID, executionErrorCode(err), executionErrorCause(err))
 
 		return
 	}

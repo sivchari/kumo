@@ -48,7 +48,7 @@ func TestFailedExecutionReportsRuntimeErrorForUnsupportedState(t *testing.T) {
 	store := NewMemoryStorage()
 	sm := createExecutionTestStateMachine(t, store, "runtime-error", definition)
 
-	exec := startAndAwaitFailure(t, store, sm.StateMachineArn)
+	exec := startAndAwaitFailure(t, store, sm.StateMachineArn, "{}")
 
 	if exec.Error != errorStatesRuntime {
 		t.Fatalf("engine failure error code: got %q, want %q (cause: %s)", exec.Error, errorStatesRuntime, exec.Cause)
@@ -75,7 +75,7 @@ func TestFailedExecutionReportsTaskFailedForTaskInvocationError(t *testing.T) {
 	store := NewMemoryStorage(WithBaseURL("http://127.0.0.1:1"))
 	sm := createExecutionTestStateMachine(t, store, "task-error", definition)
 
-	exec := startAndAwaitFailure(t, store, sm.StateMachineArn)
+	exec := startAndAwaitFailure(t, store, sm.StateMachineArn, "{}")
 
 	if exec.Error != errorStatesTaskFailed {
 		t.Fatalf("task failure error code: got %q, want %q (cause: %s)", exec.Error, errorStatesTaskFailed, exec.Cause)
@@ -97,12 +97,40 @@ func createExecutionTestStateMachine(t *testing.T, store *MemoryStorage, name, d
 	return sm
 }
 
-func startAndAwaitFailure(t *testing.T, store *MemoryStorage, stateMachineArn string) *Execution {
+func startAndAwaitFailure(t *testing.T, store *MemoryStorage, stateMachineArn, input string) *Execution {
+	t.Helper()
+
+	exec := startAndAwaitTerminal(t, store, stateMachineArn, input)
+
+	if exec.Status != ExecutionStatusFailed {
+		t.Fatalf("execution ended with status %q, want FAILED", exec.Status)
+	}
+
+	return exec
+}
+
+// startAndAwaitSuccess starts an execution and polls DescribeExecution until
+// it reaches SUCCEEDED, failing the test if it instead fails or times out.
+func startAndAwaitSuccess(t *testing.T, store *MemoryStorage, stateMachineArn, input string) *Execution {
+	t.Helper()
+
+	exec := startAndAwaitTerminal(t, store, stateMachineArn, input)
+
+	if exec.Status != ExecutionStatusSucceeded {
+		t.Fatalf("execution ended with status %q, want SUCCEEDED (error: %s, cause: %s)", exec.Status, exec.Error, exec.Cause)
+	}
+
+	return exec
+}
+
+// startAndAwaitTerminal starts an execution and polls DescribeExecution until
+// it leaves RUNNING, failing the test if it does not terminate in time.
+func startAndAwaitTerminal(t *testing.T, store *MemoryStorage, stateMachineArn, input string) *Execution {
 	t.Helper()
 
 	ctx := context.Background()
 
-	started, err := store.StartExecution(ctx, stateMachineArn, "", "{}", "")
+	started, err := store.StartExecution(ctx, stateMachineArn, "", input, "")
 	if err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
@@ -114,18 +142,14 @@ func startAndAwaitFailure(t *testing.T, store *MemoryStorage, stateMachineArn st
 			t.Fatalf("DescribeExecution: %v", err)
 		}
 
-		if exec.Status == ExecutionStatusFailed {
-			return exec
-		}
-
 		if exec.Status != ExecutionStatusRunning {
-			t.Fatalf("execution ended with status %q, want FAILED", exec.Status)
+			return exec
 		}
 
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	t.Fatal("execution did not fail within the deadline")
+	t.Fatal("execution did not terminate within the deadline")
 
 	return nil
 }
