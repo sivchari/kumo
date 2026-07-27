@@ -47,6 +47,9 @@ type Request struct {
 	RouteKey       string // v2 route key, e.g. "GET /items" or "$default"
 	PathParameters map[string]string
 	StageVariables map[string]string
+	// Authorizer carries the result of a JWT authorizer evaluation for the
+	// route (v2 payload format only). Nil for routes without an authorizer.
+	Authorizer *AuthorizerContext
 }
 
 // Dispatch resolves the integration target and writes the HTTP response. It is

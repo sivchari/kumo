@@ -73,6 +73,13 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.HandleFunc("PATCH", prefix+"/v2/apis/{apiId}/routes/{routeId}", s.UpdateRoute)
 		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}/routes/{routeId}", s.DeleteRoute)
 
+		// Authorizer routes.
+		r.HandleFunc("POST", prefix+"/v2/apis/{apiId}/authorizers", s.CreateAuthorizer)
+		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/authorizers", s.GetAuthorizers)
+		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/authorizers/{authorizerId}", s.GetAuthorizer)
+		r.HandleFunc("PATCH", prefix+"/v2/apis/{apiId}/authorizers/{authorizerId}", s.UpdateAuthorizer)
+		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}/authorizers/{authorizerId}", s.DeleteAuthorizer)
+
 		// Integration routes.
 		r.HandleFunc("POST", prefix+"/v2/apis/{apiId}/integrations", s.CreateIntegration)
 		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/integrations", s.GetIntegrations)

@@ -84,11 +84,12 @@ type proxyEventV2 struct {
 }
 
 type requestContextV2 struct {
-	APIID     string `json:"apiId"`
-	Stage     string `json:"stage"`
-	RouteKey  string `json:"routeKey"`
-	RequestID string `json:"requestId"`
-	HTTP      httpV2 `json:"http"`
+	APIID      string             `json:"apiId"`
+	Stage      string             `json:"stage"`
+	RouteKey   string             `json:"routeKey"`
+	RequestID  string             `json:"requestId"`
+	HTTP       httpV2             `json:"http"`
+	Authorizer *AuthorizerContext `json:"authorizer,omitempty"`
 }
 
 type httpV2 struct {
@@ -96,6 +97,19 @@ type httpV2 struct {
 	Path     string `json:"path"`
 	Protocol string `json:"protocol"`
 	SourceIP string `json:"sourceIp"`
+}
+
+// AuthorizerContext is the requestContext.authorizer block for a route
+// protected by an authorizer. Only the JWT authorizer shape is emulated.
+type AuthorizerContext struct {
+	JWT *JWTAuthorizerClaims `json:"jwt,omitempty"`
+}
+
+// JWTAuthorizerClaims is requestContext.authorizer.jwt: the validated
+// token's claims (stringified the way API Gateway renders them) and scopes.
+type JWTAuthorizerClaims struct {
+	Claims map[string]string `json:"claims"`
+	Scopes []string          `json:"scopes,omitempty"`
 }
 
 // buildEventV2 builds the payload-2.0 proxy event from the HTTP request.
@@ -126,6 +140,7 @@ func buildEventV2(r *http.Request, req *Request, body []byte) ([]byte, error) {
 				Protocol: r.Proto,
 				SourceIP: r.RemoteAddr,
 			},
+			Authorizer: req.Authorizer,
 		},
 	}
 
