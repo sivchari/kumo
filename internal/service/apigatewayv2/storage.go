@@ -23,6 +23,10 @@ const (
 // is not set.
 const defaultRegion = "us-east-1"
 
+// defaultIdentitySource is the identity source API Gateway uses for an
+// authorizer when the caller does not specify one.
+const defaultIdentitySource = "$request.header.Authorization"
+
 // Storage defines the API Gateway v2 storage interface.
 type Storage interface {
 	CreateAPI(ctx context.Context, req *CreateAPIRequest) (*API, error)
@@ -36,6 +40,12 @@ type Storage interface {
 	GetRoutes(ctx context.Context, apiID string) ([]*Route, error)
 	UpdateRoute(ctx context.Context, apiID, routeID string, req *CreateRouteRequest) (*Route, error)
 	DeleteRoute(ctx context.Context, apiID, routeID string) error
+
+	CreateAuthorizer(ctx context.Context, apiID string, req *CreateAuthorizerRequest) (*Authorizer, error)
+	GetAuthorizer(ctx context.Context, apiID, authorizerID string) (*Authorizer, error)
+	GetAuthorizers(ctx context.Context, apiID string) ([]*Authorizer, error)
+	UpdateAuthorizer(ctx context.Context, apiID, authorizerID string, req *CreateAuthorizerRequest) (*Authorizer, error)
+	DeleteAuthorizer(ctx context.Context, apiID, authorizerID string) error
 
 	CreateIntegration(ctx context.Context, apiID string, req *CreateIntegrationRequest) (*Integration, error)
 	GetIntegration(ctx context.Context, apiID, integrationID string) (*Integration, error)
@@ -87,6 +97,7 @@ type MemoryStorage struct {
 type APIData struct {
 	API          *API                    `json:"api"`
 	Routes       map[string]*Route       `json:"routes"`
+	Authorizers  map[string]*Authorizer  `json:"authorizers"`
 	Integrations map[string]*Integration `json:"integrations"`
 	Stages       map[string]*Stage       `json:"stages"`
 	Deployments  map[string]*Deployment  `json:"deployments"`
@@ -146,6 +157,17 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.APIs = make(map[string]*APIData)
 	}
 
+	// Authorizers was added after the initial persistence format, so a
+	// snapshot written before this feature existed restores APIData with a
+	// nil Authorizers map; re-initialize it here the same way CreateAPI
+	// does, otherwise the first CreateAuthorizer against a restored API
+	// panics with "assignment to entry in nil map".
+	for _, data := range s.APIs {
+		if data.Authorizers == nil {
+			data.Authorizers = make(map[string]*Authorizer)
+		}
+	}
+
 	return nil
 }
 
@@ -203,6 +225,7 @@ func (s *MemoryStorage) CreateAPI(_ context.Context, req *CreateAPIRequest) (*AP
 	s.APIs[id] = &APIData{
 		API:          api,
 		Routes:       make(map[string]*Route),
+		Authorizers:  make(map[string]*Authorizer),
 		Integrations: make(map[string]*Integration),
 		Stages:       make(map[string]*Stage),
 		Deployments:  make(map[string]*Deployment),
@@ -447,6 +470,142 @@ func (s *MemoryStorage) DeleteRoute(_ context.Context, apiID, routeID string) er
 	}
 
 	delete(data.Routes, routeID)
+
+	s.saveLocked()
+
+	return nil
+}
+
+// CreateAuthorizer creates a new authorizer.
+func (s *MemoryStorage) CreateAuthorizer(_ context.Context, apiID string, req *CreateAuthorizerRequest) (*Authorizer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.APIs[apiID]
+	if !exists {
+		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+	}
+
+	id := generateID()
+
+	identitySource := req.IdentitySource
+	if len(identitySource) == 0 {
+		identitySource = []string{defaultIdentitySource}
+	}
+
+	authorizer := &Authorizer{
+		AuthorizerID:                   id,
+		Name:                           req.Name,
+		AuthorizerType:                 req.AuthorizerType,
+		IdentitySource:                 identitySource,
+		JWTConfiguration:               req.JWTConfiguration,
+		AuthorizerCredentialsArn:       req.AuthorizerCredentialsArn,
+		AuthorizerResultTTLInSeconds:   req.AuthorizerResultTTLInSeconds,
+		AuthorizerPayloadFormatVersion: req.AuthorizerPayloadFormatVersion,
+		AuthorizerURI:                  req.AuthorizerURI,
+		EnableSimpleResponses:          req.EnableSimpleResponses,
+		IdentityValidationExpression:   req.IdentityValidationExpression,
+	}
+
+	data.Authorizers[id] = authorizer
+
+	s.saveLocked()
+
+	return authorizer, nil
+}
+
+// GetAuthorizer returns an authorizer by ID.
+func (s *MemoryStorage) GetAuthorizer(_ context.Context, apiID, authorizerID string) (*Authorizer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, exists := s.APIs[apiID]
+	if !exists {
+		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+	}
+
+	authorizer, exists := data.Authorizers[authorizerID]
+	if !exists {
+		return nil, &ServiceError{Code: errNotFound, Message: "Invalid authorizer identifier specified"}
+	}
+
+	return authorizer, nil
+}
+
+// GetAuthorizers returns all authorizers for an API.
+func (s *MemoryStorage) GetAuthorizers(_ context.Context, apiID string) ([]*Authorizer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, exists := s.APIs[apiID]
+	if !exists {
+		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+	}
+
+	authorizers := make([]*Authorizer, 0, len(data.Authorizers))
+	for _, a := range data.Authorizers {
+		authorizers = append(authorizers, a)
+	}
+
+	return authorizers, nil
+}
+
+// UpdateAuthorizer updates an existing authorizer.
+func (s *MemoryStorage) UpdateAuthorizer(_ context.Context, apiID, authorizerID string, req *CreateAuthorizerRequest) (*Authorizer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.APIs[apiID]
+	if !exists {
+		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+	}
+
+	authorizer, exists := data.Authorizers[authorizerID]
+	if !exists {
+		return nil, &ServiceError{Code: errNotFound, Message: "Invalid authorizer identifier specified"}
+	}
+
+	mergeStr(&authorizer.Name, req.Name)
+	mergeStr(&authorizer.AuthorizerType, req.AuthorizerType)
+	mergeStr(&authorizer.AuthorizerCredentialsArn, req.AuthorizerCredentialsArn)
+	mergeStr(&authorizer.AuthorizerPayloadFormatVersion, req.AuthorizerPayloadFormatVersion)
+	mergeStr(&authorizer.AuthorizerURI, req.AuthorizerURI)
+	mergeStr(&authorizer.IdentityValidationExpression, req.IdentityValidationExpression)
+
+	if req.IdentitySource != nil {
+		authorizer.IdentitySource = req.IdentitySource
+	}
+
+	if req.JWTConfiguration != nil {
+		authorizer.JWTConfiguration = req.JWTConfiguration
+	}
+
+	if req.AuthorizerResultTTLInSeconds != 0 {
+		authorizer.AuthorizerResultTTLInSeconds = req.AuthorizerResultTTLInSeconds
+	}
+
+	authorizer.EnableSimpleResponses = req.EnableSimpleResponses
+
+	s.saveLocked()
+
+	return authorizer, nil
+}
+
+// DeleteAuthorizer deletes an authorizer.
+func (s *MemoryStorage) DeleteAuthorizer(_ context.Context, apiID, authorizerID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, exists := s.APIs[apiID]
+	if !exists {
+		return &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+	}
+
+	if _, exists := data.Authorizers[authorizerID]; !exists {
+		return &ServiceError{Code: errNotFound, Message: "Invalid authorizer identifier specified"}
+	}
+
+	delete(data.Authorizers, authorizerID)
 
 	s.saveLocked()
 

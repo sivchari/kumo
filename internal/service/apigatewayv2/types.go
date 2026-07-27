@@ -119,6 +119,28 @@ type AccessLogSettings struct {
 	Format         string `json:"format,omitempty"`
 }
 
+// Authorizer represents an authorizer for an API. kumo only enforces the JWT
+// authorizer type at execute time; other types are stored but not evaluated.
+type Authorizer struct {
+	AuthorizerID                   string            `json:"authorizerId"`
+	Name                           string            `json:"name"`
+	AuthorizerType                 string            `json:"authorizerType"`
+	IdentitySource                 []string          `json:"identitySource,omitempty"`
+	JWTConfiguration               *JWTConfiguration `json:"jwtConfiguration,omitempty"`
+	AuthorizerCredentialsArn       string            `json:"authorizerCredentialsArn,omitempty"`
+	AuthorizerResultTTLInSeconds   int32             `json:"authorizerResultTtlInSeconds,omitempty"`
+	AuthorizerPayloadFormatVersion string            `json:"authorizerPayloadFormatVersion,omitempty"`
+	AuthorizerURI                  string            `json:"authorizerUri,omitempty"`
+	EnableSimpleResponses          bool              `json:"enableSimpleResponses,omitempty"`
+	IdentityValidationExpression   string            `json:"identityValidationExpression,omitempty"`
+}
+
+// JWTConfiguration represents the configuration of a JWT authorizer.
+type JWTConfiguration struct {
+	Audience []string `json:"audience,omitempty"`
+	Issuer   string   `json:"issuer,omitempty"`
+}
+
 // Deployment represents a deployment for an API.
 type Deployment struct {
 	DeploymentID     string    `json:"deploymentId"`
@@ -175,6 +197,20 @@ type CreateRouteRequest struct {
 	RequestParameters                map[string]ParameterConstraints `json:"requestParameters,omitempty"`
 	ModelSelectionExpression         string                          `json:"modelSelectionExpression,omitempty"`
 	RouteResponseSelectionExpression string                          `json:"routeResponseSelectionExpression,omitempty"`
+}
+
+// CreateAuthorizerRequest represents a CreateAuthorizer request.
+type CreateAuthorizerRequest struct {
+	Name                           string            `json:"name"`
+	AuthorizerType                 string            `json:"authorizerType"`
+	IdentitySource                 []string          `json:"identitySource,omitempty"`
+	JWTConfiguration               *JWTConfiguration `json:"jwtConfiguration,omitempty"`
+	AuthorizerCredentialsArn       string            `json:"authorizerCredentialsArn,omitempty"`
+	AuthorizerResultTTLInSeconds   int32             `json:"authorizerResultTtlInSeconds,omitempty"`
+	AuthorizerPayloadFormatVersion string            `json:"authorizerPayloadFormatVersion,omitempty"`
+	AuthorizerURI                  string            `json:"authorizerUri,omitempty"`
+	EnableSimpleResponses          bool              `json:"enableSimpleResponses,omitempty"`
+	IdentityValidationExpression   string            `json:"identityValidationExpression,omitempty"`
 }
 
 // CreateIntegrationRequest represents a CreateIntegration request.
@@ -248,6 +284,12 @@ type APIResponse struct {
 type APIsResponse struct {
 	Items     []APIResponse `json:"items"`
 	NextToken string        `json:"nextToken,omitempty"`
+}
+
+// AuthorizersResponse represents a GetAuthorizers response.
+type AuthorizersResponse struct {
+	Items     []Authorizer `json:"items"`
+	NextToken string       `json:"nextToken,omitempty"`
 }
 
 // RoutesResponse represents a GetRoutes response.

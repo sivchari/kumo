@@ -204,6 +204,108 @@ func (s *Service) DeleteRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ---- Authorizer handlers ----
+
+// CreateAuthorizer handles the CreateAuthorizer API.
+func (s *Service) CreateAuthorizer(w http.ResponseWriter, r *http.Request) {
+	apiID := segmentAt(r.URL.Path, 0)
+
+	var req CreateAuthorizerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, errBadRequest, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.Name == "" {
+		writeError(w, errBadRequest, "Name is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.AuthorizerType == "" {
+		writeError(w, errBadRequest, "AuthorizerType is required", http.StatusBadRequest)
+
+		return
+	}
+
+	authorizer, err := s.storage.CreateAuthorizer(r.Context(), apiID, &req)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, authorizer, http.StatusCreated)
+}
+
+// GetAuthorizer handles the GetAuthorizer API.
+func (s *Service) GetAuthorizer(w http.ResponseWriter, r *http.Request) {
+	apiID, authorizerID := segmentAt(r.URL.Path, 0), segmentAt(r.URL.Path, 2)
+
+	authorizer, err := s.storage.GetAuthorizer(r.Context(), apiID, authorizerID)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, authorizer, http.StatusOK)
+}
+
+// GetAuthorizers handles the GetAuthorizers API.
+func (s *Service) GetAuthorizers(w http.ResponseWriter, r *http.Request) {
+	apiID := segmentAt(r.URL.Path, 0)
+
+	authorizers, err := s.storage.GetAuthorizers(r.Context(), apiID)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	items := make([]Authorizer, 0, len(authorizers))
+	for _, authorizer := range authorizers {
+		items = append(items, *authorizer)
+	}
+
+	writeResponse(w, &AuthorizersResponse{Items: items}, http.StatusOK)
+}
+
+// UpdateAuthorizer handles the UpdateAuthorizer API.
+func (s *Service) UpdateAuthorizer(w http.ResponseWriter, r *http.Request) {
+	apiID, authorizerID := segmentAt(r.URL.Path, 0), segmentAt(r.URL.Path, 2)
+
+	var req CreateAuthorizerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, errBadRequest, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	authorizer, err := s.storage.UpdateAuthorizer(r.Context(), apiID, authorizerID, &req)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, authorizer, http.StatusOK)
+}
+
+// DeleteAuthorizer handles the DeleteAuthorizer API.
+func (s *Service) DeleteAuthorizer(w http.ResponseWriter, r *http.Request) {
+	apiID, authorizerID := segmentAt(r.URL.Path, 0), segmentAt(r.URL.Path, 2)
+
+	if err := s.storage.DeleteAuthorizer(r.Context(), apiID, authorizerID); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ---- Integration handlers ----
 
 // CreateIntegration handles the CreateIntegration API.

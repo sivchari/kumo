@@ -144,6 +144,83 @@ func TestAPIGatewayV2_CreateRoute(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("RouteId", "ResultMetadata")).Assert(t.Name()+"_get", getOutput)
 }
 
+func TestAPIGatewayV2_CreateAuthorizer(t *testing.T) {
+	client := newAPIGatewayV2Client(t)
+	ctx := t.Context()
+
+	apiOutput, err := client.CreateApi(ctx, &apigatewayv2.CreateApiInput{
+		Name:         aws.String("test-authorizer-api"),
+		ProtocolType: types.ProtocolTypeHttp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	createOutput, err := client.CreateAuthorizer(ctx, &apigatewayv2.CreateAuthorizerInput{
+		ApiId:          apiOutput.ApiId,
+		Name:           aws.String("test-jwt-authorizer"),
+		AuthorizerType: types.AuthorizerTypeJwt,
+		IdentitySource: []string{"$request.header.Authorization"},
+		JwtConfiguration: &types.JWTConfiguration{
+			Audience: []string{"test-audience"},
+			Issuer:   aws.String("https://issuer.example.com"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("AuthorizerId", "ResultMetadata")).Assert(t.Name()+"_create", createOutput)
+
+	getOutput, err := client.GetAuthorizer(ctx, &apigatewayv2.GetAuthorizerInput{
+		ApiId:        apiOutput.ApiId,
+		AuthorizerId: createOutput.AuthorizerId,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("AuthorizerId", "ResultMetadata")).Assert(t.Name()+"_get", getOutput)
+
+	updateOutput, err := client.UpdateAuthorizer(ctx, &apigatewayv2.UpdateAuthorizerInput{
+		ApiId:        apiOutput.ApiId,
+		AuthorizerId: createOutput.AuthorizerId,
+		Name:         aws.String("test-jwt-authorizer-renamed"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("AuthorizerId", "ResultMetadata")).Assert(t.Name()+"_update", updateOutput)
+
+	listOutput, err := client.GetAuthorizers(ctx, &apigatewayv2.GetAuthorizersInput{
+		ApiId: apiOutput.ApiId,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(listOutput.Items) != 1 {
+		t.Fatalf("GetAuthorizers() len = %d, want 1", len(listOutput.Items))
+	}
+
+	_, err = client.DeleteAuthorizer(ctx, &apigatewayv2.DeleteAuthorizerInput{
+		ApiId:        apiOutput.ApiId,
+		AuthorizerId: createOutput.AuthorizerId,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.GetAuthorizer(ctx, &apigatewayv2.GetAuthorizerInput{
+		ApiId:        apiOutput.ApiId,
+		AuthorizerId: createOutput.AuthorizerId,
+	})
+	if err == nil {
+		t.Error("expected error for deleted authorizer")
+	}
+}
+
 func TestAPIGatewayV2_CreateIntegration(t *testing.T) {
 	client := newAPIGatewayV2Client(t)
 	ctx := t.Context()

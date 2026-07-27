@@ -31,16 +31,16 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 		return true
 	}
 
-	routes, err := s.storage.GetRoutes(r.Context(), apiID)
-	if err != nil {
+	route, pathParams, ok := s.matchRequestRoute(r, apiID, routePath)
+	if !ok {
 		writeExecuteErrorV2(w, http.StatusNotFound, "Not Found")
 
 		return true
 	}
 
-	route, pathParams, ok := matchRoute(routes, r.Method, routePath)
+	authContext, ok := s.authorizeRoute(r, apiID, route)
 	if !ok {
-		writeExecuteErrorV2(w, http.StatusNotFound, "Not Found")
+		writeExecuteErrorV2(w, http.StatusUnauthorized, "Unauthorized")
 
 		return true
 	}
@@ -52,17 +52,7 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 		return true
 	}
 
-	payloadFormat := integration.PayloadFormatVersion
-	if payloadFormat == "" {
-		payloadFormat = defaultPayloadFormatVersion
-	}
-
-	execapi.Dispatch(w, r,
-		execapi.Target{
-			Type:                 integration.IntegrationType,
-			URI:                  integration.IntegrationURI,
-			PayloadFormatVersion: payloadFormat,
-		},
+	execapi.Dispatch(w, r, targetFor(integration),
 		&execapi.Request{
 			BaseURL:        s.baseURLOrDefault(),
 			APIID:          apiID,
@@ -71,10 +61,54 @@ func (s *Service) HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID
 			RouteKey:       route.RouteKey,
 			PathParameters: pathParams,
 			StageVariables: stageObj.StageVariables,
+			Authorizer:     authContext,
 		},
 	)
 
 	return true
+}
+
+// matchRequestRoute loads the API's routes and matches the request against
+// them.
+func (s *Service) matchRequestRoute(r *http.Request, apiID, routePath string) (*Route, map[string]string, bool) {
+	routes, err := s.storage.GetRoutes(r.Context(), apiID)
+	if err != nil {
+		return nil, nil, false
+	}
+
+	return matchRoute(routes, r.Method, routePath)
+}
+
+// authorizeRoute enforces the route's JWT authorizer, if any. ok is false
+// when the request must be rejected with 401 Unauthorized. Routes without a
+// JWT authorizer (AuthorizationType != "JWT" or no AuthorizerID) are always
+// authorized, with a nil authorizer context.
+func (s *Service) authorizeRoute(r *http.Request, apiID string, route *Route) (*execapi.AuthorizerContext, bool) {
+	if route.AuthorizationType != authorizerTypeJWT || route.AuthorizerID == "" {
+		return nil, true
+	}
+
+	authorizer, err := s.storage.GetAuthorizer(r.Context(), apiID, route.AuthorizerID)
+	if err != nil {
+		return nil, false
+	}
+
+	return authorizeJWT(r, authorizer)
+}
+
+// targetFor builds the execapi.Target for an integration, defaulting the
+// payload format version when the integration does not specify one.
+func targetFor(integration *Integration) execapi.Target {
+	payloadFormat := integration.PayloadFormatVersion
+	if payloadFormat == "" {
+		payloadFormat = defaultPayloadFormatVersion
+	}
+
+	return execapi.Target{
+		Type:                 integration.IntegrationType,
+		URI:                  integration.IntegrationURI,
+		PayloadFormatVersion: payloadFormat,
+	}
 }
 
 // resolveStage determines the stage, the resolved stage object, and the
