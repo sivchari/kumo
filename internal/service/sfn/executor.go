@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,6 +36,35 @@ type stateDefinition struct {
 	InputPath  *string        `json:"InputPath"`
 	OutputPath *string        `json:"OutputPath"`
 	Comment    string         `json:"Comment"`
+}
+
+// Execution error codes surfaced via DescribeExecution. States.TaskFailed is
+// reserved for failures of a Task state's work itself; every engine-level
+// failure (unsupported state, bad definition wiring) is States.Runtime.
+const (
+	errorStatesRuntime    = "States.Runtime"
+	errorStatesTaskFailed = "States.TaskFailed"
+)
+
+// taskFailedError marks a failure of the task invocation itself so the
+// execution reports States.TaskFailed instead of States.Runtime.
+type taskFailedError struct {
+	err error
+}
+
+func (e *taskFailedError) Error() string { return e.err.Error() }
+
+func (e *taskFailedError) Unwrap() error { return e.err }
+
+// executionErrorCode maps an engine error to the Step Functions error code
+// reported on the failed execution.
+func executionErrorCode(err error) string {
+	var taskErr *taskFailedError
+	if errors.As(err, &taskErr) {
+		return errorStatesTaskFailed
+	}
+
+	return errorStatesRuntime
 }
 
 // executionEngine executes a state machine definition.
@@ -141,12 +171,22 @@ func (e *executionEngine) executeTaskState(ctx context.Context, name string, sta
 
 	switch resource {
 	case "arn:aws:states:::sqs:sendMessage":
-		return e.executeSQSSendMessage(ctx, params)
+		return wrapTaskResult(e.executeSQSSendMessage(ctx, params))
 	case "arn:aws:states:::lambda:invoke":
-		return e.executeLambdaInvoke(ctx, params)
+		return wrapTaskResult(e.executeLambdaInvoke(ctx, params))
 	default:
 		return "", fmt.Errorf("unsupported task resource %q", resource)
 	}
+}
+
+// wrapTaskResult wraps a task invocation failure in taskFailedError so it is
+// reported as States.TaskFailed.
+func wrapTaskResult(output string, err error) (string, error) {
+	if err != nil {
+		return "", &taskFailedError{err: err}
+	}
+
+	return output, nil
 }
 
 // resolveParameters resolves parameter values, handling JSONPath references

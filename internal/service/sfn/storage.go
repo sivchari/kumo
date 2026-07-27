@@ -301,7 +301,7 @@ func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name,
 		execName = uuid.New().String()
 	}
 
-	executionArn := fmt.Sprintf("arn:aws:states:%s:%s:Execution:%s:%s", s.region, s.accountID, sm.Name, execName)
+	executionArn := fmt.Sprintf("arn:aws:states:%s:%s:execution:%s:%s", s.region, s.accountID, sm.Name, execName)
 
 	if _, exists := s.Executions[executionArn]; exists {
 		return nil, &ServiceError{Code: errExecutionAlreadyExists, Message: "Execution already exists"}
@@ -330,7 +330,7 @@ func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name,
 
 	go s.runExecution(ed, definition, input, startID)
 
-	return exec, nil
+	return copyExecution(exec), nil
 }
 
 // runExecution executes the state machine in a background goroutine.
@@ -340,14 +340,14 @@ func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string
 
 	def, err := parseDefinition(definition)
 	if err != nil {
-		s.failExecution(ed, lastEventID, "States.Runtime", fmt.Sprintf("Failed to parse definition: %v", err))
+		s.failExecution(ed, lastEventID, errorStatesRuntime, fmt.Sprintf("Failed to parse definition: %v", err))
 
 		return
 	}
 
 	output, err := s.engine.execute(ctx, def, input)
 	if err != nil {
-		s.failExecution(ed, lastEventID, "States.TaskFailed", err.Error())
+		s.failExecution(ed, lastEventID, executionErrorCode(err), err.Error())
 
 		return
 	}
@@ -413,6 +413,15 @@ func (s *MemoryStorage) createExecution(arn, smArn, name, input, traceHeader str
 	}
 }
 
+// copyExecution returns a shallow copy of an execution so callers never hold
+// a pointer that the background execution goroutine keeps mutating. Writers
+// only assign whole field values, so a shallow copy is race-free.
+func copyExecution(e *Execution) *Execution {
+	c := *e
+
+	return &c
+}
+
 // StopExecution stops an execution.
 func (s *MemoryStorage) StopExecution(_ context.Context, executionArn, errorCode, cause string) (*Execution, error) {
 	s.mu.Lock()
@@ -425,7 +434,7 @@ func (s *MemoryStorage) StopExecution(_ context.Context, executionArn, errorCode
 
 	if ed.Execution.Status != ExecutionStatusRunning {
 		// Already stopped.
-		return ed.Execution, nil
+		return copyExecution(ed.Execution), nil
 	}
 
 	now := time.Now()
@@ -451,7 +460,7 @@ func (s *MemoryStorage) StopExecution(_ context.Context, executionArn, errorCode
 
 	s.saveLocked()
 
-	return ed.Execution, nil
+	return copyExecution(ed.Execution), nil
 }
 
 // DescribeExecution describes an execution.
@@ -464,7 +473,7 @@ func (s *MemoryStorage) DescribeExecution(_ context.Context, executionArn string
 		return nil, &ServiceError{Code: errExecutionDoesNotExist, Message: "Execution does not exist"}
 	}
 
-	return ed.Execution, nil
+	return copyExecution(ed.Execution), nil
 }
 
 // ListExecutions lists executions for a state machine.
@@ -487,7 +496,7 @@ func (s *MemoryStorage) ListExecutions(_ context.Context, stateMachineArn, statu
 			continue
 		}
 
-		executions = append(executions, ed.Execution)
+		executions = append(executions, copyExecution(ed.Execution))
 	}
 
 	// Sort by start date (most recent first).
