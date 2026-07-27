@@ -36,14 +36,31 @@ type stateDefinition struct {
 	InputPath  *string        `json:"InputPath"`
 	OutputPath *string        `json:"OutputPath"`
 	Comment    string         `json:"Comment"`
+
+	// Choice state fields.
+	Choices []choiceRule `json:"Choices"`
+	Default string       `json:"Default"`
+
+	// Wait state fields. Exactly one of these is expected to be set.
+	Seconds       *int   `json:"Seconds"`
+	SecondsPath   string `json:"SecondsPath"`
+	Timestamp     string `json:"Timestamp"`
+	TimestampPath string `json:"TimestampPath"`
+
+	// Fail state fields.
+	Error string `json:"Error"`
+	Cause string `json:"Cause"`
 }
 
 // Execution error codes surfaced via DescribeExecution. States.TaskFailed is
-// reserved for failures of a Task state's work itself; every engine-level
-// failure (unsupported state, bad definition wiring) is States.Runtime.
+// reserved for failures of a Task state's work itself; States.NoChoiceMatched
+// is reserved for a Choice state with no matching rule and no Default; every
+// other engine-level failure (unsupported state, bad definition wiring) is
+// States.Runtime.
 const (
-	errorStatesRuntime    = "States.Runtime"
-	errorStatesTaskFailed = "States.TaskFailed"
+	errorStatesRuntime         = "States.Runtime"
+	errorStatesTaskFailed      = "States.TaskFailed"
+	errorStatesNoChoiceMatched = "States.NoChoiceMatched"
 )
 
 // taskFailedError marks a failure of the task invocation itself so the
@@ -56,6 +73,32 @@ func (e *taskFailedError) Error() string { return e.err.Error() }
 
 func (e *taskFailedError) Unwrap() error { return e.err }
 
+// noChoiceMatchedError marks a Choice state that failed to match any Choice
+// Rule and had no Default. Per the Amazon States Language spec, the
+// interpreter throws a runtime States.NoChoiceMatched error in this case.
+type noChoiceMatchedError struct {
+	state string
+}
+
+func (e *noChoiceMatchedError) Error() string {
+	return fmt.Sprintf("state %q: no Choice Rule matched and no Default was specified", e.state)
+}
+
+// failStateError carries the Error and Cause declared on a Fail state so the
+// execution reports those exact values instead of a generic engine failure.
+type failStateError struct {
+	errorName string
+	cause     string
+}
+
+func (e *failStateError) Error() string {
+	if e.cause != "" {
+		return fmt.Sprintf("%s: %s", e.errorName, e.cause)
+	}
+
+	return e.errorName
+}
+
 // executionErrorCode maps an engine error to the Step Functions error code
 // reported on the failed execution.
 func executionErrorCode(err error) string {
@@ -64,7 +107,29 @@ func executionErrorCode(err error) string {
 		return errorStatesTaskFailed
 	}
 
+	var choiceErr *noChoiceMatchedError
+	if errors.As(err, &choiceErr) {
+		return errorStatesNoChoiceMatched
+	}
+
+	var failErr *failStateError
+	if errors.As(err, &failErr) {
+		return failErr.errorName
+	}
+
 	return errorStatesRuntime
+}
+
+// executionErrorCause returns the cause message reported on the failed
+// execution. A Fail state reports its own declared Cause verbatim instead of
+// the wrapped "execute state ...: ..." error chain every other failure uses.
+func executionErrorCause(err error) string {
+	var failErr *failStateError
+	if errors.As(err, &failErr) {
+		return failErr.cause
+	}
+
+	return err.Error()
 }
 
 // executionEngine executes a state machine definition.
@@ -112,33 +177,62 @@ func (e *executionEngine) execute(ctx context.Context, def *stateMachineDefiniti
 			return "", fmt.Errorf("state %q not found in definition", currentState)
 		}
 
-		output, err := e.executeState(ctx, currentState, &state, currentInput)
+		output, nextOverride, err := e.executeState(ctx, currentState, &state, currentInput)
 		if err != nil {
 			return "", fmt.Errorf("execute state %q: %w", currentState, err)
+		}
+
+		// Succeed states are always terminal, regardless of End/Next.
+		if state.Type == "Succeed" {
+			return output, nil
+		}
+
+		next := state.Next
+		if nextOverride != "" {
+			next = nextOverride
 		}
 
 		if state.End {
 			return output, nil
 		}
 
-		if state.Next == "" {
+		if next == "" {
 			return "", fmt.Errorf("state %q has no End or Next", currentState)
 		}
 
 		currentInput = output
-		currentState = state.Next
+		currentState = next
 	}
 }
 
-// executeState executes a single state and returns the output.
-func (e *executionEngine) executeState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
+// executeState executes a single state and returns its output and, for
+// states that determine the next state dynamically (Choice), the name of
+// that next state. nextOverride is empty for states that use the state's own
+// Next/End fields.
+func (e *executionEngine) executeState(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	switch state.Type {
 	case "Pass":
-		return e.executePassState(state, input)
+		output, err := e.executePassState(state, input)
+
+		return output, "", err
 	case "Task":
-		return e.executeTaskState(ctx, name, state, input)
+		output, err := e.executeTaskState(ctx, name, state, input)
+
+		return output, "", err
+	case "Choice":
+		return e.executeChoiceState(name, state, input)
+	case "Wait":
+		output, err := e.executeWaitState(ctx, state, input)
+
+		return output, "", err
+	case "Succeed":
+		output, err := e.executeSucceedState(state, input)
+
+		return output, "", err
+	case "Fail":
+		return "", "", e.executeFailState(state)
 	default:
-		return "", fmt.Errorf("unsupported state type %q", state.Type)
+		return "", "", fmt.Errorf("unsupported state type %q", state.Type)
 	}
 }
 
@@ -156,6 +250,84 @@ func (e *executionEngine) executePassState(state *stateDefinition, input string)
 	return input, nil
 }
 
+// executeChoiceState executes a Choice state. It evaluates each Choice Rule
+// in order and transitions to the first match's Next state, falling back to
+// Default. The output is always the unmodified input.
+func (e *executionEngine) executeChoiceState(name string, state *stateDefinition, input string) (string, string, error) {
+	var inputData map[string]any
+	if err := json.Unmarshal([]byte(input), &inputData); err != nil {
+		return "", "", fmt.Errorf("choice state %q: parse input: %w", name, err)
+	}
+
+	for i := range state.Choices {
+		matched, err := evaluateChoiceRule(&state.Choices[i], inputData)
+		if err != nil {
+			return "", "", fmt.Errorf("choice state %q: %w", name, err)
+		}
+
+		if matched {
+			if state.Choices[i].Next == "" {
+				return "", "", fmt.Errorf("choice state %q: matched rule has no Next", name)
+			}
+
+			return input, state.Choices[i].Next, nil
+		}
+	}
+
+	if state.Default == "" {
+		return "", "", &noChoiceMatchedError{state: name}
+	}
+
+	return input, state.Default, nil
+}
+
+// executeSucceedState executes a Succeed state, narrowing the output through
+// InputPath/OutputPath if present.
+func (e *executionEngine) executeSucceedState(state *stateDefinition, input string) (string, error) {
+	narrowed, err := applyPath(state.InputPath, input)
+	if err != nil {
+		return "", fmt.Errorf("succeed state: %w", err)
+	}
+
+	output, err := applyPath(state.OutputPath, narrowed)
+	if err != nil {
+		return "", fmt.Errorf("succeed state: %w", err)
+	}
+
+	return output, nil
+}
+
+// executeFailState executes a Fail state, always returning a failStateError
+// carrying the state's declared Error and Cause.
+func (e *executionEngine) executeFailState(state *stateDefinition) error {
+	return &failStateError{errorName: state.Error, cause: state.Cause}
+}
+
+// applyPath narrows a JSON value using a JSONPath (InputPath/OutputPath). A
+// nil path returns data unchanged.
+func applyPath(path *string, data string) (string, error) {
+	if path == nil {
+		return data, nil
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+		return "", fmt.Errorf("parse data for path %q: %w", *path, err)
+	}
+
+	resolved, err := resolveJSONPath(parsed, *path)
+	if err != nil {
+		return "", fmt.Errorf("resolve path %q: %w", *path, err)
+	}
+
+	out, err := json.Marshal(resolved)
+	if err != nil {
+		return "", fmt.Errorf("marshal path %q result: %w", *path, err)
+	}
+
+	return string(out), nil
+}
+
 // executeTaskState executes a Task state by calling the appropriate service.
 func (e *executionEngine) executeTaskState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	resource := state.Resource
@@ -169,11 +341,13 @@ func (e *executionEngine) executeTaskState(ctx context.Context, name string, sta
 		return "", fmt.Errorf("resolve parameters for state %q: %w", name, err)
 	}
 
-	switch resource {
-	case "arn:aws:states:::sqs:sendMessage":
+	switch {
+	case resource == "arn:aws:states:::sqs:sendMessage":
 		return wrapTaskResult(e.executeSQSSendMessage(ctx, params))
-	case "arn:aws:states:::lambda:invoke":
+	case resource == "arn:aws:states:::lambda:invoke":
 		return wrapTaskResult(e.executeLambdaInvoke(ctx, params))
+	case strings.HasPrefix(resource, "arn:aws:lambda:"):
+		return wrapTaskResult(e.executeLambdaFunctionTask(ctx, name, resource, params, input))
 	default:
 		return "", fmt.Errorf("unsupported task resource %q", resource)
 	}
@@ -368,8 +542,6 @@ func formatMessageBody(v any) (string, error) {
 }
 
 // executeLambdaInvoke invokes a Lambda function via HTTP.
-//
-//nolint:funlen // Straightforward HTTP call with error handling.
 func (e *executionEngine) executeLambdaInvoke(ctx context.Context, params map[string]any) (string, error) {
 	functionName, _ := params["FunctionName"].(string)
 	if functionName == "" {
@@ -392,36 +564,16 @@ func (e *executionEngine) executeLambdaInvoke(ctx context.Context, params map[st
 		payload = []byte("{}")
 	}
 
-	invokeURL := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", e.baseURL, functionName)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invokeURL, bytes.NewReader(payload))
+	respBody, err := e.callLambda(ctx, functionName, payload)
 	if err != nil {
-		return "", fmt.Errorf("lambda invoke: create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("lambda invoke: send request: %w", err)
-	}
-
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("lambda invoke: read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("lambda invoke: unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return "", err
 	}
 
 	slog.Debug("SFN executor: Lambda invoke succeeded", "function", functionName)
 
 	// Wrap Lambda response in the Step Functions format.
 	lambdaResult := map[string]any{
-		"StatusCode": resp.StatusCode,
+		"StatusCode": http.StatusOK,
 	}
 
 	// Try to parse the response body as JSON for the Payload field.
@@ -438,6 +590,68 @@ func (e *executionEngine) executeLambdaInvoke(ctx context.Context, params map[st
 	}
 
 	return string(result), nil
+}
+
+// executeLambdaFunctionTask invokes a Lambda function specified directly by
+// ARN in a Task state's Resource field (the "directly specified function
+// resource" integration, as opposed to the optimized
+// arn:aws:states:::lambda:invoke integration). With this integration the
+// state input becomes the invocation payload verbatim, or resolved
+// Parameters if given, and the task output is the function's response
+// payload directly with no ExecutedVersion/Payload/StatusCode wrapping.
+func (e *executionEngine) executeLambdaFunctionTask(ctx context.Context, name, resourceARN string, params map[string]any, input string) (string, error) {
+	functionName := extractLambdaFunctionName(resourceARN)
+
+	payload := []byte(input)
+
+	if len(params) > 0 {
+		var err error
+
+		payload, err = json.Marshal(params)
+		if err != nil {
+			return "", fmt.Errorf("marshal parameters for state %q: %w", name, err)
+		}
+	}
+
+	respBody, err := e.callLambda(ctx, functionName, payload)
+	if err != nil {
+		return "", err
+	}
+
+	slog.Debug("SFN executor: Lambda function invoke succeeded", "function", functionName)
+
+	return string(respBody), nil
+}
+
+// callLambda performs the HTTP call to invoke a Lambda function and returns
+// the raw response body.
+func (e *executionEngine) callLambda(ctx context.Context, functionName string, payload []byte) ([]byte, error) {
+	invokeURL := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", e.baseURL, functionName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invokeURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("lambda invoke: create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("lambda invoke: send request: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("lambda invoke: read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("lambda invoke: unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return respBody, nil
 }
 
 // extractLambdaFunctionName extracts the function name from an ARN or returns the input as-is.
