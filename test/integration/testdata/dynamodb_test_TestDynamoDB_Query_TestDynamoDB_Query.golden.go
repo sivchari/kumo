@@ -4,6 +4,17 @@
   "Items": [
     {
       "data": {
+        "Value": "data1"
+      },
+      "pk": {
+        "Value": "user-1"
+      },
+      "sk": {
+        "Value": "item-1"
+      }
+    },
+    {
+      "data": {
         "Value": "data2"
       },
       "pk": {
@@ -23,20 +34,9 @@
       "sk": {
         "Value": "item-3"
       }
-    },
-    {
-      "data": {
-        "Value": "data1"
-      },
-      "pk": {
-        "Value": "user-1"
-      },
-      "sk": {
-        "Value": "item-1"
-      }
     }
   ],
   "LastEvaluatedKey": null,
-  "ScannedCount": 4,
+  "ScannedCount": 3,
   "ResultMetadata": {}
 }
