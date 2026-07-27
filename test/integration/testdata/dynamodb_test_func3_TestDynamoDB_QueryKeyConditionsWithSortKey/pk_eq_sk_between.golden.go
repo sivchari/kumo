@@ -80,5 +80,5 @@
     }
   ],
   "LastEvaluatedKey": null,
-  "ScannedCount": 4
+  "ScannedCount": 2
 }

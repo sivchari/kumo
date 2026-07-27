@@ -32,6 +32,6 @@
     }
   ],
   "LastEvaluatedKey": null,
-  "ScannedCount": 3,
+  "ScannedCount": 2,
   "ResultMetadata": {}
 }

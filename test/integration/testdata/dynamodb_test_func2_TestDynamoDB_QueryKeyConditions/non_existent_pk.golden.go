@@ -3,5 +3,5 @@
   "Count": 0,
   "Items": [],
   "LastEvaluatedKey": null,
-  "ScannedCount": 1
+  "ScannedCount": 0
 }
