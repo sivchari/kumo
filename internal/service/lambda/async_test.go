@@ -1,12 +1,14 @@
 package lambda
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -109,7 +111,7 @@ func TestAsyncDispatcher_DeliversAfterEndpointRecovers(t *testing.T) {
 	addr := reserveAddr(t)
 
 	endpoint := "http://" + addr + "/invoke"
-	deliverer := &endpointDeliverer{client: d.client, endpoint: endpoint}
+	deliverer := &endpointDeliverer{client: d.client, endpoint: endpoint, gate: d.gate("fn")}
 
 	for i := 1; i <= 3; i++ {
 		d.enqueue("fn", deliverer, fmt.Appendf(nil, `{"seq":%d}`, i))
@@ -169,7 +171,7 @@ func TestAsyncDispatcher_FunctionErrorRetries(t *testing.T) {
 		return attempts
 	}
 
-	d.enqueue("fn", &endpointDeliverer{client: d.client, endpoint: srv.URL}, []byte(`{}`))
+	d.enqueue("fn", &endpointDeliverer{client: d.client, endpoint: srv.URL, gate: d.gate("fn")}, []byte(`{}`))
 
 	wantAttempts := 1 + asyncMaxFunctionErrorRetries
 	if !waitFor(t, 5*time.Second, func() bool { return count() == wantAttempts }) {
@@ -192,7 +194,7 @@ func TestAsyncDispatcher_ExpiredEventDropped(t *testing.T) {
 
 	addr := reserveAddr(t)
 
-	d.enqueue("fn", &endpointDeliverer{client: d.client, endpoint: "http://" + addr + "/invoke"}, []byte(`{}`))
+	d.enqueue("fn", &endpointDeliverer{client: d.client, endpoint: "http://" + addr + "/invoke", gate: d.gate("fn")}, []byte(`{}`))
 
 	// Wait until the event is past its deadline and has been dropped.
 	time.Sleep(200 * time.Millisecond)
@@ -202,6 +204,45 @@ func TestAsyncDispatcher_ExpiredEventDropped(t *testing.T) {
 
 	if waitFor(t, 300*time.Millisecond, func() bool { return len(rec.snapshot()) > 0 }) {
 		t.Fatalf("expected expired event to be dropped, got deliveries %v", rec.snapshot())
+	}
+}
+
+// TestAsyncDispatcher_CloseDoesNotHangOnStuckGate guards the per-function
+// gate's context-cancelable acquire (issue #859): if a synchronous invoke
+// acquires a function's gate and never releases it -- e.g. it is blocked
+// forever inside its own HTTP call against a wedged InvokeEndpoint -- the
+// async drain goroutine waiting on that same gate must still give up when
+// the dispatcher closes, instead of blocking asyncDispatcher.close forever.
+func TestAsyncDispatcher_CloseDoesNotHangOnStuckGate(t *testing.T) {
+	t.Parallel()
+
+	d := newAsyncDispatcher()
+	d.initialBackoff = 5 * time.Millisecond
+	d.maxBackoff = 20 * time.Millisecond
+
+	gate := d.gate("fn")
+	if !gate.acquire(t.Context()) {
+		t.Fatal("failed to acquire gate")
+	}
+	// Deliberately never released: simulates a sync invoke stuck forever.
+
+	d.enqueue("fn", &endpointDeliverer{client: d.client, endpoint: "http://127.0.0.1:0/invoke", gate: gate}, []byte(`{}`))
+
+	// Give the drain goroutine time to start waiting on the (permanently
+	// held) gate before closing.
+	time.Sleep(20 * time.Millisecond)
+
+	closed := make(chan struct{})
+
+	go func() {
+		d.close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("asyncDispatcher.close hung waiting on a gate held by a stuck peer")
 	}
 }
 
@@ -424,4 +465,223 @@ func TestAsyncDispatcher_RuntimeFunctionErrorOnResponseTimeout(t *testing.T) {
 	if got := count(); got != wantAttempts {
 		t.Fatalf("expected exactly %d attempts, got %d", wantAttempts, got)
 	}
+}
+
+// singleFlightServer is an InvokeEndpoint stand-in that fails the test the
+// moment it observes two overlapping requests, mimicking a single-concurrency
+// runtime such as the Lambda RIE.
+type singleFlightServer struct {
+	t        *testing.T
+	inFlight atomic.Int32
+	maxSeen  atomic.Int32
+	handled  atomic.Int32
+	sleep    time.Duration
+}
+
+func newSingleFlightServer(t *testing.T, sleep time.Duration) (*httptest.Server, *singleFlightServer) {
+	t.Helper()
+
+	sfs := &singleFlightServer{t: t, sleep: sleep}
+
+	return httptest.NewServer(http.HandlerFunc(sfs.serve)), sfs
+}
+
+func (sfs *singleFlightServer) serve(w http.ResponseWriter, _ *http.Request) {
+	n := sfs.inFlight.Add(1)
+	defer sfs.inFlight.Add(-1)
+
+	for {
+		seen := sfs.maxSeen.Load()
+		if n <= seen || sfs.maxSeen.CompareAndSwap(seen, n) {
+			break
+		}
+	}
+
+	if n > 1 {
+		sfs.t.Errorf("endpoint saw %d overlapping requests, want at most 1", n)
+	}
+
+	time.Sleep(sfs.sleep)
+	sfs.handled.Add(1)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{}`))
+}
+
+// newInvokeTestService returns a Service backed by an in-memory storage with
+// fn already registered against endpoint as its InvokeEndpoint.
+func newInvokeTestService(t *testing.T, fn, endpoint string) *Service {
+	t.Helper()
+
+	return newInvokeTestServiceMulti(t, map[string]string{fn: endpoint})
+}
+
+// newInvokeTestServiceMulti returns a Service backed by an in-memory storage
+// with each function in endpoints already registered against its
+// InvokeEndpoint.
+func newInvokeTestServiceMulti(t *testing.T, endpoints map[string]string) *Service {
+	t.Helper()
+
+	storage := NewMemoryStorage(defaultBaseURL)
+	svc := New(storage, defaultBaseURL)
+
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Fatalf("close service: %v", err)
+		}
+	})
+
+	for fn, endpoint := range endpoints {
+		if _, err := storage.CreateFunction(t.Context(), &CreateFunctionRequest{
+			FunctionName:   fn,
+			Role:           "arn:aws:iam::000000000000:role/test",
+			InvokeEndpoint: endpoint,
+		}); err != nil {
+			t.Fatalf("create function %s: %v", fn, err)
+		}
+	}
+
+	return svc
+}
+
+// invokeRequest builds an Invoke request for fn with the given invocation
+// type ("" for RequestResponse).
+func invokeRequest(t *testing.T, fn, invocationType string) *http.Request {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, "/2015-03-31/functions/"+fn+"/invocations", bytes.NewReader([]byte(`{}`)))
+	if invocationType != "" {
+		req.Header.Set("X-Amz-Invocation-Type", invocationType)
+	}
+
+	return req.WithContext(t.Context())
+}
+
+// TestInvoke_SyncAndAsyncSerializedPerFunction reproduces issue #859: a
+// synchronous (RequestResponse) invoke and an asynchronous (Event) invoke
+// against the same function's InvokeEndpoint must never be in flight at the
+// same time, so a single-concurrency runtime (e.g. the Lambda RIE) never
+// sees overlapping requests.
+func TestInvoke_SyncAndAsyncSerializedPerFunction(t *testing.T) {
+	t.Parallel()
+
+	srv, sfs := newSingleFlightServer(t, 100*time.Millisecond)
+	t.Cleanup(srv.Close)
+
+	svc := newInvokeTestService(t, "fn", srv.URL)
+
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+
+	syncRec := httptest.NewRecorder()
+
+	go func() {
+		defer wg.Done()
+
+		svc.Invoke(syncRec, invokeRequest(t, "fn", "RequestResponse"))
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		asyncRec := httptest.NewRecorder()
+		svc.Invoke(asyncRec, invokeRequest(t, "fn", "Event"))
+
+		if asyncRec.Code != http.StatusAccepted {
+			t.Errorf("async invoke status = %d, want %d", asyncRec.Code, http.StatusAccepted)
+		}
+	}()
+
+	wg.Wait()
+
+	if syncRec.Code != http.StatusOK {
+		t.Errorf("sync invoke status = %d, want %d, body %s", syncRec.Code, http.StatusOK, syncRec.Body.String())
+	}
+
+	// The sync invoke has already completed above; the async delivery may
+	// still be draining, so wait for it to land too before asserting the
+	// endpoint's final view of concurrency.
+	if !waitFor(t, 5*time.Second, func() bool { return sfs.handled.Load() == 2 }) {
+		t.Fatalf("expected 2 deliveries to the endpoint, got %d", sfs.handled.Load())
+	}
+
+	if got := sfs.maxSeen.Load(); got > 1 {
+		t.Errorf("endpoint saw up to %d overlapping requests, want at most 1", got)
+	}
+}
+
+// newTrackedServer returns an httptest server whose handler closes started
+// on receiving a request, then blocks until release is closed.
+func newTrackedServer(t *testing.T, started chan struct{}, release <-chan struct{}) *httptest.Server {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv
+}
+
+// invokeSyncAndAssertOK fires a RequestResponse invoke for fn and records a
+// t.Errorf if it doesn't come back 200 OK. Intended to run as `go
+// invokeSyncAndAssertOK(...)`; it calls wg.Done itself.
+func invokeSyncAndAssertOK(t *testing.T, wg *sync.WaitGroup, svc *Service, fn string) {
+	t.Helper()
+
+	defer wg.Done()
+
+	rec := httptest.NewRecorder()
+	svc.Invoke(rec, invokeRequest(t, fn, "RequestResponse"))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("%s invoke status = %d, want %d", fn, rec.Code, http.StatusOK)
+	}
+}
+
+// TestInvoke_DifferentFunctionsNotSerialized verifies that invocations
+// targeting different functions are not gated against each other: two
+// concurrent requests to two different functions' endpoints must be allowed
+// to overlap.
+func TestInvoke_DifferentFunctionsNotSerialized(t *testing.T) {
+	t.Parallel()
+
+	var (
+		aStarted = make(chan struct{})
+		bStarted = make(chan struct{})
+		release  = make(chan struct{})
+	)
+
+	srvA := newTrackedServer(t, aStarted, release)
+	srvB := newTrackedServer(t, bStarted, release)
+
+	svc := newInvokeTestServiceMulti(t, map[string]string{"fn-a": srvA.URL, "fn-b": srvB.URL})
+
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+
+	go invokeSyncAndAssertOK(t, &wg, svc, "fn-a")
+	go invokeSyncAndAssertOK(t, &wg, svc, "fn-b")
+
+	// Both handlers must be able to start concurrently: neither is gated
+	// against the other, so both reach their <-release wait without one
+	// blocking on the other's in-flight request.
+	select {
+	case <-aStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("fn-a endpoint never started, functions may be wrongly serialized")
+	}
+
+	select {
+	case <-bStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("fn-b endpoint never started while fn-a was in flight, functions are wrongly serialized")
+	}
+
+	close(release)
+	wg.Wait()
 }

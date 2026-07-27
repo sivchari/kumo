@@ -62,6 +62,7 @@ type asyncDispatcher struct {
 
 	mu     sync.Mutex
 	queues map[string]chan *asyncEvent
+	gates  map[string]invokeGate
 }
 
 func newAsyncDispatcher() *asyncDispatcher {
@@ -72,7 +73,56 @@ func newAsyncDispatcher() *asyncDispatcher {
 		maxBackoff:     asyncMaxBackoff,
 		maxEventAge:    asyncMaxEventAge,
 		queues:         make(map[string]chan *asyncEvent),
+		gates:          make(map[string]invokeGate),
 	}
+}
+
+// gate returns (creating if needed) the semaphore that serializes every
+// InvokeEndpoint HTTP call for functionName, synchronous and asynchronous
+// alike, so a single-concurrency endpoint (e.g. the Lambda RIE) never
+// receives two overlapping requests (issue #859). The dispatcher's own mu
+// only guards the lookup/creation below; it is never held while a caller
+// blocks on the returned gate.
+func (d *asyncDispatcher) gate(functionName string) invokeGate {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	g, ok := d.gates[functionName]
+	if !ok {
+		g = newInvokeGate()
+		d.gates[functionName] = g
+	}
+
+	return g
+}
+
+// invokeGate is a binary semaphore (a capacity-1 channel) that serializes
+// InvokeEndpoint HTTP calls for one function across the synchronous and
+// asynchronous invoke paths. Acquisition is context-aware: a caller gives up
+// waiting when its context is done instead of blocking forever on a peer
+// that never releases the gate. This matters most for the async drain
+// goroutine, whose delivery context is canceled when the dispatcher closes —
+// without that, a stuck synchronous invoke holding the gate would prevent
+// asyncDispatcher.close from ever returning.
+type invokeGate chan struct{}
+
+func newInvokeGate() invokeGate {
+	return make(invokeGate, 1)
+}
+
+// acquire blocks until the gate is free or ctx is done, reporting which.
+func (g invokeGate) acquire(ctx context.Context) bool {
+	select {
+	case g <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// release frees the gate for the next acquirer.
+func (g invokeGate) release() {
+	<-g
 }
 
 // enqueue places an event on the function's FIFO queue without blocking the
@@ -200,6 +250,11 @@ func (d *asyncDispatcher) deliver(ctx context.Context, functionName string, ev *
 type endpointDeliverer struct {
 	client   *http.Client
 	endpoint string
+
+	// gate serializes this attempt's HTTP call against every other
+	// InvokeEndpoint call (sync or async) for the same function; see
+	// asyncDispatcher.gate.
+	gate invokeGate
 }
 
 // deliver performs a single delivery attempt.
@@ -213,7 +268,16 @@ func (e *endpointDeliverer) deliver(ctx context.Context, functionName string, pa
 
 	req.Header.Set("Content-Type", "application/json")
 
+	if !e.gate.acquire(ctx) {
+		// The dispatcher is shutting down (or the event's own context was
+		// canceled): give up waiting on a peer holding the gate rather than
+		// blocking asyncDispatcher.close forever.
+		return asyncSystemError
+	}
+
 	resp, err := e.client.Do(req)
+	e.gate.release()
+
 	if err != nil {
 		slog.Warn("async invoke attempt failed, will retry", "function", functionName, "error", err)
 

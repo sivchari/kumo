@@ -340,16 +340,21 @@ func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn st
 
 // invokeViaEndpoint forwards to a function's configured InvokeEndpoint.
 // Async invocations are queued on the dispatcher so the 202 means "accepted
-// for delivery": failed deliveries are retried instead of dropped.
+// for delivery": failed deliveries are retried instead of dropped. Both the
+// async delivery attempt and the synchronous call below share the same
+// per-function gate (asyncDispatcher.gate) so a single-concurrency endpoint,
+// such as the Lambda RIE, never sees two overlapping requests (issue #859).
 func (s *Service) invokeViaEndpoint(w http.ResponseWriter, r *http.Request, fn, endpoint string, payload []byte, async bool) {
+	gate := s.async.gate(fn)
+
 	if async {
-		s.async.enqueue(fn, &endpointDeliverer{client: s.async.client, endpoint: endpoint}, payload)
+		s.async.enqueue(fn, &endpointDeliverer{client: s.async.client, endpoint: endpoint, gate: gate}, payload)
 		writeInvokeAccepted(w)
 
 		return
 	}
 
-	s.invokeSync(r.Context(), w, endpoint, payload)
+	s.invokeSync(r.Context(), w, endpoint, payload, gate)
 }
 
 // invokeNoBackend handles a function with neither a Runtime API handler nor an
@@ -411,7 +416,11 @@ func writeInvokeHeaders(w http.ResponseWriter) {
 }
 
 // invokeSync invokes the function synchronously and writes the response.
-func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoint string, payload []byte) {
+// gate is held only around the HTTP call so it never overlaps with an async
+// delivery attempt for the same function (issue #859). Acquiring is bounded
+// by ctx, so a client that disconnects while waiting for a peer to finish
+// gives up instead of leaking this goroutine.
+func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoint string, payload []byte, gate invokeGate) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		writeFunctionError(w, ErrServiceException,
@@ -422,7 +431,17 @@ func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoin
 
 	req.Header.Set("Content-Type", "application/json")
 
+	if !gate.acquire(ctx) {
+		writeFunctionError(w, ErrServiceException,
+			fmt.Sprintf("Failed to invoke endpoint: %v", ctx.Err()), http.StatusInternalServerError)
+
+		return
+	}
+
 	resp, err := http.DefaultClient.Do(req)
+
+	gate.release()
+
 	if err != nil {
 		writeFunctionError(w, ErrServiceException,
 			fmt.Sprintf("Failed to invoke endpoint: %v", err), http.StatusInternalServerError)
