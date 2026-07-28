@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.27.0](https://github.com/sivchari/kumo/compare/v0.26.0...v0.27.0) - 2026-07-28
+- test(lambda): cover event source mapping UUID path prefixes by @yhay81 in https://github.com/sivchari/kumo/pull/851
+- fix(messaging): validate SNS and SQS names by @mizchi in https://github.com/sivchari/kumo/pull/683
+- Fix DynamoDB key attribute updates by @mizchi in https://github.com/sivchari/kumo/pull/673
+- test(integration): terraform / opentofu provider compatibility scaffold by @mizchi in https://github.com/sivchari/kumo/pull/589
+- fix(kinesis): validate CreateStream inputs by @mizchi in https://github.com/sivchari/kumo/pull/687
+- fix: persist create-time tags for DynamoDB, EventBridge, and SNS by @sivchari in https://github.com/sivchari/kumo/pull/856
+- Reject empty S3 multipart completion by @mizchi in https://github.com/sivchari/kumo/pull/675
+- fix(s3): return bucket notification config by @mizchi in https://github.com/sivchari/kumo/pull/695
+- feat(aps): Amazon Managed Prometheus emulation with data-plane passthrough by @mizchi in https://github.com/sivchari/kumo/pull/582
+- fix(s3): version completed multipart uploads by @mizchi in https://github.com/sivchari/kumo/pull/697
+- test(terraform): restructure e2e into conflict-free fixture directories by @sivchari in https://github.com/sivchari/kumo/pull/857
+- fix(dynamodb): always include requested tables in BatchGetItem Responses by @myohei in https://github.com/sivchari/kumo/pull/855
+- fix(sfn): lowercase execution ARN segment and report States.Runtime for engine failures by @sivchari in https://github.com/sivchari/kumo/pull/863
+- fix(dynamodb): apply Limit to evaluated items before FilterExpression by @sivchari in https://github.com/sivchari/kumo/pull/864
+- fix(lambda): serialize sync and async invocations per function by @sivchari in https://github.com/sivchari/kumo/pull/865
+- feat(apigatewayv2): emulate JWT authorizers for HTTP APIs by @sivchari in https://github.com/sivchari/kumo/pull/866
+- feat(sfn): execute Choice, Wait, Succeed, and Fail states and plain Lambda ARN tasks by @sivchari in https://github.com/sivchari/kumo/pull/867
+- release v0.27.0 by @sivchari in https://github.com/sivchari/kumo/pull/868
+
 ## [v0.26.0](https://github.com/sivchari/kumo/compare/v0.25.3...v0.26.0) - 2026-07-23
 - fix(apigateway): inject stage variables into Lambda proxy events by @wakame1367 in https://github.com/sivchari/kumo/pull/836
 - fix(sts): derive AssumedRoleUser ARN from the requested RoleArn by @wakame1367 in https://github.com/sivchari/kumo/pull/837
