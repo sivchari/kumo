@@ -50,17 +50,36 @@ type stateDefinition struct {
 	// Fail state fields.
 	Error string `json:"Error"`
 	Cause string `json:"Cause"`
+
+	// Retry/Catch fields, valid on Task, Parallel, and Map states.
+	Retry []retrier `json:"Retry"`
+	Catch []catcher `json:"Catch"`
+
+	// Parallel state fields.
+	Branches []stateMachineDefinition `json:"Branches"`
+
+	// Map state fields. ItemProcessor is the current field name; Iterator is
+	// the legacy alias for the same sub-state-machine. If both are present,
+	// ItemProcessor takes precedence. ItemSelector, ItemBatcher,
+	// ResultWriter, and distributed-mode Map are out of scope.
+	ItemsPath      string                  `json:"ItemsPath"`
+	ItemProcessor  *stateMachineDefinition `json:"ItemProcessor"`
+	Iterator       *stateMachineDefinition `json:"Iterator"`
+	MaxConcurrency int                     `json:"MaxConcurrency"`
 }
 
 // Execution error codes surfaced via DescribeExecution. States.TaskFailed is
 // reserved for failures of a Task state's work itself; States.NoChoiceMatched
-// is reserved for a Choice state with no matching rule and no Default; every
-// other engine-level failure (unsupported state, bad definition wiring) is
-// States.Runtime.
+// is reserved for a Choice state with no matching rule and no Default;
+// States.ALL is the Retry/Catch wildcard that matches any other Error Name;
+// every other engine-level failure (unsupported state, bad definition
+// wiring) is States.Runtime.
 const (
 	errorStatesRuntime         = "States.Runtime"
 	errorStatesTaskFailed      = "States.TaskFailed"
 	errorStatesNoChoiceMatched = "States.NoChoiceMatched"
+	errorStatesAll             = "States.ALL"
+	errorStatesBranchFailed    = "States.BranchFailed"
 )
 
 // taskFailedError marks a failure of the task invocation itself so the
@@ -187,21 +206,27 @@ func (e *executionEngine) execute(ctx context.Context, def *stateMachineDefiniti
 			return output, nil
 		}
 
-		next := state.Next
+		// nextOverride is set by states that pick their own successor
+		// dynamically: Choice, and any Task/Parallel/Map whose Catch routed
+		// to a fallback state. It always takes priority over End/Next, since
+		// a Catch must be able to redirect even a state marked End: true.
 		if nextOverride != "" {
-			next = nextOverride
+			currentInput = output
+			currentState = nextOverride
+
+			continue
 		}
 
 		if state.End {
 			return output, nil
 		}
 
-		if next == "" {
+		if state.Next == "" {
 			return "", fmt.Errorf("state %q has no End or Next", currentState)
 		}
 
 		currentInput = output
-		currentState = next
+		currentState = state.Next
 	}
 }
 
@@ -216,9 +241,7 @@ func (e *executionEngine) executeState(ctx context.Context, name string, state *
 
 		return output, "", err
 	case "Task":
-		output, err := e.executeTaskState(ctx, name, state, input)
-
-		return output, "", err
+		return e.executeTaskStateWithPolicy(ctx, name, state, input)
 	case "Choice":
 		return e.executeChoiceState(name, state, input)
 	case "Wait":
@@ -231,9 +254,21 @@ func (e *executionEngine) executeState(ctx context.Context, name string, state *
 		return output, "", err
 	case "Fail":
 		return "", "", e.executeFailState(state)
+	case "Parallel":
+		return e.executeParallelStateWithPolicy(ctx, name, state, input)
+	case "Map":
+		return e.executeMapStateWithPolicy(ctx, name, state, input)
 	default:
 		return "", "", fmt.Errorf("unsupported state type %q", state.Type)
 	}
+}
+
+// executeTaskStateWithPolicy executes a Task state's underlying work,
+// applying its Retry and Catch policy.
+func (e *executionEngine) executeTaskStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
+	return e.runWithRetryCatch(ctx, name, state, input, func(ctx context.Context) (string, error) {
+		return e.executeTaskState(ctx, name, state, input)
+	})
 }
 
 // executePassState executes a Pass state.
