@@ -3,6 +3,7 @@ package sfn
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -333,11 +334,17 @@ func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name,
 	return copyExecution(exec), nil
 }
 
-// runExecution executes the state machine in a background goroutine.
-func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string, lastEventID int64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+// executionTimeoutCap is kumo's own safety valve on how long a background
+// execution goroutine may run, independent of whether the definition sets
+// its own TimeoutSeconds. Standard state machine executions have no default
+// timeout in real AWS; this cap exists purely to bound the emulator's own
+// resource usage, so it must never be reported as a real States.Timeout --
+// see executionTimeoutDiagnosis.
+const executionTimeoutCap = 5 * time.Minute
 
+// runExecution executes the state machine in a background goroutine, bounded
+// by min(definition TimeoutSeconds, executionTimeoutCap).
+func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string, lastEventID int64) {
 	def, err := parseDefinition(definition)
 	if err != nil {
 		s.failExecution(ed, lastEventID, errorStatesRuntime, fmt.Sprintf("Failed to parse definition: %v", err))
@@ -345,14 +352,63 @@ func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string
 		return
 	}
 
+	ctx, cancel, definitionTimeoutApplies := executionContext(def)
+	defer cancel()
+
 	output, err := s.engine.execute(ctx, def, input)
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			code, cause := executionTimeoutDiagnosis(def, definitionTimeoutApplies)
+			s.failExecution(ed, lastEventID, code, cause)
+
+			return
+		}
+
 		s.failExecution(ed, lastEventID, executionErrorCode(err), executionErrorCause(err))
 
 		return
 	}
 
 	s.succeedExecution(ed, lastEventID, output)
+}
+
+// executionContext builds the context a top-level execution runs under. The
+// deadline is min(definition TimeoutSeconds, executionTimeoutCap): kumo
+// always enforces its own cap so a runaway execution cannot leak a goroutine
+// forever, even when the definition sets no timeout or one longer than the
+// cap. definitionTimeoutApplies reports whether the definition's own
+// TimeoutSeconds is the tighter (and therefore effective) bound.
+func executionContext(def *stateMachineDefinition) (ctx context.Context, cancel context.CancelFunc, definitionTimeoutApplies bool) {
+	effective := executionTimeoutCap
+
+	if def.TimeoutSeconds != nil && *def.TimeoutSeconds > 0 {
+		defTimeout := time.Duration(*def.TimeoutSeconds) * time.Second
+		if defTimeout <= effective {
+			effective = defTimeout
+			definitionTimeoutApplies = true
+		}
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), effective)
+
+	return ctx, cancel, definitionTimeoutApplies
+}
+
+// executionTimeoutDiagnosis reports the error code and cause for an
+// execution that hit its context deadline. A definition-set TimeoutSeconds
+// that was reached is a real States.Timeout; kumo's own executionTimeoutCap
+// firing on its own is an emulator implementation detail with no AWS
+// equivalent, so it is reported as States.Runtime with a cause that says so,
+// keeping the two causes distinguishable.
+func executionTimeoutDiagnosis(def *stateMachineDefinition, definitionTimeoutApplies bool) (code, cause string) {
+	if definitionTimeoutApplies {
+		return errorStatesTimeout, fmt.Sprintf("State machine execution exceeded its TimeoutSeconds (%d)", *def.TimeoutSeconds)
+	}
+
+	return errorStatesRuntime, fmt.Sprintf(
+		"kumo enforced its internal %s execution cap; the state machine did not set a TimeoutSeconds within that bound",
+		executionTimeoutCap,
+	)
 }
 
 // succeedExecution marks an execution as SUCCEEDED.

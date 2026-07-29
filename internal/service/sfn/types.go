@@ -410,12 +410,19 @@ type ListStateMachineAliasesResponse struct {
 type ValidateStateMachineDefinitionRequest struct {
 	Definition string `json:"definition"`
 	Type       string `json:"type,omitempty"`
+	// Severity filters the returned diagnostics: "ERROR" (the default)
+	// returns only ERROR-severity diagnostics, "WARNING" returns both.
+	Severity string `json:"severity,omitempty"`
+	// MaxResults caps the number of diagnostics returned; kumo defaults and
+	// caps this at defaultValidateMaxResults, same as AWS.
+	MaxResults int32 `json:"maxResults,omitempty"`
 }
 
 // ValidateStateMachineDefinitionResponse is the response for ValidateStateMachineDefinition.
 type ValidateStateMachineDefinitionResponse struct {
 	Result      string               `json:"result"`
 	Diagnostics []validateDiagnostic `json:"diagnostics"`
+	Truncated   bool                 `json:"truncated"`
 }
 
 // validateDiagnostic is a single ValidateStateMachineDefinition diagnostic.
