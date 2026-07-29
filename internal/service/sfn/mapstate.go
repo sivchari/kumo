@@ -5,7 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
+)
+
+// processorConfig is a Map state's ItemProcessor.ProcessorConfig, which
+// selects Inline vs Distributed processing. JSON tags are lowerCamelCase;
+// see itemBatcherDef in itembatcher.go for why.
+type processorConfig struct {
+	Mode          string `json:"mode"`
+	ExecutionType string `json:"executionType"`
+}
+
+// ProcessorConfig.Mode values.
+const (
+	mapProcessorModeInline      = "INLINE"
+	mapProcessorModeDistributed = "DISTRIBUTED"
 )
 
 // executeMapStateWithPolicy executes a Map state's item processing,
@@ -16,32 +29,78 @@ func (e *executionEngine) executeMapStateWithPolicy(ctx context.Context, name st
 	})
 }
 
-// executeMapState resolves ItemsPath into a JSON array and runs every item
+// executeMapState resolves a Map state's item list (from ItemsPath or, in
+// Distributed mode, ItemReader), applies ItemSelector, groups items into
+// processor units (individually, or via ItemBatcher), and runs every unit
 // through the state's ItemProcessor (or its legacy alias, Iterator),
-// bounding concurrency at MaxConcurrency when it is positive. Item outputs
-// are collected, in item order, as a JSON array. The first item to fail
-// cancels the remaining items and the Map state fails with that item's
-// error.
+// bounding concurrency at MaxConcurrency when it is positive.
 //
-// ItemSelector, ItemBatcher, ResultWriter, and distributed-mode Map are out
-// of scope; only the inline processor mode is supported.
+// Both Inline and Distributed mode run in-process in kumo: kumo has no
+// child-execution or Map Run resource, so DescribeMapRun/ListMapRuns and
+// child-execution tracking are out of scope (see the ResultWriter
+// simplification documented in resultwriter.go for the same reason).
 func (e *executionEngine) executeMapState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	processor, err := itemProcessorDefinition(state)
 	if err != nil {
 		return "", fmt.Errorf("map state %q: %w", name, err)
 	}
 
-	items, err := resolveItemsPath(state.ItemsPath, input)
+	if err := requireDistributedModeForFields(state, processor); err != nil {
+		return "", fmt.Errorf("map state %q: %w", name, err)
+	}
+
+	items, err := resolveMapItems(ctx, e, state, input)
 	if err != nil {
 		return "", fmt.Errorf("map state %q: %w", name, err)
 	}
 
+	items, err = applyItemSelector(state.ItemSelector, items, input)
+	if err != nil {
+		return "", fmt.Errorf("map state %q: %w", name, err)
+	}
+
+	units, err := buildProcessorUnits(state.ItemBatcher, items, input)
+	if err != nil {
+		return "", fmt.Errorf("map state %q: %w", name, err)
+	}
+
+	return e.runMapProcessorUnits(ctx, name, state, processor, units, len(items), input)
+}
+
+// runMapProcessorUnits runs every processor unit and shapes the Map
+// state's output: the ExceedToleratedFailureThreshold check, the plain
+// item-output array, or -- when ResultWriter is set -- the
+// ResultWriterDetails{Bucket, Key} shape (see resultwriter.go).
+func (e *executionEngine) runMapProcessorUnits(ctx context.Context, name string, state *stateDefinition, processor *stateMachineDefinition, units []mapUnit, totalItems int, input string) (string, error) {
+	tolerance := resolveMapTolerance(state)
+
 	itemCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	outputs, err := runMapItems(itemCtx, e, processor, items, state.MaxConcurrency, cancel)
+	results, err := runMapUnits(itemCtx, e, processor, units, state.MaxConcurrency, tolerance.enabled(), cancel)
 	if err != nil {
 		return "", fmt.Errorf("map state %q: %w", name, err)
+	}
+
+	outputs, failedItems := collectMapResults(units, results)
+
+	if tolerance.enabled() && tolerance.exceeds(failedItems, totalItems) {
+		return "", &failStateError{
+			errorName: errorStatesExceedToleratedFailureThreshold,
+			cause: fmt.Sprintf(
+				"map state %q: %d of %d items failed, exceeding the configured tolerated failure threshold",
+				name, failedItems, totalItems,
+			),
+		}
+	}
+
+	if len(state.ResultWriter) > 0 {
+		written, err := writeMapResultToS3(ctx, e, state.ResultWriter, outputs, input)
+		if err != nil {
+			return "", fmt.Errorf("map state %q: %w", name, err)
+		}
+
+		return written, nil
 	}
 
 	result, err := json.Marshal(outputs)
@@ -52,9 +111,34 @@ func (e *executionEngine) executeMapState(ctx context.Context, name string, stat
 	return string(result), nil
 }
 
+// collectMapResults turns per-unit results into the Map state's output
+// array and the total count of dataset items that failed. A failed unit
+// contributes a JSON null for every item it represented, rather than being
+// omitted, so the output array's length always matches the unit count --
+// an emulator simplification, since AWS does not document the exact
+// per-item output shape for a partially-failed Map Run that isn't exported
+// via ResultWriter.
+func collectMapResults(units []mapUnit, results []mapUnitResult) (outputs []json.RawMessage, failedItems int) {
+	outputs = make([]json.RawMessage, len(results))
+
+	for i, r := range results {
+		if r.err != nil {
+			failedItems += units[i].itemCount
+			outputs[i] = json.RawMessage("null")
+
+			continue
+		}
+
+		outputs[i] = r.output
+	}
+
+	return outputs, failedItems
+}
+
 // itemProcessorDefinition returns the Map state's sub-state-machine.
-// ItemProcessor is the current field name; Iterator is the legacy alias. If
-// both are present, ItemProcessor takes precedence.
+// ItemProcessor is the current field name; Iterator is the legacy alias for
+// the same sub-state-machine. If both are present, ItemProcessor takes
+// precedence.
 func itemProcessorDefinition(state *stateDefinition) (*stateMachineDefinition, error) {
 	switch {
 	case state.ItemProcessor != nil:
@@ -66,63 +150,74 @@ func itemProcessorDefinition(state *stateDefinition) (*stateMachineDefinition, e
 	}
 }
 
-// runMapItems executes the processor once per item, honoring MaxConcurrency
-// (0 or negative means unlimited), and returns the item outputs in item
-// order, or the error of the first item to fail.
-func runMapItems(ctx context.Context, e *executionEngine, processor *stateMachineDefinition, items []json.RawMessage, maxConcurrency int, cancel context.CancelFunc) ([]json.RawMessage, error) {
-	outputs := make([]json.RawMessage, len(items))
+// isDistributedMode reports whether a Map state's ItemProcessor runs in
+// Distributed mode. An absent ProcessorConfig, or a Mode other than
+// "DISTRIBUTED", is Inline mode -- ASL's own documented default.
+func isDistributedMode(processor *stateMachineDefinition) bool {
+	return processor.ProcessorConfig != nil && strings.EqualFold(processor.ProcessorConfig.Mode, mapProcessorModeDistributed)
+}
 
-	var sem chan struct{}
-	if maxConcurrency > 0 {
-		sem = make(chan struct{}, maxConcurrency)
+// requireDistributedModeForFields enforces AWS's rule that ItemReader,
+// ItemBatcher, ResultWriter, ToleratedFailurePercentage, and
+// ToleratedFailureCount are Distributed-mode-only Map state fields (see
+// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-inline.html,
+// whose field list omits all five, versus
+// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html,
+// which documents them). validateMapDistributedFields in validate.go
+// reports the same rule as a definition-time diagnostic.
+func requireDistributedModeForFields(state *stateDefinition, processor *stateMachineDefinition) error {
+	if isDistributedMode(processor) {
+		return nil
 	}
 
-	var (
-		wg       sync.WaitGroup
-		once     sync.Once
-		firstErr error
+	fields := distributedOnlyFieldsSet(state)
+	if len(fields) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"%s require ItemProcessor.ProcessorConfig.Mode %q",
+		strings.Join(fields, ", "), mapProcessorModeDistributed,
 	)
+}
 
-	for i := range items {
-		wg.Add(1)
+// distributedOnlyFieldsSet lists which of the Distributed-mode-only Map
+// fields are present on state.
+func distributedOnlyFieldsSet(state *stateDefinition) []string {
+	var fields []string
 
-		go func(i int) {
-			defer wg.Done()
-
-			if sem != nil {
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-ctx.Done():
-					// Another item already failed and canceled ctx before
-					// this queued item got a slot; skip it rather than
-					// starting work whose result will be discarded.
-					return
-				}
-			}
-
-			out, err := e.execute(ctx, processor, string(items[i]))
-			if err != nil {
-				once.Do(func() {
-					firstErr = fmt.Errorf("item %d: %w", i, err)
-
-					cancel()
-				})
-
-				return
-			}
-
-			outputs[i] = json.RawMessage(out)
-		}(i)
+	if len(state.ItemReader) > 0 {
+		fields = append(fields, "ItemReader")
 	}
 
-	wg.Wait()
-
-	if firstErr != nil {
-		return nil, firstErr
+	if len(state.ItemBatcher) > 0 {
+		fields = append(fields, "ItemBatcher")
 	}
 
-	return outputs, nil
+	if len(state.ResultWriter) > 0 {
+		fields = append(fields, "ResultWriter")
+	}
+
+	if state.ToleratedFailurePercentage != nil {
+		fields = append(fields, "ToleratedFailurePercentage")
+	}
+
+	if state.ToleratedFailureCount != nil {
+		fields = append(fields, "ToleratedFailureCount")
+	}
+
+	return fields
+}
+
+// resolveMapItems resolves a Map state's item list: from ItemReader (an S3
+// dataset, Distributed mode only) if set, otherwise from ItemsPath against
+// the state's own input.
+func resolveMapItems(ctx context.Context, e *executionEngine, state *stateDefinition, input string) ([]json.RawMessage, error) {
+	if len(state.ItemReader) > 0 {
+		return readItemsFromS3(ctx, e, state.ItemReader, input)
+	}
+
+	return resolveItemsPath(state.ItemsPath, input)
 }
 
 // resolveItemsPath resolves a Map state's ItemsPath (default "$") against

@@ -21,6 +21,13 @@ type stateMachineDefinition struct {
 	StartAt string                     `json:"StartAt"`
 	States  map[string]stateDefinition `json:"States"`
 
+	// ProcessorConfig selects a Map state's ItemProcessor processing mode
+	// (see mapstate.go). It is decoded on every stateMachineDefinition,
+	// since Parallel Branches reuse this same struct, but it is only
+	// meaningful when this stateMachineDefinition is itself a Map state's
+	// ItemProcessor.
+	ProcessorConfig *processorConfig `json:"ProcessorConfig"`
+
 	// TimeoutSeconds bounds the whole execution's wall-clock time. It is only
 	// meaningful on the top-level definition; MemoryStorage.runExecution is
 	// the sole reader of this field, since sub-state-machines (Parallel
@@ -67,18 +74,31 @@ type stateDefinition struct {
 
 	// Map state fields. ItemProcessor is the current field name; Iterator is
 	// the legacy alias for the same sub-state-machine. If both are present,
-	// ItemProcessor takes precedence. ItemSelector, ItemBatcher,
-	// ResultWriter, and distributed-mode Map are out of scope; the engine
-	// never reads these four fields, but validateStateMachineDefinition
-	// decodes them to flag definitions that rely on them (see validate.go).
-	ItemsPath      string                  `json:"ItemsPath"`
-	ItemProcessor  *stateMachineDefinition `json:"ItemProcessor"`
-	Iterator       *stateMachineDefinition `json:"Iterator"`
-	MaxConcurrency int                     `json:"MaxConcurrency"`
-	ItemReader     json.RawMessage         `json:"ItemReader"`
-	ItemSelector   json.RawMessage         `json:"ItemSelector"`
-	ItemBatcher    json.RawMessage         `json:"ItemBatcher"`
-	ResultWriter   json.RawMessage         `json:"ResultWriter"`
+	// ItemProcessor takes precedence. See mapstate.go, itemselector.go,
+	// itemreader.go, itembatcher.go, and resultwriter.go for how
+	// ItemSelector/ItemReader/ItemBatcher/ResultWriter are implemented, and
+	// requireDistributedModeForFields in mapstate.go for which of these
+	// fields require ItemProcessor.ProcessorConfig.Mode "DISTRIBUTED".
+	// MaxItemsPerBatchPath/MaxInputBytesPerBatchPath/MaxConcurrencyPath/
+	// ToleratedFailurePercentagePath/ToleratedFailureCountPath (the dynamic,
+	// reference-path forms of these fields) are not implemented.
+	ItemsPath                  string                  `json:"ItemsPath"`
+	ItemProcessor              *stateMachineDefinition `json:"ItemProcessor"`
+	Iterator                   *stateMachineDefinition `json:"Iterator"`
+	MaxConcurrency             int                     `json:"MaxConcurrency"`
+	ItemReader                 json.RawMessage         `json:"ItemReader"`
+	ItemSelector               json.RawMessage         `json:"ItemSelector"`
+	ItemBatcher                json.RawMessage         `json:"ItemBatcher"`
+	ResultWriter               json.RawMessage         `json:"ResultWriter"`
+	ToleratedFailurePercentage *float64                `json:"ToleratedFailurePercentage"`
+	ToleratedFailureCount      *int                    `json:"ToleratedFailureCount"`
+
+	// ToleratedFailurePercentagePath/ToleratedFailureCountPath are decoded
+	// only so validate.go can flag them as unimplemented; the engine never
+	// reads them (see resolveMapTolerance in maptolerance.go, which only
+	// reads the static ToleratedFailurePercentage/ToleratedFailureCount).
+	ToleratedFailurePercentagePath string `json:"ToleratedFailurePercentagePath"`
+	ToleratedFailureCountPath      string `json:"ToleratedFailureCountPath"`
 
 	// Task state timeout fields. TimeoutSeconds/TimeoutSecondsPath bound a
 	// single execution attempt of the task (see timeout.go); per the ASL
@@ -111,6 +131,11 @@ const (
 	errorStatesTimeout         = "States.Timeout"
 	errorStatesAll             = "States.ALL"
 	errorStatesBranchFailed    = "States.BranchFailed"
+
+	// errorStatesExceedToleratedFailureThreshold is reported when a
+	// distributed-mode Map state's ToleratedFailurePercentage/
+	// ToleratedFailureCount is exceeded (see mapstate.go).
+	errorStatesExceedToleratedFailureThreshold = "States.ExceedToleratedFailureThreshold"
 )
 
 // taskFailedError marks a failure of the task invocation itself so the
@@ -439,6 +464,14 @@ func wrapTaskResult(output string, err error) (string, error) {
 // resolveParameters resolves parameter values, handling JSONPath references
 // (keys ending with ".$" whose values are JSONPath expressions like "$.field").
 func resolveParameters(params map[string]any, input string) (map[string]any, error) {
+	return resolveParametersWithContext(params, input, nil)
+}
+
+// resolveParametersWithContext extends resolveParameters with an optional
+// Context object ($$.) lookup: contextData is nil everywhere except
+// ItemSelector (see itemselector.go), which is the only place the Amazon
+// States Language allows "$$." references.
+func resolveParametersWithContext(params map[string]any, input string, contextData map[string]any) (map[string]any, error) {
 	if params == nil {
 		return map[string]any{}, nil
 	}
@@ -451,7 +484,7 @@ func resolveParameters(params map[string]any, input string) (map[string]any, err
 	for key, value := range params {
 		// A ".$" suffix marks a JSONPath reference; otherwise it is a static value.
 		if strings.HasSuffix(key, ".$") {
-			resolvedValue, parsed, err := resolveJSONPathRef(key, value, input, inputData)
+			resolvedValue, parsed, err := resolveJSONPathRef(key, value, input, inputData, contextData)
 			if err != nil {
 				return nil, err
 			}
@@ -462,7 +495,7 @@ func resolveParameters(params map[string]any, input string) (map[string]any, err
 			continue
 		}
 
-		resolvedValue, err := resolveStaticValue(value, input)
+		resolvedValue, err := resolveStaticValue(value, input, contextData)
 		if err != nil {
 			return nil, err
 		}
@@ -473,14 +506,28 @@ func resolveParameters(params map[string]any, input string) (map[string]any, err
 	return resolved, nil
 }
 
-// resolveJSONPathRef resolves a "key.$" JSONPath reference against the input.
-// inputData is the lazily-parsed input (nil until first use); the possibly newly
-// parsed map is returned so the caller can reuse it for later references,
-// keeping the input JSON unmarshaled at most once per resolveParameters call.
-func resolveJSONPathRef(key string, value any, input string, inputData map[string]any) (any, map[string]any, error) {
+// resolveJSONPathRef resolves a "key.$" JSONPath reference against the
+// input, or, for a "$$."-prefixed path, against contextData. inputData is
+// the lazily-parsed input (nil until first use); the possibly newly parsed
+// map is returned so the caller can reuse it for later references, keeping
+// the input JSON unmarshaled at most once per resolveParameters call.
+func resolveJSONPathRef(key string, value any, input string, inputData, contextData map[string]any) (any, map[string]any, error) {
 	pathStr, ok := value.(string)
 	if !ok {
 		return nil, inputData, fmt.Errorf("jsonPath reference for key %q must be a string", key)
+	}
+
+	if strings.HasPrefix(pathStr, "$$.") {
+		if contextData == nil {
+			return nil, inputData, fmt.Errorf("jsonPath reference for key %q uses the Context object (%q), which is only available in ItemSelector", key, pathStr)
+		}
+
+		resolvedValue, err := resolveJSONPath(contextData, "$"+strings.TrimPrefix(pathStr, "$$"))
+		if err != nil {
+			return nil, inputData, fmt.Errorf("resolve Context object path %q for key %q: %w", pathStr, key, err)
+		}
+
+		return resolvedValue, inputData, nil
 	}
 
 	if inputData == nil {
@@ -499,13 +546,13 @@ func resolveJSONPathRef(key string, value any, input string, inputData map[strin
 
 // resolveStaticValue returns a non-reference parameter value, recursing into
 // nested maps and leaving scalars unchanged.
-func resolveStaticValue(value any, input string) (any, error) {
+func resolveStaticValue(value any, input string, contextData map[string]any) (any, error) {
 	subMap, ok := value.(map[string]any)
 	if !ok {
 		return value, nil
 	}
 
-	return resolveParameters(subMap, input)
+	return resolveParametersWithContext(subMap, input, contextData)
 }
 
 // resolveJSONPath resolves a simple JSONPath expression ("$" or "$.field") against the input data.
