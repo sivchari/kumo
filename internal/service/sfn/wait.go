@@ -12,8 +12,9 @@ import (
 //
 // The wait is not artificially capped: kumo sleeps for the full requested
 // duration but honors ctx cancellation, and every execution already runs
-// under the 5-minute timeout applied in MemoryStorage.runExecution, which
-// bounds how long any single Wait can actually block.
+// under the timeout context applied in MemoryStorage.runExecution
+// (min(definition TimeoutSeconds, executionTimeoutCap)), which bounds how
+// long any single Wait can actually block.
 func (e *executionEngine) executeWaitState(ctx context.Context, state *stateDefinition, input string) (string, error) {
 	d, err := waitDuration(state, input)
 	if err != nil {

@@ -11,9 +11,6 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
-// Validation result values.
-const validationResultOK = "OK"
-
 // handlerFunc is a type alias for handler functions.
 type handlerFunc func(http.ResponseWriter, *http.Request)
 
@@ -407,20 +404,30 @@ func (s *Service) SendTaskHeartbeat(w http.ResponseWriter, _ *http.Request) {
 	writeError(w, "InvalidToken", "Invalid token", http.StatusBadRequest)
 }
 
-// ValidateStateMachineDefinition reports the supplied definition as valid.
+// ValidateStateMachineDefinition runs kumo's structural checks against the
+// supplied definition and reports diagnostics in AWS's documented shape.
 //
 // terraform-provider-aws calls ValidateStateMachineDefinition during the
 // plan phase of every aws_sfn_state_machine, before issuing CreateStateMachine.
 // Without it, `tofu plan` fails with InvalidAction and the resource never
 // reaches the create path.
-//
-// Definitions are not statically validated in kumo; this returns OK
-// so the apply pipeline proceeds and CreateStateMachine does the real
-// shape check.
-func (s *Service) ValidateStateMachineDefinition(w http.ResponseWriter, _ *http.Request) {
+func (s *Service) ValidateStateMachineDefinition(w http.ResponseWriter, r *http.Request) {
+	var req ValidateStateMachineDefinitionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	diagnostics := validateStateMachineDefinition(req.Definition)
+	result := diagnosticsResult(diagnostics)
+
+	filtered, truncated := filterAndCapDiagnostics(diagnostics, req.Severity, req.MaxResults)
+
 	writeResponse(w, ValidateStateMachineDefinitionResponse{
-		Result:      validationResultOK,
-		Diagnostics: []validateDiagnostic{},
+		Result:      result,
+		Diagnostics: filtered,
+		Truncated:   truncated,
 	})
 }
 

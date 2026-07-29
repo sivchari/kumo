@@ -20,6 +20,13 @@ type stateMachineDefinition struct {
 	Comment string                     `json:"Comment"`
 	StartAt string                     `json:"StartAt"`
 	States  map[string]stateDefinition `json:"States"`
+
+	// TimeoutSeconds bounds the whole execution's wall-clock time. It is only
+	// meaningful on the top-level definition; MemoryStorage.runExecution is
+	// the sole reader of this field, since sub-state-machines (Parallel
+	// Branches / Map ItemProcessor) reuse this same struct but must not
+	// inherit an outer execution's timeout as their own.
+	TimeoutSeconds *int `json:"TimeoutSeconds"`
 }
 
 // stateDefinition represents a single state in a state machine definition.
@@ -61,23 +68,47 @@ type stateDefinition struct {
 	// Map state fields. ItemProcessor is the current field name; Iterator is
 	// the legacy alias for the same sub-state-machine. If both are present,
 	// ItemProcessor takes precedence. ItemSelector, ItemBatcher,
-	// ResultWriter, and distributed-mode Map are out of scope.
+	// ResultWriter, and distributed-mode Map are out of scope; the engine
+	// never reads these four fields, but validateStateMachineDefinition
+	// decodes them to flag definitions that rely on them (see validate.go).
 	ItemsPath      string                  `json:"ItemsPath"`
 	ItemProcessor  *stateMachineDefinition `json:"ItemProcessor"`
 	Iterator       *stateMachineDefinition `json:"Iterator"`
 	MaxConcurrency int                     `json:"MaxConcurrency"`
+	ItemReader     json.RawMessage         `json:"ItemReader"`
+	ItemSelector   json.RawMessage         `json:"ItemSelector"`
+	ItemBatcher    json.RawMessage         `json:"ItemBatcher"`
+	ResultWriter   json.RawMessage         `json:"ResultWriter"`
+
+	// Task state timeout fields. TimeoutSeconds/TimeoutSecondsPath bound a
+	// single execution attempt of the task (see timeout.go); per the ASL
+	// spec's default of 99999999 seconds (~3.17 years) when absent, kumo
+	// treats "unset" as no timeout at all rather than wrapping every task in
+	// a multi-year context.
+	TimeoutSeconds     *int   `json:"TimeoutSeconds"`
+	TimeoutSecondsPath string `json:"TimeoutSecondsPath"`
+
+	// HeartbeatSeconds/HeartbeatSecondsPath are decoded but intentionally
+	// never enforced: kumo has no activity/callback (.waitForTaskToken) task
+	// token support, so a task can never send a heartbeat. Enforcing this
+	// field would fail every task that sets it, for a reason kumo can never
+	// satisfy.
+	HeartbeatSeconds     *int   `json:"HeartbeatSeconds"`
+	HeartbeatSecondsPath string `json:"HeartbeatSecondsPath"`
 }
 
 // Execution error codes surfaced via DescribeExecution. States.TaskFailed is
 // reserved for failures of a Task state's work itself; States.NoChoiceMatched
 // is reserved for a Choice state with no matching rule and no Default;
-// States.ALL is the Retry/Catch wildcard that matches any other Error Name;
-// every other engine-level failure (unsupported state, bad definition
-// wiring) is States.Runtime.
+// States.Timeout is reported when a Task or the whole execution exceeds its
+// TimeoutSeconds; States.ALL is the Retry/Catch wildcard that matches any
+// other Error Name; every other engine-level failure (unsupported state, bad
+// definition wiring) is States.Runtime.
 const (
 	errorStatesRuntime         = "States.Runtime"
 	errorStatesTaskFailed      = "States.TaskFailed"
 	errorStatesNoChoiceMatched = "States.NoChoiceMatched"
+	errorStatesTimeout         = "States.Timeout"
 	errorStatesAll             = "States.ALL"
 	errorStatesBranchFailed    = "States.BranchFailed"
 )
@@ -129,6 +160,11 @@ func executionErrorCode(err error) string {
 	var choiceErr *noChoiceMatchedError
 	if errors.As(err, &choiceErr) {
 		return errorStatesNoChoiceMatched
+	}
+
+	var timeoutErr *taskTimeoutError
+	if errors.As(err, &timeoutErr) {
+		return errorStatesTimeout
 	}
 
 	var failErr *failStateError
@@ -264,10 +300,12 @@ func (e *executionEngine) executeState(ctx context.Context, name string, state *
 }
 
 // executeTaskStateWithPolicy executes a Task state's underlying work,
-// applying its Retry and Catch policy.
+// applying its Retry and Catch policy. Each attempt (initial or retried) is
+// individually bounded by the state's TimeoutSeconds/TimeoutSecondsPath; see
+// executeTaskStateWithTimeout in timeout.go.
 func (e *executionEngine) executeTaskStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	return e.runWithRetryCatch(ctx, name, state, input, func(ctx context.Context) (string, error) {
-		return e.executeTaskState(ctx, name, state, input)
+		return e.executeTaskStateWithTimeout(ctx, name, state, input)
 	})
 }
 
