@@ -44,19 +44,21 @@ var terminalStateTypes = map[string]bool{
 	"Fail":    true,
 }
 
-// mapEmulationGapFields are Map state fields the ASL spec defines but
-// kumo's executor does not implement (see mapstate.go): ItemSelector,
-// ItemBatcher and ResultWriter are unimplemented in every mode, and
-// ItemReader is the marker for distributed-mode Map, which kumo only ever
-// runs in inline (ItemProcessor/Iterator) mode.
-var mapEmulationGapFields = []struct {
-	name string
-	get  func(*stateDefinition) json.RawMessage
+// mapDistributedOnlyFields are Map state fields AWS documents only under
+// Distributed mode (see requireDistributedModeForFields in mapstate.go):
+// they are absent from the Inline Map state field list at
+// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-inline.html
+// but present at
+// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html.
+var mapDistributedOnlyFields = []struct {
+	name  string
+	isSet func(*stateDefinition) bool
 }{
-	{"ItemReader", func(s *stateDefinition) json.RawMessage { return s.ItemReader }},
-	{"ItemSelector", func(s *stateDefinition) json.RawMessage { return s.ItemSelector }},
-	{"ItemBatcher", func(s *stateDefinition) json.RawMessage { return s.ItemBatcher }},
-	{"ResultWriter", func(s *stateDefinition) json.RawMessage { return s.ResultWriter }},
+	{"ItemReader", func(s *stateDefinition) bool { return len(s.ItemReader) > 0 }},
+	{"ItemBatcher", func(s *stateDefinition) bool { return len(s.ItemBatcher) > 0 }},
+	{"ResultWriter", func(s *stateDefinition) bool { return len(s.ResultWriter) > 0 }},
+	{"ToleratedFailurePercentage", func(s *stateDefinition) bool { return s.ToleratedFailurePercentage != nil }},
+	{"ToleratedFailureCount", func(s *stateDefinition) bool { return s.ToleratedFailureCount != nil }},
 }
 
 // validateStateMachineDefinition runs kumo's best-effort structural checks
@@ -260,35 +262,143 @@ func (v *definitionValidator) validateParallelState(name string, state *stateDef
 }
 
 // validateMapState checks a Map state's ItemProcessor/Iterator (required,
-// recursively validated) and warns about ASL fields kumo's engine does not
-// implement.
+// recursively validated), the Distributed-mode-only field rules, and
+// ASL/kumo constructs still not implemented.
 func (v *definitionValidator) validateMapState(name string, state *stateDefinition, location string) {
+	var processor *stateMachineDefinition
+
 	switch {
 	case state.ItemProcessor != nil:
-		v.validateStateMachine(state.ItemProcessor, location+"/ItemProcessor")
+		processor = state.ItemProcessor
+		v.validateStateMachine(processor, location+"/ItemProcessor")
 	case state.Iterator != nil:
-		v.validateStateMachine(state.Iterator, location+"/Iterator")
+		processor = state.Iterator
+		v.validateStateMachine(processor, location+"/Iterator")
 	default:
 		v.addError(codeSchemaValidationFailed, location, fmt.Sprintf("Map state %q requires \"ItemProcessor\" (or the legacy \"Iterator\")", name))
 	}
 
-	v.warnUnsupportedMapFields(name, state, location)
+	v.validateMapDistributedFields(name, state, processor, location)
 }
 
-// warnUnsupportedMapFields flags Map fields the engine silently ignores at
-// runtime (see mapstate.go), so a definition that structurally validates
-// does not still surprise the caller when it runs -- the class of gap
-// reported in issue #861.
-func (v *definitionValidator) warnUnsupportedMapFields(name string, state *stateDefinition, location string) {
-	for _, field := range mapEmulationGapFields {
-		if len(field.get(state)) == 0 {
+// validateMapDistributedFields checks the Distributed-mode rules
+// requireDistributedModeForFields enforces at runtime (see mapstate.go),
+// and flags constructs kumo does not implement at all. processor is nil
+// when neither ItemProcessor nor Iterator was set (already reported by
+// validateMapState).
+func (v *definitionValidator) validateMapDistributedFields(name string, state *stateDefinition, processor *stateMachineDefinition, location string) {
+	if processor != nil && isDistributedMode(processor) {
+		v.validateDistributedExecutionType(name, processor, location)
+	} else {
+		v.warnDistributedOnlyFields(name, state, location)
+	}
+
+	v.warnUnimplementedMapConstructs(name, state, location)
+}
+
+// validateDistributedExecutionType checks AWS's documented requirement
+// that ProcessorConfig.Mode "DISTRIBUTED" must also set ExecutionType.
+func (v *definitionValidator) validateDistributedExecutionType(name string, processor *stateMachineDefinition, location string) {
+	if processor.ProcessorConfig.ExecutionType != "" {
+		return
+	}
+
+	v.addError(codeSchemaValidationFailed, location+"/ItemProcessor/ProcessorConfig/ExecutionType", fmt.Sprintf(
+		"Map state %q: ProcessorConfig.Mode %q requires ProcessorConfig.ExecutionType", name, mapProcessorModeDistributed,
+	))
+}
+
+// warnDistributedOnlyFields flags Map fields AWS documents as
+// Distributed-mode-only (see mapDistributedOnlyFields) that are set
+// without ProcessorConfig.Mode "DISTRIBUTED": requireDistributedModeForFields
+// fails these at runtime, so a definition that structurally validates does
+// not still surprise the caller when it runs -- the class of gap reported
+// in issue #861.
+func (v *definitionValidator) warnDistributedOnlyFields(name string, state *stateDefinition, location string) {
+	for _, field := range mapDistributedOnlyFields {
+		if !field.isSet(state) {
 			continue
 		}
 
 		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/"+field.name, fmt.Sprintf(
-			"Map state %q sets %q, which kumo's engine does not implement (only the inline ItemProcessor/Iterator mode is supported); this definition will pass validation but will not run as expected",
-			name, field.name,
+			"Map state %q sets %q, which requires ItemProcessor.ProcessorConfig.Mode %q; without it, this field fails at runtime",
+			name, field.name, mapProcessorModeDistributed,
 		))
+	}
+}
+
+// warnUnimplementedMapConstructs flags Map/ItemReader/ItemBatcher/
+// ResultWriter constructs kumo's engine does not implement at all (see
+// itemreader.go, itembatcher.go, resultwriter.go), so a definition that
+// structurally validates does not still surprise the caller when it runs.
+func (v *definitionValidator) warnUnimplementedMapConstructs(name string, state *stateDefinition, location string) {
+	v.warnUnimplementedItemReaderConstructs(name, state.ItemReader, location)
+	v.warnUnimplementedItemBatcherConstructs(name, state.ItemBatcher, location)
+	v.warnUnimplementedResultWriterConstructs(name, state.ResultWriter, location)
+
+	if state.ToleratedFailurePercentagePath != "" {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ToleratedFailurePercentagePath",
+			fmt.Sprintf("Map state %q: ToleratedFailurePercentagePath is not implemented; use the static ToleratedFailurePercentage instead", name))
+	}
+
+	if state.ToleratedFailureCountPath != "" {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ToleratedFailureCountPath",
+			fmt.Sprintf("Map state %q: ToleratedFailureCountPath is not implemented; use the static ToleratedFailureCount instead", name))
+	}
+}
+
+// warnUnimplementedItemReaderConstructs flags an ItemReader Resource kumo
+// does not implement (only s3:getObject is supported) and the unimplemented
+// ReaderConfig.MaxItemsPath field.
+func (v *definitionValidator) warnUnimplementedItemReaderConstructs(name string, raw json.RawMessage, location string) {
+	var def itemReaderDef
+	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil {
+		return
+	}
+
+	if def.Resource != "" && def.Resource != itemReaderResourceS3GetObject {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemReader/Resource", fmt.Sprintf(
+			"Map state %q: ItemReader Resource %q is not implemented; only %q is supported", name, def.Resource, itemReaderResourceS3GetObject,
+		))
+	}
+
+	if def.ReaderConfig.MaxItemsPath != "" {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemReader/ReaderConfig/MaxItemsPath",
+			fmt.Sprintf("Map state %q: ItemReader ReaderConfig.MaxItemsPath is not implemented; use the static MaxItems instead", name))
+	}
+}
+
+// warnUnimplementedItemBatcherConstructs flags ItemBatcher's unimplemented
+// reference-path sub-fields.
+func (v *definitionValidator) warnUnimplementedItemBatcherConstructs(name string, raw json.RawMessage, location string) {
+	var def itemBatcherDef
+	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil {
+		return
+	}
+
+	if def.MaxItemsPerBatchPath != "" {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemBatcher/MaxItemsPerBatchPath",
+			fmt.Sprintf("Map state %q: ItemBatcher MaxItemsPerBatchPath is not implemented; use the static MaxItemsPerBatch instead", name))
+	}
+
+	if def.MaxInputBytesPerBatchPath != "" {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemBatcher/MaxInputBytesPerBatchPath",
+			fmt.Sprintf("Map state %q: ItemBatcher MaxInputBytesPerBatchPath is not implemented; use the static MaxInputBytesPerBatch instead", name))
+	}
+}
+
+// warnUnimplementedResultWriterConstructs flags ResultWriter.WriterConfig,
+// which kumo does not implement (kumo always writes the plain item-output
+// array; see resultwriter.go).
+func (v *definitionValidator) warnUnimplementedResultWriterConstructs(name string, raw json.RawMessage, location string) {
+	var def resultWriterDef
+	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil {
+		return
+	}
+
+	if len(def.WriterConfig) > 0 {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ResultWriter/WriterConfig",
+			fmt.Sprintf("Map state %q: ResultWriter WriterConfig is not implemented; kumo always writes the plain item-output array", name))
 	}
 }
 
