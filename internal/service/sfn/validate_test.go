@@ -40,13 +40,46 @@ const comprehensiveValidDefinition = `{
 	}
 }`
 
+// validCallbackDefinition is a Task state using the .waitForTaskToken
+// integration pattern with a properly nested $$.Task.Token reference in
+// Parameters, which must validate with no ERROR diagnostics.
+const validCallbackDefinition = `{
+	"StartAt": "Notify",
+	"States": {
+		"Notify": {
+			"Type": "Task",
+			"Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
+			"Parameters": {
+				"QueueUrl": "https://sqs.us-east-1.amazonaws.com/000000000000/q",
+				"MessageBody": {"TaskToken.$": "$$.Task.Token"}
+			},
+			"End": true
+		}
+	}
+}`
+
+// validActivityTaskDefinition is a Task state whose Resource is an activity
+// ARN, which must validate with no ERROR diagnostics.
+const validActivityTaskDefinition = `{
+	"StartAt": "DoWork",
+	"States": {
+		"DoWork": {
+			"Type": "Task",
+			"Resource": "arn:aws:states:us-east-1:000000000000:activity:my-activity",
+			"End": true
+		}
+	}
+}`
+
 func TestValidateStateMachineDefinitionExistingDefinitionsStillOK(t *testing.T) {
 	t.Parallel()
 
 	for name, definition := range map[string]string{
-		"comprehensive":  comprehensiveValidDefinition,
-		"execution test": executionTestDefinition,
-		"choice repro":   choiceReproDefinition,
+		"comprehensive":     comprehensiveValidDefinition,
+		"execution test":    executionTestDefinition,
+		"choice repro":      choiceReproDefinition,
+		"waitForTaskToken":  validCallbackDefinition,
+		"activity resource": validActivityTaskDefinition,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -261,6 +294,23 @@ var validateDiagnosticTests = []diagnosticTest{
 		wantSeverity: diagnosticSeverityError,
 		wantCode:     codeInvalidJSONDescription,
 		wantLocation: "",
+	},
+	{
+		name: "waitForTaskToken without $$.Task.Token reference",
+		definition: `{
+			"StartAt": "Notify",
+			"States": {
+				"Notify": {
+					"Type": "Task",
+					"Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+					"Parameters": {"FunctionName": "notify-fn"},
+					"End": true
+				}
+			}
+		}`,
+		wantSeverity: diagnosticSeverityError,
+		wantCode:     codeSchemaValidationFailed,
+		wantLocation: "/States/Notify/Parameters",
 	},
 }
 

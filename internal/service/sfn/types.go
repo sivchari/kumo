@@ -432,3 +432,94 @@ type validateDiagnostic struct {
 	Message  string `json:"message"`
 	Location string `json:"location,omitempty"`
 }
+
+// CreateActivityRequest is the request for CreateActivity.
+type CreateActivityRequest struct {
+	Name string `json:"name"`
+	Tags []Tag  `json:"tags,omitempty"`
+}
+
+// CreateActivityResponse is the response for CreateActivity.
+type CreateActivityResponse struct {
+	ActivityArn  string  `json:"activityArn"`
+	CreationDate float64 `json:"creationDate"`
+}
+
+// DescribeActivityRequest is the request for DescribeActivity.
+type DescribeActivityRequest struct {
+	ActivityArn string `json:"activityArn"`
+}
+
+// DescribeActivityResponse is the response for DescribeActivity.
+type DescribeActivityResponse struct {
+	ActivityArn  string  `json:"activityArn"`
+	Name         string  `json:"name"`
+	CreationDate float64 `json:"creationDate"`
+}
+
+// ListActivitiesRequest is the request for ListActivities.
+type ListActivitiesRequest struct {
+	MaxResults int32  `json:"maxResults,omitempty"`
+	NextToken  string `json:"nextToken,omitempty"`
+}
+
+// ListActivitiesResponse is the response for ListActivities.
+type ListActivitiesResponse struct {
+	Activities []ActivityListItem `json:"activities"`
+	NextToken  string             `json:"nextToken,omitempty"`
+}
+
+// ActivityListItem represents an activity in a list.
+type ActivityListItem struct {
+	ActivityArn  string  `json:"activityArn"`
+	Name         string  `json:"name"`
+	CreationDate float64 `json:"creationDate"`
+}
+
+// DeleteActivityRequest is the request for DeleteActivity.
+type DeleteActivityRequest struct {
+	ActivityArn string `json:"activityArn"`
+}
+
+// DeleteActivityResponse is the response for DeleteActivity.
+type DeleteActivityResponse struct{}
+
+// GetActivityTaskRequest is the request for GetActivityTask.
+type GetActivityTaskRequest struct {
+	ActivityArn string `json:"activityArn"`
+	WorkerName  string `json:"workerName,omitempty"`
+}
+
+// GetActivityTaskResponse is the response for GetActivityTask. TaskToken is
+// an empty string when the long poll elapsed with no task scheduled.
+type GetActivityTaskResponse struct {
+	TaskToken string `json:"taskToken"`
+	Input     string `json:"input,omitempty"`
+}
+
+// SendTaskSuccessRequest is the request for SendTaskSuccess.
+type SendTaskSuccessRequest struct {
+	TaskToken string `json:"taskToken"`
+	Output    string `json:"output"`
+}
+
+// SendTaskSuccessResponse is the response for SendTaskSuccess.
+type SendTaskSuccessResponse struct{}
+
+// SendTaskFailureRequest is the request for SendTaskFailure.
+type SendTaskFailureRequest struct {
+	TaskToken string `json:"taskToken"`
+	Error     string `json:"error,omitempty"`
+	Cause     string `json:"cause,omitempty"`
+}
+
+// SendTaskFailureResponse is the response for SendTaskFailure.
+type SendTaskFailureResponse struct{}
+
+// SendTaskHeartbeatRequest is the request for SendTaskHeartbeat.
+type SendTaskHeartbeatRequest struct {
+	TaskToken string `json:"taskToken"`
+}
+
+// SendTaskHeartbeatResponse is the response for SendTaskHeartbeat.
+type SendTaskHeartbeatResponse struct{}

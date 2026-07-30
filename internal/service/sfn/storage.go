@@ -50,6 +50,19 @@ type Storage interface {
 	ListStateMachineVersions(ctx context.Context, stateMachineArn string, maxResults int32, nextToken string) ([]map[string]string, string, error)
 	ListStateMachineAliases(ctx context.Context, stateMachineArn string, maxResults int32, nextToken string) ([]map[string]string, string, error)
 
+	// Activity operations.
+	CreateActivity(ctx context.Context, name string, tags []Tag) (*Activity, error)
+	DescribeActivity(ctx context.Context, arn string) (*Activity, error)
+	ListActivities(ctx context.Context, maxResults int32, nextToken string) ([]*Activity, string, error)
+	DeleteActivity(ctx context.Context, arn string) error
+	GetActivityTask(ctx context.Context, activityArn, workerName string) (taskToken, input string, err error)
+
+	// Task token operations, shared by callback (.waitForTaskToken) Task
+	// states and activity Task states.
+	SendTaskSuccess(ctx context.Context, taskToken, output string) error
+	SendTaskFailure(ctx context.Context, taskToken, errorName, cause string) error
+	SendTaskHeartbeat(ctx context.Context, taskToken string) error
+
 	// DispatchAction dispatches the request to the appropriate handler.
 	DispatchAction(action string) bool
 }
@@ -82,6 +95,7 @@ type MemoryStorage struct {
 	mu            sync.RWMutex              `json:"-"`
 	StateMachines map[string]*StateMachine  `json:"stateMachines"`
 	Executions    map[string]*ExecutionData `json:"executions"`
+	Activities    map[string]*Activity      `json:"activities"`
 	Tags          map[string][]Tag          `json:"tags"`
 	region        string
 	accountID     string
@@ -107,6 +121,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		StateMachines: make(map[string]*StateMachine),
 		Executions:    make(map[string]*ExecutionData),
+		Activities:    make(map[string]*Activity),
 		Tags:          make(map[string][]Tag),
 		region:        region,
 		accountID:     "000000000000",
@@ -159,6 +174,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.Executions == nil {
 		s.Executions = make(map[string]*ExecutionData)
+	}
+
+	if s.Activities == nil {
+		s.Activities = make(map[string]*Activity)
 	}
 
 	if s.Tags == nil {
