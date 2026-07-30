@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 )
 
@@ -30,16 +29,12 @@ type retrier struct {
 }
 
 // catcher is a single entry in a Task/Parallel/Map state's Catch field. See
-// retrier for why its JSON tags are lowerCamelCase.
+// retrier for why its JSON tags are lowerCamelCase, and parsePathField in
+// iodata.go for why ResultPath is left as raw JSON.
 type catcher struct {
-	ErrorEquals []string `json:"errorEquals"`
-	Next        string   `json:"next"`
-
-	// ResultPath is left as raw JSON so an explicit "null" (discard the
-	// Error Output, keep the original input) can be told apart from the
-	// field being absent (default "$", full replacement by the Error
-	// Output); both unmarshal to the same value through a plain *string.
-	ResultPath json.RawMessage `json:"resultPath"`
+	ErrorEquals []string        `json:"errorEquals"`
+	Next        string          `json:"next"`
+	ResultPath  json.RawMessage `json:"resultPath"`
 }
 
 // Retry defaults per the Amazon States Language spec.
@@ -49,29 +44,85 @@ const (
 	defaultRetryBackoffRate     = 2.0
 )
 
-// runWithRetryCatch executes fn (a state's own work for one execution),
-// applying that state's Retry and Catch policy: retries are attempted
-// first, using the matching Retrier's backoff schedule; if retries do not
-// resolve the error, or no Retrier matches, the first matching Catcher
-// routes to its Next state with the Catcher's Error Output as input. The
-// return shape mirrors executeState: nextOverride is non-empty only when a
-// Catcher matched.
-func (e *executionEngine) runWithRetryCatch(ctx context.Context, name string, state *stateDefinition, input string, fn func(context.Context) (string, error)) (string, string, error) {
-	output, err := e.runWithRetry(ctx, state, fn)
-	if err == nil {
-		return output, "", nil
+// runRetryCatchResultPipeline executes work (a state's own work for one
+// execution, already given whatever effective input the caller computed
+// for it -- see executeTaskStateWithPolicy, executeParallelStateWithPolicy,
+// and executeMapStateWithPolicy in executor.go/parallel.go/mapstate.go,
+// which each fold InputPath/Parameters differently), applying that state's
+// Retry and Catch policy: retries are attempted first, using the matching
+// Retrier's backoff schedule; if retries do not resolve the error, or no
+// Retrier matches, the first matching Catcher routes to its Next state
+// with the Catcher's Error Output merged into the state's raw
+// (un-filtered) input via the Catcher's own ResultPath.
+//
+// On success, the result passes through ResultSelector, ResultPath, and
+// OutputPath to produce the effective output (see applyResultPipeline). On
+// a Catch match, only OutputPath applies to the Catcher's output --
+// ResultSelector/ResultPath are skipped, since the Catcher already shaped
+// its own output via its own ResultPath -- because OutputPath is a
+// state-level field that applies to the state's output regardless of
+// which path produced it (see applyCatchResult). An unmatched error
+// propagates unchanged: per AWS, a data-flow failure itself (e.g. an
+// unresolvable ResultPath) reports as States.Runtime, which is never
+// caught (see errorNameMatches), so such failures never reach Retry/Catch
+// in the first place.
+//
+// The return shape mirrors executeState: nextOverride is non-empty only
+// when a Catcher matched.
+func (e *executionEngine) runRetryCatchResultPipeline(
+	ctx context.Context, name string, state *stateDefinition, rawInput, effectiveInput string,
+	work func(context.Context) (string, error),
+) (string, string, error) {
+	result, err := e.runWithRetry(ctx, state, work)
+	if err != nil {
+		return e.applyCatchResult(name, state, rawInput, err)
 	}
 
-	catchOutput, catchNext, matched, buildErr := applyCatch(state, input, err)
+	return e.applyResultPipeline(name, state, effectiveInput, result)
+}
+
+// applyCatchResult scans state's Catchers for a match against workErr,
+// applying OutputPath to the matching Catcher's output. If no Catcher
+// matches, workErr propagates unchanged so the caller fails the state.
+func (e *executionEngine) applyCatchResult(name string, state *stateDefinition, rawInput string, workErr error) (string, string, error) {
+	catchOutput, catchNext, matched, buildErr := applyCatch(state, rawInput, workErr)
 	if buildErr != nil {
 		return "", "", fmt.Errorf("state %q: %w", name, buildErr)
 	}
 
 	if !matched {
-		return "", "", err
+		return "", "", workErr
 	}
 
-	return catchOutput, catchNext, nil
+	out, err := applyOutputPath(state.OutputPath, catchOutput)
+	if err != nil {
+		return "", "", fmt.Errorf("state %q: %w", name, err)
+	}
+
+	return out, catchNext, nil
+}
+
+// applyResultPipeline turns a state's own successful result into its
+// effective output: ResultSelector produces the effective result,
+// ResultPath merges it into effectiveInput, and OutputPath narrows the
+// merged output.
+func (e *executionEngine) applyResultPipeline(name string, state *stateDefinition, effectiveInput, result string) (string, string, error) {
+	effectiveResult, err := applyResultSelector(state.ResultSelector, result)
+	if err != nil {
+		return "", "", fmt.Errorf("state %q: %w", name, err)
+	}
+
+	merged, err := applyResultPath(state.ResultPath, effectiveInput, effectiveResult)
+	if err != nil {
+		return "", "", fmt.Errorf("state %q: %w", name, err)
+	}
+
+	out, err := applyOutputPath(state.OutputPath, merged)
+	if err != nil {
+		return "", "", fmt.Errorf("state %q: %w", name, err)
+	}
+
+	return out, "", nil
 }
 
 // runWithRetry executes fn, applying the state's Retry policy. Per the
@@ -216,84 +267,23 @@ func applyCatch(state *stateDefinition, input string, err error) (output, next s
 }
 
 // buildCatchOutput builds a Catcher's output: the Error Output object
-// {"Error": errName, "Cause": cause}, optionally injected into the state's
-// original input per ResultPath. The default (ResultPath absent) is "$",
-// meaning the output is the Error Output alone; an explicit null ResultPath
-// discards the Error Output and passes the original input through
-// unchanged. Only "$" and single-level "$.field" paths are supported;
-// anything deeper is reported as a plain error, which executionErrorCode
-// surfaces as States.Runtime like any other unsupported definition
-// construct.
+// {"Error": errName, "Cause": cause}, merged into the state's original
+// (raw) input per the Catcher's own ResultPath -- "works exactly like a
+// state's top-level ResultPath" per the spec's JSONPath Catchers section,
+// so it reuses applyResultPath, supporting the same "$", null, and
+// arbitrary-depth "$.a.b.c" semantics.
 func buildCatchOutput(rawResultPath json.RawMessage, input, errName, cause string) (string, error) {
-	path, isNull, err := parseCatcherResultPath(rawResultPath)
-	if err != nil {
-		return "", err
-	}
-
-	if isNull {
-		return input, nil
-	}
-
 	errorOutput := map[string]string{"Error": errName, "Cause": cause}
 
-	if path == "$" {
-		out, err := json.Marshal(errorOutput)
-		if err != nil {
-			return "", fmt.Errorf("marshal error output: %w", err)
-		}
-
-		return string(out), nil
-	}
-
-	return injectCatchResultPath(path, input, errorOutput)
-}
-
-// parseCatcherResultPath interprets a Catcher's raw ResultPath JSON.
-func parseCatcherResultPath(raw json.RawMessage) (path string, isNull bool, err error) {
-	if len(raw) == 0 {
-		return "$", false, nil
-	}
-
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return "", false, fmt.Errorf("parse ResultPath: %w", err)
-	}
-
-	if value == nil {
-		return "", true, nil
-	}
-
-	path, ok := value.(string)
-	if !ok {
-		return "", false, fmt.Errorf("resultPath must be a string or null")
-	}
-
-	return path, false, nil
-}
-
-// injectCatchResultPath injects errorOutput into input at a single-level
-// "$.field" path, replacing or creating that top-level field.
-func injectCatchResultPath(path, input string, errorOutput map[string]string) (string, error) {
-	field, ok := strings.CutPrefix(path, "$.")
-	if !ok || field == "" || strings.Contains(field, ".") {
-		return "", fmt.Errorf("unsupported ResultPath %q: only \"$\" and single-level \"$.field\" are supported", path)
-	}
-
-	var inputData map[string]any
-	if err := json.Unmarshal([]byte(input), &inputData); err != nil {
-		return "", fmt.Errorf("resultPath %q requires an object input: %w", path, err)
-	}
-
-	if inputData == nil {
-		inputData = map[string]any{}
-	}
-
-	inputData[field] = errorOutput
-
-	out, err := json.Marshal(inputData)
+	resultJSON, err := json.Marshal(errorOutput)
 	if err != nil {
-		return "", fmt.Errorf("marshal ResultPath result: %w", err)
+		return "", fmt.Errorf("marshal error output: %w", err)
 	}
 
-	return string(out), nil
+	out, err := applyResultPath(rawResultPath, input, string(resultJSON))
+	if err != nil {
+		return "", fmt.Errorf("catch: %w", err)
+	}
+
+	return out, nil
 }

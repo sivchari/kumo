@@ -46,10 +46,22 @@ type stateDefinition struct {
 	Next       string         `json:"Next"`
 	End        bool           `json:"End"`
 	Result     any            `json:"Result"`
-	ResultPath *string        `json:"ResultPath"`
-	InputPath  *string        `json:"InputPath"`
-	OutputPath *string        `json:"OutputPath"`
 	Comment    string         `json:"Comment"`
+
+	// ResultSelector, ResultPath, InputPath, and OutputPath are the
+	// remaining fields of the standard data-flow pipeline (see iodata.go).
+	// ResultPath, InputPath, and OutputPath are left as raw JSON so an
+	// explicit "null" (which, per the ASL spec, discards data) can be told
+	// apart from the field being absent (which defaults to "$", no
+	// filtering/replacement); both would otherwise unmarshal to the same
+	// value through a plain *string. Per the spec's per-state field table,
+	// not every state type honors every field -- see resolveEffectiveInput,
+	// runRetryCatchResultPipeline in retry.go, and validateStateFields in
+	// validate.go for which types actually apply which fields.
+	ResultSelector map[string]any  `json:"ResultSelector"`
+	ResultPath     json.RawMessage `json:"ResultPath"`
+	InputPath      json.RawMessage `json:"InputPath"`
+	OutputPath     json.RawMessage `json:"OutputPath"`
 
 	// Choice state fields.
 	Choices []choiceRule `json:"Choices"`
@@ -298,7 +310,7 @@ func (e *executionEngine) execute(ctx context.Context, def *stateMachineDefiniti
 func (e *executionEngine) executeState(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	switch state.Type {
 	case "Pass":
-		output, err := e.executePassState(state, input)
+		output, err := e.executePassState(name, state, input)
 
 		return output, "", err
 	case "Task":
@@ -324,70 +336,127 @@ func (e *executionEngine) executeState(ctx context.Context, name string, state *
 	}
 }
 
-// executeTaskStateWithPolicy executes a Task state's underlying work,
-// applying its Retry and Catch policy. Each attempt (initial or retried) is
-// individually bounded by the state's TimeoutSeconds/TimeoutSecondsPath; see
-// executeTaskStateWithTimeout in timeout.go.
+// executeTaskStateWithPolicy executes a Task state's full standard field
+// pipeline: InputPath narrows the raw input to the effective input, Retry
+// and Catch govern the work itself (each attempt individually bounded by
+// TimeoutSeconds/TimeoutSecondsPath; see executeTaskStateWithTimeout in
+// timeout.go), and on success ResultSelector/ResultPath/OutputPath shape
+// the effective output. Parameters is resolved inside executeTaskState,
+// against the effective input, since its resolved value doubles as the
+// resource invocation's request payload rather than a generic JSON blob.
 func (e *executionEngine) executeTaskStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
-	return e.runWithRetryCatch(ctx, name, state, input, func(ctx context.Context) (string, error) {
-		return e.executeTaskStateWithTimeout(ctx, name, state, input)
+	effectiveInput, err := applyInputPath(state.InputPath, input)
+	if err != nil {
+		return "", "", fmt.Errorf("state %q: %w", name, err)
+	}
+
+	return e.runRetryCatchResultPipeline(ctx, name, state, input, effectiveInput, func(ctx context.Context) (string, error) {
+		return e.executeTaskStateWithTimeout(ctx, name, state, effectiveInput)
 	})
 }
 
-// executePassState executes a Pass state.
-func (e *executionEngine) executePassState(state *stateDefinition, input string) (string, error) {
-	if state.Result != nil {
-		result, err := json.Marshal(state.Result)
-		if err != nil {
-			return "", fmt.Errorf("marshal pass result: %w", err)
-		}
-
-		return string(result), nil
+// executePassState executes a Pass state's full standard field pipeline:
+// InputPath and Parameters build the effective input, Result (if present)
+// -- else the effective input itself -- is the state's result, and
+// ResultPath/OutputPath shape the effective output. Pass has no
+// ResultSelector; see the spec's per-state field table.
+func (e *executionEngine) executePassState(name string, state *stateDefinition, input string) (string, error) {
+	effectiveInput, err := resolveEffectiveInput(state.InputPath, state.Parameters, input)
+	if err != nil {
+		return "", fmt.Errorf("pass state %q: %w", name, err)
 	}
 
-	return input, nil
+	result := effectiveInput
+
+	if state.Result != nil {
+		marshaled, err := json.Marshal(state.Result)
+		if err != nil {
+			return "", fmt.Errorf("pass state %q: marshal Result: %w", name, err)
+		}
+
+		result = string(marshaled)
+	}
+
+	merged, err := applyResultPath(state.ResultPath, effectiveInput, result)
+	if err != nil {
+		return "", fmt.Errorf("pass state %q: %w", name, err)
+	}
+
+	output, err := applyOutputPath(state.OutputPath, merged)
+	if err != nil {
+		return "", fmt.Errorf("pass state %q: %w", name, err)
+	}
+
+	return output, nil
 }
 
-// executeChoiceState executes a Choice state. It evaluates each Choice Rule
-// in order and transitions to the first match's Next state, falling back to
-// Default. The output is always the unmodified input.
+// executeChoiceState executes a Choice state: InputPath narrows the raw
+// input to the effective input, which the Choice Rules -- including the
+// "*Path" comparators (see choice.go) -- are evaluated against; the first
+// matching rule's Next is chosen, falling back to Default. Choice has no
+// Parameters/ResultSelector/ResultPath (it produces no result of its own),
+// so the state output is simply the effective input, narrowed by
+// OutputPath.
 func (e *executionEngine) executeChoiceState(name string, state *stateDefinition, input string) (string, string, error) {
+	effectiveInput, err := applyInputPath(state.InputPath, input)
+	if err != nil {
+		return "", "", fmt.Errorf("choice state %q: %w", name, err)
+	}
+
 	var inputData map[string]any
-	if err := json.Unmarshal([]byte(input), &inputData); err != nil {
+	if err := json.Unmarshal([]byte(effectiveInput), &inputData); err != nil {
 		return "", "", fmt.Errorf("choice state %q: parse input: %w", name, err)
 	}
 
+	next, err := chooseNextState(name, state, inputData)
+	if err != nil {
+		return "", "", err
+	}
+
+	output, err := applyOutputPath(state.OutputPath, effectiveInput)
+	if err != nil {
+		return "", "", fmt.Errorf("choice state %q: %w", name, err)
+	}
+
+	return output, next, nil
+}
+
+// chooseNextState scans a Choice state's Choices in order for the first
+// matching rule's Next, falling back to Default, or reporting
+// noChoiceMatchedError if neither exists.
+func chooseNextState(name string, state *stateDefinition, inputData map[string]any) (string, error) {
 	for i := range state.Choices {
 		matched, err := evaluateChoiceRule(&state.Choices[i], inputData)
 		if err != nil {
-			return "", "", fmt.Errorf("choice state %q: %w", name, err)
+			return "", fmt.Errorf("choice state %q: %w", name, err)
 		}
 
 		if matched {
 			if state.Choices[i].Next == "" {
-				return "", "", fmt.Errorf("choice state %q: matched rule has no Next", name)
+				return "", fmt.Errorf("choice state %q: matched rule has no Next", name)
 			}
 
-			return input, state.Choices[i].Next, nil
+			return state.Choices[i].Next, nil
 		}
 	}
 
 	if state.Default == "" {
-		return "", "", &noChoiceMatchedError{state: name}
+		return "", &noChoiceMatchedError{state: name}
 	}
 
-	return input, state.Default, nil
+	return state.Default, nil
 }
 
 // executeSucceedState executes a Succeed state, narrowing the output through
-// InputPath/OutputPath if present.
+// InputPath/OutputPath if present. Succeed has neither Parameters, Result,
+// nor ResultPath: its output is always its (possibly filtered) input.
 func (e *executionEngine) executeSucceedState(state *stateDefinition, input string) (string, error) {
-	narrowed, err := applyPath(state.InputPath, input)
+	narrowed, err := applyInputPath(state.InputPath, input)
 	if err != nil {
 		return "", fmt.Errorf("succeed state: %w", err)
 	}
 
-	output, err := applyPath(state.OutputPath, narrowed)
+	output, err := applyOutputPath(state.OutputPath, narrowed)
 	if err != nil {
 		return "", fmt.Errorf("succeed state: %w", err)
 	}
@@ -396,34 +465,10 @@ func (e *executionEngine) executeSucceedState(state *stateDefinition, input stri
 }
 
 // executeFailState executes a Fail state, always returning a failStateError
-// carrying the state's declared Error and Cause.
+// carrying the state's declared Error and Cause. Fail has neither
+// InputPath, OutputPath, nor any other data-flow field.
 func (e *executionEngine) executeFailState(state *stateDefinition) error {
 	return &failStateError{errorName: state.Error, cause: state.Cause}
-}
-
-// applyPath narrows a JSON value using a JSONPath (InputPath/OutputPath). A
-// nil path returns data unchanged.
-func applyPath(path *string, data string) (string, error) {
-	if path == nil {
-		return data, nil
-	}
-
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
-		return "", fmt.Errorf("parse data for path %q: %w", *path, err)
-	}
-
-	resolved, err := resolveJSONPath(parsed, *path)
-	if err != nil {
-		return "", fmt.Errorf("resolve path %q: %w", *path, err)
-	}
-
-	out, err := json.Marshal(resolved)
-	if err != nil {
-		return "", fmt.Errorf("marshal path %q result: %w", *path, err)
-	}
-
-	return string(out), nil
 }
 
 // executeTaskState executes a Task state by calling the appropriate service.
@@ -477,7 +522,10 @@ func resolveParametersWithContext(params map[string]any, input string, contextDa
 	}
 
 	// inputData is parsed lazily on the first JSONPath reference and reused.
-	var inputData map[string]any
+	// It is typed any, not map[string]any, since a Payload Template's input
+	// is not always a JSON object -- ResultSelector, in particular, resolves
+	// against a Parallel/Map state's result, which is a JSON array.
+	var inputData any
 
 	resolved := make(map[string]any, len(params))
 
@@ -509,9 +557,12 @@ func resolveParametersWithContext(params map[string]any, input string, contextDa
 // resolveJSONPathRef resolves a "key.$" JSONPath reference against the
 // input, or, for a "$$."-prefixed path, against contextData. inputData is
 // the lazily-parsed input (nil until first use); the possibly newly parsed
-// map is returned so the caller can reuse it for later references, keeping
-// the input JSON unmarshaled at most once per resolveParameters call.
-func resolveJSONPathRef(key string, value any, input string, inputData, contextData map[string]any) (any, map[string]any, error) {
+// value is returned so the caller can reuse it for later references,
+// keeping the input JSON unmarshaled at most once per resolveParameters
+// call. inputData -- and therefore the path resolution against it -- uses
+// resolveAnyJSONPath rather than resolveJSONPath, since the input is not
+// always a JSON object (see resolveParametersWithContext).
+func resolveJSONPathRef(key string, value any, input string, inputData any, contextData map[string]any) (any, any, error) {
 	pathStr, ok := value.(string)
 	if !ok {
 		return nil, inputData, fmt.Errorf("jsonPath reference for key %q must be a string", key)
@@ -536,7 +587,7 @@ func resolveJSONPathRef(key string, value any, input string, inputData, contextD
 		}
 	}
 
-	resolvedValue, err := resolveJSONPath(inputData, pathStr)
+	resolvedValue, err := resolveAnyJSONPath(pathStr, inputData)
 	if err != nil {
 		return nil, inputData, fmt.Errorf("resolve JSONPath %q for key %q: %w", pathStr, key, err)
 	}

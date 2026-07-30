@@ -12,13 +12,17 @@ const (
 	pathValue   = "$.value"
 	pathTS      = "$.ts"
 	pathMissing = "$.missing"
+	pathOther   = "$.other"
+	pathTSOther = "$.tsOther"
 
 	valueFast = "fast"
 	valueSlow = "slow"
 
-	fieldName  = "name"
-	fieldValue = "value"
-	fieldMode  = "mode"
+	fieldName    = "name"
+	fieldValue   = "value"
+	fieldMode    = "mode"
+	fieldOther   = "other"
+	fieldTSOther = "tsOther"
 )
 
 func float64Ptr(v float64) *float64 { return &v }
@@ -145,6 +149,128 @@ var choiceRuleTests = []struct {
 		want:  false,
 	},
 	{
+		name:  "TimestampLessThanEquals equal",
+		rule:  choiceRule{Variable: pathTS, TimestampLessThanEquals: strPtr("2020-01-01T00:00:00Z")},
+		input: map[string]any{"ts": "2020-01-01T00:00:00Z"},
+		want:  true,
+	},
+	{
+		name:  "TimestampGreaterThanEquals equal",
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEquals: strPtr("2020-01-01T00:00:00Z")},
+		input: map[string]any{"ts": "2020-01-01T00:00:00Z"},
+		want:  true,
+	},
+	{
+		name:  "StringEqualsPath match",
+		rule:  choiceRule{Variable: pathMode, StringEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldMode: valueFast, fieldOther: valueFast},
+		want:  true,
+	},
+	{
+		name:  "StringEqualsPath no match",
+		rule:  choiceRule{Variable: pathMode, StringEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldMode: valueFast, fieldOther: valueSlow},
+		want:  false,
+	},
+	{
+		name:  "StringLessThanPath match",
+		rule:  choiceRule{Variable: pathName, StringLessThanPath: strPtr(pathOther)},
+		input: map[string]any{fieldName: "alice", fieldOther: "m"},
+		want:  true,
+	},
+	{
+		name:  "StringGreaterThanPath match",
+		rule:  choiceRule{Variable: pathName, StringGreaterThanPath: strPtr(pathOther)},
+		input: map[string]any{fieldName: "zeke", fieldOther: "m"},
+		want:  true,
+	},
+	{
+		name:  "StringLessThanEqualsPath equal",
+		rule:  choiceRule{Variable: pathName, StringLessThanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldName: "mode", fieldOther: "mode"},
+		want:  true,
+	},
+	{
+		name:  "StringGreaterThanEqualsPath equal",
+		rule:  choiceRule{Variable: pathName, StringGreaterThanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldName: "mode", fieldOther: "mode"},
+		want:  true,
+	},
+	{
+		// Mirrors the ASL spec's own worked example: {"Variable": "$.rating",
+		// "NumericGreaterThanPath": "$.auditThreshold"}.
+		name:  "NumericGreaterThanPath match",
+		rule:  choiceRule{Variable: "$.rating", NumericGreaterThanPath: strPtr("$.auditThreshold")},
+		input: map[string]any{"rating": float64(30), "auditThreshold": float64(20)},
+		want:  true,
+	},
+	{
+		name:  "NumericEqualsPath no match",
+		rule:  choiceRule{Variable: pathValue, NumericEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldValue: float64(20), fieldOther: float64(21)},
+		want:  false,
+	},
+	{
+		name:  "NumericLessThanPath match",
+		rule:  choiceRule{Variable: pathValue, NumericLessThanPath: strPtr(pathOther)},
+		input: map[string]any{fieldValue: float64(20), fieldOther: float64(30)},
+		want:  true,
+	},
+	{
+		name:  "NumericGreaterThanEqualsPath equal",
+		rule:  choiceRule{Variable: pathValue, NumericGreaterThanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldValue: float64(20), fieldOther: float64(20)},
+		want:  true,
+	},
+	{
+		name:  "NumericLessThanEqualsPath equal",
+		rule:  choiceRule{Variable: pathValue, NumericLessThanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldValue: float64(20), fieldOther: float64(20)},
+		want:  true,
+	},
+	{
+		name:  "BooleanEqualsPath match",
+		rule:  choiceRule{Variable: "$.enabled", BooleanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{"enabled": true, fieldOther: true},
+		want:  true,
+	},
+	{
+		name:  "BooleanEqualsPath type mismatch does not match",
+		rule:  choiceRule{Variable: "$.enabled", BooleanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{"enabled": true, fieldOther: "not-a-bool"},
+		want:  false,
+	},
+	{
+		name:  "TimestampEqualsPath match",
+		rule:  choiceRule{Variable: pathTS, TimestampEqualsPath: strPtr(pathTSOther)},
+		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		want:  true,
+	},
+	{
+		name:  "TimestampLessThanPath match",
+		rule:  choiceRule{Variable: pathTS, TimestampLessThanPath: strPtr(pathTSOther)},
+		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-06-01T00:00:00Z"},
+		want:  true,
+	},
+	{
+		name:  "TimestampGreaterThanPath match",
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanPath: strPtr(pathTSOther)},
+		input: map[string]any{"ts": "2020-06-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		want:  true,
+	},
+	{
+		name:  "TimestampLessThanEqualsPath equal",
+		rule:  choiceRule{Variable: pathTS, TimestampLessThanEqualsPath: strPtr(pathTSOther)},
+		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		want:  true,
+	},
+	{
+		name:  "TimestampGreaterThanEqualsPath equal",
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEqualsPath: strPtr(pathTSOther)},
+		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		want:  true,
+	},
+	{
 		name:  "IsPresent true for present field",
 		rule:  choiceRule{Variable: pathMode, IsPresent: boolPtr(true)},
 		input: map[string]any{fieldMode: valueFast},
@@ -243,6 +369,20 @@ func TestEvaluateChoiceRuleMissingVariableErrors(t *testing.T) {
 	_, err := evaluateChoiceRule(&rule, map[string]any{fieldMode: valueFast})
 	if err == nil {
 		t.Fatal("evaluateChoiceRule: want error for unresolvable Variable, got nil")
+	}
+}
+
+func TestEvaluateChoiceRulePathComparatorUnresolvableOperandErrors(t *testing.T) {
+	t.Parallel()
+
+	// The "*Path" comparator's own Path -- as opposed to Variable -- fails
+	// to resolve here, which must also surface as an error rather than a
+	// silent non-match.
+	rule := choiceRule{Variable: pathMode, StringEqualsPath: strPtr(pathMissing)}
+
+	_, err := evaluateChoiceRule(&rule, map[string]any{fieldMode: valueFast})
+	if err == nil {
+		t.Fatal("evaluateChoiceRule: want error for unresolvable *Path comparator operand, got nil")
 	}
 }
 
@@ -367,5 +507,46 @@ func TestChoiceStateIsPresentGuardsMissingField(t *testing.T) {
 
 	if exec.Output != `{"picked":"no-mode"}` {
 		t.Fatalf("execution output: got %q, want %q", exec.Output, `{"picked":"no-mode"}`)
+	}
+}
+
+// TestChoiceStateNumericGreaterThanPathComparesTwoInputFields mirrors the
+// ASL spec's own worked example of a "*Path" comparator: {"Variable":
+// "$.rating", "NumericGreaterThanPath": "$.auditThreshold"} compares two
+// fields of the same input against each other, rather than a field against
+// a static literal.
+func TestChoiceStateNumericGreaterThanPathComparesTwoInputFields(t *testing.T) {
+	t.Parallel()
+
+	definition := `{
+		"StartAt": "Decide",
+		"States": {
+			"Decide": {
+				"Type": "Choice",
+				"Choices": [{
+					"Variable": "$.rating",
+					"NumericGreaterThanPath": "$.auditThreshold",
+					"Next": "StartAudit"
+				}],
+				"Default": "NoAudit"
+			},
+			"StartAudit": {"Type": "Pass", "Result": {"decision": "audit"}, "End": true},
+			"NoAudit": {"Type": "Pass", "Result": {"decision": "none"}, "End": true}
+		}
+	}`
+
+	store := NewMemoryStorage()
+	sm := createExecutionTestStateMachine(t, store, "choice-numeric-greater-than-path", definition)
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"rating":90,"auditThreshold":80}`)
+
+	if exec.Output != `{"decision":"audit"}` {
+		t.Fatalf("execution output: got %q, want %q", exec.Output, `{"decision":"audit"}`)
+	}
+
+	exec = startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"rating":50,"auditThreshold":80}`)
+
+	if exec.Output != `{"decision":"none"}` {
+		t.Fatalf("execution output: got %q, want %q", exec.Output, `{"decision":"none"}`)
 	}
 }
