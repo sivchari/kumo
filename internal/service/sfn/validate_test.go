@@ -161,6 +161,36 @@ var validateDiagnosticTests = []diagnosticTest{
 		wantLocation: "/States/W",
 	},
 	{
+		name: "ResultPath on Wait is not a supported field",
+		definition: `{
+			"StartAt": "W",
+			"States": {"W": {"Type": "Wait", "Seconds": 1, "ResultPath": "$.x", "End": true}}
+		}`,
+		wantSeverity: diagnosticSeverityError,
+		wantCode:     codeSchemaValidationFailed,
+		wantLocation: "/States/W/ResultPath",
+	},
+	{
+		name: "ResultSelector on Pass is not a supported field",
+		definition: `{
+			"StartAt": "P",
+			"States": {"P": {"Type": "Pass", "ResultSelector": {"a": "b"}, "End": true}}
+		}`,
+		wantSeverity: diagnosticSeverityError,
+		wantCode:     codeSchemaValidationFailed,
+		wantLocation: "/States/P/ResultSelector",
+	},
+	{
+		name: "OutputPath on Fail is not a supported field",
+		definition: `{
+			"StartAt": "F",
+			"States": {"F": {"Type": "Fail", "OutputPath": "$.x", "Error": "E", "Cause": "C"}}
+		}`,
+		wantSeverity: diagnosticSeverityError,
+		wantCode:     codeSchemaValidationFailed,
+		wantLocation: "/States/F/OutputPath",
+	},
+	{
 		name: "dangling Catch Next",
 		definition: `{
 			"StartAt": "Invoke",

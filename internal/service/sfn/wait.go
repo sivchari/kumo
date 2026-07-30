@@ -8,7 +8,10 @@ import (
 )
 
 // executeWaitState executes a Wait state by sleeping for the duration
-// determined by Seconds, SecondsPath, Timestamp, or TimestampPath.
+// determined by Seconds, SecondsPath, Timestamp, or TimestampPath, resolved
+// against the effective input (InputPath applied to the raw input). Wait
+// has no Parameters/Result/ResultPath: its output is always its (possibly
+// filtered) input, narrowed once more by OutputPath.
 //
 // The wait is not artificially capped: kumo sleeps for the full requested
 // duration but honors ctx cancellation, and every execution already runs
@@ -16,7 +19,12 @@ import (
 // (min(definition TimeoutSeconds, executionTimeoutCap)), which bounds how
 // long any single Wait can actually block.
 func (e *executionEngine) executeWaitState(ctx context.Context, state *stateDefinition, input string) (string, error) {
-	d, err := waitDuration(state, input)
+	effectiveInput, err := applyInputPath(state.InputPath, input)
+	if err != nil {
+		return "", fmt.Errorf("wait state: %w", err)
+	}
+
+	d, err := waitDuration(state, effectiveInput)
 	if err != nil {
 		return "", fmt.Errorf("wait state: %w", err)
 	}
@@ -30,7 +38,12 @@ func (e *executionEngine) executeWaitState(ctx context.Context, state *stateDefi
 	case <-timer.C:
 	}
 
-	return input, nil
+	output, err := applyOutputPath(state.OutputPath, effectiveInput)
+	if err != nil {
+		return "", fmt.Errorf("wait state: %w", err)
+	}
+
+	return output, nil
 }
 
 // waitDuration determines how long a Wait state should sleep from whichever

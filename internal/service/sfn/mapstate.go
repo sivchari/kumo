@@ -21,11 +21,22 @@ const (
 	mapProcessorModeDistributed = "DISTRIBUTED"
 )
 
-// executeMapStateWithPolicy executes a Map state's item processing,
-// applying its Retry and Catch policy.
+// executeMapStateWithPolicy executes a Map state's full standard field
+// pipeline: InputPath builds the effective input that ItemsPath resolves
+// the Items Array against (Map's own "Parameters" field, when present, is
+// the deprecated alias for ItemSelector rather than the standard
+// effective-input Payload Template, so it is deliberately not folded in
+// here -- see resolveEffectiveInput), Retry and Catch govern item
+// processing as a whole, and on success ResultSelector/ResultPath/
+// OutputPath shape the effective output.
 func (e *executionEngine) executeMapStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
-	return e.runWithRetryCatch(ctx, name, state, input, func(ctx context.Context) (string, error) {
-		return e.executeMapState(ctx, name, state, input)
+	effectiveInput, err := applyInputPath(state.InputPath, input)
+	if err != nil {
+		return "", "", fmt.Errorf("map state %q: %w", name, err)
+	}
+
+	return e.runRetryCatchResultPipeline(ctx, name, state, input, effectiveInput, func(ctx context.Context) (string, error) {
+		return e.executeMapState(ctx, name, state, effectiveInput)
 	})
 }
 

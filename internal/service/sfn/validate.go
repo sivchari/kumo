@@ -44,6 +44,46 @@ var terminalStateTypes = map[string]bool{
 	"Fail":    true,
 }
 
+// pathFieldTypes, resultFieldTypes, resultSelectorTypes, and
+// retryCatchTypes are the sets of state Types the ASL spec's "Table of
+// State Types and Fields (JSONPath)"
+// (https://states-language.net/spec.html#statetypetable) allows each
+// data-flow field group on:
+//
+//   - InputPath/OutputPath: every state type except Fail.
+//   - ResultPath/Parameters: Task, Parallel, Map, Pass (the states that can
+//     generate a result, plus Pass, which uses Parameters/ResultPath to
+//     shape its Result-or-input).
+//   - ResultSelector: Task, Parallel, Map only (not Pass).
+//   - Retry/Catch: Task, Parallel, Map only.
+var (
+	pathFieldTypes = map[string]bool{
+		"Task": true, "Parallel": true, "Map": true, "Pass": true,
+		"Wait": true, "Choice": true, "Succeed": true,
+	}
+	resultFieldTypes      = map[string]bool{"Task": true, "Parallel": true, "Map": true, "Pass": true}
+	resultSelectorTypes   = map[string]bool{"Task": true, "Parallel": true, "Map": true}
+	retryCatchFieldTypes  = map[string]bool{"Task": true, "Parallel": true, "Map": true}
+	stateDataFlowFieldSet = []stateFieldRule{
+		{"InputPath", func(s *stateDefinition) bool { return len(s.InputPath) > 0 }, pathFieldTypes},
+		{"OutputPath", func(s *stateDefinition) bool { return len(s.OutputPath) > 0 }, pathFieldTypes},
+		{"ResultPath", func(s *stateDefinition) bool { return len(s.ResultPath) > 0 }, resultFieldTypes},
+		{"Parameters", func(s *stateDefinition) bool { return s.Parameters != nil }, resultFieldTypes},
+		{"ResultSelector", func(s *stateDefinition) bool { return s.ResultSelector != nil }, resultSelectorTypes},
+		{"Retry", func(s *stateDefinition) bool { return len(s.Retry) > 0 }, retryCatchFieldTypes},
+		{"Catch", func(s *stateDefinition) bool { return len(s.Catch) > 0 }, retryCatchFieldTypes},
+	}
+)
+
+// stateFieldRule checks one JSON field's applicability across state Types:
+// isSet reports whether the field is present on a given state, and allowed
+// is the set of state Types the spec permits it on.
+type stateFieldRule struct {
+	name    string
+	isSet   func(*stateDefinition) bool
+	allowed map[string]bool
+}
+
 // mapDistributedOnlyFields are Map state fields AWS documents only under
 // Distributed mode (see requireDistributedModeForFields in mapstate.go):
 // they are absent from the Inline Map state field list at
@@ -172,6 +212,7 @@ func (v *definitionValidator) validateState(name string, state *stateDefinition,
 	}
 
 	v.validateCatchers(name, state, states, location)
+	v.validateStateFields(name, state, location)
 
 	switch state.Type {
 	case "Task":
@@ -184,6 +225,24 @@ func (v *definitionValidator) validateState(name string, state *stateDefinition,
 		v.validateMapState(name, state, location)
 	case "Wait":
 		v.validateWaitState(name, state, location)
+	}
+}
+
+// validateStateFields flags any data-flow field (InputPath, OutputPath,
+// ResultPath, Parameters, ResultSelector, Retry, Catch) set on a state Type
+// the spec's field table does not allow it on -- for example, a ResultPath
+// on a Wait state -- so a definition that structurally validates does not
+// still surprise the caller when it runs (the pipeline in iodata.go and
+// retry.go simply never reads a field its state type does not support).
+func (v *definitionValidator) validateStateFields(name string, state *stateDefinition, location string) {
+	for _, rule := range stateDataFlowFieldSet {
+		if !rule.isSet(state) || rule.allowed[state.Type] {
+			continue
+		}
+
+		v.addError(codeSchemaValidationFailed, location+"/"+rule.name, fmt.Sprintf(
+			"state %q: %q is not a supported field for %s states", name, rule.name, state.Type,
+		))
 	}
 }
 

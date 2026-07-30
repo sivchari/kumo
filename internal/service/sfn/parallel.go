@@ -7,11 +7,19 @@ import (
 	"sync"
 )
 
-// executeParallelStateWithPolicy executes a Parallel state's Branches,
-// applying its Retry and Catch policy.
+// executeParallelStateWithPolicy executes a Parallel state's full standard
+// field pipeline: InputPath and Parameters build the effective input fed to
+// every Branch's StartAt state, Retry and Catch govern the branches as a
+// whole, and on success ResultSelector/ResultPath/OutputPath shape the
+// effective output.
 func (e *executionEngine) executeParallelStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
-	return e.runWithRetryCatch(ctx, name, state, input, func(ctx context.Context) (string, error) {
-		return e.executeParallelState(ctx, name, state, input)
+	effectiveInput, err := resolveEffectiveInput(state.InputPath, state.Parameters, input)
+	if err != nil {
+		return "", "", fmt.Errorf("state %q: %w", name, err)
+	}
+
+	return e.runRetryCatchResultPipeline(ctx, name, state, input, effectiveInput, func(ctx context.Context) (string, error) {
+		return e.executeParallelState(ctx, name, state, effectiveInput)
 	})
 }
 

@@ -81,6 +81,52 @@ func TestTaskCatchInjectsErrorViaResultPath(t *testing.T) {
 	}
 }
 
+func TestTaskCatchInjectsErrorViaDeepResultPath(t *testing.T) {
+	t.Parallel()
+
+	// The Catcher's ResultPath is now backed by the same arbitrary-depth
+	// applyResultPath used elsewhere, so a multi-level path must create
+	// intermediate objects exactly like a state's top-level ResultPath does.
+	definition := `{
+		"StartAt": "Invoke",
+		"States": {
+			"Invoke": {
+				"Type": "Task",
+				"Resource": "arn:aws:lambda:us-east-1:000000000000:function:missing-fn",
+				"Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.a.b.c", "Next": "Fallback"}],
+				"End": true
+			},
+			"Fallback": {"Type": "Pass", "End": true}
+		}
+	}`
+
+	store := NewMemoryStorage(WithBaseURL("http://127.0.0.1:1"))
+	sm := createExecutionTestStateMachine(t, store, "catch-deep-resultpath", definition)
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"orig":"data"}`)
+
+	var output struct {
+		Orig string `json:"orig"`
+		A    struct {
+			B struct {
+				C map[string]string `json:"c"`
+			} `json:"b"`
+		} `json:"a"`
+	}
+
+	if err := json.Unmarshal([]byte(exec.Output), &output); err != nil {
+		t.Fatalf("unmarshal execution output %q: %v", exec.Output, err)
+	}
+
+	if output.Orig != "data" {
+		t.Fatalf("original input field: got %q, want %q", output.Orig, "data")
+	}
+
+	if output.A.B.C["Error"] != errorStatesTaskFailed {
+		t.Fatalf("injected error output at $.a.b.c: got %q, want %q", output.A.B.C["Error"], errorStatesTaskFailed)
+	}
+}
+
 func TestTaskCatchDoesNotMatchStatesRuntimeEvenWithStatesAll(t *testing.T) {
 	t.Parallel()
 
