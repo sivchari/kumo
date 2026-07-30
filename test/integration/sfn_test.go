@@ -4,7 +4,10 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -455,5 +458,119 @@ func TestSFN_ActivityCRUD(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for deleted activity")
+	}
+}
+
+// waitForSFNExecutionTerminal polls DescribeExecution until executionArn
+// leaves RUNNING: unlike every other state machine in this file (a single
+// Pass state, which completes essentially instantly), a
+// states:startExecution.sync/.sync:2 Task's own execution can still be
+// RUNNING by the time the test calls DescribeExecution, since it waits on
+// its child execution in the background.
+func waitForSFNExecutionTerminal(t *testing.T, client *sfn.Client, executionArn string) *sfn.DescribeExecutionOutput {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for {
+		out, err := client.DescribeExecution(context.Background(), &sfn.DescribeExecutionInput{
+			ExecutionArn: aws.String(executionArn),
+		})
+		if err != nil {
+			t.Fatalf("DescribeExecution: %v", err)
+		}
+
+		if out.Status != sfntypes.ExecutionStatusRunning {
+			return out
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("execution %q did not terminate within the deadline", executionArn)
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// TestSFN_NestedExecution exercises the states:startExecution.sync:2
+// integration end to end: a parent state machine's Task starts a child
+// state machine and waits for it, and the Task's own output (the whole
+// parent execution's Output here, since the Task is also the parent's only
+// state) mirrors DescribeExecution with the child's own Output parsed as
+// JSON rather than left as a string -- see
+// https://docs.aws.amazon.com/step-functions/latest/dg/connect-stepfunctions.html.
+func TestSFN_NestedExecution(t *testing.T) {
+	client := newSFNClient(t)
+	ctx := t.Context()
+
+	roleArn := "arn:aws:iam::000000000000:role/test-role"
+
+	childDefinition := `{
+		"StartAt": "Build",
+		"States": {"Build": {"Type": "Pass", "Result": {"MyKey": "MyValue"}, "End": true}}
+	}`
+
+	childOutput, err := client.CreateStateMachine(ctx, &sfn.CreateStateMachineInput{
+		Name:       aws.String("test-nested-child"),
+		Definition: aws.String(childDefinition),
+		RoleArn:    aws.String(roleArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parentDefinition := fmt.Sprintf(`{
+		"StartAt": "Nested",
+		"States": {
+			"Nested": {
+				"Type": "Task",
+				"Resource": "arn:aws:states:::states:startExecution.sync:2",
+				"Parameters": {"StateMachineArn": %q, "Input": {}},
+				"End": true
+			}
+		}
+	}`, *childOutput.StateMachineArn)
+
+	parentOutput, err := client.CreateStateMachine(ctx, &sfn.CreateStateMachineInput{
+		Name:       aws.String("test-nested-parent"),
+		Definition: aws.String(parentDefinition),
+		RoleArn:    aws.String(roleArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	startOutput, err := client.StartExecution(ctx, &sfn.StartExecutionInput{
+		StateMachineArn: parentOutput.StateMachineArn,
+		Input:           aws.String("{}"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	describeOutput := waitForSFNExecutionTerminal(t, client, *startOutput.ExecutionArn)
+
+	golden.New(t, golden.WithIgnoreFields(
+		"ExecutionArn", "StateMachineArn", "StartDate", "StopDate", "Name", "Output", "ResultMetadata",
+	)).Assert(t.Name()+"_describe", describeOutput)
+
+	if describeOutput.Status != sfntypes.ExecutionStatusSucceeded {
+		t.Fatalf("parent execution status: got %s, want %s (output: %s)", describeOutput.Status, sfntypes.ExecutionStatusSucceeded, aws.ToString(describeOutput.Output))
+	}
+
+	var taskOutput struct {
+		Status string         `json:"status"`
+		Output map[string]any `json:"output"`
+	}
+	if err := json.Unmarshal([]byte(aws.ToString(describeOutput.Output)), &taskOutput); err != nil {
+		t.Fatalf("unmarshal parent execution Output %q: %v", aws.ToString(describeOutput.Output), err)
+	}
+
+	if taskOutput.Status != string(sfntypes.ExecutionStatusSucceeded) {
+		t.Fatalf(".sync:2 nested output.status: got %q, want %q", taskOutput.Status, sfntypes.ExecutionStatusSucceeded)
+	}
+
+	if taskOutput.Output["MyKey"] != "MyValue" {
+		t.Fatalf(".sync:2 nested output.output: got %v, want parsed JSON {\"MyKey\":\"MyValue\"}", taskOutput.Output)
 	}
 }

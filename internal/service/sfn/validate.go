@@ -416,78 +416,68 @@ func (v *definitionValidator) warnDistributedOnlyFields(name string, state *stat
 	}
 }
 
-// warnUnimplementedMapConstructs flags Map/ItemReader/ItemBatcher/
-// ResultWriter constructs kumo's engine does not implement at all (see
-// itemreader.go, itembatcher.go, resultwriter.go), so a definition that
-// structurally validates does not still surprise the caller when it runs.
+// warnUnimplementedMapConstructs flags Map/ItemReader/ResultWriter
+// constructs kumo's engine still does not implement at all (see
+// itemreader.go, resultwriter.go), so a definition that structurally
+// validates does not still surprise the caller when it runs. ItemBatcher's
+// MaxItemsPerBatchPath/MaxInputBytesPerBatchPath and the Map state's own
+// ToleratedFailurePercentagePath/ToleratedFailureCountPath are implemented
+// (see buildProcessorUnits in itembatcher.go and resolveMapTolerance in
+// maptolerance.go), so neither warns anymore.
 func (v *definitionValidator) warnUnimplementedMapConstructs(name string, state *stateDefinition, location string) {
 	v.warnUnimplementedItemReaderConstructs(name, state.ItemReader, location)
-	v.warnUnimplementedItemBatcherConstructs(name, state.ItemBatcher, location)
 	v.warnUnimplementedResultWriterConstructs(name, state.ResultWriter, location)
-
-	if state.ToleratedFailurePercentagePath != "" {
-		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ToleratedFailurePercentagePath",
-			fmt.Sprintf("Map state %q: ToleratedFailurePercentagePath is not implemented; use the static ToleratedFailurePercentage instead", name))
-	}
-
-	if state.ToleratedFailureCountPath != "" {
-		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ToleratedFailureCountPath",
-			fmt.Sprintf("Map state %q: ToleratedFailureCountPath is not implemented; use the static ToleratedFailureCount instead", name))
-	}
 }
 
 // warnUnimplementedItemReaderConstructs flags an ItemReader Resource kumo
-// does not implement (only s3:getObject is supported) and the unimplemented
-// ReaderConfig.MaxItemsPath field.
+// does not implement: only s3:getObject and s3:listObjectsV2 are supported
+// (see itemreader.go).
 func (v *definitionValidator) warnUnimplementedItemReaderConstructs(name string, raw json.RawMessage, location string) {
 	var def itemReaderDef
 	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil {
 		return
 	}
 
-	if def.Resource != "" && def.Resource != itemReaderResourceS3GetObject {
+	if def.Resource != "" && def.Resource != itemReaderResourceS3GetObject && def.Resource != itemReaderResourceS3ListObjectsV2 {
 		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemReader/Resource", fmt.Sprintf(
-			"Map state %q: ItemReader Resource %q is not implemented; only %q is supported", name, def.Resource, itemReaderResourceS3GetObject,
+			"Map state %q: ItemReader Resource %q is not implemented; only %q and %q are supported",
+			name, def.Resource, itemReaderResourceS3GetObject, itemReaderResourceS3ListObjectsV2,
 		))
 	}
 
-	if def.ReaderConfig.MaxItemsPath != "" {
-		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemReader/ReaderConfig/MaxItemsPath",
-			fmt.Sprintf("Map state %q: ItemReader ReaderConfig.MaxItemsPath is not implemented; use the static MaxItems instead", name))
+	if strings.EqualFold(def.ReaderConfig.Transformation, itemReaderTransformationLoadAndFlatten) {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemReader/ReaderConfig/Transformation", fmt.Sprintf(
+			"Map state %q: ItemReader ReaderConfig.Transformation %q is not implemented", name, itemReaderTransformationLoadAndFlatten,
+		))
 	}
 }
 
-// warnUnimplementedItemBatcherConstructs flags ItemBatcher's unimplemented
-// reference-path sub-fields.
-func (v *definitionValidator) warnUnimplementedItemBatcherConstructs(name string, raw json.RawMessage, location string) {
-	var def itemBatcherDef
-	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil {
-		return
-	}
-
-	if def.MaxItemsPerBatchPath != "" {
-		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemBatcher/MaxItemsPerBatchPath",
-			fmt.Sprintf("Map state %q: ItemBatcher MaxItemsPerBatchPath is not implemented; use the static MaxItemsPerBatch instead", name))
-	}
-
-	if def.MaxInputBytesPerBatchPath != "" {
-		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ItemBatcher/MaxInputBytesPerBatchPath",
-			fmt.Sprintf("Map state %q: ItemBatcher MaxInputBytesPerBatchPath is not implemented; use the static MaxInputBytesPerBatch instead", name))
-	}
-}
-
-// warnUnimplementedResultWriterConstructs flags ResultWriter.WriterConfig,
-// which kumo does not implement (kumo always writes the plain item-output
-// array; see resultwriter.go).
+// warnUnimplementedResultWriterConstructs flags the ResultWriter
+// combinations kumo still does not implement: WriterConfig.Transformation
+// "NONE", and WriterConfig used without Resource/Parameters ("preview"
+// mode, which AWS documents as valid but kumo does not implement -- see
+// writeMapResultToS3 in resultwriter.go).
 func (v *definitionValidator) warnUnimplementedResultWriterConstructs(name string, raw json.RawMessage, location string) {
 	var def resultWriterDef
-	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil {
+	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil || len(def.WriterConfig) == 0 {
 		return
 	}
 
-	if len(def.WriterConfig) > 0 {
-		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ResultWriter/WriterConfig",
-			fmt.Sprintf("Map state %q: ResultWriter WriterConfig is not implemented; kumo always writes the plain item-output array", name))
+	var cfg resultWriterConfig
+	if json.Unmarshal(def.WriterConfig, &cfg) != nil {
+		return
+	}
+
+	if strings.EqualFold(cfg.Transformation, resultWriterTransformationNone) {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ResultWriter/WriterConfig/Transformation", fmt.Sprintf(
+			"Map state %q: ResultWriter WriterConfig.Transformation %q is not implemented; use COMPACT or FLATTEN instead", name, resultWriterTransformationNone,
+		))
+	}
+
+	if def.Resource == "" {
+		v.addWarning(codeUnsupportedRuntimeConstruct, location+"/ResultWriter/WriterConfig", fmt.Sprintf(
+			"Map state %q: ResultWriter WriterConfig without Resource/Parameters (preview mode) is not implemented", name,
+		))
 	}
 }
 

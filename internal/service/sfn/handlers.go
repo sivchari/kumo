@@ -26,6 +26,8 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"DescribeExecution":    s.DescribeExecution,
 		"ListExecutions":       s.ListExecutions,
 		"GetExecutionHistory":  s.GetExecutionHistory,
+		"DescribeMapRun":       s.DescribeMapRun,
+		"ListMapRuns":          s.ListMapRuns,
 		"SendTaskSuccess":      s.SendTaskSuccess,
 		"SendTaskFailure":      s.SendTaskFailure,
 		"SendTaskHeartbeat":    s.SendTaskHeartbeat,
@@ -352,6 +354,94 @@ func (s *Service) GetExecutionHistory(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, resp)
 }
 
+// DescribeMapRun handles the DescribeMapRun API.
+func (s *Service) DescribeMapRun(w http.ResponseWriter, r *http.Request) {
+	var req DescribeMapRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	mr, err := s.storage.DescribeMapRun(r.Context(), req.MapRunArn)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, mapRunToDescribeResponse(mr))
+}
+
+// mapRunToDescribeResponse converts a MapRun storage record into its
+// DescribeMapRun wire shape.
+func mapRunToDescribeResponse(mr *MapRun) *DescribeMapRunResponse {
+	resp := &DescribeMapRunResponse{
+		ExecutionArn:    mr.ExecutionArn,
+		ExecutionCounts: mr.ExecutionCounts,
+		ItemCounts:      mr.ItemCounts,
+		MapRunArn:       mr.MapRunArn,
+		MaxConcurrency:  mr.MaxConcurrency,
+		RedriveCount:    mr.RedriveCount,
+		StartDate:       float64(mr.StartDate.Unix()),
+		Status:          mr.Status,
+	}
+
+	if mr.StopDate != nil {
+		resp.StopDate = float64(mr.StopDate.Unix())
+	}
+
+	if mr.RedriveDate != nil {
+		resp.RedriveDate = float64(mr.RedriveDate.Unix())
+	}
+
+	if mr.ToleratedFailureCount != nil {
+		resp.ToleratedFailureCount = int64(*mr.ToleratedFailureCount)
+	}
+
+	if mr.ToleratedFailurePercentage != nil {
+		resp.ToleratedFailurePercentage = *mr.ToleratedFailurePercentage
+	}
+
+	return resp
+}
+
+// ListMapRuns handles the ListMapRuns API.
+func (s *Service) ListMapRuns(w http.ResponseWriter, r *http.Request) {
+	var req ListMapRunsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	mapRuns, nextToken, err := s.storage.ListMapRuns(r.Context(), req.ExecutionArn, req.MaxResults, req.NextToken)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	items := make([]MapRunListItem, len(mapRuns))
+
+	for i, mr := range mapRuns {
+		item := MapRunListItem{
+			ExecutionArn:    mr.ExecutionArn,
+			MapRunArn:       mr.MapRunArn,
+			StartDate:       float64(mr.StartDate.Unix()),
+			StateMachineArn: mr.StateMachineArn,
+		}
+
+		if mr.StopDate != nil {
+			item.StopDate = float64(mr.StopDate.Unix())
+		}
+
+		items[i] = item
+	}
+
+	writeResponse(w, &ListMapRunsResponse{MapRuns: items, NextToken: nextToken})
+}
+
 // writeResponse writes a JSON response.
 func writeResponse(w http.ResponseWriter, resp any) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
@@ -385,7 +475,7 @@ func getErrorStatus(code string) int {
 		return http.StatusNotFound
 	case errStateMachineAlreadyExists, errExecutionAlreadyExists:
 		return http.StatusConflict
-	case errInvalidArn, errInvalidDefinition:
+	case errInvalidArn, errInvalidDefinition, errResourceNotFound:
 		return http.StatusBadRequest
 	default:
 		return http.StatusBadRequest

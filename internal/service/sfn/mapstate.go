@@ -46,10 +46,10 @@ func (e *executionEngine) executeMapStateWithPolicy(ctx context.Context, name st
 // through the state's ItemProcessor (or its legacy alias, Iterator),
 // bounding concurrency at MaxConcurrency when it is positive.
 //
-// Both Inline and Distributed mode run in-process in kumo: kumo has no
-// child-execution or Map Run resource, so DescribeMapRun/ListMapRuns and
-// child-execution tracking are out of scope (see the ResultWriter
-// simplification documented in resultwriter.go for the same reason).
+// Both Inline and Distributed mode run each unit in-process in kumo, rather
+// than as a real child *execution* (see maprun.go's mapRunCountsFromResults
+// doc for the consequences of that simplification); a Distributed-mode run
+// is still recorded as a queryable Map Run (see runMapProcessorUnits).
 func (e *executionEngine) executeMapState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	processor, err := itemProcessorDefinition(state)
 	if err != nil {
@@ -81,21 +81,38 @@ func (e *executionEngine) executeMapState(ctx context.Context, name string, stat
 // runMapProcessorUnits runs every processor unit and shapes the Map
 // state's output: the ExceedToleratedFailureThreshold check, the plain
 // item-output array, or -- when ResultWriter is set -- the
-// ResultWriterDetails{Bucket, Key} shape (see resultwriter.go).
+// ResultWriterDetails{Bucket, Key} shape (see resultwriter.go). For a
+// Distributed-mode processor it also records the run as a Map Run (see
+// maprun.go), whose ARN (when recorded) is included in the ResultWriter
+// output.
 func (e *executionEngine) runMapProcessorUnits(ctx context.Context, name string, state *stateDefinition, processor *stateMachineDefinition, units []mapUnit, totalItems int, input string) (string, error) {
-	tolerance := resolveMapTolerance(state)
+	tolerance, err := resolveMapTolerance(state, input)
+	if err != nil {
+		return "", fmt.Errorf("map state %q: %w", name, err)
+	}
+
+	maxConcurrency, err := resolveMaxConcurrency(state, input)
+	if err != nil {
+		return "", fmt.Errorf("map state %q: %w", name, err)
+	}
 
 	itemCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	results, err := runMapUnits(itemCtx, e, processor, units, state.MaxConcurrency, tolerance.enabled(), cancel)
+	mapRunArn := e.startMapRunIfDistributed(ctx, name, processor, maxConcurrency, tolerance)
+
+	results, err := runMapUnits(itemCtx, e, processor, units, maxConcurrency, tolerance.enabled(), cancel)
 	if err != nil {
+		e.finishMapRunIfDistributed(mapRunArn, mapRunStatusFailed, units, nil, totalItems)
+
 		return "", fmt.Errorf("map state %q: %w", name, err)
 	}
 
 	outputs, failedItems := collectMapResults(units, results)
 
 	if tolerance.enabled() && tolerance.exceeds(failedItems, totalItems) {
+		e.finishMapRunIfDistributed(mapRunArn, mapRunStatusFailed, units, results, totalItems)
+
 		return "", &failStateError{
 			errorName: errorStatesExceedToleratedFailureThreshold,
 			cause: fmt.Sprintf(
@@ -105,8 +122,10 @@ func (e *executionEngine) runMapProcessorUnits(ctx context.Context, name string,
 		}
 	}
 
+	e.finishMapRunIfDistributed(mapRunArn, mapRunStatusSucceeded, units, results, totalItems)
+
 	if len(state.ResultWriter) > 0 {
-		written, err := writeMapResultToS3(ctx, e, state.ResultWriter, outputs, input)
+		written, err := writeMapResultToS3(ctx, e, state.ResultWriter, outputs, input, mapRunArn)
 		if err != nil {
 			return "", fmt.Errorf("map state %q: %w", name, err)
 		}
@@ -120,6 +139,23 @@ func (e *executionEngine) runMapProcessorUnits(ctx context.Context, name string,
 	}
 
 	return string(result), nil
+}
+
+// resolveMaxConcurrency resolves a Map state's MaxConcurrency, preferring
+// MaxConcurrencyPath when set (the same precedence every other *Path field
+// in this package gives its static counterpart -- see taskTimeout in
+// timeout.go).
+func resolveMaxConcurrency(state *stateDefinition, input string) (int, error) {
+	if state.MaxConcurrencyPath == "" {
+		return state.MaxConcurrency, nil
+	}
+
+	n, err := resolveNumberPath(state.MaxConcurrencyPath, input)
+	if err != nil {
+		return 0, fmt.Errorf("resolve MaxConcurrencyPath: %w", err)
+	}
+
+	return int(n), nil
 }
 
 // collectMapResults turns per-unit results into the Map state's output

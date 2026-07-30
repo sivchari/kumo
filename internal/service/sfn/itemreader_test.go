@@ -113,6 +113,134 @@ func TestMapStateItemReaderMaxItems(t *testing.T) {
 	}
 }
 
+func TestMapStateItemReaderMaxItemsPathResolvesFromMapInput(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeAWSServer(t)
+	server.putObject("src-bucket", "items.dat", `[1,2,3,4,5]`)
+
+	definition := `{
+		"StartAt": "Each",
+		"States": {
+			"Each": {
+				"Type": "Map",
+				"ItemReader": {
+					"Resource": "arn:aws:states:::s3:getObject",
+					"Parameters": {"Bucket": "src-bucket", "Key": "items.dat"},
+					"ReaderConfig": {"InputType": "JSON", "MaxItemsPath": "$.limit"}
+				},
+				"ItemProcessor": ` + distributedItemProcessorJSON + `,
+				"End": true
+			}
+		}
+	}`
+
+	store := NewMemoryStorage(WithBaseURL(server.URL))
+	sm := createExecutionTestStateMachine(t, store, "map-itemreader-maxitemspath", definition)
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"limit":2}`)
+
+	if want := `[1,2]`; exec.Output != want {
+		t.Fatalf("execution output: got %q, want %q", exec.Output, want)
+	}
+}
+
+func TestMapStateItemReaderS3ListObjectsV2ReturnsObjectSummaries(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeAWSServer(t)
+	server.putObject("listed-bucket", "data/a.json", `{"n":1}`)
+	server.putObject("listed-bucket", "data/b.json", `{"n":22}`)
+	server.putObject("listed-bucket", "other/skip.json", `{"n":999}`)
+
+	definition := `{
+		"StartAt": "Each",
+		"States": {
+			"Each": {
+				"Type": "Map",
+				"ItemReader": {
+					"Resource": "arn:aws:states:::s3:listObjectsV2",
+					"Parameters": {"Bucket": "listed-bucket", "Prefix": "data/"}
+				},
+				"ItemProcessor": ` + distributedItemProcessorJSON + `,
+				"End": true
+			}
+		}
+	}`
+
+	store := NewMemoryStorage(WithBaseURL(server.URL))
+	sm := createExecutionTestStateMachine(t, store, "map-itemreader-listobjectsv2", definition)
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{}`)
+
+	// JSON tags are lowerCamelCase (encoding/json matches the wire's
+	// PascalCase case-insensitively; see itemBatcherDef in itembatcher.go
+	// for why).
+	var summaries []struct {
+		Etag         string `json:"etag"`
+		Key          string `json:"key"`
+		LastModified int64  `json:"lastModified"`
+		Size         int64  `json:"size"`
+		StorageClass string `json:"storageClass"`
+	}
+
+	if err := json.Unmarshal([]byte(exec.Output), &summaries); err != nil {
+		t.Fatalf("unmarshal execution output %q: %v", exec.Output, err)
+	}
+
+	if len(summaries) != 2 {
+		t.Fatalf("summaries: got %d, want 2 (only keys under the Prefix): %+v", len(summaries), summaries)
+	}
+
+	if summaries[0].Key != "data/a.json" || summaries[1].Key != "data/b.json" {
+		t.Fatalf("summary keys: got [%q, %q], want [data/a.json, data/b.json]", summaries[0].Key, summaries[1].Key)
+	}
+
+	if summaries[0].Size != int64(len(`{"n":1}`)) {
+		t.Fatalf("summary[0].Size: got %d, want %d", summaries[0].Size, len(`{"n":1}`))
+	}
+
+	if summaries[0].Etag == "" || summaries[0].StorageClass != "STANDARD" || summaries[0].LastModified == 0 {
+		t.Fatalf("summary[0]: got %+v, want non-empty Etag/StorageClass=STANDARD/non-zero LastModified", summaries[0])
+	}
+}
+
+func TestMapStateItemReaderS3ListObjectsV2LoadAndFlattenIsUnimplemented(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeAWSServer(t)
+	server.putObject("listed-bucket", "data/a.json", `{"n":1}`)
+
+	definition := `{
+		"StartAt": "Each",
+		"States": {
+			"Each": {
+				"Type": "Map",
+				"ItemReader": {
+					"Resource": "arn:aws:states:::s3:listObjectsV2",
+					"ReaderConfig": {"InputType": "JSON", "Transformation": "LOAD_AND_FLATTEN"},
+					"Parameters": {"Bucket": "listed-bucket", "Prefix": "data/"}
+				},
+				"ItemProcessor": ` + distributedItemProcessorJSON + `,
+				"End": true
+			}
+		}
+	}`
+
+	store := NewMemoryStorage(WithBaseURL(server.URL))
+	sm := createExecutionTestStateMachine(t, store, "map-itemreader-loadandflatten", definition)
+
+	exec := startAndAwaitFailure(t, store, sm.StateMachineArn, `{}`)
+
+	if exec.Error != errorStatesRuntime {
+		t.Fatalf("execution error: got %q, want %q", exec.Error, errorStatesRuntime)
+	}
+
+	if !strings.Contains(exec.Cause, "LOAD_AND_FLATTEN") {
+		t.Fatalf("execution cause: got %q, want it to mention LOAD_AND_FLATTEN", exec.Cause)
+	}
+}
+
 func TestMapStateItemReaderMissingObjectFails(t *testing.T) {
 	t.Parallel()
 

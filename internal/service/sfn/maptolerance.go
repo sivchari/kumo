@@ -1,24 +1,34 @@
 package sfn
 
+import "fmt"
+
 // mapTolerance is a Map state's resolved ToleratedFailurePercentage/
 // ToleratedFailureCount (see
 // https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html#state-map-fields-failure-tolerance).
-// ToleratedFailurePercentagePath/ToleratedFailureCountPath (the dynamic,
-// reference-path forms of these fields) are not implemented.
 type mapTolerance struct {
 	percentage *float64
 	count      *int
 }
 
-// resolveMapTolerance reads a Map state's tolerance fields. Only
-// requireDistributedModeForFields lets these fields take effect at all
-// (they are Distributed-mode-only), so resolveMapTolerance itself does not
-// need to check mode.
-func resolveMapTolerance(state *stateDefinition) mapTolerance {
-	return mapTolerance{
-		percentage: state.ToleratedFailurePercentage,
-		count:      state.ToleratedFailureCount,
+// resolveMapTolerance reads a Map state's tolerance fields, resolving
+// ToleratedFailurePercentagePath/ToleratedFailureCountPath against input
+// (the Map state's effective input) when set, preferring the Path form over
+// its static counterpart -- see resolveOptionalFloatPath/
+// resolveOptionalIntPath in wait.go. Only requireDistributedModeForFields
+// lets these fields take effect at all (they are Distributed-mode-only), so
+// resolveMapTolerance itself does not need to check mode.
+func resolveMapTolerance(state *stateDefinition, input string) (mapTolerance, error) {
+	percentage, err := resolveOptionalFloatPath(state.ToleratedFailurePercentage, state.ToleratedFailurePercentagePath, input)
+	if err != nil {
+		return mapTolerance{}, fmt.Errorf("resolve ToleratedFailurePercentagePath: %w", err)
 	}
+
+	count, err := resolveOptionalIntPath(state.ToleratedFailureCount, state.ToleratedFailureCountPath, input)
+	if err != nil {
+		return mapTolerance{}, fmt.Errorf("resolve ToleratedFailureCountPath: %w", err)
+	}
+
+	return mapTolerance{percentage: percentage, count: count}, nil
 }
 
 // enabled reports whether either threshold was configured. When neither is

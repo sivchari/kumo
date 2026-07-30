@@ -115,6 +115,88 @@ type CloudWatchEventsExecutionDataDetails struct {
 	Included bool `json:"included,omitempty"`
 }
 
+// MapRun represents a Distributed-mode Map state's Map Run (see maprun.go).
+type MapRun struct {
+	MapRunArn                  string
+	ExecutionArn               string
+	StateMachineArn            string
+	Status                     string
+	StartDate                  time.Time
+	StopDate                   *time.Time
+	MaxConcurrency             int
+	ToleratedFailureCount      *int
+	ToleratedFailurePercentage *float64
+	RedriveCount               int32
+	RedriveDate                *time.Time
+	ItemCounts                 MapRunCounts
+	ExecutionCounts            MapRunCounts
+}
+
+// MapRunCounts is DescribeMapRun's documented MapRunExecutionCounts/
+// MapRunItemCounts shape (both share the same fields; see
+// https://docs.aws.amazon.com/step-functions/latest/apireference/API_MapRunExecutionCounts.html
+// and .../API_MapRunItemCounts.html), reused directly as both MapRun's own
+// storage field type and (embedded in DescribeMapRunResponse) the wire type,
+// the same way Tag and LoggingConfiguration double as both elsewhere in this
+// file. Every field except FailuresNotRedrivable/PendingRedrive is
+// documented "Required: Yes", so none but those two get "omitempty" -- a
+// legitimate 0 count must still be sent, not omitted.
+type MapRunCounts struct {
+	Total                 int64 `json:"total"`
+	Succeeded             int64 `json:"succeeded"`
+	Failed                int64 `json:"failed"`
+	Pending               int64 `json:"pending"`
+	Running               int64 `json:"running"`
+	Aborted               int64 `json:"aborted"`
+	TimedOut              int64 `json:"timedOut"`
+	ResultsWritten        int64 `json:"resultsWritten"`
+	FailuresNotRedrivable int64 `json:"failuresNotRedrivable,omitempty"`
+	PendingRedrive        int64 `json:"pendingRedrive,omitempty"`
+}
+
+// DescribeMapRunRequest is the request for DescribeMapRun.
+type DescribeMapRunRequest struct {
+	MapRunArn string `json:"mapRunArn"`
+}
+
+// DescribeMapRunResponse is the response for DescribeMapRun.
+type DescribeMapRunResponse struct {
+	ExecutionArn               string       `json:"executionArn"`
+	ExecutionCounts            MapRunCounts `json:"executionCounts"`
+	ItemCounts                 MapRunCounts `json:"itemCounts"`
+	MapRunArn                  string       `json:"mapRunArn"`
+	MaxConcurrency             int          `json:"maxConcurrency"`
+	RedriveCount               int32        `json:"redriveCount,omitempty"`
+	RedriveDate                float64      `json:"redriveDate,omitempty"`
+	StartDate                  float64      `json:"startDate"`
+	Status                     string       `json:"status"`
+	StopDate                   float64      `json:"stopDate,omitempty"`
+	ToleratedFailureCount      int64        `json:"toleratedFailureCount,omitempty"`
+	ToleratedFailurePercentage float64      `json:"toleratedFailurePercentage,omitempty"`
+}
+
+// ListMapRunsRequest is the request for ListMapRuns.
+type ListMapRunsRequest struct {
+	ExecutionArn string `json:"executionArn"`
+	MaxResults   int32  `json:"maxResults,omitempty"`
+	NextToken    string `json:"nextToken,omitempty"`
+}
+
+// ListMapRunsResponse is the response for ListMapRuns.
+type ListMapRunsResponse struct {
+	MapRuns   []MapRunListItem `json:"mapRuns"`
+	NextToken string           `json:"nextToken,omitempty"`
+}
+
+// MapRunListItem represents a Map Run in a ListMapRuns response.
+type MapRunListItem struct {
+	ExecutionArn    string  `json:"executionArn"`
+	MapRunArn       string  `json:"mapRunArn"`
+	StartDate       float64 `json:"startDate"`
+	StateMachineArn string  `json:"stateMachineArn"`
+	StopDate        float64 `json:"stopDate,omitempty"`
+}
+
 // HistoryEvent represents a history event in an execution.
 type HistoryEvent struct {
 	Timestamp                      time.Time

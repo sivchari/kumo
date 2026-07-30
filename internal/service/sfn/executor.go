@@ -93,11 +93,16 @@ type stateDefinition struct {
 	// fields require ItemProcessor.ProcessorConfig.Mode "DISTRIBUTED".
 	// MaxItemsPerBatchPath/MaxInputBytesPerBatchPath/MaxConcurrencyPath/
 	// ToleratedFailurePercentagePath/ToleratedFailureCountPath (the dynamic,
-	// reference-path forms of these fields) are not implemented.
+	// reference-path forms of these fields) are resolved against the Map
+	// state's effective input, preferring the Path form when both it and
+	// the static field are set -- see resolveMaxConcurrency in mapstate.go,
+	// resolveMapTolerance in maptolerance.go, and buildProcessorUnits in
+	// itembatcher.go.
 	ItemsPath                  string                  `json:"ItemsPath"`
 	ItemProcessor              *stateMachineDefinition `json:"ItemProcessor"`
 	Iterator                   *stateMachineDefinition `json:"Iterator"`
 	MaxConcurrency             int                     `json:"MaxConcurrency"`
+	MaxConcurrencyPath         string                  `json:"MaxConcurrencyPath"`
 	ItemReader                 json.RawMessage         `json:"ItemReader"`
 	ItemSelector               json.RawMessage         `json:"ItemSelector"`
 	ItemBatcher                json.RawMessage         `json:"ItemBatcher"`
@@ -105,10 +110,8 @@ type stateDefinition struct {
 	ToleratedFailurePercentage *float64                `json:"ToleratedFailurePercentage"`
 	ToleratedFailureCount      *int                    `json:"ToleratedFailureCount"`
 
-	// ToleratedFailurePercentagePath/ToleratedFailureCountPath are decoded
-	// only so validate.go can flag them as unimplemented; the engine never
-	// reads them (see resolveMapTolerance in maptolerance.go, which only
-	// reads the static ToleratedFailurePercentage/ToleratedFailureCount).
+	// ToleratedFailurePercentagePath/ToleratedFailureCountPath: see
+	// resolveMapTolerance in maptolerance.go.
 	ToleratedFailurePercentagePath string `json:"ToleratedFailurePercentagePath"`
 	ToleratedFailureCountPath      string `json:"ToleratedFailureCountPath"`
 
@@ -245,6 +248,22 @@ type executionEngine struct {
 	// activityPollTimeout bounds GetActivityTask's long poll; tests
 	// override this directly to keep runtime bounded.
 	activityPollTimeout time.Duration
+
+	// starter services the states:startExecution Task integration (see
+	// nestedexec.go). It is wired to the same MemoryStorage that owns this
+	// engine (see NewMemoryStorage in storage.go) rather than an HTTP round
+	// trip back to kumo's own server, since it recurses into kumo's own SFN
+	// engine -- see nestedexec.go's executionStarter doc for why. It is nil
+	// for engines built directly via newExecutionEngine in tests that never
+	// exercise states:startExecution.
+	starter executionStarter
+
+	// mapRuns records distributed-mode Map Runs (see maprun.go), wired the
+	// same way as starter and for the same reason: it is storage
+	// bookkeeping, not a real AWS service call. It is nil for engines built
+	// directly via newExecutionEngine in tests that never exercise a
+	// Distributed Map.
+	mapRuns mapRunTracker
 }
 
 // newExecutionEngine creates a new execution engine.
@@ -525,6 +544,8 @@ func (e *executionEngine) executeTaskState(ctx context.Context, name string, sta
 		return wrapTaskResult(e.executeLambdaInvoke(ctx, params))
 	case strings.HasPrefix(resource, "arn:aws:lambda:"):
 		return wrapTaskResult(e.executeLambdaFunctionTask(ctx, name, resource, params, input))
+	case strings.HasPrefix(resource, resourceStartExecutionBase):
+		return wrapTaskResult(e.executeStartExecutionTask(ctx, resource, params))
 	default:
 		return "", fmt.Errorf("unsupported task resource %q", resource)
 	}

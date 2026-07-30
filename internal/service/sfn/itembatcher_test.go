@@ -106,6 +106,74 @@ func TestMapStateItemBatcherResolvesBatchInputFromMapInput(t *testing.T) {
 	}
 }
 
+func TestMapStateItemBatcherMaxItemsPerBatchPathResolvesFromMapInput(t *testing.T) {
+	t.Parallel()
+
+	itemBatcher := `{"MaxItemsPerBatchPath": "$.batchSize"}`
+	definition := fmt.Sprintf(`{
+		"StartAt": "Each",
+		"States": {
+			"Each": {
+				"Type": "Map",
+				"ItemsPath": "$.items",
+				"ItemBatcher": %s,
+				"ItemProcessor": %s,
+				"End": true
+			}
+		}
+	}`, itemBatcher, distributedItemProcessorJSON)
+
+	store := NewMemoryStorage()
+	sm := createExecutionTestStateMachine(t, store, "map-itembatcher-maxitemsperbatchpath", definition)
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"items":[1,2,3,4,5],"batchSize":2}`)
+
+	var envelopes []batchEnvelope
+	if err := json.Unmarshal([]byte(exec.Output), &envelopes); err != nil {
+		t.Fatalf("unmarshal execution output %q: %v", exec.Output, err)
+	}
+
+	if len(envelopes) != 3 {
+		t.Fatalf("batches: got %d, want 3", len(envelopes))
+	}
+}
+
+// TestMapStateItemBatcherMaxItemsPerBatchPathTakesPrecedenceOverStatic
+// checks that, when both MaxItemsPerBatch and MaxItemsPerBatchPath are set,
+// the Path form wins -- the same precedence every other *Path field in this
+// package gives its static counterpart.
+func TestMapStateItemBatcherMaxItemsPerBatchPathTakesPrecedenceOverStatic(t *testing.T) {
+	t.Parallel()
+
+	itemBatcher := `{"MaxItemsPerBatch": 10, "MaxItemsPerBatchPath": "$.batchSize"}`
+	definition := fmt.Sprintf(`{
+		"StartAt": "Each",
+		"States": {
+			"Each": {
+				"Type": "Map",
+				"ItemsPath": "$.items",
+				"ItemBatcher": %s,
+				"ItemProcessor": %s,
+				"End": true
+			}
+		}
+	}`, itemBatcher, distributedItemProcessorJSON)
+
+	store := NewMemoryStorage()
+	sm := createExecutionTestStateMachine(t, store, "map-itembatcher-maxitemsperbatchpath-precedence", definition)
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"items":[1,2,3,4,5],"batchSize":1}`)
+
+	var envelopes []batchEnvelope
+	if err := json.Unmarshal([]byte(exec.Output), &envelopes); err != nil {
+		t.Fatalf("unmarshal execution output %q: %v", exec.Output, err)
+	}
+
+	if len(envelopes) != 5 {
+		t.Fatalf("batches: got %d, want 5 (MaxItemsPerBatchPath=1 must win over MaxItemsPerBatch=10)", len(envelopes))
+	}
+}
+
 // jsonDeepEqual compares two already-decoded JSON values by re-encoding
 // them, avoiding a reflect.DeepEqual dependency on map/slice identity.
 func jsonDeepEqual(a, b any) bool {

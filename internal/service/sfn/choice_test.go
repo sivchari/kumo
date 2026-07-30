@@ -301,6 +301,114 @@ var choiceRuleTests = []struct {
 		want:  true,
 	},
 	{
+		name:  "IsNumeric true for numeric field",
+		rule:  choiceRule{Variable: pathValue, IsNumeric: boolPtr(true)},
+		input: map[string]any{fieldValue: float64(1)},
+		want:  true,
+	},
+	{
+		name:  "IsNumeric false for non-numeric field",
+		rule:  choiceRule{Variable: pathValue, IsNumeric: boolPtr(false)},
+		input: map[string]any{fieldValue: valueFast},
+		want:  true,
+	},
+	{
+		name:  "IsNumeric true expectation fails for non-numeric field",
+		rule:  choiceRule{Variable: pathValue, IsNumeric: boolPtr(true)},
+		input: map[string]any{fieldValue: valueFast},
+		want:  false,
+	},
+	{
+		name:  "IsString true for string field",
+		rule:  choiceRule{Variable: pathValue, IsString: boolPtr(true)},
+		input: map[string]any{fieldValue: valueFast},
+		want:  true,
+	},
+	{
+		name:  "IsString false for non-string field",
+		rule:  choiceRule{Variable: pathValue, IsString: boolPtr(false)},
+		input: map[string]any{fieldValue: float64(1)},
+		want:  true,
+	},
+	{
+		name:  "IsBoolean true for boolean field",
+		rule:  choiceRule{Variable: pathValue, IsBoolean: boolPtr(true)},
+		input: map[string]any{fieldValue: true},
+		want:  true,
+	},
+	{
+		name:  "IsBoolean false for non-boolean field",
+		rule:  choiceRule{Variable: pathValue, IsBoolean: boolPtr(false)},
+		input: map[string]any{fieldValue: valueFast},
+		want:  true,
+	},
+	{
+		name:  "IsTimestamp true for RFC3339 string field",
+		rule:  choiceRule{Variable: pathValue, IsTimestamp: boolPtr(true)},
+		input: map[string]any{fieldValue: "2020-01-01T00:00:00Z"},
+		want:  true,
+	},
+	{
+		name:  "IsTimestamp false for non-timestamp string field",
+		rule:  choiceRule{Variable: pathValue, IsTimestamp: boolPtr(true)},
+		input: map[string]any{fieldValue: valueFast},
+		want:  false,
+	},
+	{
+		name:  "StringMatches exact match with no wildcard",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("alice")},
+		input: map[string]any{fieldName: "alice"},
+		want:  true,
+	},
+	{
+		name:  "StringMatches leading wildcard",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("*.log")},
+		input: map[string]any{fieldName: "zebra.log"},
+		want:  true,
+	},
+	{
+		name:  "StringMatches trailing wildcard",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("foo*")},
+		input: map[string]any{fieldName: "foo23.log"},
+		want:  true,
+	},
+	{
+		name:  "StringMatches wildcard on both ends",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("foo*.*")},
+		input: map[string]any{fieldName: "foobar.zebra"},
+		want:  true,
+	},
+	{
+		name:  "StringMatches no match",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("log-*.txt")},
+		input: map[string]any{fieldName: "log-1.csv"},
+		want:  false,
+	},
+	{
+		name:  "StringMatches escaped wildcard is literal",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(`a\*b`)},
+		input: map[string]any{fieldName: "a*b"},
+		want:  true,
+	},
+	{
+		name:  "StringMatches escaped wildcard does not act as wildcard",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(`a\*b`)},
+		input: map[string]any{fieldName: "aXb"},
+		want:  false,
+	},
+	{
+		name:  "StringMatches escaped backslash is literal",
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(`a\\b`)},
+		input: map[string]any{fieldName: `a\b`},
+		want:  true,
+	},
+	{
+		name:  "StringMatches against non-string value does not match",
+		rule:  choiceRule{Variable: pathValue, StringMatches: strPtr("*")},
+		input: map[string]any{fieldValue: float64(1)},
+		want:  false,
+	},
+	{
 		name: "And all match",
 		rule: choiceRule{And: []choiceRule{
 			{Variable: pathValue, IsPresent: boolPtr(true)},
@@ -383,6 +491,28 @@ func TestEvaluateChoiceRulePathComparatorUnresolvableOperandErrors(t *testing.T)
 	_, err := evaluateChoiceRule(&rule, map[string]any{fieldMode: valueFast})
 	if err == nil {
 		t.Fatal("evaluateChoiceRule: want error for unresolvable *Path comparator operand, got nil")
+	}
+}
+
+func TestEvaluateChoiceRuleStringMatchesDanglingBackslashErrors(t *testing.T) {
+	t.Parallel()
+
+	rule := choiceRule{Variable: pathName, StringMatches: strPtr(`a\`)}
+
+	_, err := evaluateChoiceRule(&rule, map[string]any{fieldName: "a"})
+	if err == nil {
+		t.Fatal("evaluateChoiceRule: want error for StringMatches pattern with a dangling backslash, got nil")
+	}
+}
+
+func TestEvaluateChoiceRuleStringMatchesInvalidEscapeErrors(t *testing.T) {
+	t.Parallel()
+
+	rule := choiceRule{Variable: pathName, StringMatches: strPtr(`a\bc`)}
+
+	_, err := evaluateChoiceRule(&rule, map[string]any{fieldName: "abc"})
+	if err == nil {
+		t.Fatal("evaluateChoiceRule: want error for StringMatches pattern escaping a character other than '*' or '\\', got nil")
 	}
 }
 

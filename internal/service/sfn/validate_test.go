@@ -271,6 +271,61 @@ var validateDiagnosticTests = []diagnosticTest{
 		wantLocation: "/States/Items/ResultWriter",
 	},
 	{
+		name: "ItemReader Resource kumo does not implement",
+		definition: `{
+			"StartAt": "Items",
+			"States": {
+				"Items": {
+					"Type": "Map",
+					"ItemProcessor": ` + distributedItemProcessorJSON + `,
+					"ItemReader": {"Resource": "arn:aws:states:::s3:getObjectRange", "Parameters": {"Bucket": "b", "Key": "k"}},
+					"End": true
+				}
+			}
+		}`,
+		wantSeverity: diagnosticSeverityWarning,
+		wantCode:     codeUnsupportedRuntimeConstruct,
+		wantLocation: "/States/Items/ItemReader/Resource",
+	},
+	{
+		name: "ResultWriter WriterConfig Transformation NONE",
+		definition: `{
+			"StartAt": "Items",
+			"States": {
+				"Items": {
+					"Type": "Map",
+					"ItemProcessor": ` + distributedItemProcessorJSON + `,
+					"ResultWriter": {
+						"Resource": "arn:aws:states:::s3:putObject",
+						"Parameters": {"Bucket": "b", "Prefix": "p"},
+						"WriterConfig": {"Transformation": "NONE"}
+					},
+					"End": true
+				}
+			}
+		}`,
+		wantSeverity: diagnosticSeverityWarning,
+		wantCode:     codeUnsupportedRuntimeConstruct,
+		wantLocation: "/States/Items/ResultWriter/WriterConfig/Transformation",
+	},
+	{
+		name: "ResultWriter WriterConfig preview mode without Resource",
+		definition: `{
+			"StartAt": "Items",
+			"States": {
+				"Items": {
+					"Type": "Map",
+					"ItemProcessor": ` + distributedItemProcessorJSON + `,
+					"ResultWriter": {"WriterConfig": {"OutputType": "JSON"}},
+					"End": true
+				}
+			}
+		}`,
+		wantSeverity: diagnosticSeverityWarning,
+		wantCode:     codeUnsupportedRuntimeConstruct,
+		wantLocation: "/States/Items/ResultWriter/WriterConfig",
+	},
+	{
 		name: "nested branch dangling Next",
 		definition: `{
 			"StartAt": "Fork",
