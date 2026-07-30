@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Diagnostic severities and validation results, matching the exact wire
@@ -267,11 +268,40 @@ func (v *definitionValidator) validateCatchers(name string, state *stateDefiniti
 	}
 }
 
-// validateTaskState checks a Task state's required Resource field.
+// validateTaskState checks a Task state's required Resource field, and, for
+// the .waitForTaskToken integration pattern, that Parameters actually
+// references the task token ($$.Task.Token) -- otherwise the integration
+// fires but no caller can ever resolve the token, so the state can only
+// ever fail with States.Timeout. AWS rejects this at CreateStateMachine
+// time.
 func (v *definitionValidator) validateTaskState(name string, state *stateDefinition, location string) {
 	if state.Resource == "" {
 		v.addError(codeInvalidResource, location+"/Resource", fmt.Sprintf("Task state %q is missing required field \"Resource\"", name))
+
+		return
 	}
+
+	if _, ok := isCallbackResource(state.Resource); ok && !hasTaskTokenReference(state.Parameters) {
+		v.addError(codeSchemaValidationFailed, location+"/Parameters", fmt.Sprintf(
+			"Task state %q uses %q, so \"Parameters\" must reference the task token via \"$$.Task.Token\"", name, callbackResourceSuffix,
+		))
+	}
+}
+
+// hasTaskTokenReference reports whether params contains a "$$.Task.Token"
+// JSONPath reference anywhere, including nested Payload Template objects.
+func hasTaskTokenReference(params map[string]any) bool {
+	for key, value := range params {
+		if strings.HasSuffix(key, ".$") && value == "$$.Task.Token" {
+			return true
+		}
+
+		if sub, ok := value.(map[string]any); ok && hasTaskTokenReference(sub) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // validateChoiceState checks a Choice state's Choices (non-empty, each with

@@ -374,3 +374,86 @@ func TestSFN_TagOperations(t *testing.T) {
 	}
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_untag", listOutput2)
 }
+
+func TestSFN_ActivityCRUD(t *testing.T) {
+	client := newSFNClient(t)
+	ctx := t.Context()
+
+	name := "test-activity"
+
+	// CreateActivity.
+	createOutput, err := client.CreateActivity(ctx, &sfn.CreateActivityInput{
+		Name: aws.String(name),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ActivityArn", "CreationDate", "ResultMetadata")).Assert(t.Name()+"_create", createOutput)
+
+	activityArn := *createOutput.ActivityArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteActivity(context.Background(), &sfn.DeleteActivityInput{
+			ActivityArn: aws.String(activityArn),
+		})
+	})
+
+	// CreateActivity again with the same name: idempotent, same ARN.
+	secondCreateOutput, err := client.CreateActivity(ctx, &sfn.CreateActivityInput{
+		Name: aws.String(name),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if *secondCreateOutput.ActivityArn != activityArn {
+		t.Fatalf("CreateActivity is not idempotent: got %q, want %q", *secondCreateOutput.ActivityArn, activityArn)
+	}
+
+	// DescribeActivity.
+	describeOutput, err := client.DescribeActivity(ctx, &sfn.DescribeActivityInput{
+		ActivityArn: aws.String(activityArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ActivityArn", "CreationDate", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+
+	// ListActivities.
+	listOutput, err := client.ListActivities(ctx, &sfn.ListActivitiesInput{
+		MaxResults: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+
+	for _, a := range listOutput.Activities {
+		if *a.Name == name {
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		t.Error("created activity not found in list")
+	}
+
+	// DeleteActivity.
+	_, err = client.DeleteActivity(ctx, &sfn.DeleteActivityInput{
+		ActivityArn: aws.String(activityArn),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify deletion.
+	_, err = client.DescribeActivity(ctx, &sfn.DescribeActivityInput{
+		ActivityArn: aws.String(activityArn),
+	})
+	if err == nil {
+		t.Fatal("expected error for deleted activity")
+	}
+}

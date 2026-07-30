@@ -29,6 +29,12 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"SendTaskSuccess":      s.SendTaskSuccess,
 		"SendTaskFailure":      s.SendTaskFailure,
 		"SendTaskHeartbeat":    s.SendTaskHeartbeat,
+		// Activity operations.
+		"CreateActivity":   s.CreateActivity,
+		"DescribeActivity": s.DescribeActivity,
+		"ListActivities":   s.ListActivities,
+		"DeleteActivity":   s.DeleteActivity,
+		"GetActivityTask":  s.GetActivityTask,
 		// Tag, validation, version and alias operations.
 		"ValidateStateMachineDefinition": s.ValidateStateMachineDefinition,
 		"ListStateMachineVersions":       s.ListStateMachineVersions,
@@ -387,21 +393,176 @@ func getErrorStatus(code string) int {
 }
 
 // SendTaskSuccess handles the SendTaskSuccess API.
-// Since kumo does not manage task tokens, it always returns InvalidToken.
-func (s *Service) SendTaskSuccess(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, "InvalidToken", "Invalid token", http.StatusBadRequest)
+func (s *Service) SendTaskSuccess(w http.ResponseWriter, r *http.Request) {
+	var req SendTaskSuccessRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SendTaskSuccess(r.Context(), req.TaskToken, req.Output); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &SendTaskSuccessResponse{})
 }
 
 // SendTaskFailure handles the SendTaskFailure API.
-// Since kumo does not manage task tokens, it always returns InvalidToken.
-func (s *Service) SendTaskFailure(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, "InvalidToken", "Invalid token", http.StatusBadRequest)
+func (s *Service) SendTaskFailure(w http.ResponseWriter, r *http.Request) {
+	var req SendTaskFailureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SendTaskFailure(r.Context(), req.TaskToken, req.Error, req.Cause); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &SendTaskFailureResponse{})
 }
 
 // SendTaskHeartbeat handles the SendTaskHeartbeat API.
-// Since kumo does not manage task tokens, it always returns InvalidToken.
-func (s *Service) SendTaskHeartbeat(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, "InvalidToken", "Invalid token", http.StatusBadRequest)
+func (s *Service) SendTaskHeartbeat(w http.ResponseWriter, r *http.Request) {
+	var req SendTaskHeartbeatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.SendTaskHeartbeat(r.Context(), req.TaskToken); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &SendTaskHeartbeatResponse{})
+}
+
+// CreateActivity handles the CreateActivity API.
+func (s *Service) CreateActivity(w http.ResponseWriter, r *http.Request) {
+	var req CreateActivityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	activity, err := s.storage.CreateActivity(r.Context(), req.Name, req.Tags)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &CreateActivityResponse{
+		ActivityArn:  activity.ActivityArn,
+		CreationDate: float64(activity.CreationDate.Unix()),
+	})
+}
+
+// DescribeActivity handles the DescribeActivity API.
+func (s *Service) DescribeActivity(w http.ResponseWriter, r *http.Request) {
+	var req DescribeActivityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	activity, err := s.storage.DescribeActivity(r.Context(), req.ActivityArn)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &DescribeActivityResponse{
+		ActivityArn:  activity.ActivityArn,
+		Name:         activity.Name,
+		CreationDate: float64(activity.CreationDate.Unix()),
+	})
+}
+
+// ListActivities handles the ListActivities API.
+func (s *Service) ListActivities(w http.ResponseWriter, r *http.Request) {
+	var req ListActivitiesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	activities, nextToken, err := s.storage.ListActivities(r.Context(), req.MaxResults, req.NextToken)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	items := make([]ActivityListItem, len(activities))
+	for i, a := range activities {
+		items[i] = ActivityListItem{
+			ActivityArn:  a.ActivityArn,
+			Name:         a.Name,
+			CreationDate: float64(a.CreationDate.Unix()),
+		}
+	}
+
+	writeResponse(w, &ListActivitiesResponse{
+		Activities: items,
+		NextToken:  nextToken,
+	})
+}
+
+// DeleteActivity handles the DeleteActivity API.
+func (s *Service) DeleteActivity(w http.ResponseWriter, r *http.Request) {
+	var req DeleteActivityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.DeleteActivity(r.Context(), req.ActivityArn); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &DeleteActivityResponse{})
+}
+
+// GetActivityTask handles the GetActivityTask API: a worker's long poll for
+// a scheduled task. It blocks for up to activityPollTimeout inside
+// s.storage.GetActivityTask, so the HTTP response itself is only written
+// once a task arrives or the poll window elapses.
+func (s *Service) GetActivityTask(w http.ResponseWriter, r *http.Request) {
+	var req GetActivityTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	taskToken, input, err := s.storage.GetActivityTask(r.Context(), req.ActivityArn, req.WorkerName)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	writeResponse(w, &GetActivityTaskResponse{
+		TaskToken: taskToken,
+		Input:     input,
+	})
 }
 
 // ValidateStateMachineDefinition runs kumo's structural checks against the

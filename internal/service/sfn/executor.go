@@ -120,11 +120,15 @@ type stateDefinition struct {
 	TimeoutSeconds     *int   `json:"TimeoutSeconds"`
 	TimeoutSecondsPath string `json:"TimeoutSecondsPath"`
 
-	// HeartbeatSeconds/HeartbeatSecondsPath are decoded but intentionally
-	// never enforced: kumo has no activity/callback (.waitForTaskToken) task
-	// token support, so a task can never send a heartbeat. Enforcing this
-	// field would fail every task that sets it, for a reason kumo can never
-	// satisfy.
+	// HeartbeatSeconds is enforced only for callback (.waitForTaskToken) and
+	// activity Task states (see heartbeatInterval and awaitTaskToken in
+	// callback_task.go, and executeActivityTask in activity_task.go): those
+	// are the only Task states that can ever receive a SendTaskHeartbeat.
+	// For every other (ordinary HTTP) Task state it is decoded but not
+	// enforced, since such a task can never send a heartbeat -- enforcing it
+	// there would fail every task that sets it, for a reason kumo can never
+	// satisfy. HeartbeatSecondsPath is decoded but not implemented at all
+	// (see heartbeatInterval).
 	HeartbeatSeconds     *int   `json:"HeartbeatSeconds"`
 	HeartbeatSecondsPath string `json:"HeartbeatSecondsPath"`
 }
@@ -228,6 +232,19 @@ func executionErrorCause(err error) string {
 type executionEngine struct {
 	baseURL string
 	client  *http.Client
+
+	// tokens tracks task tokens for callback (.waitForTaskToken) and
+	// activity Task states (see callback.go, callback_task.go,
+	// activity_task.go).
+	tokens *tokenRegistry
+
+	// activityQueues holds each activity's pending tasks and waiting
+	// GetActivityTask pollers (see activity_task.go).
+	activityQueues *activityQueueRegistry
+
+	// activityPollTimeout bounds GetActivityTask's long poll; tests
+	// override this directly to keep runtime bounded.
+	activityPollTimeout time.Duration
 }
 
 // newExecutionEngine creates a new execution engine.
@@ -237,6 +254,9 @@ func newExecutionEngine(baseURL string) *executionEngine {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		tokens:              newTokenRegistry(),
+		activityQueues:      newActivityQueueRegistry(),
+		activityPollTimeout: activityPollTimeout,
 	}
 }
 
@@ -471,11 +491,25 @@ func (e *executionEngine) executeFailState(state *stateDefinition) error {
 	return &failStateError{errorName: state.Error, cause: state.Cause}
 }
 
-// executeTaskState executes a Task state by calling the appropriate service.
+// executeTaskState executes a Task state by calling the appropriate
+// service. Callback (.waitForTaskToken) and activity resources are
+// dispatched before the ordinary integrations below, since both pause the
+// state on a task token rather than completing from the integration call's
+// own response; wrapCallbackTaskResult -- not wrapTaskResult -- wraps their
+// result, so a taskTimeoutError from a HeartbeatSeconds/TimeoutSeconds
+// expiry reaches executionErrorCode unwrapped (see wrapCallbackTaskResult).
 func (e *executionEngine) executeTaskState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	resource := state.Resource
 	if resource == "" {
 		return "", fmt.Errorf("task state %q has no Resource", name)
+	}
+
+	if isActivityResource(resource) {
+		return wrapCallbackTaskResult(e.executeActivityTask(ctx, name, state, resource, input))
+	}
+
+	if baseResource, ok := isCallbackResource(resource); ok {
+		return wrapCallbackTaskResult(e.executeCallbackTask(ctx, name, state, baseResource, input))
 	}
 
 	// Resolve parameters with JSONPath references from input.
@@ -504,6 +538,31 @@ func wrapTaskResult(output string, err error) (string, error) {
 	}
 
 	return output, nil
+}
+
+// wrapCallbackTaskResult is wrapTaskResult's counterpart for callback and
+// activity Task states: a taskTimeoutError (HeartbeatSeconds/TimeoutSeconds
+// expiry, or a SendTaskFailure's own reported error via failStateError) must
+// reach executionErrorCode unwrapped, since executionErrorCode checks for
+// *taskFailedError before *taskTimeoutError/*failStateError -- wrapping
+// either in *taskFailedError here would misreport a real States.Timeout or
+// SendTaskFailure error as States.TaskFailed instead.
+func wrapCallbackTaskResult(output string, err error) (string, error) {
+	if err == nil {
+		return output, nil
+	}
+
+	var timeoutErr *taskTimeoutError
+	if errors.As(err, &timeoutErr) {
+		return "", err
+	}
+
+	var failErr *failStateError
+	if errors.As(err, &failErr) {
+		return "", err
+	}
+
+	return "", &taskFailedError{err: err}
 }
 
 // resolveParameters resolves parameter values, handling JSONPath references
