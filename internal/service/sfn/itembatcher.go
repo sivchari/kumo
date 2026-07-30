@@ -12,8 +12,8 @@ import (
 //
 // MaxItemsPerBatchPath and MaxInputBytesPerBatchPath (the dynamic,
 // reference-path forms of MaxItemsPerBatch/MaxInputBytesPerBatch) are
-// decoded only so validate.go can flag them as unimplemented; the engine
-// never reads them.
+// resolved against the Map state's input in buildProcessorUnits, preferring
+// the Path form over its static counterpart when both are set.
 type itemBatcherDef struct {
 	MaxItemsPerBatch          *int           `json:"maxItemsPerBatch"`
 	MaxInputBytesPerBatch     *int           `json:"maxInputBytesPerBatch"`
@@ -46,8 +46,18 @@ func buildProcessorUnits(raw json.RawMessage, items []json.RawMessage, mapInput 
 		return nil, fmt.Errorf("parse ItemBatcher: %w", err)
 	}
 
-	if def.MaxItemsPerBatch == nil && def.MaxInputBytesPerBatch == nil {
-		return nil, fmt.Errorf("itemBatcher requires MaxItemsPerBatch or MaxInputBytesPerBatch")
+	maxItemsPerBatch, err := resolveOptionalIntPath(def.MaxItemsPerBatch, def.MaxItemsPerBatchPath, mapInput)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ItemBatcher MaxItemsPerBatchPath: %w", err)
+	}
+
+	maxInputBytesPerBatch, err := resolveOptionalIntPath(def.MaxInputBytesPerBatch, def.MaxInputBytesPerBatchPath, mapInput)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ItemBatcher MaxInputBytesPerBatchPath: %w", err)
+	}
+
+	if maxItemsPerBatch == nil && maxInputBytesPerBatch == nil {
+		return nil, fmt.Errorf("itemBatcher requires MaxItemsPerBatch(Path) or MaxInputBytesPerBatch(Path)")
 	}
 
 	batchInput, err := resolveBatchInput(def.BatchInput, mapInput)
@@ -55,7 +65,7 @@ func buildProcessorUnits(raw json.RawMessage, items []json.RawMessage, mapInput 
 		return nil, err
 	}
 
-	batches := groupIntoBatches(items, def.MaxItemsPerBatch, def.MaxInputBytesPerBatch)
+	batches := groupIntoBatches(items, maxItemsPerBatch, maxInputBytesPerBatch)
 
 	units := make([]mapUnit, len(batches))
 

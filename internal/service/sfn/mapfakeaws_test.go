@@ -1,9 +1,12 @@
 package sfn
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -40,6 +43,7 @@ func newFakeAWSServer(t *testing.T) *fakeAWSServer {
 
 	s.mux.HandleFunc("GET /{bucket}/{key...}", s.handleGet)
 	s.mux.HandleFunc("PUT /{bucket}/{key...}", s.handlePut)
+	s.mux.HandleFunc("GET /{bucket}", s.handleListObjectsV2)
 
 	s.Server = httptest.NewServer(s.mux)
 	t.Cleanup(s.Close)
@@ -96,6 +100,55 @@ func (s *fakeAWSServer) handlePut(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleListObjectsV2 handles GET /{bucket}?list-type=2&prefix=...: a
+// minimal single-page ListObjectsV2 XML response over whatever objects were
+// seeded via putObject, synthesizing ETag/LastModified/StorageClass the way
+// kumo's own S3 service would (see ListObjects in
+// internal/service/s3/handlers.go). Test keys are expected to be simple
+// (no XML-special characters), so no escaping is done.
+func (s *fakeAWSServer) handleListObjectsV2(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	prefix := r.URL.Query().Get("prefix")
+
+	s.mu.Lock()
+
+	sizes := make(map[string]int, len(s.objects))
+
+	for objectKey, body := range s.objects {
+		b, k, ok := strings.Cut(objectKey, "/")
+		if !ok || b != bucket || !strings.HasPrefix(k, prefix) {
+			continue
+		}
+
+		sizes[k] = len(body)
+	}
+
+	s.mu.Unlock()
+
+	keys := make([]string, 0, len(sizes))
+	for k := range sizes {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	var buf strings.Builder
+
+	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult>`)
+
+	for _, k := range keys {
+		fmt.Fprintf(&buf,
+			`<Contents><Key>%s</Key><LastModified>2024-01-02T03:04:05.000Z</LastModified><ETag>&quot;etag-%s&quot;</ETag><Size>%d</Size><StorageClass>STANDARD</StorageClass></Contents>`,
+			k, k, sizes[k],
+		)
+	}
+
+	buf.WriteString(`<IsTruncated>false</IsTruncated></ListBucketResult>`)
+
+	w.Header().Set("Content-Type", "application/xml")
+	_, _ = io.WriteString(w, buf.String())
 }
 
 // putObject pre-seeds an object for a test's ItemReader to read.

@@ -64,8 +64,17 @@ type choiceRule struct {
 	TimestampLessThanEqualsPath    *string `json:"timestampLessThanEqualsPath"`
 	TimestampGreaterThanEqualsPath *string `json:"timestampGreaterThanEqualsPath"`
 
-	IsPresent *bool `json:"isPresent"`
-	IsNull    *bool `json:"isNull"`
+	IsPresent   *bool `json:"isPresent"`
+	IsNull      *bool `json:"isNull"`
+	IsNumeric   *bool `json:"isNumeric"`
+	IsString    *bool `json:"isString"`
+	IsBoolean   *bool `json:"isBoolean"`
+	IsTimestamp *bool `json:"isTimestamp"`
+
+	// StringMatches has no "*Path" variant (the spec lists it as a plain
+	// comparator, unlike every other String*/Numeric*/Boolean*/Timestamp*
+	// operator) -- see evaluateStringMatches.
+	StringMatches *string `json:"stringMatches"`
 
 	And []choiceRule `json:"and"`
 	Or  []choiceRule `json:"or"`
@@ -148,6 +157,10 @@ func evaluateDataTest(rule *choiceRule, input map[string]any) (bool, error) {
 		return (value == nil) == *rule.IsNull, nil
 	}
 
+	if matched, handled := evaluateTypeCheck(rule, value); handled {
+		return matched, nil
+	}
+
 	if matched, handled, err := evaluateStringComparison(rule, value, input); handled {
 		return matched, err
 	}
@@ -168,7 +181,8 @@ func evaluateDataTest(rule *choiceRule, input map[string]any) (bool, error) {
 }
 
 // evaluateStringComparison evaluates the String* comparators, including
-// their "*Path" variants. handled is false if rule sets none of them.
+// their "*Path" variants, and StringMatches (which has no "*Path" variant).
+// handled is false if rule sets none of them.
 func evaluateStringComparison(rule *choiceRule, value any, input map[string]any) (matched, handled bool, err error) {
 	switch {
 	case rule.StringEquals != nil || rule.StringEqualsPath != nil:
@@ -181,9 +195,137 @@ func evaluateStringComparison(rule *choiceRule, value any, input map[string]any)
 		return compareStringWith(value, rule.StringLessThanEquals, rule.StringLessThanEqualsPath, input, func(cmp int) bool { return cmp <= 0 })
 	case rule.StringGreaterThanEquals != nil || rule.StringGreaterThanEqualsPath != nil:
 		return compareStringWith(value, rule.StringGreaterThanEquals, rule.StringGreaterThanEqualsPath, input, func(cmp int) bool { return cmp >= 0 })
+	case rule.StringMatches != nil:
+		return evaluateStringMatches(value, *rule.StringMatches)
 	default:
 		return false, false, nil
 	}
+}
+
+// evaluateStringMatches evaluates StringMatches: value must be a string
+// matching pattern, per states-language.net's wildcard rules -- see
+// parseStringMatchesPattern/stringMatchesGlob.
+func evaluateStringMatches(value any, pattern string) (matched, handled bool, err error) {
+	s, ok := value.(string)
+	if !ok {
+		return false, true, nil
+	}
+
+	segments, err := parseStringMatchesPattern(pattern)
+	if err != nil {
+		return false, true, fmt.Errorf("choice rule: %w", err)
+	}
+
+	return stringMatchesGlob(s, segments), true, nil
+}
+
+// parseStringMatchesPattern splits a StringMatches pattern into the literal
+// segments between its unescaped "*" wildcards, per
+// https://states-language.net/spec.html's StringMatches rules: "*" matches
+// zero or more characters; "\*" is a literal "*"; "\\" is a literal "\";
+// any other use of "\" (including a trailing, unescaped one) is a runtime
+// error.
+func parseStringMatchesPattern(pattern string) ([]string, error) {
+	var (
+		segments []string
+		current  strings.Builder
+	)
+
+	runes := []rune(pattern)
+
+	for i := 0; i < len(runes); i++ {
+		switch runes[i] {
+		case '\\':
+			if i+1 >= len(runes) {
+				return nil, fmt.Errorf("stringMatches pattern %q ends with an unescaped backslash", pattern)
+			}
+
+			next := runes[i+1]
+			if next != '*' && next != '\\' {
+				return nil, fmt.Errorf("stringMatches pattern %q: backslash must escape '*' or '\\', not %q", pattern, next)
+			}
+
+			current.WriteRune(next)
+
+			i++
+		case '*':
+			segments = append(segments, current.String())
+			current.Reset()
+		default:
+			current.WriteRune(runes[i])
+		}
+	}
+
+	segments = append(segments, current.String())
+
+	return segments, nil
+}
+
+// stringMatchesGlob reports whether value matches a StringMatches pattern
+// already split into segments by parseStringMatchesPattern: segments[0]
+// must prefix value and segments[len-1] must suffix it (the sole segment
+// must equal value exactly when there was no wildcard at all), with every
+// segment in between required to appear, in order, somewhere between them.
+func stringMatchesGlob(value string, segments []string) bool {
+	if len(segments) == 1 {
+		return value == segments[0]
+	}
+
+	if !strings.HasPrefix(value, segments[0]) {
+		return false
+	}
+
+	value = value[len(segments[0]):]
+
+	for _, seg := range segments[1 : len(segments)-1] {
+		idx := strings.Index(value, seg)
+		if idx < 0 {
+			return false
+		}
+
+		value = value[idx+len(seg):]
+	}
+
+	return strings.HasSuffix(value, segments[len(segments)-1])
+}
+
+// evaluateTypeCheck evaluates IsNumeric/IsString/IsBoolean/IsTimestamp: each
+// takes a boolean operand and matches when value's type (JSON number/
+// string/boolean, or -- for IsTimestamp -- an RFC3339 string) equals it,
+// mirroring how IsNull compares (value == nil) against its own boolean
+// operand. handled is false if rule sets none of them.
+func evaluateTypeCheck(rule *choiceRule, value any) (matched, handled bool) {
+	switch {
+	case rule.IsNumeric != nil:
+		_, isNumber := value.(float64)
+
+		return isNumber == *rule.IsNumeric, true
+	case rule.IsString != nil:
+		_, isString := value.(string)
+
+		return isString == *rule.IsString, true
+	case rule.IsBoolean != nil:
+		_, isBool := value.(bool)
+
+		return isBool == *rule.IsBoolean, true
+	case rule.IsTimestamp != nil:
+		return isTimestampValue(value) == *rule.IsTimestamp, true
+	default:
+		return false, false
+	}
+}
+
+// isTimestampValue reports whether value is a string parseable as an
+// RFC3339 timestamp, mirroring timestampCompare's own parsing.
+func isTimestampValue(value any) bool {
+	s, ok := value.(string)
+	if !ok {
+		return false
+	}
+
+	_, err := time.Parse(time.RFC3339, s)
+
+	return err == nil
 }
 
 // compareStringWith resolves a String* comparator's operand -- from a

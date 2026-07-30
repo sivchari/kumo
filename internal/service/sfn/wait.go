@@ -144,3 +144,41 @@ func resolvePath(path, input string) (any, error) {
 
 	return value, nil
 }
+
+// resolveOptionalIntPath resolves the dynamic "*Path" variant of an
+// otherwise-static optional integer field, preferring path over static when
+// both are set -- the same precedence taskTimeout gives
+// TimeoutSecondsPath/TimeoutSeconds. It returns static unchanged (possibly
+// nil) when path is empty. Shared by the several Map/ItemReader/ItemBatcher
+// fields with this exact shape: ReaderConfig.MaxItems(Path),
+// ItemBatcher.MaxItemsPerBatch(Path)/MaxInputBytesPerBatch(Path), and
+// ToleratedFailureCount(Path).
+func resolveOptionalIntPath(static *int, path, input string) (*int, error) {
+	if path == "" {
+		return static, nil
+	}
+
+	n, err := resolveNumberPath(path, input)
+	if err != nil {
+		return nil, err
+	}
+
+	resolved := int(n)
+
+	return &resolved, nil
+}
+
+// resolveOptionalFloatPath is resolveOptionalIntPath's float64 counterpart,
+// used by ToleratedFailurePercentage(Path).
+func resolveOptionalFloatPath(static *float64, path, input string) (*float64, error) {
+	if path == "" {
+		return static, nil
+	}
+
+	n, err := resolveNumberPath(path, input)
+	if err != nil {
+		return nil, err
+	}
+
+	return &n, nil
+}

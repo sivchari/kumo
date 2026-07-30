@@ -11,6 +11,11 @@ import (
 
 const echoItemProcessorJSON = `{"StartAt": "Echo", "States": {"Echo": {"Type": "Pass", "End": true}}}`
 
+// threeItemArrayJSON is the "[1,2,3]" Map input/output literal shared by
+// several tests across this package (goconst flags it once repeated three
+// or more times).
+const threeItemArrayJSON = `[1,2,3]`
+
 func TestMapStateProcessesItemsInOrder(t *testing.T) {
 	t.Parallel()
 
@@ -28,10 +33,10 @@ func TestMapStateProcessesItemsInOrder(t *testing.T) {
 	store := NewMemoryStorage()
 	sm := createExecutionTestStateMachine(t, store, "map-order", definition)
 
-	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `[1,2,3]`)
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, threeItemArrayJSON)
 
-	if exec.Output != `[1,2,3]` {
-		t.Fatalf("execution output: got %q, want %q", exec.Output, `[1,2,3]`)
+	if exec.Output != threeItemArrayJSON {
+		t.Fatalf("execution output: got %q, want %q", exec.Output, threeItemArrayJSON)
 	}
 }
 
@@ -114,7 +119,7 @@ func TestMapStateItemFailureFailsTheMap(t *testing.T) {
 	store := NewMemoryStorage(WithBaseURL("http://127.0.0.1:1"))
 	sm := createExecutionTestStateMachine(t, store, "map-item-fails", definition)
 
-	exec := startAndAwaitFailure(t, store, sm.StateMachineArn, `[1,2,3]`)
+	exec := startAndAwaitFailure(t, store, sm.StateMachineArn, threeItemArrayJSON)
 
 	if exec.Error != errorStatesTaskFailed {
 		t.Fatalf("execution error: got %q, want %q", exec.Error, errorStatesTaskFailed)
@@ -183,7 +188,7 @@ func TestMapStateMaxConcurrencyOneSerializesItems(t *testing.T) {
 	store := NewMemoryStorage(WithBaseURL(server.URL))
 	sm := createExecutionTestStateMachine(t, store, "map-max-concurrency", definition)
 
-	startAndAwaitSuccess(t, store, sm.StateMachineArn, `[1,2,3]`)
+	startAndAwaitSuccess(t, store, sm.StateMachineArn, threeItemArrayJSON)
 
 	if got := atomic.LoadInt32(maxSeen); got != 1 {
 		t.Fatalf("max observed concurrent item invocations: got %d, want 1", got)

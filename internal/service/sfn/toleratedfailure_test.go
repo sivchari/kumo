@@ -103,3 +103,87 @@ func TestMapStateToleratedFailureCountExceedingToleranceFails(t *testing.T) {
 		t.Fatalf("execution error: got %q, want %q", exec.Error, errorStatesExceedToleratedFailureThreshold)
 	}
 }
+
+// toleratedFailurePathMapDefinition builds a Map state whose tolerance
+// field(s) are resolved dynamically from the Map state's own input, rather
+// than the static literal toleratedFailureMapDefinition uses.
+func toleratedFailurePathMapDefinition(toleranceField string) string {
+	return fmt.Sprintf(`{
+		"StartAt": "Each",
+		"States": {
+			"Each": {
+				"Type": "Map",
+				"ItemsPath": "$.items",
+				%s,
+				"ItemProcessor": %s,
+				"End": true
+			}
+		}
+	}`, toleranceField, conditionalFailProcessorJSON)
+}
+
+func TestMapStateToleratedFailurePercentagePathResolvesFromMapInput(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	sm := createExecutionTestStateMachine(t, store, "map-tolerated-pct-path",
+		toleratedFailurePathMapDefinition(`"ToleratedFailurePercentagePath": "$.tolerance"`))
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn,
+		`{"items":[{"ok":true},{"ok":true},{"ok":false},{"ok":true}],"tolerance":50}`)
+
+	var outputs []json.RawMessage
+	if err := json.Unmarshal([]byte(exec.Output), &outputs); err != nil {
+		t.Fatalf("unmarshal execution output %q: %v", exec.Output, err)
+	}
+
+	if len(outputs) != 4 {
+		t.Fatalf("outputs: got %d entries, want 4", len(outputs))
+	}
+}
+
+func TestMapStateToleratedFailureCountPathResolvesFromMapInput(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	sm := createExecutionTestStateMachine(t, store, "map-tolerated-count-path",
+		toleratedFailurePathMapDefinition(`"ToleratedFailureCountPath": "$.tolerance"`))
+
+	exec := startAndAwaitFailure(t, store, sm.StateMachineArn,
+		`{"items":[{"ok":true},{"ok":true},{"ok":false},{"ok":true}],"tolerance":0}`)
+
+	if exec.Error != errorStatesExceedToleratedFailureThreshold {
+		t.Fatalf("execution error: got %q, want %q", exec.Error, errorStatesExceedToleratedFailureThreshold)
+	}
+}
+
+func TestMapStateMaxConcurrencyPathResolvesFromMapInput(t *testing.T) {
+	t.Parallel()
+
+	definition := fmt.Sprintf(`{
+		"StartAt": "Each",
+		"States": {
+			"Each": {
+				"Type": "Map",
+				"ItemsPath": "$.items",
+				"MaxConcurrencyPath": "$.concurrency",
+				"ItemProcessor": %s,
+				"End": true
+			}
+		}
+	}`, distributedItemProcessorJSON)
+
+	store := NewMemoryStorage()
+	sm := createExecutionTestStateMachine(t, store, "map-maxconcurrencypath", definition)
+
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"items":[{"ok":true},{"ok":true}],"concurrency":1}`)
+
+	var outputs []json.RawMessage
+	if err := json.Unmarshal([]byte(exec.Output), &outputs); err != nil {
+		t.Fatalf("unmarshal execution output %q: %v", exec.Output, err)
+	}
+
+	if len(outputs) != 2 {
+		t.Fatalf("outputs: got %d entries, want 2", len(outputs))
+	}
+}

@@ -24,6 +24,9 @@ const (
 	errExecutionAlreadyExists    = "ExecutionAlreadyExists"
 	errInvalidArn                = "InvalidArn"
 	errInvalidDefinition         = "InvalidDefinition"
+	// errResourceNotFound is DescribeMapRun's documented error for a
+	// mapRunArn kumo has never recorded.
+	errResourceNotFound = "ResourceNotFound"
 )
 
 // Storage defines the Step Functions storage interface.
@@ -40,6 +43,12 @@ type Storage interface {
 	DescribeExecution(ctx context.Context, executionArn string) (*Execution, error)
 	ListExecutions(ctx context.Context, stateMachineArn, statusFilter string, maxResults int32, nextToken string) ([]*Execution, string, error)
 	GetExecutionHistory(ctx context.Context, executionArn string, maxResults int32, nextToken string, reverseOrder bool) ([]*HistoryEvent, string, error)
+
+	// Map Run operations (see maprun.go): distributed-mode Map states each
+	// create a Map Run record, queryable the same way real AWS's own
+	// DescribeMapRun/ListMapRuns are.
+	DescribeMapRun(ctx context.Context, mapRunArn string) (*MapRun, error)
+	ListMapRuns(ctx context.Context, executionArn string, maxResults int32, nextToken string) ([]*MapRun, string, error)
 
 	// Tag operations.
 	TagResource(ctx context.Context, resourceArn string, tags []Tag) error
@@ -97,6 +106,7 @@ type MemoryStorage struct {
 	Executions    map[string]*ExecutionData `json:"executions"`
 	Activities    map[string]*Activity      `json:"activities"`
 	Tags          map[string][]Tag          `json:"tags"`
+	MapRuns       map[string]*MapRun        `json:"mapRuns"`
 	region        string
 	accountID     string
 	EventCounter  int64 `json:"eventCounter"`
@@ -123,6 +133,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		Executions:    make(map[string]*ExecutionData),
 		Activities:    make(map[string]*Activity),
 		Tags:          make(map[string][]Tag),
+		MapRuns:       make(map[string]*MapRun),
 		region:        region,
 		accountID:     "000000000000",
 		baseURL:       defaultBaseURL,
@@ -132,6 +143,12 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	}
 
 	s.engine = newExecutionEngine(s.baseURL)
+	// Wire the engine's states:startExecution and Map Run bookkeeping back
+	// to this same storage -- see executionStarter in nestedexec.go and
+	// mapRunTracker in maprun.go for why this is a direct reference rather
+	// than an HTTP round trip.
+	s.engine.starter = s
+	s.engine.mapRuns = s
 
 	if s.dataDir != "" {
 		_ = storage.Load(s.dataDir, "states", s)
@@ -182,6 +199,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.Tags == nil {
 		s.Tags = make(map[string][]Tag)
+	}
+
+	if s.MapRuns == nil {
+		s.MapRuns = make(map[string]*MapRun)
 	}
 
 	return nil
@@ -307,7 +328,22 @@ func (s *MemoryStorage) ListStateMachines(_ context.Context, maxResults int32, _
 }
 
 // StartExecution starts a new execution.
-func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name, input, traceHeader string) (*Execution, error) {
+func (s *MemoryStorage) StartExecution(ctx context.Context, stateMachineArn, name, input, traceHeader string) (*Execution, error) {
+	return s.startExecutionAtDepth(ctx, stateMachineArn, name, input, traceHeader, 0)
+}
+
+// startNestedExecution implements executionStarter (see nestedexec.go) for
+// a states:startExecution Task: identical to StartExecution except it
+// carries the caller's nesting depth through to the child's own runExecution
+// goroutine, since StartExecution's own ctx parameter cannot (see
+// nestedExecutionDepthKey's doc in nestedexec.go).
+func (s *MemoryStorage) startNestedExecution(ctx context.Context, stateMachineArn, name, input string, depth int) (*Execution, error) {
+	return s.startExecutionAtDepth(ctx, stateMachineArn, name, input, "", depth)
+}
+
+// startExecutionAtDepth is StartExecution/startNestedExecution's shared
+// implementation.
+func (s *MemoryStorage) startExecutionAtDepth(_ context.Context, stateMachineArn, name, input, traceHeader string, depth int) (*Execution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -348,7 +384,7 @@ func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name,
 	// Parse the definition and run the state machine asynchronously.
 	definition := sm.Definition
 
-	go s.runExecution(ed, definition, input, startID)
+	go s.runExecution(ed, definition, input, startID, depth)
 
 	return copyExecution(exec), nil
 }
@@ -362,8 +398,10 @@ func (s *MemoryStorage) StartExecution(_ context.Context, stateMachineArn, name,
 const executionTimeoutCap = 5 * time.Minute
 
 // runExecution executes the state machine in a background goroutine, bounded
-// by min(definition TimeoutSeconds, executionTimeoutCap).
-func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string, lastEventID int64) {
+// by min(definition TimeoutSeconds, executionTimeoutCap). depth is this
+// execution's states:startExecution nesting depth (0 for a top-level
+// execution reached via StartExecution; see startNestedExecution).
+func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string, lastEventID int64, depth int) {
 	def, err := parseDefinition(definition)
 	if err != nil {
 		s.failExecution(ed, lastEventID, errorStatesRuntime, fmt.Sprintf("Failed to parse definition: %v", err))
@@ -373,6 +411,9 @@ func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string
 
 	ctx, cancel, definitionTimeoutApplies := executionContext(def)
 	defer cancel()
+
+	ctx = withNestedExecutionDepth(ctx, depth)
+	ctx = withExecutionArn(ctx, ed.Execution.ExecutionArn)
 
 	output, err := s.engine.execute(ctx, def, input)
 	if err != nil {
@@ -584,6 +625,53 @@ func (s *MemoryStorage) ListExecutions(_ context.Context, stateMachineArn, statu
 	}
 
 	return executions, "", nil
+}
+
+// DescribeMapRun describes a Map Run (see maprun.go).
+func (s *MemoryStorage) DescribeMapRun(_ context.Context, mapRunArn string) (*MapRun, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	mr, exists := s.MapRuns[mapRunArn]
+	if !exists {
+		return nil, &ServiceError{Code: errResourceNotFound, Message: "Map Run does not exist"}
+	}
+
+	return copyMapRun(mr), nil
+}
+
+// ListMapRuns lists the Map Runs started by a given execution.
+func (s *MemoryStorage) ListMapRuns(_ context.Context, executionArn string, maxResults int32, _ string) ([]*MapRun, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.Executions[executionArn]; !exists {
+		return nil, "", &ServiceError{Code: errExecutionDoesNotExist, Message: "Execution does not exist"}
+	}
+
+	if maxResults <= 0 {
+		maxResults = 100
+	}
+
+	var mapRuns []*MapRun
+
+	for _, mr := range s.MapRuns {
+		if mr.ExecutionArn != executionArn {
+			continue
+		}
+
+		mapRuns = append(mapRuns, copyMapRun(mr))
+	}
+
+	sort.Slice(mapRuns, func(i, j int) bool {
+		return mapRuns[i].StartDate.Before(mapRuns[j].StartDate)
+	})
+
+	if len(mapRuns) > int(maxResults) {
+		mapRuns = mapRuns[:int(maxResults)]
+	}
+
+	return mapRuns, "", nil
 }
 
 // GetExecutionHistory gets the history of an execution.
