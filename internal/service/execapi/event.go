@@ -8,6 +8,21 @@ import (
 	"github.com/google/uuid"
 )
 
+// defaultStage is the HTTP API catch-all stage, served at the root of the
+// API's invoke URL.
+const defaultStage = "$default"
+
+// stagePath builds the request path delivered to the integration. The
+// $default stage is not part of the invoke URL path on AWS, so only a named
+// stage contributes a path segment.
+func stagePath(stage, resourcePath string) string {
+	if stage == defaultStage {
+		return resourcePath
+	}
+
+	return "/" + stage + resourcePath
+}
+
 // proxyEventV1 is the API Gateway proxy integration input event for REST APIs
 // and HTTP API payload format 1.0.
 type proxyEventV1 struct {
@@ -53,7 +68,7 @@ func buildEventV1(r *http.Request, req *Request, body []byte) ([]byte, error) {
 		RequestContext: requestContextV1{
 			ResourcePath: req.ResourcePath,
 			HTTPMethod:   r.Method,
-			Path:         "/" + req.Stage + req.ResourcePath,
+			Path:         stagePath(req.Stage, req.ResourcePath),
 			APIID:        req.APIID,
 			Stage:        req.Stage,
 			RequestID:    uuid.New().String(),
@@ -117,7 +132,7 @@ func buildEventV2(r *http.Request, req *Request, body []byte) ([]byte, error) {
 	headers, _ := collectHeaders(r)
 	query, _ := collectQuery(r)
 
-	path := "/" + req.Stage + req.ResourcePath
+	path := stagePath(req.Stage, req.ResourcePath)
 
 	event := proxyEventV2{
 		Version:               "2.0",
