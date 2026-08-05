@@ -23,6 +23,19 @@ type Storage interface {
 	GetInvalidation(ctx context.Context, distributionID, invalidationID string) (*Invalidation, error)
 	ListInvalidations(ctx context.Context, distributionID, marker string, maxItems int) ([]*Invalidation, string, error)
 
+	// CloudFront Functions: lightweight JS executed at the edge. Per
+	// AWS, every function exists in DEVELOPMENT and (optionally) LIVE
+	// stages; PublishFunction promotes DEVELOPMENT → LIVE. Update /
+	// Delete / Publish require the caller's If-Match header to match
+	// the current ETag (passed in via ifMatch).
+	CreateFunction(ctx context.Context, name, runtime, comment string, code []byte) (*Function, error)
+	GetFunction(ctx context.Context, name, stage string) (*Function, []byte, error)
+	DescribeFunction(ctx context.Context, name, stage string) (*Function, error)
+	ListFunctions(ctx context.Context, stage string) ([]*Function, error)
+	UpdateFunction(ctx context.Context, name, runtime, comment string, code []byte, ifMatch string) (*Function, error)
+	PublishFunction(ctx context.Context, name, ifMatch string) (*Function, error)
+	DeleteFunction(ctx context.Context, name, ifMatch string) error
+
 	// Signed URL building blocks.
 	CreatePublicKey(ctx context.Context, cfg *PublicKeyConfig) (*PublicKey, error)
 	GetPublicKey(ctx context.Context, id string) (*PublicKey, error)
@@ -56,6 +69,7 @@ type MemoryStorage struct {
 	mu            sync.RWMutex                        `json:"-"`
 	Distributions map[string]*Distribution            `json:"distributions"`
 	Invalidations map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
+	Functions     map[string]*Function                `json:"functions"`     // function name -> Function
 	signing       signingStore
 	dataDir       string
 }
@@ -65,6 +79,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Distributions: make(map[string]*Distribution),
 		Invalidations: make(map[string]map[string]*Invalidation),
+		Functions:     make(map[string]*Function),
 		signing: signingStore{
 			PublicKeys: make(map[string]*PublicKey),
 			KeyGroups:  make(map[string]*KeyGroup),
@@ -115,6 +130,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.Invalidations == nil {
 		s.Invalidations = make(map[string]map[string]*Invalidation)
+	}
+
+	if s.Functions == nil {
+		s.Functions = make(map[string]*Function)
 	}
 
 	s.ensureSigningInit()
