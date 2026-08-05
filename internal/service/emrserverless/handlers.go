@@ -4,7 +4,9 @@ package emrserverless
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 
@@ -405,20 +407,24 @@ func extractApplicationAndJobRunID(path string) (string, string) {
 
 // parseIntParam parses an integer parameter from a string.
 func parseIntParam(s string, result *int32) error {
-	var val int
+    var val int
 
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return errors.New("invalid integer")
-		}
+    for _, c := range s {
+        if c < '0' || c > '9' {
+            return errors.New("invalid integer")
+        }
+        val = val*10 + int(c-'0')
+    }
 
-		val = val*10 + int(c-'0')
-	}
+    // Check for overflow before casting
+    if val > math.MaxInt32 || val < math.MinInt32 {  
+        return fmt.Errorf("value %d out of int32 range", val)
+    }
 
-	*result = int32(val) //nolint:gosec // G115: val is bounded by input string length
-
-	return nil
+    *result = int32(val)
+    return nil
 }
+
 
 // writeJSON writes a JSON response with 200 OK status.
 func writeJSON(w http.ResponseWriter, v any) {
