@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -16,7 +17,10 @@ const (
 	cloudfrontXmlns = "http://cloudfront.amazonaws.com/doc/2020-05-31/"
 )
 
-// CreateDistribution handles the CreateDistribution operation.
+// CreateDistribution handles both CreateDistribution and the
+// CreateDistributionWithTags variant (POST /2020-05-31/distribution?WithTags).
+// The Terraform AWS provider uses the WithTags variant, whose body root is
+// <DistributionConfigWithTags> wrapping <DistributionConfig> and <Tags>.
 func (s *Service) CreateDistribution(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -25,8 +29,22 @@ func (s *Service) CreateDistribution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req CreateDistributionRequest
-	if err := xml.Unmarshal(body, &req); err != nil {
+	var (
+		req  CreateDistributionRequest
+		tags *Tags
+	)
+
+	if _, withTags := r.URL.Query()["WithTags"]; withTags {
+		var wrap DistributionConfigWithTags
+		if err := xml.Unmarshal(body, &wrap); err != nil {
+			writeCloudFrontError(w, errInvalidArgument, "Invalid request body", http.StatusBadRequest)
+
+			return
+		}
+
+		req = wrap.DistributionConfig
+		tags = wrap.Tags
+	} else if err := xml.Unmarshal(body, &req); err != nil {
 		writeCloudFrontError(w, errInvalidArgument, "Invalid request body", http.StatusBadRequest)
 
 		return
@@ -37,6 +55,14 @@ func (s *Service) CreateDistribution(w http.ResponseWriter, r *http.Request) {
 		handleStorageError(w, err)
 
 		return
+	}
+
+	if tags != nil && len(tags.Items) > 0 {
+		if err := s.storage.TagResource(r.Context(), dist.ARN, tagsToMap(tags)); err != nil {
+			handleStorageError(w, err)
+
+			return
+		}
 	}
 
 	resp := buildDistributionXML(dist)
@@ -234,7 +260,117 @@ func (s *Service) GetDistributionConfig(w http.ResponseWriter, r *http.Request) 
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
+// Tagging handles TagResource and UntagResource on POST /2020-05-31/tagging,
+// dispatched by the Operation query parameter (Tag or Untag).
+func (s *Service) Tagging(w http.ResponseWriter, r *http.Request) {
+	resource := r.URL.Query().Get("Resource")
+	if resource == "" {
+		writeCloudFrontError(w, errInvalidArgument, "Resource ARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeCloudFrontError(w, errMissingBody, "Request body is missing", http.StatusBadRequest)
+
+		return
+	}
+
+	switch r.URL.Query().Get("Operation") {
+	case "Tag":
+		s.tagResource(w, r, resource, body)
+	case "Untag":
+		s.untagResource(w, r, resource, body)
+	default:
+		writeCloudFrontError(w, errInvalidArgument, "Invalid Operation", http.StatusBadRequest)
+	}
+}
+
+func (s *Service) tagResource(w http.ResponseWriter, r *http.Request, resource string, body []byte) {
+	var tags Tags
+	if err := xml.Unmarshal(body, &tags); err != nil {
+		writeCloudFrontError(w, errInvalidArgument, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.TagResource(r.Context(), resource, tagsToMap(&tags)); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Service) untagResource(w http.ResponseWriter, r *http.Request, resource string, body []byte) {
+	var keys TagKeysBody
+	if err := xml.Unmarshal(body, &keys); err != nil {
+		writeCloudFrontError(w, errInvalidArgument, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.UntagResource(r.Context(), resource, keys.Items); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListTagsForResource handles GET /2020-05-31/tagging?Resource=<arn>.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	resource := r.URL.Query().Get("Resource")
+	if resource == "" {
+		writeCloudFrontError(w, errInvalidArgument, "Resource ARN is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTags(r.Context(), resource)
+	if err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeXMLResponse(w, http.StatusOK, buildTagsXML(tags))
+}
+
 // Helper functions.
+
+func tagsToMap(t *Tags) map[string]string {
+	if t == nil {
+		return nil
+	}
+
+	m := make(map[string]string, len(t.Items))
+	for _, tag := range t.Items {
+		m[tag.Key] = tag.Value
+	}
+
+	return m
+}
+
+func buildTagsXML(tags map[string]string) *Tags {
+	result := &Tags{Xmlns: cloudfrontXmlns}
+
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		result.Items = append(result.Items, Tag{Key: k, Value: tags[k]})
+	}
+
+	return result
+}
 
 func writeXMLResponse(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/xml")
@@ -324,6 +460,11 @@ func buildDistributionConfigXML(config *DistributionConfig) *DistributionConfigX
 	result.Aliases = buildAliasesConfigXML(config.Aliases)
 	result.ViewerCertificate = buildViewerCertificateConfigXML(config.ViewerCertificate)
 
+	// kumo does not store origin groups, but real CloudFront always returns an
+	// (empty) OriginGroups element. Emitting it keeps the Terraform AWS provider's
+	// resourceDistributionRead from nil-dereferencing distributionConfig.OriginGroups.Quantity.
+	result.OriginGroups = &OriginGroupsXML{Quantity: 0}
+
 	return result
 }
 
@@ -408,15 +549,30 @@ func buildDefaultCacheBehaviorXML(dcb *DefaultCacheBehavior) *DefaultCacheBehavi
 	}
 
 	if dcb.AllowedMethods != nil {
-		result.AllowedMethods = &AllowedMethodsXML{
+		am := &AllowedMethodsXML{
 			Quantity: dcb.AllowedMethods.Quantity,
 			Items:    dcb.AllowedMethods.Items,
 		}
+		if dcb.CachedMethods != nil {
+			am.CachedMethods = &CachedMethodsXML{
+				Quantity: dcb.CachedMethods.Quantity,
+				Items:    dcb.CachedMethods.Items,
+			}
+		}
+
+		result.AllowedMethods = am
 	}
 
 	buildForwardedValuesXML(dcb.ForwardedValues, result)
 	buildTrustedSignersXML(dcb.TrustedSigners, result)
 	buildTrustedKeyGroupsXML(dcb.TrustedKeyGroups, result)
+
+	// kumo does not store function/Lambda associations, but real CloudFront
+	// always returns both elements (empty, Quantity=0). Emitting them keeps the
+	// Terraform AWS provider's flattenDefaultCacheBehavior from nil-dereferencing
+	// apiObject.FunctionAssociations.Items / apiObject.LambdaFunctionAssociations.Items.
+	result.FunctionAssociations = &FunctionAssociationsXML{Quantity: 0}
+	result.LambdaFunctionAssociations = &LambdaFunctionAssociationsXML{Quantity: 0}
 
 	return result
 }
@@ -446,6 +602,8 @@ func buildForwardedValuesXML(fv *ForwardedValues, result *DefaultCacheBehaviorXM
 
 func buildTrustedSignersXML(ts *TrustedSigners, result *DefaultCacheBehaviorXML) {
 	if ts == nil {
+		result.TrustedSigners = &TrustedSignersXML{Enabled: false, Quantity: 0}
+
 		return
 	}
 
@@ -458,6 +616,8 @@ func buildTrustedSignersXML(ts *TrustedSigners, result *DefaultCacheBehaviorXML)
 
 func buildTrustedKeyGroupsXML(tkg *TrustedKeyGroups, result *DefaultCacheBehaviorXML) {
 	if tkg == nil {
+		result.TrustedKeyGroups = &TrustedKeyGroupsXML{Enabled: false, Quantity: 0}
+
 		return
 	}
 

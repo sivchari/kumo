@@ -1,6 +1,6 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/E8bee0337-b059",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/Ef434e2f1-4cce",
     "DistributionConfig": {
       "CallerReference": "test-create-distribution",
       "Comment": "Test distribution",
@@ -13,17 +13,31 @@
         "DefaultTTL": null,
         "FieldLevelEncryptionId": null,
         "ForwardedValues": null,
-        "FunctionAssociations": null,
+        "FunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "GrpcConfig": null,
-        "LambdaFunctionAssociations": null,
+        "LambdaFunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "MaxTTL": null,
         "MinTTL": null,
         "OriginRequestPolicyId": null,
         "RealtimeLogConfigArn": null,
         "ResponseHeadersPolicyId": null,
         "SmoothStreaming": null,
-        "TrustedKeyGroups": null,
-        "TrustedSigners": null
+        "TrustedKeyGroups": {
+          "Enabled": false,
+          "Quantity": 0,
+          "Items": []
+        },
+        "TrustedSigners": {
+          "Enabled": false,
+          "Quantity": 0,
+          "Items": []
+        }
       },
       "Enabled": true,
       "Origins": {
@@ -59,7 +73,10 @@
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
       "Logging": null,
-      "OriginGroups": null,
+      "OriginGroups": {
+        "Quantity": 0,
+        "Items": null
+      },
       "PriceClass": "PriceClass_All",
       "Restrictions": null,
       "Staging": null,
@@ -76,10 +93,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "E8bee0337-b059.cloudfront.net",
-    "Id": "E8bee0337-b059",
+    "DomainName": "Ef434e2f1-4cce.cloudfront.net",
+    "Id": "Ef434e2f1-4cce",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-03-23T07:45:28Z",
+    "LastModifiedTime": "2026-06-12T16:37:13+09:00",
     "Status": "InProgress",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -93,7 +110,7 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "Eb4dae4da-6ffc-4f75-90ba-ab889276",
-  "Location": "/2020-05-31/distribution/E8bee0337-b059",
+  "ETag": "E6a2f40e1-1152-498a-9f08-9c93014e",
+  "Location": "/2020-05-31/distribution/Ef434e2f1-4cce",
   "ResultMetadata": {}
 }

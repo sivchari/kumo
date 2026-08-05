@@ -1,13 +1,26 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/Ecf959148-482f",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/Eab931381-edab",
     "DistributionConfig": {
-      "CallerReference": "test-get-distribution",
-      "Comment": "Test distribution",
+      "CallerReference": "test-cache-policy-no-signing",
+      "Comment": "Test distribution cache policy no signing",
       "DefaultCacheBehavior": {
         "TargetOriginId": "myS3Origin",
-        "ViewerProtocolPolicy": "allow-all",
-        "AllowedMethods": null,
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": {
+          "Items": [
+            "GET",
+            "HEAD"
+          ],
+          "Quantity": 2,
+          "CachedMethods": {
+            "Items": [
+              "GET",
+              "HEAD"
+            ],
+            "Quantity": 2
+          }
+        },
         "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
         "Compress": null,
         "DefaultTTL": null,
@@ -93,11 +106,11 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "Ecf959148-482f.cloudfront.net",
-    "Id": "Ecf959148-482f",
+    "DomainName": "Eab931381-edab.cloudfront.net",
+    "Id": "Eab931381-edab",
     "InProgressInvalidationBatches": null,
     "LastModifiedTime": "2026-06-12T16:37:13+09:00",
-    "Status": "Deployed",
+    "Status": "InProgress",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
       "Quantity": 0,
@@ -110,6 +123,7 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "E41fc55eb-63aa-4cb3-aa8a-2e5b7778",
+  "ETag": "E78e549d9-e2b9-45e5-aa1d-80fd5ca8",
+  "Location": "/2020-05-31/distribution/Eab931381-edab",
   "ResultMetadata": {}
 }

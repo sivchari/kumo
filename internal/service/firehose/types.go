@@ -303,6 +303,37 @@ type ExtendedS3DestinationUpdate struct {
 // UpdateDestinationOutput is the output for UpdateDestination.
 type UpdateDestinationOutput struct{}
 
+// ListTagsForDeliveryStreamInput is the input for ListTagsForDeliveryStream.
+type ListTagsForDeliveryStreamInput struct {
+	DeliveryStreamName   string `json:"DeliveryStreamName"`
+	ExclusiveStartTagKey string `json:"ExclusiveStartTagKey,omitempty"`
+	Limit                int32  `json:"Limit,omitempty"`
+}
+
+// ListTagsForDeliveryStreamOutput is the output for ListTagsForDeliveryStream.
+type ListTagsForDeliveryStreamOutput struct {
+	Tags        []Tag `json:"Tags"`
+	HasMoreTags bool  `json:"HasMoreTags"`
+}
+
+// TagDeliveryStreamInput is the input for TagDeliveryStream.
+type TagDeliveryStreamInput struct {
+	DeliveryStreamName string `json:"DeliveryStreamName"`
+	Tags               []Tag  `json:"Tags"`
+}
+
+// TagDeliveryStreamOutput is the output for TagDeliveryStream.
+type TagDeliveryStreamOutput struct{}
+
+// UntagDeliveryStreamInput is the input for UntagDeliveryStream.
+type UntagDeliveryStreamInput struct {
+	DeliveryStreamName string   `json:"DeliveryStreamName"`
+	TagKeys            []string `json:"TagKeys"`
+}
+
+// UntagDeliveryStreamOutput is the output for UntagDeliveryStream.
+type UntagDeliveryStreamOutput struct{}
+
 // ErrorResponse represents an error response.
 type ErrorResponse struct {
 	Type    string `json:"__type"`
