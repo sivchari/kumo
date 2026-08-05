@@ -459,6 +459,51 @@ $KUMO_DATA_DIR/
   ...
 ```
 
+## Latency Emulator
+
+kumo can load a JSON latency profile at startup and apply delays to matching AWS API requests. This does not expose runtime control endpoints; the file is read once and kept in memory.
+
+```bash
+KUMO_LATENCY_CONFIG=./latency.json ./bin/kumo
+```
+
+Example:
+
+```json
+{
+  "seed": 12345,
+  "rules": [
+    {
+      "id": "s3-tail-latency",
+      "enabled": true,
+      "match": {
+        "service": "s3",
+        "action": "PutObject"
+      },
+      "latency": {
+        "p50Ms": 20,
+        "p95Ms": 300,
+        "p99Ms": 1500,
+        "maxMs": 3000
+      }
+    },
+    {
+      "id": "dynamodb-fixed-latency",
+      "enabled": true,
+      "match": {
+        "service": "dynamodb",
+        "action": "GetItem"
+      },
+      "latency": {
+        "fixedMs": 50
+      }
+    }
+  ]
+}
+```
+
+Rules can match `service`, `action`, `method`, `path`, `pattern`, and `resource`. Service names are normalized, so aliases such as `events` for EventBridge, `states` for Step Functions, and `logs` for CloudWatch Logs are accepted. kumo-owned paths such as `/health` and `/kumo/...` are excluded from latency injection.
+
 ## kumo-specific Endpoints
 
 kumo provides additional endpoints under the `/kumo/` prefix for testing purposes. These are not part of any AWS API but are useful for verifying application behavior in tests.

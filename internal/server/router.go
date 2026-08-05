@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/latency"
+	"github.com/sivchari/kumo/internal/servicecatalog"
 )
 
 // localhostHost is the loopback host label used by kumo virtual-hosted URLs.
@@ -19,6 +22,7 @@ const localhostHost = "localhost"
 type Route struct {
 	Method  string
 	Pattern string
+	Service string
 	Handler http.HandlerFunc
 }
 
@@ -33,6 +37,10 @@ type Router struct {
 	prefixRouters      map[string]*http.ServeMux // Separate routers for services with prefixes
 	executeAPIHandlers []executeAPIDispatch
 	logger             *slog.Logger
+	catalog            *servicecatalog.Catalog
+	latencyEngine      *latency.Engine
+	jsonPrefixes       map[string]string
+	cborNames          map[string]string
 }
 
 // AddExecuteAPIHandler registers a handler for virtual-hosted execute-api
@@ -48,6 +56,9 @@ func NewRouter(logger *slog.Logger) *Router {
 		routes:        make([]Route, 0),
 		prefixRouters: make(map[string]*http.ServeMux),
 		logger:        logger,
+		catalog:       servicecatalog.NewDefault(),
+		jsonPrefixes:  make(map[string]string),
+		cborNames:     make(map[string]string),
 	}
 
 	return r
@@ -55,9 +66,15 @@ func NewRouter(logger *slog.Logger) *Router {
 
 // Handle registers a handler for the given method and pattern.
 func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
+	r.HandleWithService(method, pattern, "", handler)
+}
+
+// HandleWithService registers a handler annotated with the owning service.
+func (r *Router) HandleWithService(method, pattern, serviceName string, handler http.HandlerFunc) {
 	r.routes = append(r.routes, Route{
 		Method:  method,
 		Pattern: pattern,
+		Service: serviceName,
 		Handler: handler,
 	})
 
@@ -71,7 +88,7 @@ func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
 		}
 
 		fullPattern := method + " " + pattern
-		r.prefixRouters[prefix].HandleFunc(fullPattern, r.wrapHandler(method, pattern, handler))
+		r.prefixRouters[prefix].HandleFunc(fullPattern, r.wrapHandler(method, pattern, serviceName, handler))
 		r.logger.Debug("registered prefixed route", "method", method, "pattern", pattern, "prefix", prefix)
 
 		return
@@ -79,7 +96,7 @@ func (r *Router) Handle(method, pattern string, handler http.HandlerFunc) {
 
 	// Use Go 1.22+ method pattern
 	fullPattern := method + " " + pattern
-	r.mux.HandleFunc(fullPattern, r.wrapHandler(method, pattern, handler))
+	r.mux.HandleFunc(fullPattern, r.wrapHandler(method, pattern, serviceName, handler))
 	r.logger.Debug("registered route", "method", method, "pattern", pattern)
 }
 
@@ -127,11 +144,34 @@ func (r *Router) HandleFunc(method, pattern string, handler http.HandlerFunc) {
 	r.Handle(method, pattern, handler)
 }
 
+// SetCatalog sets the service catalog used for request normalization.
+func (r *Router) SetCatalog(catalog *servicecatalog.Catalog) {
+	if catalog != nil {
+		r.catalog = catalog
+	}
+}
+
+// SetLatencyEngine sets the latency engine used by the router.
+func (r *Router) SetLatencyEngine(engine *latency.Engine) {
+	r.latencyEngine = engine
+}
+
+// RegisterJSONPrefix maps an AWS JSON X-Amz-Target prefix to a canonical service.
+func (r *Router) RegisterJSONPrefix(prefix, serviceName string) {
+	r.jsonPrefixes[prefix] = r.catalog.MustNormalize(serviceName)
+}
+
+// RegisterCBORServiceName maps a Smithy RPC v2 CBOR service name to a canonical service.
+func (r *Router) RegisterCBORServiceName(serviceName, canonical string) {
+	r.cborNames[serviceName] = r.catalog.MustNormalize(canonical)
+}
+
 // wrapHandler wraps a handler with logging and request ID injection.
-func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) http.HandlerFunc {
+func (r *Router) wrapHandler(method, pattern, serviceName string, handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
 		requestID := uuid.New().String()
+		info := r.requestInfo(serviceName, method, pattern, req)
 
 		// Add AWS-style headers
 		w.Header().Set("x-amz-request-id", requestID)
@@ -150,6 +190,15 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 
 		// Wrap response writer to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		if decision := r.evaluateLatency(&info); decision != nil && decision.Delay > 0 {
+			timer := time.NewTimer(decision.Delay)
+			select {
+			case <-timer.C:
+			case <-req.Context().Done():
+				timer.Stop()
+			}
+		}
 
 		// Call the actual handler
 		handler(wrapped, req)
@@ -184,6 +233,14 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 			r.logger.Debug("request body", "request_id", requestID, "body", requestBody)
 		}
 	}
+}
+
+func (r *Router) evaluateLatency(info *requestInfo) *latency.Decision {
+	if r.latencyEngine == nil || info.isControl {
+		return nil
+	}
+
+	return r.latencyEngine.Evaluate(&info.RequestInfo)
 }
 
 // ServeHTTP implements http.Handler.
