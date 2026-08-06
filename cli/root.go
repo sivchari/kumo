@@ -33,9 +33,12 @@ func NewRootCmd() *cobra.Command {
 		newAppMeshCmd(),
 		newAppSyncCmd(),
 		newBackupCmd(),
+		newCloudFrontCmd(),
 		newLambdaCmd(),
+		newRoute53Cmd(),
 		newS3Cmd(),
 		newS3APICmd(),
+		newSESv2Cmd(),
 	)
 
 	// Services covered by cli-gen (see internal/cligen and `make cli-gen`).

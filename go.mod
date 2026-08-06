@@ -17,6 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/athena v1.57.6
 	github.com/aws/aws-sdk-go-v2/service/backup v1.55.2
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.76.1
+	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.67.4
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.66.3
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.81.1
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.57.3
@@ -30,8 +31,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.43.7
 	github.com/aws/aws-sdk-go-v2/service/kms v1.51.1
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.2
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.65.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.100.1
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.44.4
+	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.66.4
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.45.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.42.4
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.27

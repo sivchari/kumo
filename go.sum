@@ -32,6 +32,8 @@ github.com/aws/aws-sdk-go-v2/service/backup v1.55.2 h1:WhdT1PwOjTjKLGuD9lJDyNMgY
 github.com/aws/aws-sdk-go-v2/service/backup v1.55.2/go.mod h1:uMh3ZDoLKhXldYL1qcBYy1HsNQfKgL/w8iF2onOyoKY=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.76.1 h1:UDQGJ9AuLcf4yiDKyHPGN4EirOLo/E8+Zfoii8FhyZs=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.76.1/go.mod h1:tCsJEKr4HMFIZSnXLx6rU2HlptPtLhWWfw2V2j9p7lE=
+github.com/aws/aws-sdk-go-v2/service/cloudfront v1.67.4 h1:vM0MvzS7MkDHdo7Wmf8laa76iV9Q51I2+Qyfp6U+npk=
+github.com/aws/aws-sdk-go-v2/service/cloudfront v1.67.4/go.mod h1:pJFmx+oQZM45GaxxMbro/1hebSe7r2HEvzRZpYfbOUo=
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.66.3 h1:bpL3nRqFErK0i1AAjCnFT5hKovNOZsNzcG+U8wrCbuc=
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.66.3/go.mod h1:wvC/zJUFlvcT+KTHLzpKe8PNU21NmTWrXxWBlzh0gTQ=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.81.1 h1:snTrm7koUumqi+IYoRDgsVfYBEM0naT29binkFO57M0=
@@ -68,10 +70,14 @@ github.com/aws/aws-sdk-go-v2/service/kms v1.51.1 h1:zuSf4olLKZW8cF/W9Y5wvGT+/0ra
 github.com/aws/aws-sdk-go-v2/service/kms v1.51.1/go.mod h1:Y0+uxvxz6ib4KktRdK0V4X45Vcs/JyYoz8H71pO8xeI=
 github.com/aws/aws-sdk-go-v2/service/lambda v1.101.2 h1:CkTYIMCfXy2/Td2jLBqw341cNYbRxwSCNPxdDm5COXc=
 github.com/aws/aws-sdk-go-v2/service/lambda v1.101.2/go.mod h1:1YzSvApzBChjIuI1UN2cN2roWoGjR/V7Ch3+pfIfyN0=
+github.com/aws/aws-sdk-go-v2/service/route53 v1.65.6 h1:MDZUFQEVG3S6W+VmhQ9qlbprAuPZDfvvWZTg+HZU0o0=
+github.com/aws/aws-sdk-go-v2/service/route53 v1.65.6/go.mod h1:mh85zjA/hf1PtItwFXA9Yb/2zgUCEYpkN9QmzrK4RNc=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.100.1 h1:mxuT1xE+dI54NW3RkNjP8DUT5HXqbkiAFvfdyDFwE5c=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.100.1/go.mod h1:L2dcoOgS2VSgbPLvpak2NyUPsO1TBN7M45Z4H7DlRc4=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.44.4 h1:yCy8e5a6pNHJnqlPn/f9RZ2J0UMwlxA30MRiNedSwzo=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.44.4/go.mod h1:6DFMltRxgqNNlO+UrKGSxl3fHSAqDjDkTPoGiCLrElI=
+github.com/aws/aws-sdk-go-v2/service/sesv2 v1.66.4 h1:br4Yg9yZfFggiPLgSh4ud7oLxXeG4r/UFysUiPFBYD0=
+github.com/aws/aws-sdk-go-v2/service/sesv2 v1.66.4/go.mod h1:f3Jidj1KNnUeGCuKpAhazEpxIFCVyu5+RDAB6OXt1/s=
 github.com/aws/aws-sdk-go-v2/service/sfn v1.45.4 h1:SM1kF9OLEi49bzhYW5xjexvFWKz9NhnWfN6FpWBwLJw=
 github.com/aws/aws-sdk-go-v2/service/sfn v1.45.4/go.mod h1:Ln5QOieZkb5PrbkzHXaFpzsXJFQUn1WbShNSY+p2CcM=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.11 h1:TdJ+HdzOBhU8+iVAOGUTU63VXopcumCOF1paFulHWZc=

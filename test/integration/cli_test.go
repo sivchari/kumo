@@ -19,11 +19,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	route53Types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/sivchari/golden"
 )
@@ -357,4 +361,152 @@ func TestCLI_Lambda_InvokeWithEndpoint(t *testing.T) {
 	if echoed["key"] != "value" {
 		t.Errorf("payload did not round-trip through InvokeEndpoint: %s", payloadBytes)
 	}
+}
+
+func TestCLI_SESv2_IdentityAndSendEmail(t *testing.T) {
+	emailIdentity := "cli-sender@example.com"
+
+	createOut := runCLI(t, "sesv2", "create-email-identity", "--email-identity", emailIdentity)
+	golden.New(t, golden.WithIgnoreFields("Tokens", "ResultMetadata")).Assert(t.Name()+"_create", createOut)
+
+	client := newSESv2Client(t)
+	t.Cleanup(func() {
+		_, _ = client.DeleteEmailIdentity(context.Background(), &sesv2.DeleteEmailIdentityInput{
+			EmailIdentity: aws.String(emailIdentity),
+		})
+	})
+
+	sendOut := runCLI(t, "sesv2", "send-email",
+		"--from-email-address", emailIdentity,
+		"--destination", `{"ToAddresses":["recipient@example.com"]}`,
+		"--content", `{"Simple":{"Subject":{"Data":"CLI Test Subject"},"Body":{"Text":{"Data":"CLI test body"}}}}`,
+	)
+	golden.New(t, golden.WithIgnoreFields("MessageId", "ResultMetadata")).Assert(t.Name()+"_send", sendOut)
+}
+
+func TestCLI_Route53_HostedZoneAndRecordLifecycle(t *testing.T) {
+	zoneName := "cli-test.example.com"
+
+	createOut := runCLI(t, "route53", "create-hosted-zone",
+		"--name", zoneName,
+		"--caller-reference", "test-cli-route53-create-hosted-zone",
+	)
+	created := decodeCLIJSON(t, createOut)
+	golden.New(t, golden.WithIgnoreFields(
+		"Id", "SubmittedAt", "NameServers", "Location", "ResultMetadata",
+	)).Assert(t.Name()+"_create", createOut)
+
+	hostedZone, _ := created["HostedZone"].(map[string]any)
+
+	zoneID, _ := hostedZone["Id"].(string)
+	if zoneID == "" {
+		t.Fatalf("create-hosted-zone: no HostedZone.Id in output: %s", createOut)
+	}
+
+	client := newRoute53Client(t)
+	t.Cleanup(func() {
+		_, _ = client.ChangeResourceRecordSets(context.Background(), &route53.ChangeResourceRecordSetsInput{
+			HostedZoneId: aws.String(zoneID),
+			ChangeBatch: &route53Types.ChangeBatch{
+				Changes: []route53Types.Change{
+					{
+						Action: route53Types.ChangeActionDelete,
+						ResourceRecordSet: &route53Types.ResourceRecordSet{
+							Name: aws.String("www.cli-test.example.com."),
+							Type: route53Types.RRTypeA,
+							TTL:  aws.Int64(300),
+							ResourceRecords: []route53Types.ResourceRecord{
+								{Value: aws.String("192.0.2.1")},
+							},
+						},
+					},
+				},
+			},
+		})
+		_, _ = client.DeleteHostedZone(context.Background(), &route53.DeleteHostedZoneInput{
+			Id: aws.String(zoneID),
+		})
+	})
+
+	getOut := runCLI(t, "route53", "get-hosted-zone", "--id", zoneID)
+	golden.New(t, golden.WithIgnoreFields(
+		"Id", "ResourceRecordSetCount", "NameServers", "ResultMetadata",
+	)).Assert(t.Name()+"_get", getOut)
+
+	recordChangeBatch := `{"Changes":[{"Action":"CREATE","ResourceRecordSet":` +
+		`{"Name":"www.cli-test.example.com.","Type":"A","TTL":300,"ResourceRecords":[{"Value":"192.0.2.1"}]}}]}`
+
+	changeOut := runCLI(t, "route53", "change-resource-record-sets",
+		"--hosted-zone-id", zoneID, "--change-batch", recordChangeBatch)
+	golden.New(t, golden.WithIgnoreFields("Id", "SubmittedAt", "ResultMetadata")).Assert(t.Name()+"_change", changeOut)
+
+	listOut := runCLI(t, "route53", "list-resource-record-sets", "--hosted-zone-id", zoneID)
+	if !recordSetInList(t, listOut, "www.cli-test.example.com.", "A") {
+		t.Errorf("record set should be in list-resource-record-sets output: %s", listOut)
+	}
+}
+
+// recordSetInList reports whether a resource record set with the given name
+// and type is present in a list-resource-record-sets CLI JSON output.
+func recordSetInList(t *testing.T, listOut []byte, name, recordType string) bool {
+	t.Helper()
+
+	list := decodeCLIJSON(t, listOut)
+
+	recordSets, _ := list["ResourceRecordSets"].([]any)
+
+	for _, rs := range recordSets {
+		record, ok := rs.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if record["Name"] == name && record["Type"] == recordType {
+			return true
+		}
+	}
+
+	return false
+}
+
+func TestCLI_CloudFront_DistributionCreateAndGet(t *testing.T) {
+	distributionConfig := `{` +
+		`"CallerReference":"test-cli-cloudfront-create-distribution",` +
+		`"Origins":{"Quantity":1,"Items":[{"Id":"myS3Origin","DomainName":"mybucket.s3.amazonaws.com",` +
+		`"S3OriginConfig":{"OriginAccessIdentity":""}}]},` +
+		`"DefaultCacheBehavior":{"TargetOriginId":"myS3Origin","ViewerProtocolPolicy":"allow-all",` +
+		`"CachePolicyId":"658327ea-f89d-4fab-a63d-7e88639e58f6"},` +
+		`"Comment":"CLI test distribution",` +
+		`"Enabled":true}`
+
+	createOut := runCLI(t, "cloudfront", "create-distribution", "--distribution-config", distributionConfig)
+	created := decodeCLIJSON(t, createOut)
+	golden.New(t, golden.WithIgnoreFields(
+		"Id", "ARN", "DomainName", "LastModifiedTime", "ETag", "Location", "ResultMetadata",
+	)).Assert(t.Name()+"_create", createOut)
+
+	distribution, _ := created["Distribution"].(map[string]any)
+
+	distID, _ := distribution["Id"].(string)
+	if distID == "" {
+		t.Fatalf("create-distribution: no Distribution.Id in output: %s", createOut)
+	}
+
+	etag, _ := created["ETag"].(string)
+	if etag == "" {
+		t.Fatalf("create-distribution: no ETag in output: %s", createOut)
+	}
+
+	client := newCloudFrontClient(t)
+	t.Cleanup(func() {
+		_, _ = client.DeleteDistribution(context.Background(), &cloudfront.DeleteDistributionInput{
+			Id:      aws.String(distID),
+			IfMatch: aws.String(etag),
+		})
+	})
+
+	getOut := runCLI(t, "cloudfront", "get-distribution", "--id", distID)
+	golden.New(t, golden.WithIgnoreFields(
+		"Id", "ARN", "DomainName", "LastModifiedTime", "ETag", "Location", "ResultMetadata",
+	)).Assert(t.Name()+"_get", getOut)
 }
