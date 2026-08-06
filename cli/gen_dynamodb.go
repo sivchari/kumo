@@ -24,16 +24,22 @@ func newDynamoDBCmd() *cobra.Command {
 		newDynamoDBBatchGetItemCmd(),
 		newDynamoDBBatchWriteItemCmd(),
 		newDynamoDBCreateTableCmd(),
+		newDynamoDBDeleteItemCmd(),
 		newDynamoDBDeleteTableCmd(),
 		newDynamoDBDescribeContinuousBackupsCmd(),
 		newDynamoDBDescribeTableCmd(),
 		newDynamoDBDescribeTimeToLiveCmd(),
+		newDynamoDBGetItemCmd(),
 		newDynamoDBListTablesCmd(),
 		newDynamoDBListTagsOfResourceCmd(),
+		newDynamoDBPutItemCmd(),
+		newDynamoDBQueryCmd(),
+		newDynamoDBScanCmd(),
 		newDynamoDBTagResourceCmd(),
 		newDynamoDBTransactGetItemsCmd(),
 		newDynamoDBTransactWriteItemsCmd(),
 		newDynamoDBUntagResourceCmd(),
+		newDynamoDBUpdateItemCmd(),
 		newDynamoDBUpdateTableCmd(),
 		newDynamoDBUpdateTimeToLiveCmd(),
 	)
@@ -333,6 +339,130 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 	return cmd
 }
 
+func newDynamoDBDeleteItemCmd() *cobra.Command {
+	var key string
+	var tableName string
+	var conditionExpression string
+	var conditionalOperator string
+	var expected string
+	var expressionAttributeNames string
+	var expressionAttributeValues string
+	var returnConsumedCapacity string
+	var returnItemCollectionMetrics string
+	var returnValues string
+	var returnValuesOnConditionCheckFailure string
+
+	cmd := &cobra.Command{
+		Use:   "delete-item",
+		Short: "DeleteItem",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &dynamodb.DeleteItemInput{}
+
+			if key != "" {
+				decoded, err := decodeDynamoDBJSON(key)
+				if err != nil {
+					return fmt.Errorf("delete-item: parse --key: %w", err)
+				}
+				input.Key = decoded
+			}
+
+			if tableName != "" {
+				input.TableName = aws.String(tableName)
+			}
+
+			if conditionExpression != "" {
+				input.ConditionExpression = aws.String(conditionExpression)
+			}
+
+			if conditionalOperator != "" {
+				input.ConditionalOperator = types.ConditionalOperator(conditionalOperator)
+			}
+
+			if expected != "" {
+				if err := json.Unmarshal([]byte(expected), &input.Expected); err != nil {
+					return fmt.Errorf("delete-item: parse --expected: %w", err)
+				}
+			}
+
+			if expressionAttributeNames != "" {
+				if err := json.Unmarshal([]byte(expressionAttributeNames), &input.ExpressionAttributeNames); err != nil {
+					return fmt.Errorf("delete-item: parse --expression-attribute-names: %w", err)
+				}
+			}
+
+			if expressionAttributeValues != "" {
+				decoded, err := decodeDynamoDBJSON(expressionAttributeValues)
+				if err != nil {
+					return fmt.Errorf("delete-item: parse --expression-attribute-values: %w", err)
+				}
+				input.ExpressionAttributeValues = decoded
+			}
+
+			if returnConsumedCapacity != "" {
+				input.ReturnConsumedCapacity = types.ReturnConsumedCapacity(returnConsumedCapacity)
+			}
+
+			if returnItemCollectionMetrics != "" {
+				input.ReturnItemCollectionMetrics = types.ReturnItemCollectionMetrics(returnItemCollectionMetrics)
+			}
+
+			if returnValues != "" {
+				input.ReturnValues = types.ReturnValue(returnValues)
+			}
+
+			if returnValuesOnConditionCheckFailure != "" {
+				input.ReturnValuesOnConditionCheckFailure = types.ReturnValuesOnConditionCheckFailure(returnValuesOnConditionCheckFailure)
+			}
+
+			out, err := client.DeleteItem(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("delete-item failed: %w", err)
+			}
+
+			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+				return fmt.Errorf("failed to encode output: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&key, "key", "", "Key (JSON)")
+
+	cmd.Flags().StringVar(&tableName, "table-name", "", "Table name")
+
+	cmd.Flags().StringVar(&conditionExpression, "condition-expression", "", "Condition expression")
+
+	cmd.Flags().StringVar(&conditionalOperator, "conditional-operator", "", "Conditional operator")
+
+	cmd.Flags().StringVar(&expected, "expected", "", "Expected (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeNames, "expression-attribute-names", "", "Expression attribute names (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeValues, "expression-attribute-values", "", "Expression attribute values (JSON)")
+
+	cmd.Flags().StringVar(&returnConsumedCapacity, "return-consumed-capacity", "", "Return consumed capacity")
+
+	cmd.Flags().StringVar(&returnItemCollectionMetrics, "return-item-collection-metrics", "", "Return item collection metrics")
+
+	cmd.Flags().StringVar(&returnValues, "return-values", "", "Return values")
+
+	cmd.Flags().StringVar(&returnValuesOnConditionCheckFailure, "return-values-on-condition-check-failure", "", "Return values on condition check failure")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
 func newDynamoDBDeleteTableCmd() *cobra.Command {
 	var tableName string
 
@@ -501,6 +631,96 @@ func newDynamoDBDescribeTimeToLiveCmd() *cobra.Command {
 	return cmd
 }
 
+func newDynamoDBGetItemCmd() *cobra.Command {
+	var key string
+	var tableName string
+	var attributesToGet []string
+	var consistentRead bool
+	var expressionAttributeNames string
+	var projectionExpression string
+	var returnConsumedCapacity string
+
+	cmd := &cobra.Command{
+		Use:   "get-item",
+		Short: "GetItem",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &dynamodb.GetItemInput{}
+
+			if key != "" {
+				decoded, err := decodeDynamoDBJSON(key)
+				if err != nil {
+					return fmt.Errorf("get-item: parse --key: %w", err)
+				}
+				input.Key = decoded
+			}
+
+			if tableName != "" {
+				input.TableName = aws.String(tableName)
+			}
+
+			if len(attributesToGet) > 0 {
+				input.AttributesToGet = attributesToGet
+			}
+
+			if consistentRead {
+				input.ConsistentRead = aws.Bool(consistentRead)
+			}
+
+			if expressionAttributeNames != "" {
+				if err := json.Unmarshal([]byte(expressionAttributeNames), &input.ExpressionAttributeNames); err != nil {
+					return fmt.Errorf("get-item: parse --expression-attribute-names: %w", err)
+				}
+			}
+
+			if projectionExpression != "" {
+				input.ProjectionExpression = aws.String(projectionExpression)
+			}
+
+			if returnConsumedCapacity != "" {
+				input.ReturnConsumedCapacity = types.ReturnConsumedCapacity(returnConsumedCapacity)
+			}
+
+			out, err := client.GetItem(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("get-item failed: %w", err)
+			}
+
+			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+				return fmt.Errorf("failed to encode output: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&key, "key", "", "Key (JSON)")
+
+	cmd.Flags().StringVar(&tableName, "table-name", "", "Table name")
+
+	cmd.Flags().StringArrayVar(&attributesToGet, "attributes-to-get", nil, "Attributes to get")
+
+	cmd.Flags().BoolVar(&consistentRead, "consistent-read", false, "Consistent read")
+
+	cmd.Flags().StringVar(&expressionAttributeNames, "expression-attribute-names", "", "Expression attribute names (JSON)")
+
+	cmd.Flags().StringVar(&projectionExpression, "projection-expression", "", "Projection expression")
+
+	cmd.Flags().StringVar(&returnConsumedCapacity, "return-consumed-capacity", "", "Return consumed capacity")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
 func newDynamoDBListTablesCmd() *cobra.Command {
 	var exclusiveStartTableName string
 	var limit int32
@@ -593,6 +813,457 @@ func newDynamoDBListTagsOfResourceCmd() *cobra.Command {
 	cmd.Flags().StringVar(&resourceArn, "resource-arn", "", "Resource arn")
 
 	cmd.Flags().StringVar(&nextToken, "next-token", "", "Next token")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newDynamoDBPutItemCmd() *cobra.Command {
+	var item string
+	var tableName string
+	var conditionExpression string
+	var conditionalOperator string
+	var expected string
+	var expressionAttributeNames string
+	var expressionAttributeValues string
+	var returnConsumedCapacity string
+	var returnItemCollectionMetrics string
+	var returnValues string
+	var returnValuesOnConditionCheckFailure string
+
+	cmd := &cobra.Command{
+		Use:   "put-item",
+		Short: "PutItem",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &dynamodb.PutItemInput{}
+
+			if item != "" {
+				decoded, err := decodeDynamoDBJSON(item)
+				if err != nil {
+					return fmt.Errorf("put-item: parse --item: %w", err)
+				}
+				input.Item = decoded
+			}
+
+			if tableName != "" {
+				input.TableName = aws.String(tableName)
+			}
+
+			if conditionExpression != "" {
+				input.ConditionExpression = aws.String(conditionExpression)
+			}
+
+			if conditionalOperator != "" {
+				input.ConditionalOperator = types.ConditionalOperator(conditionalOperator)
+			}
+
+			if expected != "" {
+				if err := json.Unmarshal([]byte(expected), &input.Expected); err != nil {
+					return fmt.Errorf("put-item: parse --expected: %w", err)
+				}
+			}
+
+			if expressionAttributeNames != "" {
+				if err := json.Unmarshal([]byte(expressionAttributeNames), &input.ExpressionAttributeNames); err != nil {
+					return fmt.Errorf("put-item: parse --expression-attribute-names: %w", err)
+				}
+			}
+
+			if expressionAttributeValues != "" {
+				decoded, err := decodeDynamoDBJSON(expressionAttributeValues)
+				if err != nil {
+					return fmt.Errorf("put-item: parse --expression-attribute-values: %w", err)
+				}
+				input.ExpressionAttributeValues = decoded
+			}
+
+			if returnConsumedCapacity != "" {
+				input.ReturnConsumedCapacity = types.ReturnConsumedCapacity(returnConsumedCapacity)
+			}
+
+			if returnItemCollectionMetrics != "" {
+				input.ReturnItemCollectionMetrics = types.ReturnItemCollectionMetrics(returnItemCollectionMetrics)
+			}
+
+			if returnValues != "" {
+				input.ReturnValues = types.ReturnValue(returnValues)
+			}
+
+			if returnValuesOnConditionCheckFailure != "" {
+				input.ReturnValuesOnConditionCheckFailure = types.ReturnValuesOnConditionCheckFailure(returnValuesOnConditionCheckFailure)
+			}
+
+			out, err := client.PutItem(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("put-item failed: %w", err)
+			}
+
+			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+				return fmt.Errorf("failed to encode output: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&item, "item", "", "Item (JSON)")
+
+	cmd.Flags().StringVar(&tableName, "table-name", "", "Table name")
+
+	cmd.Flags().StringVar(&conditionExpression, "condition-expression", "", "Condition expression")
+
+	cmd.Flags().StringVar(&conditionalOperator, "conditional-operator", "", "Conditional operator")
+
+	cmd.Flags().StringVar(&expected, "expected", "", "Expected (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeNames, "expression-attribute-names", "", "Expression attribute names (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeValues, "expression-attribute-values", "", "Expression attribute values (JSON)")
+
+	cmd.Flags().StringVar(&returnConsumedCapacity, "return-consumed-capacity", "", "Return consumed capacity")
+
+	cmd.Flags().StringVar(&returnItemCollectionMetrics, "return-item-collection-metrics", "", "Return item collection metrics")
+
+	cmd.Flags().StringVar(&returnValues, "return-values", "", "Return values")
+
+	cmd.Flags().StringVar(&returnValuesOnConditionCheckFailure, "return-values-on-condition-check-failure", "", "Return values on condition check failure")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newDynamoDBQueryCmd() *cobra.Command {
+	var tableName string
+	var attributesToGet []string
+	var conditionalOperator string
+	var consistentRead bool
+	var exclusiveStartKey string
+	var expressionAttributeNames string
+	var expressionAttributeValues string
+	var filterExpression string
+	var indexName string
+	var keyConditionExpression string
+	var keyConditions string
+	var limit int32
+	var projectionExpression string
+	var queryFilter string
+	var returnConsumedCapacity string
+	var scanIndexForward bool
+	var selectValue string
+
+	cmd := &cobra.Command{
+		Use:   "query",
+		Short: "Query",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &dynamodb.QueryInput{}
+
+			if tableName != "" {
+				input.TableName = aws.String(tableName)
+			}
+
+			if len(attributesToGet) > 0 {
+				input.AttributesToGet = attributesToGet
+			}
+
+			if conditionalOperator != "" {
+				input.ConditionalOperator = types.ConditionalOperator(conditionalOperator)
+			}
+
+			if consistentRead {
+				input.ConsistentRead = aws.Bool(consistentRead)
+			}
+
+			if exclusiveStartKey != "" {
+				decoded, err := decodeDynamoDBJSON(exclusiveStartKey)
+				if err != nil {
+					return fmt.Errorf("query: parse --exclusive-start-key: %w", err)
+				}
+				input.ExclusiveStartKey = decoded
+			}
+
+			if expressionAttributeNames != "" {
+				if err := json.Unmarshal([]byte(expressionAttributeNames), &input.ExpressionAttributeNames); err != nil {
+					return fmt.Errorf("query: parse --expression-attribute-names: %w", err)
+				}
+			}
+
+			if expressionAttributeValues != "" {
+				decoded, err := decodeDynamoDBJSON(expressionAttributeValues)
+				if err != nil {
+					return fmt.Errorf("query: parse --expression-attribute-values: %w", err)
+				}
+				input.ExpressionAttributeValues = decoded
+			}
+
+			if filterExpression != "" {
+				input.FilterExpression = aws.String(filterExpression)
+			}
+
+			if indexName != "" {
+				input.IndexName = aws.String(indexName)
+			}
+
+			if keyConditionExpression != "" {
+				input.KeyConditionExpression = aws.String(keyConditionExpression)
+			}
+
+			if keyConditions != "" {
+				if err := json.Unmarshal([]byte(keyConditions), &input.KeyConditions); err != nil {
+					return fmt.Errorf("query: parse --key-conditions: %w", err)
+				}
+			}
+
+			if limit != 0 {
+				input.Limit = aws.Int32(limit)
+			}
+
+			if projectionExpression != "" {
+				input.ProjectionExpression = aws.String(projectionExpression)
+			}
+
+			if queryFilter != "" {
+				if err := json.Unmarshal([]byte(queryFilter), &input.QueryFilter); err != nil {
+					return fmt.Errorf("query: parse --query-filter: %w", err)
+				}
+			}
+
+			if returnConsumedCapacity != "" {
+				input.ReturnConsumedCapacity = types.ReturnConsumedCapacity(returnConsumedCapacity)
+			}
+
+			if scanIndexForward {
+				input.ScanIndexForward = aws.Bool(scanIndexForward)
+			}
+
+			if selectValue != "" {
+				input.Select = types.Select(selectValue)
+			}
+
+			out, err := client.Query(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("query failed: %w", err)
+			}
+
+			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+				return fmt.Errorf("failed to encode output: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&tableName, "table-name", "", "Table name")
+
+	cmd.Flags().StringArrayVar(&attributesToGet, "attributes-to-get", nil, "Attributes to get")
+
+	cmd.Flags().StringVar(&conditionalOperator, "conditional-operator", "", "Conditional operator")
+
+	cmd.Flags().BoolVar(&consistentRead, "consistent-read", false, "Consistent read")
+
+	cmd.Flags().StringVar(&exclusiveStartKey, "exclusive-start-key", "", "Exclusive start key (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeNames, "expression-attribute-names", "", "Expression attribute names (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeValues, "expression-attribute-values", "", "Expression attribute values (JSON)")
+
+	cmd.Flags().StringVar(&filterExpression, "filter-expression", "", "Filter expression")
+
+	cmd.Flags().StringVar(&indexName, "index-name", "", "Index name")
+
+	cmd.Flags().StringVar(&keyConditionExpression, "key-condition-expression", "", "Key condition expression")
+
+	cmd.Flags().StringVar(&keyConditions, "key-conditions", "", "Key conditions (JSON)")
+
+	cmd.Flags().Int32Var(&limit, "limit", 0, "Limit")
+
+	cmd.Flags().StringVar(&projectionExpression, "projection-expression", "", "Projection expression")
+
+	cmd.Flags().StringVar(&queryFilter, "query-filter", "", "Query filter (JSON)")
+
+	cmd.Flags().StringVar(&returnConsumedCapacity, "return-consumed-capacity", "", "Return consumed capacity")
+
+	cmd.Flags().BoolVar(&scanIndexForward, "scan-index-forward", false, "Scan index forward")
+
+	cmd.Flags().StringVar(&selectValue, "select", "", "Select")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newDynamoDBScanCmd() *cobra.Command {
+	var tableName string
+	var attributesToGet []string
+	var conditionalOperator string
+	var consistentRead bool
+	var exclusiveStartKey string
+	var expressionAttributeNames string
+	var expressionAttributeValues string
+	var filterExpression string
+	var indexName string
+	var limit int32
+	var projectionExpression string
+	var returnConsumedCapacity string
+	var scanFilter string
+	var segment int32
+	var selectValue string
+	var totalSegments int32
+
+	cmd := &cobra.Command{
+		Use:   "scan",
+		Short: "Scan",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &dynamodb.ScanInput{}
+
+			if tableName != "" {
+				input.TableName = aws.String(tableName)
+			}
+
+			if len(attributesToGet) > 0 {
+				input.AttributesToGet = attributesToGet
+			}
+
+			if conditionalOperator != "" {
+				input.ConditionalOperator = types.ConditionalOperator(conditionalOperator)
+			}
+
+			if consistentRead {
+				input.ConsistentRead = aws.Bool(consistentRead)
+			}
+
+			if exclusiveStartKey != "" {
+				decoded, err := decodeDynamoDBJSON(exclusiveStartKey)
+				if err != nil {
+					return fmt.Errorf("scan: parse --exclusive-start-key: %w", err)
+				}
+				input.ExclusiveStartKey = decoded
+			}
+
+			if expressionAttributeNames != "" {
+				if err := json.Unmarshal([]byte(expressionAttributeNames), &input.ExpressionAttributeNames); err != nil {
+					return fmt.Errorf("scan: parse --expression-attribute-names: %w", err)
+				}
+			}
+
+			if expressionAttributeValues != "" {
+				decoded, err := decodeDynamoDBJSON(expressionAttributeValues)
+				if err != nil {
+					return fmt.Errorf("scan: parse --expression-attribute-values: %w", err)
+				}
+				input.ExpressionAttributeValues = decoded
+			}
+
+			if filterExpression != "" {
+				input.FilterExpression = aws.String(filterExpression)
+			}
+
+			if indexName != "" {
+				input.IndexName = aws.String(indexName)
+			}
+
+			if limit != 0 {
+				input.Limit = aws.Int32(limit)
+			}
+
+			if projectionExpression != "" {
+				input.ProjectionExpression = aws.String(projectionExpression)
+			}
+
+			if returnConsumedCapacity != "" {
+				input.ReturnConsumedCapacity = types.ReturnConsumedCapacity(returnConsumedCapacity)
+			}
+
+			if scanFilter != "" {
+				if err := json.Unmarshal([]byte(scanFilter), &input.ScanFilter); err != nil {
+					return fmt.Errorf("scan: parse --scan-filter: %w", err)
+				}
+			}
+
+			if segment != 0 {
+				input.Segment = aws.Int32(segment)
+			}
+
+			if selectValue != "" {
+				input.Select = types.Select(selectValue)
+			}
+
+			if totalSegments != 0 {
+				input.TotalSegments = aws.Int32(totalSegments)
+			}
+
+			out, err := client.Scan(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("scan failed: %w", err)
+			}
+
+			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+				return fmt.Errorf("failed to encode output: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&tableName, "table-name", "", "Table name")
+
+	cmd.Flags().StringArrayVar(&attributesToGet, "attributes-to-get", nil, "Attributes to get")
+
+	cmd.Flags().StringVar(&conditionalOperator, "conditional-operator", "", "Conditional operator")
+
+	cmd.Flags().BoolVar(&consistentRead, "consistent-read", false, "Consistent read")
+
+	cmd.Flags().StringVar(&exclusiveStartKey, "exclusive-start-key", "", "Exclusive start key (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeNames, "expression-attribute-names", "", "Expression attribute names (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeValues, "expression-attribute-values", "", "Expression attribute values (JSON)")
+
+	cmd.Flags().StringVar(&filterExpression, "filter-expression", "", "Filter expression")
+
+	cmd.Flags().StringVar(&indexName, "index-name", "", "Index name")
+
+	cmd.Flags().Int32Var(&limit, "limit", 0, "Limit")
+
+	cmd.Flags().StringVar(&projectionExpression, "projection-expression", "", "Projection expression")
+
+	cmd.Flags().StringVar(&returnConsumedCapacity, "return-consumed-capacity", "", "Return consumed capacity")
+
+	cmd.Flags().StringVar(&scanFilter, "scan-filter", "", "Scan filter (JSON)")
+
+	cmd.Flags().Int32Var(&segment, "segment", 0, "Segment")
+
+	cmd.Flags().StringVar(&selectValue, "select", "", "Select")
+
+	cmd.Flags().Int32Var(&totalSegments, "total-segments", 0, "Total segments")
 
 	cmd.Flags().String("region", "", "Region override (ignored)")
 
@@ -803,6 +1474,146 @@ func newDynamoDBUntagResourceCmd() *cobra.Command {
 	cmd.Flags().StringVar(&resourceArn, "resource-arn", "", "Resource arn")
 
 	cmd.Flags().StringArrayVar(&tagKeys, "tag-keys", nil, "Tag keys")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newDynamoDBUpdateItemCmd() *cobra.Command {
+	var key string
+	var tableName string
+	var attributeUpdates string
+	var conditionExpression string
+	var conditionalOperator string
+	var expected string
+	var expressionAttributeNames string
+	var expressionAttributeValues string
+	var returnConsumedCapacity string
+	var returnItemCollectionMetrics string
+	var returnValues string
+	var returnValuesOnConditionCheckFailure string
+	var updateExpression string
+
+	cmd := &cobra.Command{
+		Use:   "update-item",
+		Short: "UpdateItem",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &dynamodb.UpdateItemInput{}
+
+			if key != "" {
+				decoded, err := decodeDynamoDBJSON(key)
+				if err != nil {
+					return fmt.Errorf("update-item: parse --key: %w", err)
+				}
+				input.Key = decoded
+			}
+
+			if tableName != "" {
+				input.TableName = aws.String(tableName)
+			}
+
+			if attributeUpdates != "" {
+				if err := json.Unmarshal([]byte(attributeUpdates), &input.AttributeUpdates); err != nil {
+					return fmt.Errorf("update-item: parse --attribute-updates: %w", err)
+				}
+			}
+
+			if conditionExpression != "" {
+				input.ConditionExpression = aws.String(conditionExpression)
+			}
+
+			if conditionalOperator != "" {
+				input.ConditionalOperator = types.ConditionalOperator(conditionalOperator)
+			}
+
+			if expected != "" {
+				if err := json.Unmarshal([]byte(expected), &input.Expected); err != nil {
+					return fmt.Errorf("update-item: parse --expected: %w", err)
+				}
+			}
+
+			if expressionAttributeNames != "" {
+				if err := json.Unmarshal([]byte(expressionAttributeNames), &input.ExpressionAttributeNames); err != nil {
+					return fmt.Errorf("update-item: parse --expression-attribute-names: %w", err)
+				}
+			}
+
+			if expressionAttributeValues != "" {
+				decoded, err := decodeDynamoDBJSON(expressionAttributeValues)
+				if err != nil {
+					return fmt.Errorf("update-item: parse --expression-attribute-values: %w", err)
+				}
+				input.ExpressionAttributeValues = decoded
+			}
+
+			if returnConsumedCapacity != "" {
+				input.ReturnConsumedCapacity = types.ReturnConsumedCapacity(returnConsumedCapacity)
+			}
+
+			if returnItemCollectionMetrics != "" {
+				input.ReturnItemCollectionMetrics = types.ReturnItemCollectionMetrics(returnItemCollectionMetrics)
+			}
+
+			if returnValues != "" {
+				input.ReturnValues = types.ReturnValue(returnValues)
+			}
+
+			if returnValuesOnConditionCheckFailure != "" {
+				input.ReturnValuesOnConditionCheckFailure = types.ReturnValuesOnConditionCheckFailure(returnValuesOnConditionCheckFailure)
+			}
+
+			if updateExpression != "" {
+				input.UpdateExpression = aws.String(updateExpression)
+			}
+
+			out, err := client.UpdateItem(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("update-item failed: %w", err)
+			}
+
+			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+				return fmt.Errorf("failed to encode output: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&key, "key", "", "Key (JSON)")
+
+	cmd.Flags().StringVar(&tableName, "table-name", "", "Table name")
+
+	cmd.Flags().StringVar(&attributeUpdates, "attribute-updates", "", "Attribute updates (JSON)")
+
+	cmd.Flags().StringVar(&conditionExpression, "condition-expression", "", "Condition expression")
+
+	cmd.Flags().StringVar(&conditionalOperator, "conditional-operator", "", "Conditional operator")
+
+	cmd.Flags().StringVar(&expected, "expected", "", "Expected (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeNames, "expression-attribute-names", "", "Expression attribute names (JSON)")
+
+	cmd.Flags().StringVar(&expressionAttributeValues, "expression-attribute-values", "", "Expression attribute values (JSON)")
+
+	cmd.Flags().StringVar(&returnConsumedCapacity, "return-consumed-capacity", "", "Return consumed capacity")
+
+	cmd.Flags().StringVar(&returnItemCollectionMetrics, "return-item-collection-metrics", "", "Return item collection metrics")
+
+	cmd.Flags().StringVar(&returnValues, "return-values", "", "Return values")
+
+	cmd.Flags().StringVar(&returnValuesOnConditionCheckFailure, "return-values-on-condition-check-failure", "", "Return values on condition check failure")
+
+	cmd.Flags().StringVar(&updateExpression, "update-expression", "", "Update expression")
 
 	cmd.Flags().String("region", "", "Region override (ignored)")
 

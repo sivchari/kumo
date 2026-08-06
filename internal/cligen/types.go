@@ -91,6 +91,12 @@ const (
 	// field (nested structs, maps of structs, or anything deeper than a flat
 	// struct).
 	FlagJSONBlob
+	// FlagCustomFunc is a string flag decoded by calling a named,
+	// hand-written cli package function (see FieldFlag.CustomFunc /
+	// FlagOverride.CustomFunc), for fields no generic rule can derive (e.g.
+	// dynamodb's map[string]types.AttributeValue, decoded by
+	// cli.decodeDynamoDBJSON).
+	FlagCustomFunc
 )
 
 // FieldFlag is a single Input struct field classified as a CLI flag.
@@ -103,6 +109,9 @@ type FieldFlag struct {
 	// ElemType is set for FlagStringEnum (the named enum type), FlagKV and
 	// FlagKVArray (the flat struct type). It is nil otherwise.
 	ElemType reflect.Type
+	// CustomFunc is the cli package function name to call for FlagCustomFunc
+	// fields (see FlagOverride.CustomFunc). Empty for every other Kind.
+	CustomFunc string
 	// Pointer reports whether the struct field's Go type is a pointer
 	// (e.g. *string vs string).
 	Pointer bool

@@ -221,7 +221,7 @@ func buildActionView(binding sdkBinding, action *Action, fields []FieldFlag, imp
 	}
 
 	for _, f := range fields {
-		fv, err := buildFlagView(f, use, imports)
+		fv, err := buildFlagView(&f, use, imports)
 		if err != nil {
 			return actionView{}, err
 		}
