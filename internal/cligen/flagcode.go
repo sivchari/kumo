@@ -2,6 +2,7 @@ package cligen
 
 import (
 	"fmt"
+	"go/token"
 	"strings"
 )
 
@@ -68,14 +69,15 @@ func buildFlagView(f FieldFlag, actionUse string, imports *importSet) (flagView,
 }
 
 // flagVarName derives a local RunE variable name from a struct field name,
-// avoiding collisions with reservedLocalNames.
+// avoiding collisions with reservedLocalNames and Go keywords (e.g. a field
+// named "Type" would otherwise lower-case to the reserved word "type").
 func flagVarName(fieldName string) string {
 	if fieldName == "" {
 		return "value"
 	}
 
 	v := strings.ToLower(fieldName[:1]) + fieldName[1:]
-	if reservedLocalNames[v] {
+	if reservedLocalNames[v] || token.IsKeyword(v) {
 		v += "Value"
 	}
 

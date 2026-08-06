@@ -45,7 +45,11 @@ func NewRootCmd() *cobra.Command {
 		newEventsCmd(),
 		newKMSCmd(),
 		newKinesisCmd(),
+		newSecretsManagerCmd(),
+		newSNSCmd(),
 		newSQSCmd(),
+		newSSMCmd(),
+		newSTSCmd(),
 	)
 
 	return cmd

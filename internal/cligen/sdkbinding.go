@@ -15,7 +15,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 // sdkBinding describes how a kumo service maps onto an aws-sdk-go-v2 client:
@@ -104,9 +108,29 @@ var sdkBindings = map[string]sdkBinding{
 		ImportPath: "github.com/aws/aws-sdk-go-v2/service/kms",
 		CLIName:    "KMS",
 	},
+	"secretsmanager": {
+		ClientType: reflect.TypeOf(secretsmanager.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/secretsmanager",
+		CLIName:    "SecretsManager",
+	},
+	"sns": {
+		ClientType: reflect.TypeOf(sns.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/sns",
+		CLIName:    "SNS",
+	},
 	"sqs": {
 		ClientType: reflect.TypeOf(sqs.Client{}),
 		ImportPath: "github.com/aws/aws-sdk-go-v2/service/sqs",
 		CLIName:    "SQS",
+	},
+	"ssm": {
+		ClientType: reflect.TypeOf(ssm.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/ssm",
+		CLIName:    "SSM",
+	},
+	"sts": {
+		ClientType: reflect.TypeOf(sts.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/sts",
+		CLIName:    "STS",
 	},
 }
