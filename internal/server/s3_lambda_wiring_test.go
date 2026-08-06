@@ -50,9 +50,12 @@ func TestS3ToLambdaInvoker_InvokeAsync_StatusHandling(t *testing.T) {
 			}))
 			defer srv.Close()
 
+			// A dedicated Transport keeps the parallel subtests off the shared
+			// http.DefaultTransport: httptest's Close closes its idle
+			// connections, killing the sibling subtest's in-flight request.
 			inv := &s3ToLambdaInvoker{
 				baseURL:    srv.URL,
-				httpClient: &http.Client{Timeout: 5 * time.Second},
+				httpClient: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{}},
 			}
 
 			err := inv.InvokeAsync(context.Background(), "arn:aws:lambda:us-east-1:123456789012:function:my-func", []byte(`{}`))
