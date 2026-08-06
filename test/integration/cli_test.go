@@ -10,6 +10,11 @@ package integration
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/sivchari/golden"
 )
@@ -231,4 +237,124 @@ func TestCLI_ACM_RequestAndDescribeCertificate(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields(
 		"CertificateArn", "CreatedAt", "IssuedAt", "Serial", "Value", "ResultMetadata",
 	)).Assert(t.Name()+"_describe", describeOut)
+}
+
+func TestCLI_Lambda_FunctionLifecycle(t *testing.T) {
+	functionName := "test-cli-lambda-function"
+	code := `{"ZipFile":"` + base64.StdEncoding.EncodeToString([]byte("fake-zip-content")) + `"}`
+
+	createOut := runCLI(t, "lambda", "create-function",
+		"--function-name", functionName,
+		"--runtime", "python3.12",
+		"--role", "arn:aws:iam::000000000000:role/test-role",
+		"--handler", "index.handler",
+		"--code", code,
+	)
+	golden.New(t, golden.WithIgnoreFields(
+		"FunctionArn", "CodeSha256", "LastModified",
+	)).Assert(t.Name()+"_create", createOut)
+
+	client := newLambdaClient(t)
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	listOut := runCLI(t, "lambda", "list-functions")
+	list := decodeCLIJSON(t, listOut)
+
+	functions, _ := list["Functions"].([]any)
+
+	found := false
+
+	for _, f := range functions {
+		fn, ok := f.(map[string]any)
+		if ok && fn["FunctionName"] == functionName {
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("function %s not found in list-functions output: %s", functionName, listOut)
+	}
+
+	getOut := runCLI(t, "lambda", "get-function", "--function-name", functionName)
+	golden.New(t, golden.WithIgnoreFields(
+		"FunctionArn", "CodeSha256", "LastModified", "Location",
+	)).Assert(t.Name()+"_get", getOut)
+
+	runCLI(t, "lambda", "delete-function", "--function-name", functionName)
+
+	if _, stderr, err := runCLIExpectError(t, "lambda", "get-function", "--function-name", functionName); err == nil {
+		t.Fatalf("expected get-function to fail after delete-function, stderr:\n%s", stderr)
+	}
+}
+
+// TestCLI_Lambda_InvokeWithEndpoint exercises the local-dev loop the
+// InvokeEndpoint extension exists for: create-function with a kumo-only
+// --invoke-endpoint pointing at a local HTTP server, then invoke round-trips
+// the payload through it, mirroring TestLambda_InvokeWithEndpoint in
+// lambda_test.go.
+func TestCLI_Lambda_InvokeWithEndpoint(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"statusCode": 200,
+			"echoed":     payload,
+		})
+	}))
+	t.Cleanup(mockServer.Close)
+
+	functionName := "test-cli-lambda-invoke-endpoint"
+	code := `{"ZipFile":"` + base64.StdEncoding.EncodeToString([]byte("fake-zip-content")) + `"}`
+
+	runCLI(t, "lambda", "create-function",
+		"--function-name", functionName,
+		"--runtime", "python3.12",
+		"--role", "arn:aws:iam::000000000000:role/test-role",
+		"--handler", "index.handler",
+		"--code", code,
+		"--invoke-endpoint", mockServer.URL,
+	)
+
+	client := newLambdaClient(t)
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	outfile := filepath.Join(t.TempDir(), "invoke-out.json")
+
+	metadataOut := runCLI(t, "lambda", "invoke",
+		"--function-name", functionName,
+		"--payload", `{"key":"value"}`,
+		outfile,
+	)
+
+	metadata := decodeCLIJSON(t, metadataOut)
+	if statusCode, _ := metadata["StatusCode"].(float64); statusCode != http.StatusOK {
+		t.Errorf("unexpected StatusCode in invoke output: %v (full output: %s)", metadata["StatusCode"], metadataOut)
+	}
+
+	payloadBytes, err := os.ReadFile(outfile)
+	if err != nil {
+		t.Fatalf("read invoke outfile: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("decode invoke outfile: %v\ncontents: %s", err, payloadBytes)
+	}
+
+	echoed, _ := payload["echoed"].(map[string]any)
+	if echoed["key"] != "value" {
+		t.Errorf("payload did not round-trip through InvokeEndpoint: %s", payloadBytes)
+	}
 }

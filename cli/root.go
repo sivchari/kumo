@@ -33,6 +33,7 @@ func NewRootCmd() *cobra.Command {
 		newAppMeshCmd(),
 		newAppSyncCmd(),
 		newBackupCmd(),
+		newLambdaCmd(),
 		newS3Cmd(),
 		newS3APICmd(),
 	)
