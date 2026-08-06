@@ -3,6 +3,8 @@ package sns
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Topic represents an SNS topic.
@@ -290,15 +292,7 @@ type XMLErrorDetail struct {
 }
 
 // TopicError represents an SNS error.
-type TopicError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *TopicError) Error() string {
-	return e.Message
-}
+type TopicError = service.CodedError
 
 // XMLSetTopicAttributesResponse is the XML response for SetTopicAttributes.
 type XMLSetTopicAttributesResponse struct {

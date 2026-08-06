@@ -4,6 +4,8 @@ package ses
 import (
 	"encoding/xml"
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Identity represents a verified email identity.
@@ -197,12 +199,4 @@ type XMLErrorDetail struct {
 }
 
 // Error represents an SES error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
