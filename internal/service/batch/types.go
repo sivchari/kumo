@@ -1,7 +1,11 @@
 // Package batch provides AWS Batch service emulation for kumo.
 package batch
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // Compute environment states.
 const (
@@ -763,15 +767,7 @@ type ErrorResponse struct {
 }
 
 // Error represents a Batch error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // Timestamp helper for job creation.
 func nowMillis() int64 {

@@ -4,6 +4,8 @@ package glue
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // AWSTimestamp is a time.Time that marshals to Unix timestamp (float64).
@@ -367,15 +369,7 @@ type ErrorResponse struct {
 }
 
 // Error represents a Glue error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // GetTagsInput is the request for GetTags.
 type GetTagsInput struct {

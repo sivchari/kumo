@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // ReturnValues constants for DynamoDB operations.
@@ -610,15 +612,7 @@ type ErrorResponse struct {
 }
 
 // TableError represents a DynamoDB table error.
-type TableError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *TableError) Error() string {
-	return e.Message
-}
+type TableError = service.CodedError
 
 // Tag represents a key-value tag for a DynamoDB resource.
 type Tag struct {

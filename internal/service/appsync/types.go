@@ -1,6 +1,8 @@
 // Package appsync provides AWS AppSync service emulation for kumo.
 package appsync
 
+import "github.com/sivchari/kumo/internal/service"
+
 // Authentication types.
 const (
 	AuthTypeAPIKey           = "API_KEY"
@@ -363,12 +365,4 @@ type ErrorResponse struct {
 }
 
 // Error represents an AppSync error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError

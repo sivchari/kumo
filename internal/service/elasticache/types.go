@@ -2,6 +2,8 @@ package elasticache
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CacheCluster represents an ElastiCache cluster.
@@ -230,15 +232,7 @@ type DescribeReplicationGroupsOutput struct {
 // Error types.
 
 // Error represents an ElastiCache error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // Error codes.
 const (

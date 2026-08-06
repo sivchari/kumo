@@ -2,6 +2,8 @@ package documentdb
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // DBCluster represents a DocumentDB database cluster.
@@ -113,15 +115,7 @@ type DescribeDBInstancesInput struct {
 // Error types.
 
 // Error represents a DocumentDB error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // ErrorResponse represents a DocumentDB error response.
 type ErrorResponse struct {
