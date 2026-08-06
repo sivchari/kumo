@@ -61,14 +61,7 @@ func TestRender_MatchesExistingHandWrittenCommands(t *testing.T) {
 // cli/gen_*.go file matches cligen.Render(service.Services()) output. Run
 // `make cli-gen` to regenerate and commit the output after modifying a
 // covered service or cli-gen itself.
-//
-// PR1 is intentionally inert (it ships the generator without committing any
-// generated cli/gen_*.go file), so this test is skipped for now. Remove the
-// Skip when PR2 lands the first generated files - see the "PR 2" checklist
-// in plan-feat/cli-gen.md.
 func TestGeneratedCLIUpToDate(t *testing.T) {
-	t.Skip("enabled when gen files land in PR 2 (see plan-feat/cli-gen.md)")
-
 	files, diagnostics, err := cligen.Render(service.Services())
 	if err != nil {
 		t.Fatalf("Render: %v", err)

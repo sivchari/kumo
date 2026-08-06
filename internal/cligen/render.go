@@ -208,7 +208,7 @@ func buildActionView(binding sdkBinding, action *Action, fields []FieldFlag, imp
 		SDKMethod:      action.SDKMethod,
 		InputTypeName:  action.InputType.Name(),
 		OutputTypeName: action.OutputType.Name(),
-		HasOutput:      hasOutputContent(action.OutputType),
+		HasOutput:      hasOutputContent(action.OutputType) && !isOutputPrintSuppressed(action.ServiceName, action.SDKMethod),
 	}
 
 	if av.HasOutput {

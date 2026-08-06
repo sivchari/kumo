@@ -56,10 +56,10 @@ fmt-diff:
 readme:
 	go run ./cmd/readme-gen
 
-# Print cli-gen's discovery/render diagnostics without writing any files.
-# Pass -out to actually (re)generate cli/gen_*.go once a service is migrated.
+# Regenerate the cli/gen_*.go command files. Pass -dry-run to only print
+# discovery/render diagnostics without writing any files.
 cli-gen:
-	go run ./cmd/cli-gen -dry-run
+	go run ./cmd/cli-gen
 
 # Docker
 docker:
