@@ -134,13 +134,9 @@ func TestSFN_StartAndDescribeExecution(t *testing.T) {
 	}
 	golden.New(t, golden.WithIgnoreFields("ExecutionArn", "StartDate", "ResultMetadata")).Assert(t.Name()+"_start", startOutput)
 
-	// Describe execution.
-	describeOutput, err := client.DescribeExecution(ctx, &sfn.DescribeExecutionInput{
-		ExecutionArn: startOutput.ExecutionArn,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Describe execution. Wait for the terminal state first: even a
+	// single-Pass execution can still be RUNNING on a slow runner.
+	describeOutput := waitForSFNExecutionTerminal(t, client, *startOutput.ExecutionArn)
 	golden.New(t, golden.WithIgnoreFields("ExecutionArn", "StateMachineArn", "StartDate", "StopDate", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
 }
 
