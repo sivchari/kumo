@@ -1,6 +1,9 @@
 package apigateway
 
-import "testing"
+import (
+	"maps"
+	"testing"
+)
 
 func TestMemoryStorage_CreateStage_Variables(t *testing.T) {
 	t.Parallel()
@@ -38,7 +41,7 @@ func TestMemoryStorage_CreateStage_Variables(t *testing.T) {
 				t.Fatalf("CreateStage() error = %v", err)
 			}
 
-			if !mapsEqualV1(created.Variables, tt.variables) {
+			if !maps.Equal(created.Variables, tt.variables) {
 				t.Errorf("CreateStage() Variables = %v, want %v", created.Variables, tt.variables)
 			}
 
@@ -47,28 +50,14 @@ func TestMemoryStorage_CreateStage_Variables(t *testing.T) {
 				t.Fatalf("GetStage() error = %v", err)
 			}
 
-			if !mapsEqualV1(got.Variables, tt.variables) {
+			if !maps.Equal(got.Variables, tt.variables) {
 				t.Errorf("GetStage() Variables = %v, want %v", got.Variables, tt.variables)
 			}
 
 			resp := toStageResponse(got)
-			if !mapsEqualV1(resp.Variables, tt.variables) {
+			if !maps.Equal(resp.Variables, tt.variables) {
 				t.Errorf("toStageResponse() Variables = %v, want %v", resp.Variables, tt.variables)
 			}
 		})
 	}
-}
-
-func mapsEqualV1(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-
-	return true
 }

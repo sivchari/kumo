@@ -2,6 +2,7 @@ package execapi
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http/httptest"
 	"testing"
 )
@@ -29,41 +30,36 @@ func TestBuildEventV1_StageVariables(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			checkBuildEventV1StageVariables(t, tt.stageVariables, tt.wantVars)
+
+			r := httptest.NewRequestWithContext(t.Context(), "GET", "/dev/items", nil)
+			req := &Request{
+				APIID:          "api1",
+				Stage:          "dev",
+				ResourcePath:   "/items",
+				StageVariables: tt.stageVariables,
+			}
+
+			data, err := buildEventV1(r, req, nil)
+			if err != nil {
+				t.Fatalf("buildEventV1() error = %v", err)
+			}
+
+			var decoded struct {
+				StageVariables map[string]string `json:"stageVariables"`
+			}
+
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("unmarshal event: %v", err)
+			}
+
+			if !maps.Equal(decoded.StageVariables, tt.wantVars) {
+				t.Errorf("stageVariables = %v, want %v", decoded.StageVariables, tt.wantVars)
+			}
+
+			if tt.stageVariables == nil && !hasNullField(data, "stageVariables") {
+				t.Error("expected stageVariables to be present as null in the v1 event")
+			}
 		})
-	}
-}
-
-func checkBuildEventV1StageVariables(t *testing.T, stageVariables, wantVars map[string]string) {
-	t.Helper()
-
-	r := httptest.NewRequestWithContext(t.Context(), "GET", "/dev/items", nil)
-	req := &Request{
-		APIID:          "api1",
-		Stage:          "dev",
-		ResourcePath:   "/items",
-		StageVariables: stageVariables,
-	}
-
-	data, err := buildEventV1(r, req, nil)
-	if err != nil {
-		t.Fatalf("buildEventV1() error = %v", err)
-	}
-
-	var decoded struct {
-		StageVariables map[string]string `json:"stageVariables"`
-	}
-
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal event: %v", err)
-	}
-
-	if !mapsEqual(decoded.StageVariables, wantVars) {
-		t.Errorf("stageVariables = %v, want %v", decoded.StageVariables, wantVars)
-	}
-
-	if stageVariables == nil && !hasNullField(data, "stageVariables") {
-		t.Error("expected stageVariables to be present as null in the v1 event")
 	}
 }
 
@@ -137,7 +133,7 @@ func checkBuildEventV2StageVariables(t *testing.T, stageVariables, wantVars map[
 		t.Fatalf("unmarshal event: %v", err)
 	}
 
-	if !mapsEqual(typed.StageVariables, wantVars) {
+	if !maps.Equal(typed.StageVariables, wantVars) {
 		t.Errorf("stageVariables = %v, want %v", typed.StageVariables, wantVars)
 	}
 }
@@ -269,20 +265,6 @@ func TestBuildEventV1_StagePath(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mapsEqual(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-
-	return true
 }
 
 // hasNullField reports whether the given top-level JSON field is present and

@@ -1,6 +1,7 @@
 package apigatewayv2
 
 import (
+	"maps"
 	"net/http/httptest"
 	"testing"
 )
@@ -74,7 +75,7 @@ func checkResolveStageReturnsVariables(t *testing.T, stageName, invokePath, want
 		t.Fatal("resolveStage() stageObj is nil, want a resolved *Stage")
 	}
 
-	if !mapsEqualV2(stageObj.StageVariables, wantVars) {
+	if !maps.Equal(stageObj.StageVariables, wantVars) {
 		t.Errorf("resolveStage() stageObj.StageVariables = %v, want %v", stageObj.StageVariables, wantVars)
 	}
 }
@@ -97,18 +98,4 @@ func TestResolveStage_UnknownStage(t *testing.T) {
 	if stage != "" || stageObj != nil || routePath != "" {
 		t.Errorf("resolveStage() = (%q, %v, %q), want (\"\", nil, \"\")", stage, stageObj, routePath)
 	}
-}
-
-func mapsEqualV2(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-
-	return true
 }
