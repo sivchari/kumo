@@ -12,15 +12,11 @@ import (
 // CreateQueue handles the CreateQueue action.
 func (s *Service) CreateQueue(w http.ResponseWriter, r *http.Request) {
 	var req CreateQueueRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueName == "" {
-		writeSQSError(w, "MissingParameter", "QueueName is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueName, "QueueName") {
 		return
 	}
 
@@ -46,15 +42,11 @@ func (s *Service) CreateQueue(w http.ResponseWriter, r *http.Request) {
 // ListQueueTags handles the ListQueueTags action.
 func (s *Service) ListQueueTags(w http.ResponseWriter, r *http.Request) {
 	var req ListQueueTagsRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -80,15 +72,11 @@ func (s *Service) ListQueueTags(w http.ResponseWriter, r *http.Request) {
 // TagQueue handles the TagQueue action.
 func (s *Service) TagQueue(w http.ResponseWriter, r *http.Request) {
 	var req TagQueueRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -111,15 +99,11 @@ func (s *Service) TagQueue(w http.ResponseWriter, r *http.Request) {
 // UntagQueue handles the UntagQueue action.
 func (s *Service) UntagQueue(w http.ResponseWriter, r *http.Request) {
 	var req UntagQueueRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -142,15 +126,11 @@ func (s *Service) UntagQueue(w http.ResponseWriter, r *http.Request) {
 // DeleteQueue handles the DeleteQueue action.
 func (s *Service) DeleteQueue(w http.ResponseWriter, r *http.Request) {
 	var req DeleteQueueRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -173,9 +153,7 @@ func (s *Service) DeleteQueue(w http.ResponseWriter, r *http.Request) {
 // ListQueues handles the ListQueues action.
 func (s *Service) ListQueues(w http.ResponseWriter, r *http.Request) {
 	var req ListQueuesRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
@@ -194,15 +172,11 @@ func (s *Service) ListQueues(w http.ResponseWriter, r *http.Request) {
 // GetQueueURL handles the GetQueueURL action.
 func (s *Service) GetQueueURL(w http.ResponseWriter, r *http.Request) {
 	var req GetQueueURLRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueName == "" {
-		writeSQSError(w, "MissingParameter", "QueueName is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueName, "QueueName") {
 		return
 	}
 
@@ -228,21 +202,15 @@ func (s *Service) GetQueueURL(w http.ResponseWriter, r *http.Request) {
 // SendMessage handles the SendMessage action.
 func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	var req SendMessageRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
-	if req.MessageBody == "" {
-		writeSQSError(w, "MissingParameter", "MessageBody is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.MessageBody, "MessageBody") {
 		return
 	}
 
@@ -270,15 +238,11 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 // SendMessageBatch handles the SendMessageBatch action.
 func (s *Service) SendMessageBatch(w http.ResponseWriter, r *http.Request) {
 	var req SendMessageBatchRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -367,15 +331,11 @@ func (s *Service) batchEntryError(id string, err error) BatchResultErrorEntry {
 // ReceiveMessage handles the ReceiveMessage action.
 func (s *Service) ReceiveMessage(w http.ResponseWriter, r *http.Request) {
 	var req ReceiveMessageRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -429,21 +389,15 @@ func convertMessagesToResponse(messages []*Message) []MessageResponse {
 // DeleteMessage handles the DeleteMessage action.
 func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	var req DeleteMessageRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
-	if req.ReceiptHandle == "" {
-		writeSQSError(w, "MissingParameter", "ReceiptHandle is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.ReceiptHandle, "ReceiptHandle") {
 		return
 	}
 
@@ -466,15 +420,11 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 // DeleteMessageBatch handles the DeleteMessageBatch action.
 func (s *Service) DeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
 	var req DeleteMessageBatchRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -539,21 +489,15 @@ func (s *Service) processDeleteBatchEntries(ctx context.Context, queueURL string
 // ChangeMessageVisibility handles the ChangeMessageVisibility action.
 func (s *Service) ChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
 	var req ChangeMessageVisibilityRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
-	if req.ReceiptHandle == "" {
-		writeSQSError(w, "MissingParameter", "ReceiptHandle is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.ReceiptHandle, "ReceiptHandle") {
 		return
 	}
 
@@ -576,15 +520,11 @@ func (s *Service) ChangeMessageVisibility(w http.ResponseWriter, r *http.Request
 // ChangeMessageVisibilityBatch handles the ChangeMessageVisibilityBatch action.
 func (s *Service) ChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
 	var req ChangeMessageVisibilityBatchRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -614,15 +554,11 @@ func (s *Service) ChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Re
 // PurgeQueue handles the PurgeQueue action.
 func (s *Service) PurgeQueue(w http.ResponseWriter, r *http.Request) {
 	var req PurgeQueueRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -645,15 +581,11 @@ func (s *Service) PurgeQueue(w http.ResponseWriter, r *http.Request) {
 // GetQueueAttributes handles the GetQueueAttributes action.
 func (s *Service) GetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	var req GetQueueAttributesRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -679,15 +611,11 @@ func (s *Service) GetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 // SetQueueAttributes handles the SetQueueAttributes action.
 func (s *Service) SetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	var req SetQueueAttributesRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeSQSRequest(w, r, &req) {
 		return
 	}
 
-	if req.QueueURL == "" {
-		writeSQSError(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
-
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
 		return
 	}
 
@@ -715,6 +643,30 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 // writeSQSError writes an SQS error response in JSON format.
 func writeSQSError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
+}
+
+// decodeSQSRequest decodes the JSON request body into req, writing the
+// standard SQS decode-failure error and returning false on failure.
+func decodeSQSRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := service.ReadJSONRequest(r, req); err != nil {
+		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
+// requireSQSParameter writes the standard SQS MissingParameter error and
+// returns false if value is empty.
+func requireSQSParameter(w http.ResponseWriter, value, name string) bool {
+	if value == "" {
+		writeSQSError(w, "MissingParameter", name+" is required", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
 }
 
 // sqsActions maps an X-Amz-Target action name to its handler method.

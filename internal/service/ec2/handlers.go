@@ -27,15 +27,11 @@ const (
 // RunInstances handles the RunInstances action.
 func (s *Service) RunInstances(w http.ResponseWriter, r *http.Request) {
 	var req RunInstancesRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.ImageID == "" {
-		writeError(w, errInvalidParameter, "ImageId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.ImageID == "", "ImageId") {
 		return
 	}
 
@@ -63,15 +59,11 @@ func (s *Service) RunInstances(w http.ResponseWriter, r *http.Request) {
 // TerminateInstances handles the TerminateInstances action.
 func (s *Service) TerminateInstances(w http.ResponseWriter, r *http.Request) {
 	var req TerminateInstancesRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if len(req.InstanceIDs) == 0 {
-		writeError(w, errInvalidParameter, "InstanceIds is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, len(req.InstanceIDs) == 0, "InstanceIds") {
 		return
 	}
 
@@ -92,9 +84,7 @@ func (s *Service) TerminateInstances(w http.ResponseWriter, r *http.Request) {
 // DescribeInstances handles the DescribeInstances action.
 func (s *Service) DescribeInstances(w http.ResponseWriter, r *http.Request) {
 	var req DescribeInstancesRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -130,15 +120,11 @@ func (s *Service) DescribeInstances(w http.ResponseWriter, r *http.Request) {
 // StartInstances handles the StartInstances action.
 func (s *Service) StartInstances(w http.ResponseWriter, r *http.Request) {
 	var req StartInstancesRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if len(req.InstanceIDs) == 0 {
-		writeError(w, errInvalidParameter, "InstanceIds is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, len(req.InstanceIDs) == 0, "InstanceIds") {
 		return
 	}
 
@@ -159,15 +145,11 @@ func (s *Service) StartInstances(w http.ResponseWriter, r *http.Request) {
 // StopInstances handles the StopInstances action.
 func (s *Service) StopInstances(w http.ResponseWriter, r *http.Request) {
 	var req StopInstancesRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if len(req.InstanceIDs) == 0 {
-		writeError(w, errInvalidParameter, "InstanceIds is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, len(req.InstanceIDs) == 0, "InstanceIds") {
 		return
 	}
 
@@ -188,21 +170,15 @@ func (s *Service) StopInstances(w http.ResponseWriter, r *http.Request) {
 // CreateSecurityGroup handles the CreateSecurityGroup action.
 func (s *Service) CreateSecurityGroup(w http.ResponseWriter, r *http.Request) {
 	var req CreateSecurityGroupRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.GroupName == "" {
-		writeError(w, errInvalidParameter, "GroupName is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.GroupName == "", "GroupName") {
 		return
 	}
 
-	if req.GroupDescription == "" {
-		writeError(w, errInvalidParameter, "GroupDescription is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.GroupDescription == "", "GroupDescription") {
 		return
 	}
 
@@ -226,15 +202,11 @@ func (s *Service) CreateSecurityGroup(w http.ResponseWriter, r *http.Request) {
 // DeleteSecurityGroup handles the DeleteSecurityGroup action.
 func (s *Service) DeleteSecurityGroup(w http.ResponseWriter, r *http.Request) {
 	var req DeleteSecurityGroupRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.GroupID == "" && req.GroupName == "" {
-		writeError(w, errInvalidParameter, "GroupId or GroupName is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.GroupID == "" && req.GroupName == "", "GroupId or GroupName") {
 		return
 	}
 
@@ -255,15 +227,11 @@ func (s *Service) DeleteSecurityGroup(w http.ResponseWriter, r *http.Request) {
 // AuthorizeSecurityGroupIngress handles the AuthorizeSecurityGroupIngress action.
 func (s *Service) AuthorizeSecurityGroupIngress(w http.ResponseWriter, r *http.Request) {
 	var req AuthorizeSecurityGroupIngressRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.GroupID == "" && req.GroupName == "" {
-		writeError(w, errInvalidParameter, "GroupId or GroupName is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.GroupID == "" && req.GroupName == "", "GroupId or GroupName") {
 		return
 	}
 
@@ -296,15 +264,11 @@ func (s *Service) AuthorizeSecurityGroupIngress(w http.ResponseWriter, r *http.R
 // AuthorizeSecurityGroupEgress handles the AuthorizeSecurityGroupEgress action.
 func (s *Service) AuthorizeSecurityGroupEgress(w http.ResponseWriter, r *http.Request) {
 	var req AuthorizeSecurityGroupEgressRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.GroupID == "" {
-		writeError(w, errInvalidParameter, "GroupId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.GroupID == "", "GroupId") {
 		return
 	}
 
@@ -333,15 +297,11 @@ func (s *Service) AuthorizeSecurityGroupEgress(w http.ResponseWriter, r *http.Re
 // CreateKeyPair handles the CreateKeyPair action.
 func (s *Service) CreateKeyPair(w http.ResponseWriter, r *http.Request) {
 	var req CreateKeyPairRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.KeyName == "" {
-		writeError(w, errInvalidParameter, "KeyName is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.KeyName == "", "KeyName") {
 		return
 	}
 
@@ -365,15 +325,11 @@ func (s *Service) CreateKeyPair(w http.ResponseWriter, r *http.Request) {
 // DeleteKeyPair handles the DeleteKeyPair action.
 func (s *Service) DeleteKeyPair(w http.ResponseWriter, r *http.Request) {
 	var req DeleteKeyPairRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.KeyName == "" && req.KeyPairID == "" {
-		writeError(w, errInvalidParameter, "KeyName or KeyPairId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.KeyName == "" && req.KeyPairID == "", "KeyName or KeyPairId") {
 		return
 	}
 
@@ -394,9 +350,7 @@ func (s *Service) DeleteKeyPair(w http.ResponseWriter, r *http.Request) {
 // DescribeKeyPairs handles the DescribeKeyPairs action.
 func (s *Service) DescribeKeyPairs(w http.ResponseWriter, r *http.Request) {
 	var req DescribeKeyPairsRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -426,15 +380,11 @@ func (s *Service) DescribeKeyPairs(w http.ResponseWriter, r *http.Request) {
 // CreateVpc handles the CreateVpc action.
 func (s *Service) CreateVpc(w http.ResponseWriter, r *http.Request) {
 	var req CreateVpcRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.CidrBlock == "" {
-		writeError(w, errInvalidParameter, "CidrBlock is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.CidrBlock == "", "CidrBlock") {
 		return
 	}
 
@@ -477,15 +427,11 @@ func applyTagsOnCreate(r *http.Request, storage Storage, resourceID, resourceTyp
 // DeleteVpc handles the DeleteVpc action.
 func (s *Service) DeleteVpc(w http.ResponseWriter, r *http.Request) {
 	var req DeleteVpcRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.VpcID == "" {
-		writeError(w, errInvalidParameter, "VpcId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.VpcID == "", "VpcId") {
 		return
 	}
 
@@ -505,9 +451,7 @@ func (s *Service) DeleteVpc(w http.ResponseWriter, r *http.Request) {
 // DescribeVpcs handles the DescribeVpcs action.
 func (s *Service) DescribeVpcs(w http.ResponseWriter, r *http.Request) {
 	var req DescribeVpcsRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -533,21 +477,15 @@ func (s *Service) DescribeVpcs(w http.ResponseWriter, r *http.Request) {
 // CreateSubnet handles the CreateSubnet action.
 func (s *Service) CreateSubnet(w http.ResponseWriter, r *http.Request) {
 	var req CreateSubnetRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.VpcID == "" {
-		writeError(w, errInvalidParameter, "VpcId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.VpcID == "", "VpcId") {
 		return
 	}
 
-	if req.CidrBlock == "" {
-		writeError(w, errInvalidParameter, "CidrBlock is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.CidrBlock == "", "CidrBlock") {
 		return
 	}
 
@@ -570,15 +508,11 @@ func (s *Service) CreateSubnet(w http.ResponseWriter, r *http.Request) {
 // DeleteSubnet handles the DeleteSubnet action.
 func (s *Service) DeleteSubnet(w http.ResponseWriter, r *http.Request) {
 	var req DeleteSubnetRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.SubnetID == "" {
-		writeError(w, errInvalidParameter, "SubnetId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.SubnetID == "", "SubnetId") {
 		return
 	}
 
@@ -598,9 +532,7 @@ func (s *Service) DeleteSubnet(w http.ResponseWriter, r *http.Request) {
 // DescribeSubnets handles the DescribeSubnets action.
 func (s *Service) DescribeSubnets(w http.ResponseWriter, r *http.Request) {
 	var req DescribeSubnetsRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -626,9 +558,7 @@ func (s *Service) DescribeSubnets(w http.ResponseWriter, r *http.Request) {
 // CreateInternetGateway handles the CreateInternetGateway action.
 func (s *Service) CreateInternetGateway(w http.ResponseWriter, r *http.Request) {
 	var req CreateInternetGatewayRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -651,21 +581,15 @@ func (s *Service) CreateInternetGateway(w http.ResponseWriter, r *http.Request) 
 // AttachInternetGateway handles the AttachInternetGateway action.
 func (s *Service) AttachInternetGateway(w http.ResponseWriter, r *http.Request) {
 	var req AttachInternetGatewayRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.InternetGatewayID == "" {
-		writeError(w, errInvalidParameter, "InternetGatewayId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.InternetGatewayID == "", "InternetGatewayId") {
 		return
 	}
 
-	if req.VpcID == "" {
-		writeError(w, errInvalidParameter, "VpcId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.VpcID == "", "VpcId") {
 		return
 	}
 
@@ -685,9 +609,7 @@ func (s *Service) AttachInternetGateway(w http.ResponseWriter, r *http.Request) 
 // DescribeInternetGateways handles the DescribeInternetGateways action.
 func (s *Service) DescribeInternetGateways(w http.ResponseWriter, r *http.Request) {
 	var req DescribeInternetGatewaysRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -713,15 +635,11 @@ func (s *Service) DescribeInternetGateways(w http.ResponseWriter, r *http.Reques
 // CreateRouteTable handles the CreateRouteTable action.
 func (s *Service) CreateRouteTable(w http.ResponseWriter, r *http.Request) {
 	var req CreateRouteTableRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.VpcID == "" {
-		writeError(w, errInvalidParameter, "VpcId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.VpcID == "", "VpcId") {
 		return
 	}
 
@@ -744,21 +662,15 @@ func (s *Service) CreateRouteTable(w http.ResponseWriter, r *http.Request) {
 // CreateRoute handles the CreateRoute action.
 func (s *Service) CreateRoute(w http.ResponseWriter, r *http.Request) {
 	var req CreateRouteRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.RouteTableID == "" {
-		writeError(w, errInvalidParameter, "RouteTableId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.RouteTableID == "", "RouteTableId") {
 		return
 	}
 
-	if req.DestinationCidrBlock == "" {
-		writeError(w, errInvalidParameter, "DestinationCidrBlock is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.DestinationCidrBlock == "", "DestinationCidrBlock") {
 		return
 	}
 
@@ -778,21 +690,15 @@ func (s *Service) CreateRoute(w http.ResponseWriter, r *http.Request) {
 // AssociateRouteTable handles the AssociateRouteTable action.
 func (s *Service) AssociateRouteTable(w http.ResponseWriter, r *http.Request) {
 	var req AssociateRouteTableRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.RouteTableID == "" {
-		writeError(w, errInvalidParameter, "RouteTableId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.RouteTableID == "", "RouteTableId") {
 		return
 	}
 
-	if req.SubnetID == "" {
-		writeError(w, errInvalidParameter, "SubnetId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.SubnetID == "", "SubnetId") {
 		return
 	}
 
@@ -813,9 +719,7 @@ func (s *Service) AssociateRouteTable(w http.ResponseWriter, r *http.Request) {
 // DescribeRouteTables handles the DescribeRouteTables action.
 func (s *Service) DescribeRouteTables(w http.ResponseWriter, r *http.Request) {
 	var req DescribeRouteTablesRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -841,15 +745,11 @@ func (s *Service) DescribeRouteTables(w http.ResponseWriter, r *http.Request) {
 // CreateNatGateway handles the CreateNatGateway action.
 func (s *Service) CreateNatGateway(w http.ResponseWriter, r *http.Request) {
 	var req CreateNatGatewayRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.SubnetID == "" {
-		writeError(w, errInvalidParameter, "SubnetId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.SubnetID == "", "SubnetId") {
 		return
 	}
 
@@ -870,9 +770,7 @@ func (s *Service) CreateNatGateway(w http.ResponseWriter, r *http.Request) {
 // DescribeNatGateways handles the DescribeNatGateways action.
 func (s *Service) DescribeNatGateways(w http.ResponseWriter, r *http.Request) {
 	var req DescribeNatGatewaysRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
@@ -904,15 +802,11 @@ func (s *Service) CreateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(resources) == 0 {
-		writeError(w, errInvalidParameter, "ResourceId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, len(resources) == 0, "ResourceId") {
 		return
 	}
 
-	if len(tags) == 0 {
-		writeError(w, errInvalidParameter, "Tag is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, len(tags) == 0, "Tag") {
 		return
 	}
 
@@ -938,9 +832,7 @@ func (s *Service) DeleteTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(resources) == 0 {
-		writeError(w, errInvalidParameter, "ResourceId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, len(resources) == 0, "ResourceId") {
 		return
 	}
 
@@ -959,9 +851,7 @@ func (s *Service) DeleteTags(w http.ResponseWriter, r *http.Request) {
 
 // DescribeTags handles the DescribeTags action.
 func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
-
+	if !decodeEC2Form(w, r) {
 		return
 	}
 
@@ -989,16 +879,12 @@ func (s *Service) DescribeTags(w http.ResponseWriter, r *http.Request) {
 // ModifyVpcAttribute handles the ModifyVpcAttribute action. AWS modifies one
 // attribute per call; the handler updates only the fields the request supplies.
 func (s *Service) ModifyVpcAttribute(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
-
+	if !decodeEC2Form(w, r) {
 		return
 	}
 
 	vpcID := r.Form.Get("VpcId")
-	if vpcID == "" {
-		writeError(w, errInvalidParameter, "VpcId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, vpcID == "", "VpcId") {
 		return
 	}
 
@@ -1020,9 +906,7 @@ func (s *Service) ModifyVpcAttribute(w http.ResponseWriter, r *http.Request) {
 // EnableNetworkAddressUsageMetrics. The attribute name in the request uses
 // the AWS lowercase-camel form (e.g. "enableDnsHostnames").
 func (s *Service) DescribeVpcAttribute(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
-
+	if !decodeEC2Form(w, r) {
 		return
 	}
 
@@ -1083,16 +967,12 @@ type xmlBoolValue struct {
 
 // ModifySubnetAttribute handles the ModifySubnetAttribute action.
 func (s *Service) ModifySubnetAttribute(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
-
+	if !decodeEC2Form(w, r) {
 		return
 	}
 
 	subnetID := r.Form.Get("SubnetId")
-	if subnetID == "" {
-		writeError(w, errInvalidParameter, "SubnetId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, subnetID == "", "SubnetId") {
 		return
 	}
 
@@ -1524,6 +1404,42 @@ func readEC2JSONRequest(r *http.Request, v any) error {
 	return nil
 }
 
+// decodeEC2Request decodes the JSON request body into req, writing the
+// standard EC2 decode-failure error and returning false on failure.
+func decodeEC2Request(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := readEC2JSONRequest(r, req); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
+// decodeEC2Form parses the request's form data, writing the standard EC2
+// form-parse-failure error and returning false on failure.
+func decodeEC2Form(w http.ResponseWriter, r *http.Request) bool {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
+// requireEC2Parameter writes the standard EC2 InvalidParameterValue error
+// and returns false if missing is true.
+func requireEC2Parameter(w http.ResponseWriter, missing bool, name string) bool {
+	if missing {
+		writeError(w, errInvalidParameter, name+" is required", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
 // extractAction extracts the action name from the request.
 // It tries X-Amz-Target header first (set by QueryProtocolDispatcher),
 // then falls back to URL query parameter.
@@ -1670,15 +1586,11 @@ func convertToXMLRouteTable(rt *RouteTable) XMLRouteTable {
 // form so IpPermissions.N.* lands in the request.
 func (s *Service) RevokeSecurityGroupIngress(w http.ResponseWriter, r *http.Request) {
 	var req AuthorizeSecurityGroupIngressRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.GroupID == "" && req.GroupName == "" {
-		writeError(w, errInvalidParameter, "GroupId or GroupName is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.GroupID == "" && req.GroupName == "", "GroupId or GroupName") {
 		return
 	}
 
@@ -1707,15 +1619,11 @@ func (s *Service) RevokeSecurityGroupIngress(w http.ResponseWriter, r *http.Requ
 // the existing Authorize handler.
 func (s *Service) RevokeSecurityGroupEgress(w http.ResponseWriter, r *http.Request) {
 	var req AuthorizeSecurityGroupEgressRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.GroupID == "" {
-		writeError(w, errInvalidParameter, "GroupId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.GroupID == "", "GroupId") {
 		return
 	}
 
@@ -1743,9 +1651,7 @@ func (s *Service) RevokeSecurityGroupEgress(w http.ResponseWriter, r *http.Reque
 // Filters honoured: GroupId.N, GroupName.N. Without either, every SG
 // in storage is returned.
 func (s *Service) DescribeSecurityGroups(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse form data", http.StatusBadRequest)
-
+	if !decodeEC2Form(w, r) {
 		return
 	}
 

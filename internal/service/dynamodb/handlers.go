@@ -15,21 +15,15 @@ import (
 // CreateTable handles the CreateTable action.
 func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 	var req CreateTableRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
-	if len(req.KeySchema) == 0 {
-		writeDynamoDBError(w, "ValidationException", "KeySchema is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.KeySchema) == 0, "KeySchema is required") {
 		return
 	}
 
@@ -55,15 +49,11 @@ func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 // DeleteTable handles the DeleteTable action.
 func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 	var req DeleteTableRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
@@ -89,9 +79,7 @@ func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 // ListTables handles the ListTables action.
 func (s *Service) ListTables(w http.ResponseWriter, r *http.Request) {
 	var req ListTablesRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
@@ -111,15 +99,11 @@ func (s *Service) ListTables(w http.ResponseWriter, r *http.Request) {
 // DescribeTable handles the DescribeTable action.
 func (s *Service) DescribeTable(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTableRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
@@ -145,21 +129,15 @@ func (s *Service) DescribeTable(w http.ResponseWriter, r *http.Request) {
 // PutItem handles the PutItem action.
 func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 	var req PutItemRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
-	if len(req.Item) == 0 {
-		writeDynamoDBError(w, "ValidationException", "Item is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.Item) == 0, "Item is required") {
 		return
 	}
 
@@ -195,21 +173,15 @@ func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 // GetItem handles the GetItem action.
 func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 	var req GetItemRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
-	if len(req.Key) == 0 {
-		writeDynamoDBError(w, "ValidationException", "Key is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.Key) == 0, "Key is required") {
 		return
 	}
 
@@ -237,21 +209,15 @@ func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 // DeleteItem handles the DeleteItem action.
 func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	var req DeleteItemRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
-	if len(req.Key) == 0 {
-		writeDynamoDBError(w, "ValidationException", "Key is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.Key) == 0, "Key is required") {
 		return
 	}
 
@@ -287,21 +253,15 @@ func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 // UpdateItem handles the UpdateItem action.
 func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	var req UpdateItemRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
-	if len(req.Key) == 0 {
-		writeDynamoDBError(w, "ValidationException", "Key is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.Key) == 0, "Key is required") {
 		return
 	}
 
@@ -348,15 +308,11 @@ func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 // Query handles the Query action.
 func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 	var req QueryRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
@@ -405,15 +361,11 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 // Scan handles the Scan action.
 func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 	var req ScanRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
@@ -542,18 +494,38 @@ func writeDynamoDBError(w http.ResponseWriter, code, message string, status int)
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
+// decodeDynamoDBRequest decodes the JSON request body into req, writing the
+// standard DynamoDB decode-failure error and returning false on failure.
+func decodeDynamoDBRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := service.ReadJSONRequest(r, req); err != nil {
+		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
+// requireDynamoDBField writes the standard DynamoDB ValidationException error
+// and returns false if missing is true.
+func requireDynamoDBField(w http.ResponseWriter, missing bool, message string) bool {
+	if missing {
+		writeDynamoDBError(w, "ValidationException", message, http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
 // UpdateTimeToLive handles the UpdateTimeToLive action.
 func (s *Service) UpdateTimeToLive(w http.ResponseWriter, r *http.Request) {
 	var req UpdateTimeToLiveRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
@@ -578,15 +550,11 @@ func (s *Service) UpdateTimeToLive(w http.ResponseWriter, r *http.Request) {
 // DescribeTimeToLive handles the DescribeTimeToLive action.
 func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 	var req DescribeTimeToLiveRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
 		return
 	}
 
@@ -620,15 +588,11 @@ func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 // TransactWriteItems handles the TransactWriteItems action.
 func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 	var req TransactWriteItemsRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.TransactItems) == 0 {
-		writeDynamoDBError(w, "ValidationException", "TransactItems is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.TransactItems) == 0, "TransactItems is required") {
 		return
 	}
 
@@ -670,15 +634,11 @@ func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 // TransactGetItems handles the TransactGetItems action.
 func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 	var req TransactGetItemsRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.TransactItems) == 0 {
-		writeDynamoDBError(w, "ValidationException", "TransactItems is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.TransactItems) == 0, "TransactItems is required") {
 		return
 	}
 
@@ -749,15 +709,11 @@ func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Re
 // BatchWriteItem handles the BatchWriteItem action.
 func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 	var req BatchWriteItemRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.RequestItems) == 0 {
-		writeDynamoDBError(w, "ValidationException", "RequestItems is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.RequestItems) == 0, "RequestItems is required") {
 		return
 	}
 
@@ -792,15 +748,11 @@ func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 // BatchGetItem handles the BatchGetItem action.
 func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 	var req BatchGetItemRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.RequestItems) == 0 {
-		writeDynamoDBError(w, "ValidationException", "RequestItems is required", http.StatusBadRequest)
-
+	if !requireDynamoDBField(w, len(req.RequestItems) == 0, "RequestItems is required") {
 		return
 	}
 
@@ -942,9 +894,7 @@ func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
 // ListTagsOfResource returns the tags for a DynamoDB resource.
 func (s *Service) ListTagsOfResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsOfResourceRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
@@ -961,9 +911,7 @@ func (s *Service) ListTagsOfResource(w http.ResponseWriter, r *http.Request) {
 // TagResource adds tags to a DynamoDB resource.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
@@ -979,9 +927,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource removes tags from a DynamoDB resource.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeDynamoDBRequest(w, r, &req) {
 		return
 	}
 
