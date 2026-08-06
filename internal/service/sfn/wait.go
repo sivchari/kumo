@@ -137,7 +137,7 @@ func resolvePath(path, input string) (any, error) {
 		return nil, fmt.Errorf("parse input: %w", err)
 	}
 
-	value, err := resolveJSONPath(data, path)
+	value, err := resolveAnyJSONPath(path, data)
 	if err != nil {
 		return nil, fmt.Errorf("resolve JSONPath %q: %w", path, err)
 	}

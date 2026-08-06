@@ -143,12 +143,12 @@ func evaluateDataTest(rule *choiceRule, input map[string]any) (bool, error) {
 	}
 
 	if rule.IsPresent != nil {
-		_, err := resolveJSONPath(input, rule.Variable)
+		_, err := resolveAnyJSONPath(rule.Variable, input)
 
 		return (err == nil) == *rule.IsPresent, nil
 	}
 
-	value, err := resolveJSONPath(input, rule.Variable)
+	value, err := resolveAnyJSONPath(rule.Variable, input)
 	if err != nil {
 		return false, fmt.Errorf("choice rule: resolve Variable %q: %w", rule.Variable, err)
 	}
@@ -356,7 +356,7 @@ func resolveStringOperand(static, path *string, input map[string]any) (want stri
 		return *static, true, nil
 	}
 
-	resolved, err := resolveJSONPath(input, *path)
+	resolved, err := resolveAnyJSONPath(*path, input)
 	if err != nil {
 		return "", false, fmt.Errorf("resolve comparator path %q: %w", *path, err)
 	}
@@ -411,7 +411,7 @@ func resolveNumericOperand(static *float64, path *string, input map[string]any) 
 		return *static, true, nil
 	}
 
-	resolved, err := resolveJSONPath(input, *path)
+	resolved, err := resolveAnyJSONPath(*path, input)
 	if err != nil {
 		return 0, false, fmt.Errorf("resolve comparator path %q: %w", *path, err)
 	}
@@ -450,7 +450,7 @@ func resolveBooleanOperand(static *bool, path *string, input map[string]any) (wa
 		return *static, true, nil
 	}
 
-	resolved, err := resolveJSONPath(input, *path)
+	resolved, err := resolveAnyJSONPath(*path, input)
 	if err != nil {
 		return false, false, fmt.Errorf("resolve comparator path %q: %w", *path, err)
 	}
