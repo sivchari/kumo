@@ -1,4 +1,4 @@
-.PHONY: build run test test-fuzz test-integration test-terraform test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme
+.PHONY: build run test test-fuzz test-integration test-terraform test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme cli-gen
 
 BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
@@ -55,6 +55,11 @@ fmt-diff:
 # Regenerate the README service catalog from each service's Meta().
 readme:
 	go run ./cmd/readme-gen
+
+# Print cli-gen's discovery/render diagnostics without writing any files.
+# Pass -out to actually (re)generate cli/gen_*.go once a service is migrated.
+cli-gen:
+	go run ./cmd/cli-gen -dry-run
 
 # Docker
 docker:
