@@ -2,7 +2,7 @@
   "Grants": [
     {
       "Grantee": {
-        "Type": "",
+        "Type": "CanonicalUser",
         "DisplayName": "Alice",
         "EmailAddress": null,
         "ID": "user-1",
@@ -12,7 +12,7 @@
     },
     {
       "Grantee": {
-        "Type": "",
+        "Type": "Group",
         "DisplayName": null,
         "EmailAddress": null,
         "ID": null,

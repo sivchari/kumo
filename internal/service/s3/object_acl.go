@@ -68,6 +68,29 @@ type AccessControlGrantee struct {
 	DisplayName string `xml:"DisplayName,omitempty"`
 }
 
+// UnmarshalXML decodes a Grantee, resolving the xsi:type attribute by its
+// local name. encoding/xml matches the `xml:"xsi:type,attr"` tag literally
+// on marshal but by resolved namespace URI on unmarshal, so the struct tag
+// alone never populates Type from real client requests.
+func (g *AccessControlGrantee) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type plain AccessControlGrantee
+
+	var p plain
+	if err := d.DecodeElement(&p, &start); err != nil {
+		return fmt.Errorf("decode Grantee: %w", err)
+	}
+
+	*g = AccessControlGrantee(p)
+
+	for _, attr := range start.Attr {
+		if attr.Name.Local == "type" {
+			g.Type = attr.Value
+		}
+	}
+
+	return nil
+}
+
 // PutObjectACL handles PUT /{bucket}/{key}?acl.
 //
 // The grant list comes from one of two sources, mutually exclusive:
