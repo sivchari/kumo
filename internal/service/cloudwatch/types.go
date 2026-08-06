@@ -3,6 +3,8 @@ package cloudwatch
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // CBORTime wraps time.Time for CBOR serialization.
@@ -263,15 +265,7 @@ type ErrorResponse struct {
 }
 
 // Error represents a CloudWatch error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // CBOR Request types for RPC v2 CBOR protocol.
 // These types use time.Time for timestamps which are sent as CBOR Tag (ID: 1).

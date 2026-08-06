@@ -1,6 +1,8 @@
 // Package cloudwatchlogs provides CloudWatch Logs service emulation for kumo.
 package cloudwatchlogs
 
+import "github.com/sivchari/kumo/internal/service"
+
 // LogGroup represents a log group in CloudWatch Logs.
 type LogGroup struct {
 	LogGroupName      string
@@ -231,12 +233,4 @@ type ErrorResponse struct {
 }
 
 // LogsError represents a CloudWatch Logs error.
-type LogsError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *LogsError) Error() string {
-	return e.Message
-}
+type LogsError = service.CodedError

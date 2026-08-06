@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -145,14 +146,7 @@ func (s *MemoryStorage) Close() error {
 }
 
 // Error represents a CloudFront error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // CreateDistribution creates a new distribution.
 func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDistributionRequest) (*Distribution, error) {

@@ -1,7 +1,11 @@
 // Package firehose provides a mock implementation of Amazon Data Firehose.
 package firehose
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // DeliveryStreamStatus represents the status of a delivery stream.
 type DeliveryStreamStatus string
@@ -310,15 +314,7 @@ type ErrorResponse struct {
 }
 
 // Error represents a service error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // Error codes.
 const (
