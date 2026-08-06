@@ -344,10 +344,12 @@ type DeleteRoleResponse struct {
 	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
 }
 
-// UpdateRoleResponse represents an UpdateRole response. AWS only
-// returns ResponseMetadata — the updated role isn't echoed back.
+// UpdateRoleResponse represents an UpdateRole response. AWS wraps the
+// (empty) result in an UpdateRoleResult element — aws-sdk-go-v2's
+// deserializer requires it to be present even though it has no fields.
 type UpdateRoleResponse struct {
 	XMLName          xml.Name         `xml:"UpdateRoleResponse"`
+	UpdateRoleResult struct{}         `xml:"UpdateRoleResult"`
 	ResponseMetadata ResponseMetadata `xml:"ResponseMetadata"`
 }
 
