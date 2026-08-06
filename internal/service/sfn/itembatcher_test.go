@@ -1,7 +1,6 @@
 package sfn
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -172,20 +171,4 @@ func TestMapStateItemBatcherMaxItemsPerBatchPathTakesPrecedenceOverStatic(t *tes
 	if len(envelopes) != 5 {
 		t.Fatalf("batches: got %d, want 5 (MaxItemsPerBatchPath=1 must win over MaxItemsPerBatch=10)", len(envelopes))
 	}
-}
-
-// jsonDeepEqual compares two already-decoded JSON values by re-encoding
-// them, avoiding a reflect.DeepEqual dependency on map/slice identity.
-func jsonDeepEqual(a, b any) bool {
-	aJSON, err := json.Marshal(a)
-	if err != nil {
-		return false
-	}
-
-	bJSON, err := json.Marshal(b)
-	if err != nil {
-		return false
-	}
-
-	return bytes.Equal(aJSON, bJSON)
 }

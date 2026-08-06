@@ -228,12 +228,6 @@ func TestHandleExecuteAPI_JWTAuthorizer_Valid(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
 	}
 
-	checkCapturedJWTClaims(t, captured, future)
-}
-
-func checkCapturedJWTClaims(t *testing.T, captured jwtEventCapture, wantExpUnix int64) {
-	t.Helper()
-
 	claims := captured.RequestContext.Authorizer.JWT.Claims
 	if claims["sub"] != "user-1" {
 		t.Errorf("claims[sub] = %q, want %q", claims["sub"], "user-1")
@@ -243,7 +237,7 @@ func checkCapturedJWTClaims(t *testing.T, captured jwtEventCapture, wantExpUnix 
 		t.Errorf("claims[iss] = %q, want %q", claims["iss"], testJWTIssuer)
 	}
 
-	wantExp := strconv.FormatInt(wantExpUnix, 10)
+	wantExp := strconv.FormatInt(future, 10)
 	if claims["exp"] != wantExp {
 		t.Errorf("claims[exp] = %q, want %q (stringified number)", claims["exp"], wantExp)
 	}

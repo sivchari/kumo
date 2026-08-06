@@ -1,7 +1,6 @@
 package sfn
 
 import (
-	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -254,7 +253,9 @@ func TestApplyResultPath(t *testing.T) {
 				t.Fatalf("applyResultPath: %v", err)
 			}
 
-			assertJSONEqual(t, got, tt.want)
+			if !jsonDeepEqual(got, tt.want) {
+				t.Fatalf("JSON mismatch: got %s, want %s", got, tt.want)
+			}
 		})
 	}
 }
@@ -284,36 +285,7 @@ func TestResolveEffectiveInput(t *testing.T) {
 		t.Fatalf("resolveEffectiveInput: %v", err)
 	}
 
-	assertJSONEqual(t, got, `{"total":3}`)
-}
-
-// assertJSONEqual fails the test unless got and want decode to
-// deep-equal JSON values, so tests are not sensitive to key ordering
-// (encoding/json's map marshaling order is not guaranteed to match a
-// hand-written literal).
-func assertJSONEqual(t *testing.T, got, want string) {
-	t.Helper()
-
-	var gotVal, wantVal any
-	if err := json.Unmarshal([]byte(got), &gotVal); err != nil {
-		t.Fatalf("unmarshal got %q: %v", got, err)
-	}
-
-	if err := json.Unmarshal([]byte(want), &wantVal); err != nil {
-		t.Fatalf("unmarshal want %q: %v", want, err)
-	}
-
-	gotNorm, err := json.Marshal(gotVal)
-	if err != nil {
-		t.Fatalf("marshal got: %v", err)
-	}
-
-	wantNorm, err := json.Marshal(wantVal)
-	if err != nil {
-		t.Fatalf("marshal want: %v", err)
-	}
-
-	if !bytes.Equal(gotNorm, wantNorm) {
-		t.Fatalf("JSON mismatch: got %s, want %s", got, want)
+	if !jsonDeepEqual(got, `{"total":3}`) {
+		t.Fatalf("JSON mismatch: got %s, want %s", got, `{"total":3}`)
 	}
 }

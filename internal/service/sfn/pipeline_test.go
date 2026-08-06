@@ -63,7 +63,10 @@ func TestPassStatePipelineAppliesResultAndResultPath(t *testing.T) {
 
 	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"georefOf":"Home"}`)
 
-	assertJSONEqual(t, exec.Output, `{"georefOf":"Home","coords":{"x-datum":0.381018,"y-datum":622.2269926397355}}`)
+	want := `{"georefOf":"Home","coords":{"x-datum":0.381018,"y-datum":622.2269926397355}}`
+	if !jsonDeepEqual(exec.Output, want) {
+		t.Fatalf("JSON mismatch: got %s, want %s", exec.Output, want)
+	}
 }
 
 // TestPassStatePipelineDefaultsToPassThrough checks that a Pass state with
@@ -115,7 +118,10 @@ func TestParallelStatePipelineAppliesResultSelectorAndResultPath(t *testing.T) {
 
 	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"seed":1}`)
 
-	assertJSONEqual(t, exec.Output, `{"seed":1,"parallelResult":{"all":[{"branch":"a"},{"branch":"b"}]}}`)
+	want := `{"seed":1,"parallelResult":{"all":[{"branch":"a"},{"branch":"b"}]}}`
+	if !jsonDeepEqual(exec.Output, want) {
+		t.Fatalf("JSON mismatch: got %s, want %s", exec.Output, want)
+	}
 }
 
 // TestMapStatePipelineAppliesResultSelectorAndResultPath checks the same
@@ -143,10 +149,13 @@ func TestMapStatePipelineAppliesResultSelectorAndResultPath(t *testing.T) {
 
 	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"items":[1,2,3]}`)
 
-	assertJSONEqual(t, exec.Output, `{
+	want := `{
 		"items": [1, 2, 3],
 		"mapResult": {"outputs": [{"doubled": true}, {"doubled": true}, {"doubled": true}]}
-	}`)
+	}`
+	if !jsonDeepEqual(exec.Output, want) {
+		t.Fatalf("JSON mismatch: got %s, want %s", exec.Output, want)
+	}
 }
 
 // TestWaitStatePipelineAppliesInputPathAndOutputPath checks that a Wait

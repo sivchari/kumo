@@ -1,7 +1,6 @@
 package sfn
 
 import (
-	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -52,26 +51,8 @@ func TestMapStateItemSelectorStaticAndContextAndInputPaths(t *testing.T) {
 	}
 
 	for i, w := range want {
-		assertMapEqual(t, i, w, outputs[i])
-	}
-}
-
-// assertMapEqual fails the test unless got deep-equals want, field by
-// field, reporting the specific mismatched key when it doesn't.
-func assertMapEqual(t *testing.T, index int, want, got map[string]any) {
-	t.Helper()
-
-	for k, wv := range want {
-		gv, ok := got[k]
-		if !ok {
-			t.Fatalf("item %d: missing key %q in %+v", index, k, got)
-		}
-
-		wantJSON, _ := json.Marshal(wv)
-		gotJSON, _ := json.Marshal(gv)
-
-		if !bytes.Equal(wantJSON, gotJSON) {
-			t.Fatalf("item %d: key %q: got %s, want %s", index, k, gotJSON, wantJSON)
+		if !jsonDeepEqual(outputs[i], w) {
+			t.Fatalf("item %d: got %+v, want %+v", i, outputs[i], w)
 		}
 	}
 }
