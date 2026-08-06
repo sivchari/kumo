@@ -18,8 +18,14 @@ const (
 // Content-Type, and a generated x-amzn-RequestId header. This is the shared
 // implementation behind the per-service writeJSONResponse helpers.
 func WriteJSONResponse(w http.ResponseWriter, contentType string, v any) {
+	WriteJSONResponseWithStatus(w, contentType, http.StatusOK, v)
+}
+
+// WriteJSONResponseWithStatus is WriteJSONResponse with an explicit status
+// code, for REST-style services whose success responses are not always 200.
+func WriteJSONResponseWithStatus(w http.ResponseWriter, contentType string, status int, v any) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Amzn-Requestid", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
