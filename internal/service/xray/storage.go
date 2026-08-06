@@ -199,7 +199,6 @@ func (s *MemoryStorage) PutTraceSegments(_ context.Context, documents []string) 
 
 		s.Segments[segDoc.ID] = segment
 
-		// Create or update trace.
 		trace, exists := s.Traces[segDoc.TraceID]
 		if !exists {
 			trace = &Trace{
@@ -211,7 +210,6 @@ func (s *MemoryStorage) PutTraceSegments(_ context.Context, documents []string) 
 
 		trace.Segments = append(trace.Segments, segment)
 
-		// Calculate duration.
 		if segDoc.EndTime > 0 && segDoc.StartTime > 0 {
 			duration := segDoc.EndTime - segDoc.StartTime
 			if duration > trace.Duration {
@@ -238,7 +236,6 @@ func (s *MemoryStorage) GetTraceSummaries(_ context.Context, _, _ time.Time) ([]
 			Duration: trace.Duration,
 		}
 
-		// Parse first segment to get additional info.
 		if len(trace.Segments) > 0 {
 			var segDoc SegmentDocument
 			if err := json.Unmarshal([]byte(trace.Segments[0].Document), &segDoc); err == nil {
@@ -286,7 +283,6 @@ func (s *MemoryStorage) GetServiceGraph(_ context.Context, _, _ time.Time, _ str
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Build service graph from traces.
 	serviceMap := make(map[string]*ServiceNode)
 
 	for _, trace := range s.Traces {
@@ -373,7 +369,6 @@ func (s *MemoryStorage) DeleteGroup(_ context.Context, groupName, groupARN strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Find group by name or ARN.
 	var targetName string
 
 	if groupName != "" {

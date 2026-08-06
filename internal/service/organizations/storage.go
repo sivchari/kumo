@@ -227,7 +227,6 @@ func (m *MemoryStorage) Close() error {
 }
 
 func (m *MemoryStorage) initializeDefaultPolicy() {
-	// Create a default full access SCP.
 	defaultSCPID := "p-FullAWSAccess"
 	m.Policies[defaultSCPID] = &Policy{
 		Content: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}`,
@@ -273,7 +272,6 @@ func (m *MemoryStorage) CreateOrganization(_ context.Context, featureSet string)
 		}
 	}
 
-	// Create the root.
 	m.Root = &Root{
 		ARN:  fmt.Sprintf("arn:aws:organizations::%s:root/%s/%s", m.accountID, orgID, rootID),
 		ID:   rootID,
@@ -286,7 +284,6 @@ func (m *MemoryStorage) CreateOrganization(_ context.Context, featureSet string)
 		}
 	}
 
-	// Add the management account.
 	m.Accounts[m.accountID] = &Account{
 		ARN:             m.Organization.MasterAccountARN,
 		Email:           m.Organization.MasterAccountEmail,
@@ -298,7 +295,6 @@ func (m *MemoryStorage) CreateOrganization(_ context.Context, featureSet string)
 		Status:          accountStatusActive,
 	}
 
-	// Attach the default SCP to the root.
 	m.PolicyAttachments[rootID] = map[string]bool{
 		"p-FullAWSAccess": true,
 	}
@@ -322,12 +318,10 @@ func (m *MemoryStorage) DeleteOrganization(_ context.Context) error {
 		return &Error{Code: errOrganizationNotEmptyException, Message: "Organization still has member accounts"}
 	}
 
-	// Check if there are any OUs.
 	if len(m.OrganizationalUnits) > 0 {
 		return &Error{Code: errOrganizationNotEmptyException, Message: "Organization still has organizational units"}
 	}
 
-	// Delete the organization.
 	m.Organization = nil
 	m.Root = nil
 	m.Accounts = make(map[string]*Account)
@@ -363,12 +357,10 @@ func (m *MemoryStorage) CreateAccount(_ context.Context, req *CreateAccountInput
 		return nil, &Error{Code: errInvalidInputException, Message: "AccountName and Email are required"}
 	}
 
-	// Generate a new account ID.
 	accountID := generateAccountID()
 	requestID := uuid.New().String()
 	now := time.Now()
 
-	// Create the account.
 	account := &Account{
 		ARN:             fmt.Sprintf("arn:aws:organizations::%s:account/%s/%s", m.accountID, m.Organization.ID, accountID),
 		Email:           req.Email,
@@ -382,14 +374,12 @@ func (m *MemoryStorage) CreateAccount(_ context.Context, req *CreateAccountInput
 
 	m.Accounts[accountID] = account
 
-	// Attach the default SCP to the new account.
 	m.PolicyAttachments[accountID] = map[string]bool{
 		"p-FullAWSAccess": true,
 	}
 
 	m.saveLocked()
 
-	// Create the status.
 	status := &CreateAccountStatus{
 		AccountID:          accountID,
 		AccountName:        req.AccountName,
@@ -451,19 +441,16 @@ func (m *MemoryStorage) CreateOrganizationalUnit(_ context.Context, name, parent
 		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
 	}
 
-	// Validate parent ID.
 	if !m.isValidParentID(parentID) {
 		return nil, &Error{Code: errParentNotFoundException, Message: "Parent not found: " + parentID}
 	}
 
-	// Check for duplicate OU name under the same parent.
 	for ouID, ou := range m.OrganizationalUnits {
 		if m.OuParents[ouID] == parentID && ou.Name == name {
 			return nil, &Error{Code: errDuplicateOrganizationalUnitException, Message: "OU with this name already exists under the parent"}
 		}
 	}
 
-	// Generate OU ID.
 	ouID := fmt.Sprintf("ou-%s-%s", generateShortID()[:4], generateShortID()[:8])
 
 	ou := &OrganizationalUnit{
@@ -475,7 +462,6 @@ func (m *MemoryStorage) CreateOrganizationalUnit(_ context.Context, name, parent
 	m.OrganizationalUnits[ouID] = ou
 	m.OuParents[ouID] = parentID
 
-	// Attach the default SCP to the new OU.
 	m.PolicyAttachments[ouID] = map[string]bool{
 		"p-FullAWSAccess": true,
 	}
@@ -494,7 +480,6 @@ func (m *MemoryStorage) ListOrganizationalUnitsForParent(_ context.Context, pare
 		return nil, "", &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
 	}
 
-	// Validate parent ID.
 	if !m.isValidParentID(parentID) {
 		return nil, "", &Error{Code: errParentNotFoundException, Message: "Parent not found: " + parentID}
 	}
@@ -524,24 +509,20 @@ func (m *MemoryStorage) AttachPolicy(_ context.Context, policyID, targetID strin
 		return &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
 	}
 
-	// Validate policy ID.
 	if _, exists := m.Policies[policyID]; !exists {
 		return &Error{Code: errPolicyNotFoundException, Message: "Policy not found: " + policyID}
 	}
 
-	// Validate target ID.
 	if !m.isValidTargetID(targetID) {
 		return &Error{Code: errInvalidInputException, Message: "Invalid target ID: " + targetID}
 	}
 
-	// Check if already attached.
 	if attachments, exists := m.PolicyAttachments[targetID]; exists {
 		if attachments[policyID] {
 			return &Error{Code: errDuplicatePolicyAttachmentException, Message: "Policy is already attached to the target"}
 		}
 	}
 
-	// Attach the policy.
 	if m.PolicyAttachments[targetID] == nil {
 		m.PolicyAttachments[targetID] = make(map[string]bool)
 	}
@@ -562,23 +543,19 @@ func (m *MemoryStorage) DetachPolicy(_ context.Context, policyID, targetID strin
 		return &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
 	}
 
-	// Validate policy ID.
 	if _, exists := m.Policies[policyID]; !exists {
 		return &Error{Code: errPolicyNotFoundException, Message: "Policy not found: " + policyID}
 	}
 
-	// Validate target ID.
 	if !m.isValidTargetID(targetID) {
 		return &Error{Code: errInvalidInputException, Message: "Invalid target ID: " + targetID}
 	}
 
-	// Check if attached.
 	attachments, exists := m.PolicyAttachments[targetID]
 	if !exists || !attachments[policyID] {
 		return &Error{Code: errPolicyNotAttachedException, Message: "Policy is not attached to the target"}
 	}
 
-	// Detach the policy.
 	delete(m.PolicyAttachments[targetID], policyID)
 
 	m.saveLocked()
@@ -604,12 +581,10 @@ func (m *MemoryStorage) ListRoots(_ context.Context, _ int32, _ string) ([]*Root
 
 // isValidParentID checks if a parent ID is valid (root or OU).
 func (m *MemoryStorage) isValidParentID(parentID string) bool {
-	// Check if it's the root.
 	if m.Root != nil && m.Root.ID == parentID {
 		return true
 	}
 
-	// Check if it's an OU.
 	_, exists := m.OrganizationalUnits[parentID]
 
 	return exists
@@ -617,17 +592,14 @@ func (m *MemoryStorage) isValidParentID(parentID string) bool {
 
 // isValidTargetID checks if a target ID is valid (root, OU, or account).
 func (m *MemoryStorage) isValidTargetID(targetID string) bool {
-	// Check if it's the root.
 	if m.Root != nil && m.Root.ID == targetID {
 		return true
 	}
 
-	// Check if it's an OU.
 	if _, exists := m.OrganizationalUnits[targetID]; exists {
 		return true
 	}
 
-	// Check if it's an account.
 	_, exists := m.Accounts[targetID]
 
 	return exists
@@ -640,7 +612,6 @@ func generateShortID() string {
 }
 
 func generateAccountID() string {
-	// Generate a 12-digit account ID.
 	id := uint64(uuid.New().ID())
 
 	return fmt.Sprintf("%012d", id%1000000000000)

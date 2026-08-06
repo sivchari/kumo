@@ -148,7 +148,6 @@ func (s *MemoryStorage) PutParameter(_ context.Context, req *PutParameterRequest
 
 	existing, exists := s.Parameters[req.Name]
 
-	// Check if parameter exists and overwrite is not set
 	if exists && !req.Overwrite {
 		return nil, &ParameterError{
 			Type:    ErrParameterAlreadyExists,
@@ -156,7 +155,6 @@ func (s *MemoryStorage) PutParameter(_ context.Context, req *PutParameterRequest
 		}
 	}
 
-	// Set defaults
 	paramType := req.Type
 	if paramType == "" {
 		if exists {
@@ -246,7 +244,6 @@ func (s *MemoryStorage) GetParametersByPath(_ context.Context, path string, recu
 		maxResults = 10
 	}
 
-	// Normalize path
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -255,7 +252,6 @@ func (s *MemoryStorage) GetParametersByPath(_ context.Context, path string, recu
 		path += "/"
 	}
 
-	// Collect matching parameters
 	var matches []*Parameter
 
 	for name, param := range s.Parameters {
@@ -264,12 +260,10 @@ func (s *MemoryStorage) GetParametersByPath(_ context.Context, path string, recu
 		}
 	}
 
-	// Sort by name for consistent pagination
 	sort.Slice(matches, func(i, j int) bool {
 		return matches[i].Name < matches[j].Name
 	})
 
-	// Handle pagination
 	start := 0
 
 	if nextToken != "" {
@@ -371,7 +365,6 @@ func (s *MemoryStorage) DescribeParameters(_ context.Context, filters []Paramete
 		maxResults = 50
 	}
 
-	// Collect all parameters, applying filters.
 	params := make([]*Parameter, 0, len(s.Parameters))
 
 	for _, p := range s.Parameters {
@@ -380,12 +373,10 @@ func (s *MemoryStorage) DescribeParameters(_ context.Context, filters []Paramete
 		}
 	}
 
-	// Sort by name for consistent pagination
 	sort.Slice(params, func(i, j int) bool {
 		return params[i].Name < params[j].Name
 	})
 
-	// Handle pagination
 	start := 0
 
 	if nextToken != "" {

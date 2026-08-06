@@ -294,7 +294,6 @@ func (s *Service) SendMessageBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for duplicate IDs.
 	seen := make(map[string]struct{}, len(req.Entries))
 	for _, entry := range req.Entries {
 		if _, exists := seen[entry.ID]; exists {
@@ -491,7 +490,6 @@ func (s *Service) DeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for duplicate IDs.
 	seen := make(map[string]struct{}, len(req.Entries))
 	for _, entry := range req.Entries {
 		if _, exists := seen[entry.ID]; exists {

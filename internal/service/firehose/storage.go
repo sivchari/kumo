@@ -233,7 +233,6 @@ func (s *MemoryStorage) buildDestinations(input *CreateDeliveryStreamInput) []De
 		destinations = append(destinations, dest)
 	}
 
-	// If no destination is provided, create a default.
 	if len(destinations) == 0 {
 		destinations = append(destinations, DestinationDescription{
 			DestinationID: destID,

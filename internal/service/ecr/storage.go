@@ -260,13 +260,11 @@ func (s *MemoryStorage) ListImages(_ context.Context, repositoryName string, max
 		maxResults = 100
 	}
 
-	// Collect all images into a slice for sorting
 	images := make([]*Image, 0, len(rd.Images))
 	for _, img := range rd.Images {
 		images = append(images, img)
 	}
 
-	// Sort by push date (descending - newest first)
 	sort.Slice(images, func(i, j int) bool {
 		return images[i].PushedAt.After(images[j].PushedAt)
 	})
@@ -284,7 +282,6 @@ func (s *MemoryStorage) ListImages(_ context.Context, repositoryName string, max
 		}
 	}
 
-	// Build the result slice with pagination
 	var imageIDs []*ImageIdentifier
 
 	var newNextToken string

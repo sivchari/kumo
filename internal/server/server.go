@@ -105,7 +105,6 @@ func New(config Config) *Server {
 		logger:          logger,
 	}
 
-	// Auto-register services from global registry
 	for _, svc := range service.Services() {
 		srv.RegisterService(svc)
 	}
@@ -116,7 +115,6 @@ func New(config Config) *Server {
 	wireS3toLambda(registry)
 	wireCloudWatchToSNS(registry)
 
-	// Register unified protocol dispatcher for POST /
 	hasJSONServices := len(jsonDispatcher.handlers) > 0
 	hasQueryServices := len(queryDispatcher.handlers) > 0
 
@@ -125,7 +123,6 @@ func New(config Config) *Server {
 		logger.Debug("registered unified protocol dispatcher for POST /")
 	}
 
-	// Register CBOR protocol dispatcher for /service/{serviceName}/operation/{operationName}
 	hasCBORServices := len(cborDispatcher.handlers) > 0
 	if hasCBORServices {
 		router.HandleFunc("POST", "/service/{serviceName}/operation/{operationName}", srv.cborDispatcher.ServeHTTP)
@@ -166,23 +163,19 @@ func (s *Server) RegisterService(svc service.Service) {
 	s.registry.Register(svc)
 	svc.RegisterRoutes(s.router)
 
-	// Check if service implements JSON protocol.
 	if jsonSvc, ok := svc.(service.JSONProtocolService); ok {
 		s.jsonDispatcher.Register(jsonSvc.TargetPrefix(), jsonSvc.DispatchAction)
 		s.logger.Debug("registered JSON protocol service", "name", svc.Name(), "prefix", jsonSvc.TargetPrefix())
 	}
 
-	// Check if service exposes an execute-api invoke surface.
 	if execSvc, ok := svc.(service.ExecuteAPIHandler); ok {
 		s.router.AddExecuteAPIHandler(execSvc.HandleExecuteAPI)
 		s.logger.Debug("registered execute-api handler", "name", svc.Name())
 	}
 
-	// Check if service implements Query protocol.
 	if querySvc, ok := svc.(service.QueryProtocolService); ok {
 		s.queryDispatcher.Register(querySvc.TargetPrefix(), querySvc.DispatchAction)
 
-		// Register each action for proper routing.
 		for _, action := range querySvc.Actions() {
 			s.queryDispatcher.RegisterAction(action, querySvc.TargetPrefix(), querySvc.ServiceIdentifier(), querySvc.DispatchAction)
 		}
@@ -194,7 +187,6 @@ func (s *Server) RegisterService(svc service.Service) {
 		)
 	}
 
-	// Check if service implements CBOR protocol.
 	if cborSvc, ok := svc.(service.CBORProtocolService); ok {
 		s.cborDispatcher.Register(cborSvc.ServiceName(), cborSvc.DispatchCBORAction)
 		s.logger.Debug("registered CBOR protocol service", "name", svc.Name(), "serviceName", cborSvc.ServiceName())
@@ -227,7 +219,6 @@ func (s *Server) Start(readyCh ...chan struct{}) error {
 	// Optional pprof endpoint (KUMO_PPROF=1).
 	startPprofServer(s.logger)
 
-	// List registered services
 	for _, name := range s.registry.Names() {
 		s.logger.Info("service available", "name", name)
 	}
@@ -260,7 +251,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("failed to shutdown server: %w", err)
 	}
 
-	// Save final snapshots for services that implement io.Closer.
 	for _, svc := range s.registry.All() {
 		if c, ok := svc.(io.Closer); ok {
 			if err := c.Close(); err != nil {
@@ -274,24 +264,19 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // Run starts the server and handles graceful shutdown.
 func (s *Server) Run() error {
-	// Channel to receive OS signals
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Channel to receive server errors
 	errChan := make(chan error, 1)
 
-	// Channel to signal server readiness
 	readyCh := make(chan struct{})
 
-	// Start server in a goroutine
 	go func() {
 		if err := s.Start(readyCh); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- err
 		}
 	}()
 
-	// Wait for server to be ready, then execute init scripts
 	select {
 	case <-readyCh:
 		s.runInitScripts()
@@ -299,7 +284,6 @@ func (s *Server) Run() error {
 		return fmt.Errorf("server error: %w", err)
 	}
 
-	// Wait for signal or error
 	select {
 	case sig := <-sigChan:
 		s.logger.Info("received signal", "signal", sig)
@@ -307,7 +291,6 @@ func (s *Server) Run() error {
 		return fmt.Errorf("server error: %w", err)
 	}
 
-	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

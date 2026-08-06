@@ -672,7 +672,6 @@ func buildCharset(req *GetRandomPasswordRequest) string {
 		charset += " "
 	}
 
-	// Remove excluded characters.
 	if req.ExcludeCharacters != "" {
 		var filtered []byte
 

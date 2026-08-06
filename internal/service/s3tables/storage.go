@@ -153,7 +153,6 @@ func (s *MemoryStorage) CreateTableBucket(_ context.Context, name string) (*Tabl
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if bucket with same name already exists
 	for _, bucket := range s.TableBuckets {
 		if bucket.Name == name {
 			return nil, &Error{
@@ -195,7 +194,6 @@ func (s *MemoryStorage) DeleteTableBucket(_ context.Context, arn string) error {
 		}
 	}
 
-	// Check if bucket has namespaces
 	if namespaces, exists := s.Namespaces[arn]; exists && len(namespaces) > 0 {
 		return &Error{
 			Code:    errConflict,
@@ -254,10 +252,8 @@ func (s *MemoryStorage) ListTableBuckets(_ context.Context, prefix, continuation
 		})
 	}
 
-	// Sort by name for consistent ordering
 	sortTableBucketSummaries(allBuckets)
 
-	// Apply continuation token (skip buckets until we find the marker)
 	startIdx := 0
 
 	if continuationToken != "" {
@@ -270,7 +266,6 @@ func (s *MemoryStorage) ListTableBuckets(_ context.Context, prefix, continuation
 		}
 	}
 
-	// Apply pagination
 	if startIdx >= len(allBuckets) {
 		return []TableBucketSummary{}, "", nil
 	}
@@ -282,7 +277,6 @@ func (s *MemoryStorage) ListTableBuckets(_ context.Context, prefix, continuation
 
 	result := allBuckets[startIdx:endIdx]
 
-	// Set next continuation token if there are more results
 	var nextToken string
 
 	if endIdx < len(allBuckets) {
@@ -351,7 +345,6 @@ func (s *MemoryStorage) DeleteNamespace(_ context.Context, tableBucketArn, names
 		}
 	}
 
-	// Check if namespace has tables
 	tableKey := tableBucketArn + "/" + namespace
 	if tables, exists := s.Tables[tableKey]; exists && len(tables) > 0 {
 		return &Error{
@@ -460,7 +453,6 @@ func (s *MemoryStorage) CreateTable(_ context.Context, tableBucketArn, namespace
 		}
 	}
 
-	// Extract bucket name from ARN for table ARN
 	bucketName := extractBucketNameFromArn(tableBucketArn)
 	tableArn := fmt.Sprintf("arn:aws:s3tables:%s:%s:bucket/%s/table/%s/%s",
 		defaultRegion, defaultAccountID, bucketName, namespace, name)

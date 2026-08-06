@@ -104,19 +104,15 @@ func (s *Service) SendRawEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode base64-encoded raw message data.
 	rawBytes, err := base64.StdEncoding.DecodeString(req.RawMessageData)
 	if err != nil {
-		// Try the raw data as-is if base64 decoding fails.
 		rawBytes = []byte(req.RawMessageData)
 	}
 
 	rawData := string(rawBytes)
 
-	// Parse the raw email to extract subject and body.
 	subject, body, htmlBody := extractRawEmailContent(rawBytes)
 
-	// Use destinations from the request or extract from headers.
 	destinations := req.Destinations
 	if len(destinations) == 0 {
 		destinations = extractRawEmailRecipients(rawBytes)

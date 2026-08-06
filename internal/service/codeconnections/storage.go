@@ -322,7 +322,6 @@ func (s *MemoryStorage) DeleteHost(_ context.Context, hostArn string) error {
 		}
 	}
 
-	// Check if any connection uses this host
 	for _, conn := range s.Connections {
 		if conn.HostArn == hostArn {
 			return &ServiceError{
@@ -392,7 +391,6 @@ func (s *MemoryStorage) CreateRepositoryLink(_ context.Context, connectionArn, o
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify connection exists
 	conn, ok := s.Connections[connectionArn]
 	if !ok {
 		return nil, &ServiceError{
@@ -499,7 +497,6 @@ func (s *MemoryStorage) UpdateRepositoryLink(_ context.Context, repositoryLinkID
 	}
 
 	if connectionArn != "" {
-		// Verify new connection exists
 		conn, ok := s.Connections[connectionArn]
 		if !ok {
 			return nil, &ServiceError{
@@ -528,13 +525,11 @@ func (s *MemoryStorage) ListTagsForResource(_ context.Context, resourceArn strin
 
 	var tagMap map[string]string
 
-	// Check connections
 	if conn, ok := s.Connections[resourceArn]; ok {
 		tagMap = conn.Tags
 	} else if host, ok := s.Hosts[resourceArn]; ok {
 		tagMap = host.Tags
 	} else {
-		// Check repository links by ARN
 		for _, link := range s.RepositoryLinks {
 			if link.RepositoryLinkArn == resourceArn {
 				tagMap = link.Tags
@@ -566,13 +561,11 @@ func (s *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags 
 
 	var tagMap map[string]string
 
-	// Check connections
 	if conn, ok := s.Connections[resourceArn]; ok {
 		tagMap = conn.Tags
 	} else if host, ok := s.Hosts[resourceArn]; ok {
 		tagMap = host.Tags
 	} else {
-		// Check repository links by ARN
 		for _, link := range s.RepositoryLinks {
 			if link.RepositoryLinkArn == resourceArn {
 				tagMap = link.Tags
@@ -605,13 +598,11 @@ func (s *MemoryStorage) UntagResource(_ context.Context, resourceArn string, tag
 
 	var tagMap map[string]string
 
-	// Check connections
 	if conn, ok := s.Connections[resourceArn]; ok {
 		tagMap = conn.Tags
 	} else if host, ok := s.Hosts[resourceArn]; ok {
 		tagMap = host.Tags
 	} else {
-		// Check repository links by ARN
 		for _, link := range s.RepositoryLinks {
 			if link.RepositoryLinkArn == resourceArn {
 				tagMap = link.Tags

@@ -155,7 +155,6 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		_ = storage.Load(s.dataDir, "eventbridge", s)
 	}
 
-	// Create default event bus if not present.
 	if _, exists := s.EventBuses[defaultEventBusName]; !exists {
 		now := time.Now()
 		s.EventBuses[defaultEventBusName] = &EventBus{
@@ -285,7 +284,6 @@ func (s *MemoryStorage) DeleteEventBus(_ context.Context, name string) error {
 	delete(s.EventBuses, name)
 	delete(s.Rules, name)
 
-	// Delete all targets for rules on this event bus.
 	for key := range s.Targets {
 		if strings.HasPrefix(key, name+":") {
 			delete(s.Targets, key)
@@ -407,7 +405,6 @@ func (s *MemoryStorage) DeleteRule(_ context.Context, eventBusName, ruleName str
 
 	delete(rules, ruleName)
 
-	// Delete targets for this rule.
 	targetKey := eventBusName + ":" + ruleName
 	delete(s.Targets, targetKey)
 
@@ -674,17 +671,14 @@ func (s *MemoryStorage) matchAndDeliver(eventID, eventBusName string, entry *Put
 
 			payload := s.buildEventPayload(eventID, eventBusName, target, entry)
 
-			// Deliver to API Destination via HTTP if the target ARN is an API destination.
 			if dest := s.resolveAPIDestination(target.Arn); dest != nil {
 				go s.deliverToHTTP(dest, target, payload)
 			}
 
-			// Deliver to SQS if the target ARN is an SQS queue.
 			if isSQSArn(target.Arn) {
 				go s.deliverToSQS(target, payload)
 			}
 
-			// Deliver to Lambda if the target ARN is a Lambda function.
 			if isLambdaArn(target.Arn) {
 				go s.deliverToLambda(target, payload)
 			}
@@ -726,14 +720,12 @@ func (s *MemoryStorage) buildEventPayload(eventID, eventBusName string, target *
 		return nil
 	}
 
-	// Apply InputTransformer if set on the target.
 	if target.InputTransformer != nil {
 		if transformed := applyInputTransformer(body, target.InputTransformer); transformed != nil {
 			return transformed
 		}
 	}
 
-	// Apply InputPath if set on the target.
 	if target.InputPath != "" {
 		if resolved := resolveInputPath(body, target.InputPath); resolved != nil {
 			return resolved
@@ -787,7 +779,6 @@ func applyInputTransformer(payload []byte, transformer *InputTransformer) []byte
 		return nil
 	}
 
-	// Extract values using InputPathsMap.
 	values := make(map[string]any, len(transformer.InputPathsMap))
 	for key, path := range transformer.InputPathsMap {
 		values[key] = extractJSONPath(event, path)

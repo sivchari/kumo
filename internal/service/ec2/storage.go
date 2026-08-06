@@ -1183,7 +1183,6 @@ func (m *MemoryStorage) AttachInternetGateway(_ context.Context, igwID, vpcID st
 		}
 	}
 
-	// Check if already attached
 	for _, attachment := range igw.Attachments {
 		if attachment.VpcID == vpcID {
 			return &Error{
@@ -1336,7 +1335,6 @@ func (m *MemoryStorage) CreateRoute(_ context.Context, req *CreateRouteRequest) 
 		}
 	}
 
-	// Check for duplicate route
 	for _, route := range rt.Routes {
 		if route.DestinationCidrBlock == req.DestinationCidrBlock {
 			return &Error{

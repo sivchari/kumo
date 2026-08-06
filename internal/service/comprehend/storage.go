@@ -237,7 +237,6 @@ func (a *Analyzer) extractKeyPhrases(text string) []KeyPhrase {
 	keyPhrases := []KeyPhrase{}
 
 	// Simple approach: extract noun phrases (sequences of capitalized words or quoted text).
-	// Find quoted strings.
 	quotePattern := regexp.MustCompile(`"([^"]+)"`)
 	matches := quotePattern.FindAllStringSubmatchIndex(text, -1)
 
@@ -253,7 +252,6 @@ func (a *Analyzer) extractKeyPhrases(text string) []KeyPhrase {
 		}
 	}
 
-	// Find sequences of capitalized words.
 	capPattern := regexp.MustCompile(`\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b`)
 	capMatches := capPattern.FindAllStringSubmatchIndex(text, -1)
 
@@ -276,7 +274,6 @@ func (a *Analyzer) extractKeyPhrases(text string) []KeyPhrase {
 func (a *Analyzer) extractPiiEntities(text string) []PiiEntity {
 	piiEntities := make([]PiiEntity, 0) //nolint:prealloc // Capacity unknown as we check multiple patterns.
 
-	// Email pattern.
 	emailPattern := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
 	emailMatches := emailPattern.FindAllStringIndex(text, -1)
 
@@ -289,7 +286,6 @@ func (a *Analyzer) extractPiiEntities(text string) []PiiEntity {
 		})
 	}
 
-	// Phone pattern (simple US format).
 	phonePattern := regexp.MustCompile(`\b(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`)
 	phoneMatches := phonePattern.FindAllStringIndex(text, -1)
 
@@ -302,7 +298,6 @@ func (a *Analyzer) extractPiiEntities(text string) []PiiEntity {
 		})
 	}
 
-	// SSN pattern.
 	ssnPattern := regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)
 	ssnMatches := ssnPattern.FindAllStringIndex(text, -1)
 
@@ -315,7 +310,6 @@ func (a *Analyzer) extractPiiEntities(text string) []PiiEntity {
 		})
 	}
 
-	// Credit card pattern (simple).
 	ccPattern := regexp.MustCompile(`\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b`)
 	ccMatches := ccPattern.FindAllStringIndex(text, -1)
 
@@ -371,7 +365,6 @@ func (a *Analyzer) tokenize(text string) []SyntaxToken {
 func (a *Analyzer) detectPiiLabels(text string) []EntityLabel {
 	labels := []EntityLabel{}
 
-	// Check for email.
 	emailPattern := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
 	if emailPattern.MatchString(text) {
 		labels = append(labels, EntityLabel{
@@ -380,7 +373,6 @@ func (a *Analyzer) detectPiiLabels(text string) []EntityLabel {
 		})
 	}
 
-	// Check for phone.
 	phonePattern := regexp.MustCompile(`\b(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`)
 	if phonePattern.MatchString(text) {
 		labels = append(labels, EntityLabel{
@@ -389,7 +381,6 @@ func (a *Analyzer) detectPiiLabels(text string) []EntityLabel {
 		})
 	}
 
-	// Check for SSN.
 	ssnPattern := regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)
 	if ssnPattern.MatchString(text) {
 		labels = append(labels, EntityLabel{
@@ -415,7 +406,6 @@ func isCommonWord(word string) bool {
 
 // guessEntityType guesses the entity type based on simple heuristics.
 func guessEntityType(word string) EntityType {
-	// Simple heuristics for entity type detection.
 	locationSuffixes := []string{"City", "State", "Country", "Island", "Mountain", "River", "Lake", "Street", "Avenue", "Road"}
 
 	for _, suffix := range locationSuffixes {
@@ -432,7 +422,6 @@ func guessEntityType(word string) EntityType {
 		}
 	}
 
-	// Default to person for capitalized words.
 	return EntityTypePerson
 }
 
@@ -459,32 +448,26 @@ var (
 func guessPartOfSpeech(word string) SyntaxTokenType {
 	lowerWord := strings.ToLower(word)
 
-	// Check word-based POS.
 	if pos, ok := posWordMap[lowerWord]; ok {
 		return pos
 	}
 
-	// Check for punctuation.
 	if len(word) == 1 && strings.ContainsAny(word, ".,!?;:'\"") {
 		return SyntaxTokenPunct
 	}
 
-	// Check for proper nouns (capitalized words).
 	if word != "" && unicode.IsUpper(rune(word[0])) {
 		return SyntaxTokenPropn
 	}
 
-	// Check verb suffixes.
 	if hasSuffix(lowerWord, verbSuffixes) {
 		return SyntaxTokenVerb
 	}
 
-	// Check adverb suffix.
 	if strings.HasSuffix(lowerWord, "ly") {
 		return SyntaxTokenAdv
 	}
 
-	// Check adjective suffixes.
 	if hasSuffix(lowerWord, adjSuffixes) {
 		return SyntaxTokenAdj
 	}

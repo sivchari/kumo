@@ -346,7 +346,6 @@ func (m *MemoryStorage) ListTables(_ context.Context, exclusiveStartTableName st
 
 	sort.Strings(names)
 
-	// Apply exclusive start.
 	startIdx := 0
 
 	if exclusiveStartTableName != "" {
@@ -359,7 +358,6 @@ func (m *MemoryStorage) ListTables(_ context.Context, exclusiveStartTableName st
 		}
 	}
 
-	// Apply limit.
 	endIdx := startIdx + limit
 	if endIdx > len(names) {
 		endIdx = len(names)
@@ -388,7 +386,6 @@ func (m *MemoryStorage) DescribeTable(_ context.Context, tableName string) (*Tab
 		}
 	}
 
-	// Update item count.
 	td.Table.ItemCount = int64(len(td.Items))
 
 	return td.Table, nil
@@ -413,7 +410,6 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 
 	key := m.serializeKey(td.Table, item)
 
-	// Evaluate condition against existing item (nil if not exists).
 	var existingItem Item
 	if existing, ok := td.Items[key]; ok {
 		existingItem = existing
@@ -439,7 +435,6 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 
 	td.Items[key] = m.copyItem(item)
 
-	// Emit stream event if streams are enabled for this table.
 	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
 		eventName := streams.OperationTypeInsert
 		if existingItem != nil {
@@ -499,7 +494,6 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 
 	keyStr := m.serializeKey(td.Table, key)
 
-	// Evaluate condition against existing item.
 	var existingItem Item
 	if existing, ok := td.Items[keyStr]; ok {
 		existingItem = existing
@@ -526,7 +520,6 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 
 		delete(td.Items, keyStr)
 
-		// Emit stream event if streams are enabled for this table.
 		if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
 			m.emitStreamEvent(td.Table, streams.OperationTypeRemove, key, existingItem, nil)
 		}
@@ -557,7 +550,6 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 	keyStr := m.serializeKey(td.Table, key)
 	item, itemExists := td.Items[keyStr]
 
-	// Evaluate condition against the existing item (nil for a new item).
 	var condItem Item
 	if itemExists {
 		condItem = item
@@ -571,11 +563,9 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 	if itemExists {
 		oldItem = m.copyItem(item)
 	} else {
-		// Create new item with key attributes.
 		item = m.copyItem(key)
 	}
 
-	// Parse and apply update expression.
 	if updateExpr != "" {
 		updated, err := m.applyValidatedUpdateExpression(td.Table, item, updateExpr, exprNames, exprValues)
 		if err != nil {
@@ -587,7 +577,6 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 
 	td.Items[keyStr] = item
 
-	// Emit stream event if streams are enabled for this table.
 	if td.Table.StreamEnabled && td.Table.LatestStreamArn != "" {
 		eventName := streams.OperationTypeInsert
 		if itemExists {
@@ -677,7 +666,6 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		}
 	}
 
-	// Determine key schema to use (table, GSI, or LSI).
 	keySchema, err := resolveKeySchema(td.Table, indexName)
 	if err != nil {
 		return nil, nil, 0, err
@@ -686,7 +674,6 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 	partitionKeyName := keyAttrName(keySchema, "HASH")
 	partitionKeyValue := m.extractPartitionKeyValue(keyCondExpr, partitionKeyName, exprNames, exprValues)
 
-	// Resolve expression attribute names in key condition.
 	resolvedKeyCondExpr := keyCondExpr
 	for placeholder, name := range exprNames {
 		resolvedKeyCondExpr = strings.ReplaceAll(resolvedKeyCondExpr, placeholder, name)
@@ -1203,13 +1190,11 @@ func (m *MemoryStorage) extractPartitionKeyValue(keyCondExpr, partitionKeyName s
 	}
 
 	// Simple parsing: look for "attrName = :value" pattern.
-	// Replace expression attribute names.
 	expr := keyCondExpr
 	for placeholder, name := range exprNames {
 		expr = strings.ReplaceAll(expr, placeholder, name)
 	}
 
-	// Look for partition key equality.
 	parts := strings.Split(expr, " AND ")
 
 	for _, part := range parts {
@@ -1305,13 +1290,11 @@ func (m *MemoryStorage) attributeValuesEqual(a, b AttributeValue) bool {
 // applyUpdateExpression applies an update expression to an item.
 // Supports SET, ADD, DELETE, and REMOVE clauses.
 func (m *MemoryStorage) applyUpdateExpression(item Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) Item {
-	// Replace expression attribute names.
 	expr := updateExpr
 	for placeholder, name := range exprNames {
 		expr = strings.ReplaceAll(expr, placeholder, name)
 	}
 
-	// Split expression into clauses (SET, ADD, DELETE, REMOVE).
 	clauses := parseUpdateClauses(expr)
 
 	for _, clause := range clauses {
@@ -1434,9 +1417,7 @@ func parseUpdateClauses(expr string) []updateClause {
 
 			absIdx := idx + found
 
-			// Ensure it's a keyword boundary (start of string or preceded by space).
 			if absIdx == 0 || upper[absIdx-1] == ' ' {
-				// Ensure it's followed by a space or end of string.
 				endIdx := absIdx + len(kw)
 				if endIdx >= len(upper) || upper[endIdx] == ' ' {
 					positions = append(positions, pos{idx: absIdx, action: kw})
@@ -1447,7 +1428,6 @@ func parseUpdateClauses(expr string) []updateClause {
 		}
 	}
 
-	// Sort by position.
 	sort.Slice(positions, func(i, j int) bool {
 		return positions[i].idx < positions[j].idx
 	})
@@ -1603,7 +1583,6 @@ func evaluateSetArithmetic(item Item, expr string, exprValues map[string]Attribu
 // resolveSetOperand resolves a token to an AttributeValue for SET expressions.
 // Supports: :placeholder, path, and if_not_exists(path, :default).
 func resolveSetOperand(item Item, token string, exprValues map[string]AttributeValue) AttributeValue {
-	// Handle if_not_exists(path, :default)
 	if strings.HasPrefix(token, "if_not_exists(") {
 		return resolveIfNotExists(item, token, exprValues)
 	}
@@ -1801,7 +1780,6 @@ func addNumbers(a, b string) string {
 
 	result := fa + fb
 
-	// Return integer format if result is a whole number.
 	if result == float64(int64(result)) {
 		return strconv.FormatInt(int64(result), 10)
 	}
@@ -2342,7 +2320,6 @@ func (m *MemoryStorage) TagResource(_ context.Context, resourceArn string, tags 
 
 	existing := m.Tags[resourceArn]
 
-	// Build a map of existing tags for efficient lookup.
 	tagMap := make(map[string]int, len(existing))
 	for i, tag := range existing {
 		tagMap[tag.Key] = i

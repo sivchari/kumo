@@ -210,7 +210,6 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 
 	arn := m.clusterArn(name)
 
-	// Check if cluster already exists.
 	if existing, ok := m.Clusters[arn]; ok {
 		return existing, nil
 	}
@@ -244,7 +243,6 @@ func (m *MemoryStorage) DeleteCluster(_ context.Context, cluster string) (*Clust
 		}
 	}
 
-	// Check if cluster has active services or tasks.
 	if existing.ActiveServicesCount > 0 {
 		return nil, &Error{
 			Code:    "ClusterContainsServicesException",
@@ -278,7 +276,6 @@ func (m *MemoryStorage) DescribeClusters(_ context.Context, clusters []string) (
 		failures []Failure
 	)
 
-	// If no clusters specified, return all.
 	if len(clusters) == 0 {
 		for _, c := range m.Clusters {
 			result = append(result, *c)
@@ -321,7 +318,6 @@ func (m *MemoryStorage) RegisterTaskDefinition(_ context.Context, req *RegisterT
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Determine revision number.
 	revision := 1
 	if existing, ok := m.TaskDefFamilies[req.Family]; ok {
 		revision = len(existing) + 1
@@ -530,7 +526,6 @@ func (m *MemoryStorage) StopTask(_ context.Context, cluster, taskID, reason stri
 		task.Containers[i].LastStatus = statusStopped
 	}
 
-	// Update cluster task count.
 	if c, ok := m.Clusters[task.ClusterArn]; ok && c.RunningTasksCount > 0 {
 		c.RunningTasksCount--
 	}
@@ -597,7 +592,6 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 	clusterName := extractClusterName(clusterArn)
 	arn := m.serviceArn(clusterName, req.ServiceName)
 
-	// Check if service already exists.
 	if _, ok := m.Services[arn]; ok {
 		return nil, &Error{
 			Code:    "ServiceAlreadyExistsException",
@@ -679,7 +673,6 @@ func (m *MemoryStorage) DeleteService(_ context.Context, cluster, service string
 
 	delete(m.Services, svcArn)
 
-	// Update cluster service count.
 	if c, ok := m.Clusters[svc.ClusterArn]; ok && c.ActiveServicesCount > 0 {
 		c.ActiveServicesCount--
 	}
@@ -719,7 +712,6 @@ func (m *MemoryStorage) UpdateService(_ context.Context, req *UpdateServiceReque
 		svc.PendingCount = max(*req.DesiredCount-svc.RunningCount, 0)
 	}
 
-	// Update deployment.
 	if len(svc.Deployments) > 0 {
 		svc.Deployments[0].TaskDefinition = svc.TaskDefinition
 		svc.Deployments[0].DesiredCount = svc.DesiredCount

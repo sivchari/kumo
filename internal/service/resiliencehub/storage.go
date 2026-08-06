@@ -164,7 +164,6 @@ func (s *MemoryStorage) CreateApp(req *CreateAppRequest) (*App, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate name
 	for _, app := range s.Apps {
 		if app.Name == req.Name {
 			return nil, &Error{
@@ -290,7 +289,6 @@ func (s *MemoryStorage) ListApps(req *ListAppsRequest) ([]*AppSummary, string, e
 	summaries := make([]*AppSummary, 0, len(s.Apps))
 
 	for _, app := range s.Apps {
-		// Apply filters
 		if req.Name != "" && app.Name != req.Name {
 			continue
 		}
@@ -324,7 +322,6 @@ func (s *MemoryStorage) CreateResiliencyPolicy(req *CreateResiliencyPolicyReques
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate name
 	for _, policy := range s.Policies {
 		if policy.PolicyName == req.PolicyName {
 			return nil, &Error{
@@ -442,7 +439,6 @@ func (s *MemoryStorage) ListResiliencyPolicies(req *ListResiliencyPoliciesReques
 	policies := make([]*ResiliencyPolicy, 0, len(s.Policies))
 
 	for _, policy := range s.Policies {
-		// Apply filters
 		if req.PolicyName != "" && policy.PolicyName != req.PolicyName {
 			continue
 		}
@@ -555,7 +551,6 @@ func (s *MemoryStorage) ListAppAssessments(req *ListAppAssessmentsRequest) ([]*A
 	summaries := make([]*AppAssessmentSummary, 0, len(s.Assessments))
 
 	for _, assessment := range s.Assessments {
-		// Apply filters
 		if req.AppARN != "" && assessment.AppARN != req.AppARN {
 			continue
 		}
@@ -608,7 +603,6 @@ func (s *MemoryStorage) TagResource(resourceARN string, tags map[string]string) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if resource exists
 	_, appOK := s.Apps[resourceARN]
 	_, policyOK := s.Policies[resourceARN]
 	_, assessmentOK := s.Assessments[resourceARN]
@@ -636,7 +630,6 @@ func (s *MemoryStorage) UntagResource(resourceARN string, tagKeys []string) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if resource exists
 	_, appOK := s.Apps[resourceARN]
 	_, policyOK := s.Policies[resourceARN]
 	_, assessmentOK := s.Assessments[resourceARN]
@@ -664,7 +657,6 @@ func (s *MemoryStorage) ListTagsForResource(resourceARN string) (map[string]stri
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Check if resource exists
 	_, appOK := s.Apps[resourceARN]
 	_, policyOK := s.Policies[resourceARN]
 	_, assessmentOK := s.Assessments[resourceARN]

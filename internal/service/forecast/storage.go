@@ -175,7 +175,6 @@ func (m *MemoryStorage) CreateDataset(_ context.Context, req *CreateDatasetInput
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check for duplicate name.
 	for _, ds := range m.Datasets {
 		if ds.DatasetName == req.DatasetName {
 			return "", &Error{
@@ -185,7 +184,6 @@ func (m *MemoryStorage) CreateDataset(_ context.Context, req *CreateDatasetInput
 		}
 	}
 
-	// Validate dataset type.
 	if !isValidDatasetType(req.DatasetType) {
 		return "", &Error{
 			Code:    errInvalidInputException,
@@ -193,7 +191,6 @@ func (m *MemoryStorage) CreateDataset(_ context.Context, req *CreateDatasetInput
 		}
 	}
 
-	// Validate domain.
 	if !isValidDomain(req.Domain) {
 		return "", &Error{
 			Code:    errInvalidInputException,
@@ -282,7 +279,6 @@ func (m *MemoryStorage) DeleteDataset(_ context.Context, datasetArn string) erro
 		}
 	}
 
-	// Check if dataset is in use by any dataset group.
 	for _, dg := range m.DatasetGroups {
 		if slices.Contains(dg.DatasetArns, datasetArn) {
 			return &Error{
@@ -306,7 +302,6 @@ func (m *MemoryStorage) CreateDatasetGroup(_ context.Context, req *CreateDataset
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check for duplicate name.
 	for _, dg := range m.DatasetGroups {
 		if dg.DatasetGroupName == req.DatasetGroupName {
 			return "", &Error{
@@ -316,7 +311,6 @@ func (m *MemoryStorage) CreateDatasetGroup(_ context.Context, req *CreateDataset
 		}
 	}
 
-	// Validate domain.
 	if !isValidDomain(req.Domain) {
 		return "", &Error{
 			Code:    errInvalidInputException,
@@ -324,7 +318,6 @@ func (m *MemoryStorage) CreateDatasetGroup(_ context.Context, req *CreateDataset
 		}
 	}
 
-	// Validate dataset ARNs exist and have matching domain.
 	for _, dsArn := range req.DatasetArns {
 		ds, exists := m.Datasets[dsArn]
 		if !exists {
@@ -418,7 +411,6 @@ func (m *MemoryStorage) DeleteDatasetGroup(_ context.Context, datasetGroupArn st
 		}
 	}
 
-	// Check if dataset group is in use by any predictor.
 	for _, p := range m.Predictors {
 		if p.InputDataConfig != nil && p.InputDataConfig.DatasetGroupArn == datasetGroupArn {
 			return &Error{
@@ -448,7 +440,6 @@ func (m *MemoryStorage) UpdateDatasetGroup(_ context.Context, datasetGroupArn st
 		}
 	}
 
-	// Validate dataset ARNs exist and have matching domain.
 	for _, dsArn := range datasetArns {
 		ds, dsExists := m.Datasets[dsArn]
 		if !dsExists {
@@ -520,7 +511,6 @@ func (m *MemoryStorage) CreatePredictor(_ context.Context, req *CreatePredictorI
 // validateCreatePredictor validates a CreatePredictor request and returns the
 // resolved dataset group. It must be called with m.mu held.
 func (m *MemoryStorage) validateCreatePredictor(req *CreatePredictorInput) (*DatasetGroup, *Error) {
-	// Check for duplicate name.
 	for _, p := range m.Predictors {
 		if p.PredictorName == req.PredictorName {
 			return nil, &Error{
@@ -588,7 +578,6 @@ func (m *MemoryStorage) ListPredictors(_ context.Context, maxResults *int32, _ s
 			break
 		}
 
-		// Apply filters.
 		if !matchesFilters(p, filters) {
 			continue
 		}
@@ -624,7 +613,6 @@ func (m *MemoryStorage) DeletePredictor(_ context.Context, predictorArn string) 
 		}
 	}
 
-	// Check if predictor is in use by any forecast.
 	for _, f := range m.Forecasts {
 		if f.PredictorArn == predictorArn {
 			return &Error{
@@ -648,7 +636,6 @@ func (m *MemoryStorage) CreateForecast(_ context.Context, req *CreateForecastInp
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check for duplicate name.
 	for _, f := range m.Forecasts {
 		if f.ForecastName == req.ForecastName {
 			return "", &Error{
@@ -658,7 +645,6 @@ func (m *MemoryStorage) CreateForecast(_ context.Context, req *CreateForecastInp
 		}
 	}
 
-	// Validate predictor exists.
 	predictor, exists := m.Predictors[req.PredictorArn]
 	if !exists {
 		return "", &Error{
@@ -732,7 +718,6 @@ func (m *MemoryStorage) ListForecasts(_ context.Context, maxResults *int32, _ st
 			break
 		}
 
-		// Apply filters.
 		if !matchesForecastFilters(f, filters) {
 			continue
 		}

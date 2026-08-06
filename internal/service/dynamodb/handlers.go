@@ -305,7 +305,6 @@ func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert legacy AttributeUpdates to UpdateExpression if needed.
 	if req.UpdateExpression == "" && len(req.AttributeUpdates) > 0 {
 		convertAttributeUpdates(&req)
 	}
@@ -361,7 +360,6 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert legacy KeyConditions to KeyConditionExpression if needed.
 	applyLegacyKeyConditions(&req)
 
 	scanForward := true

@@ -75,7 +75,6 @@ func (s *Service) DeleteStream(w http.ResponseWriter, r *http.Request) {
 
 	streamName := req.StreamName
 	if streamName == "" && req.StreamARN != "" {
-		// Extract stream name from ARN.
 		parts := strings.Split(req.StreamARN, "/")
 		if len(parts) >= 2 {
 			streamName = parts[len(parts)-1]
@@ -231,7 +230,6 @@ func (s *Service) ListStreams(w http.ResponseWriter, r *http.Request) {
 		StreamSummaries: streamSummaries,
 	}
 
-	// Set NextToken for pagination if there are more streams.
 	if hasMoreStreams && len(streamNames) > 0 {
 		resp.NextToken = streamNames[len(streamNames)-1]
 	}

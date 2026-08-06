@@ -110,7 +110,6 @@ func parseNotExpr(expr string, item Item, values map[string]AttributeValue) (boo
 func parsePrimary(expr string, item Item, values map[string]AttributeValue) (bool, string, error) {
 	trimmed := strings.TrimSpace(expr)
 
-	// Parenthesized expression.
 	if strings.HasPrefix(trimmed, "(") {
 		inner := trimmed[1:]
 
@@ -141,12 +140,10 @@ func parsePrimary(expr string, item Item, values map[string]AttributeValue) (boo
 		}
 	}
 
-	// size() function used in comparison: size(path) op value
 	if strings.HasPrefix(trimmed, "size(") {
 		return parseSizeComparison(trimmed, item, values)
 	}
 
-	// Comparison: operand op operand
 	return parseComparison(trimmed, item, values)
 }
 
@@ -289,12 +286,10 @@ func evalContainsFunc(args []string, item Item, values map[string]AttributeValue
 //
 //nolint:gocritic // hugeParam: AttributeValue passed by value intentionally.
 func evalContains(av AttributeValue, operand AttributeValue) bool {
-	// String contains substring.
 	if av.S != nil && operand.S != nil {
 		return strings.Contains(*av.S, *operand.S)
 	}
 
-	// String set contains value.
 	if av.SS != nil && operand.S != nil {
 		for _, s := range av.SS {
 			if s == *operand.S {
@@ -305,7 +300,6 @@ func evalContains(av AttributeValue, operand AttributeValue) bool {
 		return false
 	}
 
-	// Number set contains value.
 	if av.NS != nil && operand.N != nil {
 		for _, n := range av.NS {
 			if n == *operand.N {
@@ -316,7 +310,6 @@ func evalContains(av AttributeValue, operand AttributeValue) bool {
 		return false
 	}
 
-	// List contains value.
 	if av.L != nil {
 		for _, elem := range av.L {
 			if elem == nil {
@@ -336,7 +329,6 @@ func evalContains(av AttributeValue, operand AttributeValue) bool {
 
 // parseSizeComparison parses size(path) op value.
 func parseSizeComparison(expr string, item Item, values map[string]AttributeValue) (bool, string, error) {
-	// Extract path from size(...).
 	inner := expr[5:] // skip "size("
 
 	parenDepth := 1
@@ -428,12 +420,10 @@ func parseComparison(expr string, item Item, values map[string]AttributeValue) (
 
 	rest = strings.TrimSpace(rest)
 
-	// Handle BETWEEN: operand BETWEEN operand AND operand
 	if startsWithKeyword(rest, "BETWEEN") {
 		return parseBetween(leftToken, strings.TrimSpace(rest[7:]), item, values)
 	}
 
-	// Handle IN: operand IN (operand, operand, ...)
 	if startsWithKeyword(rest, "IN") {
 		return parseIn(leftToken, strings.TrimSpace(rest[2:]), item, values)
 	}
@@ -514,7 +504,6 @@ func parseBetween(leftToken, rest string, item Item, values map[string]Attribute
 	lo := resolveOperand(loToken, item, values)
 	hi := resolveOperand(hiToken, item, values)
 
-	// val >= lo AND val <= hi
 	result := compareAttributeValues(val, lo, ">=") && compareAttributeValues(val, hi, "<=")
 
 	return result, finalRest, nil
@@ -653,12 +642,10 @@ func equalityOnly(equal bool, op string) bool {
 
 //nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
 func compareAttributeValues(a, b AttributeValue, op string) bool {
-	// String comparison.
 	if a.S != nil && b.S != nil {
 		return compareStrings(*a.S, *b.S, op)
 	}
 
-	// Number comparison.
 	if a.N != nil && b.N != nil {
 		aNum, err1 := strconv.ParseFloat(*a.N, 64)
 		bNum, err2 := strconv.ParseFloat(*b.N, 64)

@@ -319,7 +319,6 @@ func (m *MemoryStorage) DescribeFleetAttributes(_ context.Context, fleetIDs []st
 	defer m.mu.RUnlock()
 
 	if len(fleetIDs) == 0 {
-		// Return all fleets
 		result := make([]*Fleet, 0, len(m.Fleets))
 		for _, fleet := range m.Fleets {
 			result = append(result, fleet)
@@ -328,7 +327,6 @@ func (m *MemoryStorage) DescribeFleetAttributes(_ context.Context, fleetIDs []st
 		return result, nil
 	}
 
-	// Return specified fleets
 	result := make([]*Fleet, 0, len(fleetIDs))
 
 	for _, fleetID := range fleetIDs {

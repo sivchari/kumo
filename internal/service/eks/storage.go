@@ -259,7 +259,6 @@ func (s *MemoryStorage) DeleteCluster(_ context.Context, name string) (*Cluster,
 		}
 	}
 
-	// Check if there are any nodegroups.
 	if nodegroups, ok := s.Nodegroups[name]; ok && len(nodegroups) > 0 {
 		return nil, &Error{
 			Code:    "ResourceInUseException",

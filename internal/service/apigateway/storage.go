@@ -178,7 +178,6 @@ func (s *MemoryStorage) CreateRestAPI(_ context.Context, req *CreateRestAPIReque
 		RootResourceID:         rootResourceID,
 	}
 
-	// Create root resource.
 	rootResource := &Resource{
 		ID:              rootResourceID,
 		Path:            "/",
@@ -341,7 +340,6 @@ func (s *MemoryStorage) DeleteResource(_ context.Context, restAPIID, resourceID 
 		return &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
 	}
 
-	// Cannot delete root resource.
 	if resource.Path == "/" {
 		return &ServiceError{Code: errBadRequest, Message: "Cannot delete root resource"}
 	}
@@ -522,7 +520,6 @@ func (s *MemoryStorage) CreateDeployment(_ context.Context, restAPIID string, re
 
 	data.Deployments[id] = deployment
 
-	// If stage name is specified, create or update the stage.
 	if req.StageName != "" {
 		stage := &Stage{
 			StageName:       req.StageName,
@@ -614,7 +611,6 @@ func (s *MemoryStorage) CreateStage(_ context.Context, restAPIID string, req *Cr
 		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
 	}
 
-	// Verify deployment exists.
 	if _, exists := data.Deployments[req.DeploymentID]; !exists {
 		return nil, &ServiceError{Code: errDeploymentNotFound, Message: "Invalid deployment identifier specified"}
 	}

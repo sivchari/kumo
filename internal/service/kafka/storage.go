@@ -171,7 +171,6 @@ func (s *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate cluster name.
 	for _, c := range s.Clusters {
 		if c.ClusterName == req.ClusterName {
 			return nil, &Error{
@@ -325,7 +324,6 @@ func (s *MemoryStorage) UpdateClusterConfiguration(_ context.Context, clusterArn
 		}
 	}
 
-	// Update version.
 	cluster.CurrentVersion = "K2" + uuid.New().String()[:8]
 
 	s.saveLocked()

@@ -1016,13 +1016,11 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // getFormValue extracts a form value from the request.
 // It tries JSON body first, then form values.
 func getFormValue(r *http.Request, key string) string {
-	// Try to read from JSON body if content type is JSON.
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(contentType, "application/json") || strings.Contains(contentType, "application/x-amz-json") {
 		return getJSONValue(r, key)
 	}
 
-	// Parse form if not already parsed.
 	if r.Form == nil {
 		_ = r.ParseForm()
 	}

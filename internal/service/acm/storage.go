@@ -239,7 +239,6 @@ func (s *MemoryStorage) ListCertificates(_ context.Context, statuses []string, m
 	certs := make([]*Certificate, 0, len(s.Certificates))
 
 	for _, cert := range s.Certificates {
-		// Filter by status if specified.
 		if len(statuses) > 0 && !slices.Contains(statuses, cert.Status) {
 			continue
 		}
@@ -247,7 +246,6 @@ func (s *MemoryStorage) ListCertificates(_ context.Context, statuses []string, m
 		certs = append(certs, cert)
 	}
 
-	// Apply pagination.
 	if len(certs) > int(maxItems) {
 		certs = certs[:maxItems]
 	}
@@ -319,12 +317,10 @@ func (s *MemoryStorage) ImportCertificate(_ context.Context, req *ImportCertific
 
 	arn := req.CertificateArn
 	if arn == "" {
-		// Generate new ARN.
 		certID := uuid.New().String()
 		arn = fmt.Sprintf("arn:aws:acm:us-east-1:000000000000:certificate/%s", certID)
 	}
 
-	// Generate serial number.
 	serialBytes := make([]byte, 16)
 	if _, err := rand.Read(serialBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate serial: %w", err)

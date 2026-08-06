@@ -186,7 +186,6 @@ func (s *MemoryStorage) CreateDataLake(_ context.Context, req *CreateDataLakeReq
 			region = s.region
 		}
 
-		// Check if data lake already exists for this region
 		if _, exists := s.DataLakes[region]; exists {
 			return nil, &Error{
 				Code:    errConflict,
@@ -312,7 +311,6 @@ func (s *MemoryStorage) CreateSubscriber(_ context.Context, req *CreateSubscribe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate subscriber name
 	for _, sub := range s.Subscribers {
 		if sub.SubscriberName == req.SubscriberName {
 			return nil, &Error{
@@ -511,12 +509,10 @@ func (s *MemoryStorage) ListLogSources(_ context.Context, req *ListLogSourcesReq
 	sources := make([]*LogSource, 0, len(s.LogSources))
 
 	for _, source := range s.LogSources {
-		// Filter by regions if specified
 		if len(req.Regions) > 0 && !slices.Contains(req.Regions, source.Region) {
 			continue
 		}
 
-		// Filter by accounts if specified
 		if len(req.Accounts) > 0 && !slices.Contains(req.Accounts, source.Account) {
 			continue
 		}

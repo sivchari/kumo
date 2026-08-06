@@ -165,7 +165,6 @@ func (m *MemoryStorage) CreatePipe(_ context.Context, req *CreatePipeInput) (*Pi
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check if pipe already exists.
 	if _, exists := m.Pipes[req.Name]; exists {
 		return nil, &Error{
 			Code:    errConflictException,
@@ -255,7 +254,6 @@ func (m *MemoryStorage) UpdatePipe(_ context.Context, req *UpdatePipeInput) (*Pi
 		}
 	}
 
-	// Validate required field.
 	if req.RoleArn == "" {
 		return nil, &Error{
 			Code:    errValidationException,
@@ -325,7 +323,6 @@ func (m *MemoryStorage) DeletePipe(_ context.Context, name string) (*Pipe, error
 		}
 	}
 
-	// Update state to deleting.
 	pipe.CurrentState = CurrentStateDeleting
 	pipe.DesiredState = DesiredStateStopped
 	pipe.LastModifiedTime = AWSTimestamp{Time: time.Now()}
@@ -419,7 +416,6 @@ func (m *MemoryStorage) StartPipe(_ context.Context, name string) (*Pipe, error)
 		}
 	}
 
-	// Check if pipe can be started.
 	if pipe.CurrentState != CurrentStateStopped {
 		return nil, &Error{
 			Code:    errConflictException,
@@ -449,7 +445,6 @@ func (m *MemoryStorage) StopPipe(_ context.Context, name string) (*Pipe, error) 
 		}
 	}
 
-	// Check if pipe can be stopped.
 	if pipe.CurrentState != CurrentStateRunning {
 		return nil, &Error{
 			Code:    errConflictException,
@@ -471,7 +466,6 @@ func (m *MemoryStorage) TagResource(_ context.Context, arn string, tags map[stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Find pipe by ARN.
 	var pipe *Pipe
 
 	for _, p := range m.Pipes {
@@ -505,7 +499,6 @@ func (m *MemoryStorage) UntagResource(_ context.Context, arn string, tagKeys []s
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Find pipe by ARN.
 	var pipe *Pipe
 
 	for _, p := range m.Pipes {
@@ -541,7 +534,6 @@ func (m *MemoryStorage) ListTagsForResource(_ context.Context, arn string) (map[
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Find pipe by ARN.
 	var pipe *Pipe
 
 	for _, p := range m.Pipes {
@@ -559,7 +551,6 @@ func (m *MemoryStorage) ListTagsForResource(_ context.Context, arn string) (map[
 		}
 	}
 
-	// Return a copy of the tags.
 	tags := make(map[string]string)
 	maps.Copy(tags, pipe.Tags)
 

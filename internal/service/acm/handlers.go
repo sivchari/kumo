@@ -140,13 +140,11 @@ func (s *Service) ListCertificates(w http.ResponseWriter, r *http.Request) {
 	summaries := make([]CertificateSummary, 0, len(certs))
 
 	for _, cert := range certs {
-		// Convert KeyUsages to string slice
 		keyUsages := make([]string, 0, len(cert.KeyUsages))
 		for _, ku := range cert.KeyUsages {
 			keyUsages = append(keyUsages, ku.Name)
 		}
 
-		// Convert ExtendedKeyUsages to string slice
 		extendedKeyUsages := make([]string, 0, len(cert.ExtendedKeyUsages))
 		for _, eku := range cert.ExtendedKeyUsages {
 			extendedKeyUsages = append(extendedKeyUsages, eku.Name)

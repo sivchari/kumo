@@ -590,7 +590,6 @@ func (s *Service) ListKeyPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the key exists.
 	if _, err := s.storage.GetKey(r.Context(), req.KeyID); err != nil {
 		handleKMSError(w, err)
 

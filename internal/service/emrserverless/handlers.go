@@ -331,7 +331,6 @@ func extractApplicationID(path string) string {
 
 	remainder := strings.TrimPrefix(path, prefix)
 
-	// Remove any trailing path segments.
 	if idx := strings.Index(remainder, "/"); idx != -1 {
 		remainder = remainder[:idx]
 	}
@@ -367,7 +366,6 @@ func extractApplicationIDFromJobRuns(path string) string {
 
 	remainder := strings.TrimPrefix(path, prefix)
 
-	// Find the /jobruns part.
 	idx := strings.Index(remainder, "/jobruns")
 	if idx == -1 {
 		return ""
@@ -386,7 +384,6 @@ func extractApplicationAndJobRunID(path string) (string, string) {
 
 	remainder := strings.TrimPrefix(path, prefix)
 
-	// Split by /jobruns/.
 	parts := strings.Split(remainder, "/jobruns/")
 	if len(parts) != 2 {
 		return "", ""
@@ -395,7 +392,6 @@ func extractApplicationAndJobRunID(path string) (string, string) {
 	applicationID := parts[0]
 	jobRunID := parts[1]
 
-	// Remove any trailing path segments from jobRunID.
 	if idx := strings.Index(jobRunID, "/"); idx != -1 {
 		jobRunID = jobRunID[:idx]
 	}

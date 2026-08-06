@@ -421,7 +421,6 @@ func (m *MemoryStorage) buildNodeGroups(input *CreateReplicationGroupInput, port
 }
 
 func (m *MemoryStorage) buildNodeGroupMembers(rgID, ngID string, replicas, port int32) []NodeGroupMember {
-	// Primary + replicas
 	totalNodes := 1 + replicas
 	members := make([]NodeGroupMember, 0, totalNodes)
 

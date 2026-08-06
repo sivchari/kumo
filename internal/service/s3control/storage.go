@@ -192,7 +192,6 @@ func (s *MemoryStorage) CreateAccessPoint(_ context.Context, accountID string, a
 		}
 	}
 
-	// Generate ARN and alias
 	ap.AccountID = accountID
 	ap.AccessPointArn = fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", s.region, accountID, ap.Name)
 	ap.Alias = fmt.Sprintf("%s-%s-s3alias", ap.Name, accountID[:12])

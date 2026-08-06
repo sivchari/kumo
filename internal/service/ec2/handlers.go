@@ -1664,8 +1664,7 @@ func convertToXMLRouteTable(rt *RouteTable) XMLRouteTable {
 // RevokeSecurityGroupIngress removes the requested rules / CIDRs
 // from the SG's ingress list. terraform aws_security_group calls this
 // on every Update where cidr_blocks shrinks, so the side effect must
-// reach storage — earlier this was a no-op stub which left stale
-// rules behind for the audit-style consumers to trip over.
+// reach storage.
 //
 // The form-converter dotted-key issue applies here too: re-parse the
 // form so IpPermissions.N.* lands in the request.

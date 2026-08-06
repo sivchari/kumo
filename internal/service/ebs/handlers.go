@@ -117,7 +117,6 @@ func (s *Service) PutSnapshotBlockHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Compute SHA256 checksum of the block data.
 	sum := sha256.Sum256(data)
 	computedChecksum := base64.StdEncoding.EncodeToString(sum[:])
 

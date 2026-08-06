@@ -256,7 +256,6 @@ func (m *MemoryStorage) CreateCodeReview(input *CreateCodeReviewInput) (*CodeRev
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Find the association.
 	assoc, ok := m.Associations[input.RepositoryAssociationArn]
 	if !ok {
 		return nil, fmt.Errorf("NotFoundException: repository association %s not found", input.RepositoryAssociationArn)

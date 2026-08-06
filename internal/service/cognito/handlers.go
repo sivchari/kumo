@@ -365,7 +365,6 @@ func (s *Service) SignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user sub from attributes.
 	userSub := uuid.New().String()
 
 	for _, attr := range user.Attributes {

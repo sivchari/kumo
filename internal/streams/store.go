@@ -150,7 +150,6 @@ func (s *Store) PutRecord(record *StreamRecord) {
 	record.EventVersion = "1.1"
 	record.EventSource = "aws:dynamodb"
 
-	// Append to the last (active) shard.
 	activeShard := sd.shards[len(sd.shards)-1]
 	activeShard.records = append(activeShard.records, record)
 }

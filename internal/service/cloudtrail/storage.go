@@ -235,7 +235,6 @@ func (m *MemoryStorage) DescribeTrails(_ context.Context, names []string) ([]*Tr
 	defer m.mu.RUnlock()
 
 	if len(names) == 0 {
-		// Return all trails.
 		result := make([]*Trail, 0, len(m.Trails))
 		for _, trail := range m.Trails {
 			result = append(result, trail)
@@ -244,7 +243,6 @@ func (m *MemoryStorage) DescribeTrails(_ context.Context, names []string) ([]*Tr
 		return result, nil
 	}
 
-	// Return specified trails.
 	result := make([]*Trail, 0, len(names))
 
 	for _, name := range names {
@@ -293,7 +291,6 @@ func (m *MemoryStorage) StopLogging(_ context.Context, name string) error {
 // LookupEvents looks up events.
 // For MVP, this returns an empty list as we don't capture actual events.
 func (m *MemoryStorage) LookupEvents(_ context.Context, _ *LookupEventsRequest) ([]*Event, string, error) {
-	// Return empty events list for MVP.
 	return []*Event{}, "", nil
 }
 

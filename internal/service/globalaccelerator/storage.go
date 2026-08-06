@@ -173,7 +173,6 @@ func (s *MemoryStorage) CreateAccelerator(_ context.Context, req *CreateAccelera
 		ipAddressType = IPAddressType(req.IPAddressType)
 	}
 
-	// Generate static IP addresses.
 	ipSets := []IPSet{
 		{
 			IPFamily:        "IPv4",
@@ -245,7 +244,6 @@ func (s *MemoryStorage) ListAccelerators(_ context.Context, maxResults int32, ne
 
 	sort.Strings(arns)
 
-	// Find starting index based on nextToken.
 	startIdx := 0
 
 	if nextToken != "" {
@@ -258,13 +256,11 @@ func (s *MemoryStorage) ListAccelerators(_ context.Context, maxResults int32, ne
 		}
 	}
 
-	// Collect accelerators from startIdx up to maxResults.
 	accelerators := make([]*Accelerator, 0, maxResults)
 	for i := startIdx; i < len(arns) && len(accelerators) < int(maxResults); i++ {
 		accelerators = append(accelerators, s.Accelerators[arns[i]])
 	}
 
-	// Determine next token.
 	var newNextToken string
 	if startIdx+int(maxResults) < len(arns) {
 		newNextToken = arns[startIdx+int(maxResults)]
@@ -316,10 +312,8 @@ func (s *MemoryStorage) DeleteAccelerator(_ context.Context, arn string) error {
 		return &ServiceError{Code: errAcceleratorEnabled, Message: "Accelerator must be disabled before deletion"}
 	}
 
-	// Delete associated listeners and endpoint groups.
 	for listenerArn, listener := range s.Listeners {
 		if listener.AcceleratorArn == arn {
-			// Delete endpoint groups for this listener.
 			for egArn, eg := range s.EndpointGroups {
 				if eg.ListenerArn == listenerArn {
 					delete(s.EndpointGroups, egArn)
@@ -342,7 +336,6 @@ func (s *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify accelerator exists.
 	if _, ok := s.Accelerators[req.AcceleratorArn]; !ok {
 		return nil, &ServiceError{Code: errNotFound, Message: "Accelerator not found"}
 	}
@@ -452,7 +445,6 @@ func (s *MemoryStorage) DeleteListener(_ context.Context, arn string) error {
 		return &ServiceError{Code: errListenerNotFound, Message: "Listener not found"}
 	}
 
-	// Delete associated endpoint groups.
 	for egArn, eg := range s.EndpointGroups {
 		if eg.ListenerArn == arn {
 			delete(s.EndpointGroups, egArn)
@@ -471,7 +463,6 @@ func (s *MemoryStorage) CreateEndpointGroup(_ context.Context, req *CreateEndpoi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify listener exists.
 	if _, ok := s.Listeners[req.ListenerArn]; !ok {
 		return nil, &ServiceError{Code: errListenerNotFound, Message: "Listener not found"}
 	}

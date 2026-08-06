@@ -180,7 +180,6 @@ func (s *MemoryStorage) CreateKxEnvironment(_ context.Context, req *CreateKxEnvi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate name
 	for _, env := range s.Environments {
 		if env.Name == req.Name {
 			return nil, &Error{
@@ -350,7 +349,6 @@ func (s *MemoryStorage) CreateKxDatabase(_ context.Context, req *CreateKxDatabas
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if environment exists
 	if _, exists := s.Environments[req.EnvironmentID]; !exists {
 		return nil, &Error{
 			Code:    errResourceNotFound,
@@ -360,7 +358,6 @@ func (s *MemoryStorage) CreateKxDatabase(_ context.Context, req *CreateKxDatabas
 
 	key := fmt.Sprintf("%s/%s", req.EnvironmentID, req.DatabaseName)
 
-	// Check for duplicate
 	if _, exists := s.Databases[key]; exists {
 		return nil, &Error{
 			Code:    errConflict,
@@ -514,7 +511,6 @@ func (s *MemoryStorage) CreateKxUser(_ context.Context, req *CreateKxUserRequest
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if environment exists
 	if _, exists := s.Environments[req.EnvironmentID]; !exists {
 		return nil, &Error{
 			Code:    errResourceNotFound,
@@ -524,7 +520,6 @@ func (s *MemoryStorage) CreateKxUser(_ context.Context, req *CreateKxUserRequest
 
 	key := fmt.Sprintf("%s/%s", req.EnvironmentID, req.UserName)
 
-	// Check for duplicate
 	if _, exists := s.Users[key]; exists {
 		return nil, &Error{
 			Code:    errConflict,
@@ -617,7 +612,6 @@ func (s *MemoryStorage) ListKxUsers(_ context.Context, environmentID string, max
 	users := make([]*KxUser, 0)
 
 	for key, user := range s.Users {
-		// Check if the key starts with the environmentID
 		if len(key) > len(environmentID) && key[:len(environmentID)] == environmentID && key[len(environmentID)] == '/' {
 			users = append(users, user)
 

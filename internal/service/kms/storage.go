@@ -300,7 +300,6 @@ func (s *MemoryStorage) GetKey(_ context.Context, keyID string) (*Key, error) {
 
 // getKeyLocked retrieves a key without locking (caller must hold lock).
 func (s *MemoryStorage) getKeyLocked(keyID string) (*Key, error) {
-	// Check if it's an alias.
 	if len(keyID) > 6 && keyID[:6] == "alias/" {
 		alias, ok := s.Aliases[keyID]
 		if !ok {
@@ -310,9 +309,7 @@ func (s *MemoryStorage) getKeyLocked(keyID string) (*Key, error) {
 		keyID = alias.TargetKeyID
 	}
 
-	// Check if it's an ARN.
 	if len(keyID) > 8 && keyID[:8] == "arn:aws:" {
-		// Extract key ID from ARN.
 		for _, key := range s.Keys {
 			if key.Arn == keyID {
 				return key, nil
@@ -322,7 +319,6 @@ func (s *MemoryStorage) getKeyLocked(keyID string) (*Key, error) {
 		return nil, &ServiceError{Code: errNotFound, Message: "Key " + keyID + " is not found."}
 	}
 
-	// Look up by key ID.
 	key, ok := s.Keys[keyID]
 	if !ok {
 		return nil, &ServiceError{Code: errNotFound, Message: "Key " + keyID + " is not found."}
@@ -575,7 +571,6 @@ func (s *MemoryStorage) GenerateDataKey(_ context.Context, keyID, keySpec string
 
 	keySize := determineKeySize(keySpec, numberOfBytes)
 
-	// Generate plaintext data key.
 	plaintext := make([]byte, keySize)
 	if _, err := io.ReadFull(rand.Reader, plaintext); err != nil {
 		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Failed to generate data key"}
@@ -696,17 +691,14 @@ func (s *MemoryStorage) CreateAlias(_ context.Context, aliasName, targetKeyID st
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Validate alias name.
 	if len(aliasName) < 7 || aliasName[:6] != "alias/" {
 		return &ServiceError{Code: errInvalidAlias, Message: "Alias must begin with 'alias/'"}
 	}
 
-	// Check if alias already exists.
 	if _, ok := s.Aliases[aliasName]; ok {
 		return &ServiceError{Code: errAlreadyExists, Message: "Alias " + aliasName + " already exists."}
 	}
 
-	// Verify target key exists.
 	key, err := s.getKeyLocked(targetKeyID)
 	if err != nil {
 		return err

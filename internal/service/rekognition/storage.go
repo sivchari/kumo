@@ -276,7 +276,6 @@ func (s *MemoryStorage) IndexFaces(_ context.Context, req *IndexFacesRequest) (*
 		}
 	}
 
-	// Generate mock face data
 	faceID := uuid.New().String()
 	imageID := uuid.New().String()
 
@@ -385,7 +384,6 @@ func (s *MemoryStorage) SearchFaces(_ context.Context, req *SearchFacesRequest) 
 		}
 	}
 
-	// Return mock matches (excluding the searched face)
 	matches := make([]FaceMatch, 0)
 
 	for faceID, face := range collection.Faces {
@@ -445,7 +443,6 @@ func (s *MemoryStorage) DeleteFaces(_ context.Context, req *DeleteFacesRequest) 
 
 // DetectFaces detects faces in an image.
 func (s *MemoryStorage) DetectFaces(_ context.Context, _ *DetectFacesRequest) (*DetectFacesResponse, error) {
-	// Return mock face detection results
 	return &DetectFacesResponse{
 		FaceDetails: []FaceDetail{
 			{
@@ -480,7 +477,6 @@ func (s *MemoryStorage) DetectFaces(_ context.Context, _ *DetectFacesRequest) (*
 
 // DetectLabels detects labels in an image.
 func (s *MemoryStorage) DetectLabels(_ context.Context, _ *DetectLabelsRequest) (*DetectLabelsResponse, error) {
-	// Return mock label detection results
 	return &DetectLabelsResponse{
 		LabelModelVersion: defaultLabelModelVersion,
 		Labels: []Label{
@@ -526,7 +522,6 @@ func (s *MemoryStorage) DetectLabels(_ context.Context, _ *DetectLabelsRequest) 
 
 // DetectText detects text in an image.
 func (s *MemoryStorage) DetectText(_ context.Context, _ *DetectTextRequest) (*DetectTextResponse, error) {
-	// Return mock text detection results
 	parentID := 0
 
 	return &DetectTextResponse{
@@ -585,7 +580,6 @@ func (s *MemoryStorage) DetectText(_ context.Context, _ *DetectTextRequest) (*De
 
 // RecognizeCelebrities recognizes celebrities in an image.
 func (s *MemoryStorage) RecognizeCelebrities(_ context.Context, _ *RecognizeCelebritiesRequest) (*RecognizeCelebritiesResponse, error) {
-	// Return mock celebrity recognition results (no celebrities found for mock)
 	return &RecognizeCelebritiesResponse{
 		CelebrityFaces:    []Celebrity{},
 		UnrecognizedFaces: []FaceDetail{},
@@ -594,7 +588,6 @@ func (s *MemoryStorage) RecognizeCelebrities(_ context.Context, _ *RecognizeCele
 
 // DetectModerationLabels detects moderation labels in an image.
 func (s *MemoryStorage) DetectModerationLabels(_ context.Context, _ *DetectModerationLabelsRequest) (*DetectModerationLabelsResponse, error) {
-	// Return mock moderation results (safe content)
 	return &DetectModerationLabelsResponse{
 		ModerationModelVersion: defaultModerationModelVersion,
 		ModerationLabels:       []ModerationLabel{},

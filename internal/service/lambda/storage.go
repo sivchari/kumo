@@ -451,7 +451,6 @@ func (s *MemoryStorage) AddPermission(_ context.Context, functionName string, st
 		}
 	}
 
-	// Check for duplicate statement ID.
 	for _, existing := range fn.Policy.Statements {
 		if existing.Sid == stmt.Sid {
 			return &FunctionError{
@@ -663,7 +662,6 @@ func (s *MemoryStorage) CreateEventSourceMapping(_ context.Context, req *CreateE
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Validate function exists
 	fn, exists := s.Functions[req.FunctionName]
 	if !exists {
 		return nil, &FunctionError{
@@ -672,7 +670,6 @@ func (s *MemoryStorage) CreateEventSourceMapping(_ context.Context, req *CreateE
 		}
 	}
 
-	// Generate UUID
 	mappingUUID := generateUUID()
 
 	// Set defaults
@@ -739,7 +736,6 @@ func (s *MemoryStorage) DeleteEventSourceMapping(_ context.Context, uuid string)
 		}
 	}
 
-	// Mark as deleting state before removing
 	mapping.State = "Deleting"
 
 	delete(s.EventSourceMappings, uuid)
@@ -762,12 +758,10 @@ func (s *MemoryStorage) ListEventSourceMappings(_ context.Context, functionName,
 	var mappings []*EventSourceMapping
 
 	for _, m := range s.EventSourceMappings {
-		// Filter by function name if specified
 		if functionName != "" && !matchesFunctionName(m.FunctionArn, functionName) {
 			continue
 		}
 
-		// Filter by event source ARN if specified
 		if eventSourceArn != "" && m.EventSourceArn != eventSourceArn {
 			continue
 		}
@@ -816,7 +810,6 @@ func (s *MemoryStorage) UpdateEventSourceMapping(_ context.Context, uuid string,
 		}
 	}
 
-	// Update function ARN if function name is specified
 	if req.FunctionName != "" {
 		fn, fnExists := s.Functions[req.FunctionName]
 		if !fnExists {
@@ -876,7 +869,6 @@ func matchesFunctionName(functionArn, functionName string) bool {
 		return true
 	}
 
-	// Extract function name from ARN
 	// ARN format: arn:aws:lambda:region:account:function:name
 	parts := splitARN(functionArn)
 	if len(parts) >= 7 && parts[6] == functionName {

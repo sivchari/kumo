@@ -133,11 +133,9 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 		start := time.Now()
 		requestID := uuid.New().String()
 
-		// Add AWS-style headers
 		w.Header().Set("x-amz-request-id", requestID)
 		w.Header().Set("x-amzn-RequestId", requestID)
 
-		// Capture request body for debug logging.
 		var requestBody string
 
 		if r.logger.Enabled(req.Context(), slog.LevelDebug) && req.Body != nil {
@@ -148,13 +146,10 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 			}
 		}
 
-		// Wrap response writer to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		// Call the actual handler
 		handler(wrapped, req)
 
-		// Build log attributes.
 		attrs := []any{
 			"method", method,
 			"path", req.URL.Path,
@@ -179,7 +174,6 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 
 		r.logger.Info("request", attrs...)
 
-		// Log request body at debug level.
 		if requestBody != "" {
 			r.logger.Debug("request body", "request_id", requestID, "body", requestBody)
 		}

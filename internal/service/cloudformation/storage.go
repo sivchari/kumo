@@ -141,7 +141,6 @@ func (m *MemoryStorage) CreateStack(_ context.Context, req *CreateStackRequest) 
 	stackID := generateStackID(req.StackName)
 	now := time.Now()
 
-	// Parse template to extract resources.
 	resources := parseTemplateResources(req.TemplateBody, stackID, req.StackName)
 
 	stack := &Stack{
@@ -172,7 +171,6 @@ func (m *MemoryStorage) DeleteStack(_ context.Context, stackName string) error {
 		return &Error{Code: "StackNotFoundException", Message: "Stack not found"}
 	}
 
-	// Mark stack as deleted.
 	stack.StackStatus = StackStatusDeleteComplete
 	stack.DeletionTime = time.Now()
 
@@ -198,7 +196,6 @@ func (m *MemoryStorage) DescribeStacks(_ context.Context, stackName string) ([]*
 		return []*Stack{stack}, nil
 	}
 
-	// Return all stacks.
 	result := make([]*Stack, 0, len(m.Stacks))
 	for _, stack := range m.Stacks {
 		result = append(result, stack)
@@ -250,7 +247,6 @@ func (m *MemoryStorage) UpdateStack(_ context.Context, req *UpdateStackRequest) 
 		stack.Parameters = req.Parameters
 	}
 
-	// Re-parse resources from new template.
 	stack.Resources = parseTemplateResources(req.TemplateBody, stack.StackID, stack.StackName)
 
 	m.saveLocked()
@@ -305,7 +301,6 @@ func (m *MemoryStorage) ValidateTemplate(_ context.Context, templateBody string)
 		return nil, &Error{Code: "ValidationError", Message: "TemplateBody is required"}
 	}
 
-	// Try to parse as JSON.
 	var template map[string]any
 	if err := json.Unmarshal([]byte(templateBody), &template); err != nil {
 		return nil, &Error{Code: "ValidationError", Message: "Template format error: " + err.Error()}
@@ -316,12 +311,10 @@ func (m *MemoryStorage) ValidateTemplate(_ context.Context, templateBody string)
 		Capabilities: []string{},
 	}
 
-	// Extract description.
 	if desc, ok := template["Description"].(string); ok {
 		result.Description = desc
 	}
 
-	// Extract parameters.
 	if params, ok := template["Parameters"].(map[string]any); ok {
 		for key, value := range params {
 			param := parseTemplateParameter(key, value)

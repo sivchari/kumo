@@ -304,7 +304,6 @@ func (s *MemoryStorage) GetMetricData(_ context.Context, req *GetMetricDataReque
 			continue
 		}
 
-		// Filter datapoints by time range.
 		timestamps := make([]string, 0)
 		values := make([]float64, 0)
 
@@ -349,7 +348,6 @@ func (s *MemoryStorage) GetMetricStatistics(_ context.Context, req *GetMetricSta
 		}, nil
 	}
 
-	// Collect datapoints in time range.
 	var filteredPoints []MetricDatapoint
 
 	for _, dp := range metric.Datapoints {
@@ -365,7 +363,6 @@ func (s *MemoryStorage) GetMetricStatistics(_ context.Context, req *GetMetricSta
 		}, nil
 	}
 
-	// Calculate statistics.
 	datapoints := s.calculateStatistics(filteredPoints, req.Statistics, req.Period)
 
 	return &GetMetricStatisticsResult{
@@ -382,17 +379,14 @@ func (s *MemoryStorage) ListMetrics(_ context.Context, req *ListMetricsRequest) 
 	metrics := make([]Metric, 0)
 
 	for _, m := range s.Metrics {
-		// Filter by namespace.
 		if req.Namespace != "" && m.Namespace != req.Namespace {
 			continue
 		}
 
-		// Filter by metric name.
 		if req.MetricName != "" && m.MetricName != req.MetricName {
 			continue
 		}
 
-		// Filter by dimensions.
 		if !s.matchesDimensionFilters(m.Dimensions, req.Dimensions) {
 			continue
 		}
@@ -404,7 +398,6 @@ func (s *MemoryStorage) ListMetrics(_ context.Context, req *ListMetricsRequest) 
 		})
 	}
 
-	// Sort metrics for consistent output.
 	sort.Slice(metrics, func(i, j int) bool {
 		if metrics[i].Namespace != metrics[j].Namespace {
 			return metrics[i].Namespace < metrics[j].Namespace
@@ -622,12 +615,10 @@ func (s *MemoryStorage) DescribeAlarms(_ context.Context, req *DescribeAlarmsReq
 		alarms = append(alarms, convertAlarmToJSON(alarm))
 	}
 
-	// Sort alarms by name.
 	sort.Slice(alarms, func(i, j int) bool {
 		return alarms[i].AlarmName < alarms[j].AlarmName
 	})
 
-	// Apply MaxRecords limit.
 	maxRecords := 50
 	if req.MaxRecords != nil && *req.MaxRecords > 0 {
 		maxRecords = int(*req.MaxRecords)
@@ -685,7 +676,6 @@ func convertAlarmToJSON(alarm *Alarm) MetricAlarm {
 
 // makeMetricKey creates a unique key for a metric.
 func (s *MemoryStorage) makeMetricKey(namespace, metricName string, dimensions []Dimension) MetricKey {
-	// Sort dimensions for consistent key generation.
 	sorted := make([]Dimension, len(dimensions))
 	copy(sorted, dimensions)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -789,7 +779,6 @@ func (s *MemoryStorage) calculateStatistics(points []MetricDatapoint, statistics
 		Unit:      unit,
 	}
 
-	// Include requested statistics.
 	for _, stat := range statistics {
 		switch stat {
 		case "SampleCount":
@@ -805,7 +794,6 @@ func (s *MemoryStorage) calculateStatistics(points []MetricDatapoint, statistics
 		}
 	}
 
-	// If no specific statistics requested, include all.
 	if len(statistics) == 0 {
 		dp.SampleCount = &count
 		dp.Average = &average

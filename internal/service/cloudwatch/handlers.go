@@ -49,7 +49,6 @@ func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// PutMetricData returns an empty response on success.
 	writeJSONResponse(w, struct{}{})
 }
 
@@ -463,7 +462,6 @@ func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert CBOR request to storage request
 	storageReq := &GetMetricDataRequest{
 		MetricDataQueries: req.MetricDataQueries,
 		StartTime:         req.StartTime.Format(time.RFC3339),
@@ -479,7 +477,6 @@ func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert result to CBOR response
 	cborResults := make([]MetricDataCBORResult, len(result.MetricDataResults))
 
 	for i := range result.MetricDataResults {
@@ -527,7 +524,6 @@ func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Convert CBOR request to storage request
 	storageReq := &GetMetricStatisticsRequest{
 		Namespace:  req.Namespace,
 		MetricName: req.MetricName,
@@ -546,7 +542,6 @@ func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Convert result to CBOR response
 	cborDatapoints := make([]CBORDatapoint, len(result.Datapoints))
 
 	for i := range result.Datapoints {
@@ -631,7 +626,6 @@ func (s *Service) PutMetricAlarmCBOR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// PutMetricAlarm returns an empty response on success.
 	server.WriteCBORResponse(w, struct{}{})
 }
 
@@ -656,7 +650,6 @@ func (s *Service) DeleteAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DeleteAlarms returns an empty response on success.
 	server.WriteCBORResponse(w, struct{}{})
 }
 
@@ -676,7 +669,6 @@ func (s *Service) DescribeAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert result to CBOR response
 	cborAlarms := make([]MetricAlarmCBOR, len(result.MetricAlarms))
 
 	for i := range result.MetricAlarms {
@@ -833,12 +825,10 @@ func parseTimestamp(s string) (time.Time, error) {
 		return time.Time{}, nil
 	}
 
-	// Try RFC3339 first
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
 
-	// Try RFC3339Nano
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
 	}

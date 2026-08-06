@@ -144,7 +144,6 @@ func (s *MemoryStorage) CreateBroker(_ context.Context, req *CreateBrokerRequest
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate broker name
 	for _, b := range s.Brokers {
 		if b.BrokerName == req.BrokerName {
 			return nil, &Error{
@@ -234,18 +233,15 @@ func (s *MemoryStorage) ListBrokers(_ context.Context, maxResults int, nextToken
 		maxResults = 100
 	}
 
-	// Collect all brokers
 	brokers := make([]*Broker, 0, len(s.Brokers))
 	for _, b := range s.Brokers {
 		brokers = append(brokers, b)
 	}
 
-	// Sort by broker name for consistent pagination
 	sort.Slice(brokers, func(i, j int) bool {
 		return brokers[i].BrokerName < brokers[j].BrokerName
 	})
 
-	// Handle pagination
 	start := 0
 
 	if nextToken != "" {
@@ -309,7 +305,6 @@ func (s *MemoryStorage) CreateConfiguration(_ context.Context, req *CreateConfig
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate configuration name
 	for _, c := range s.Configurations {
 		if c.Name == req.Name {
 			return nil, &Error{

@@ -202,7 +202,6 @@ func (m *MemoryStorage) PutConfigurationRecorder(_ context.Context, req *PutConf
 
 	m.Recorders[input.Name] = recorder
 
-	// Initialize status if not exists
 	if _, exists := m.RecorderStatuses[input.Name]; !exists {
 		m.RecorderStatuses[input.Name] = &ConfigurationRecorderStatus{
 			Name:       input.Name,
@@ -239,7 +238,6 @@ func (m *MemoryStorage) DescribeConfigurationRecorders(_ context.Context, names 
 	defer m.mu.RUnlock()
 
 	if len(names) == 0 {
-		// Return all recorders
 		result := make([]*ConfigurationRecorder, 0, len(m.Recorders))
 		for _, recorder := range m.Recorders {
 			result = append(result, recorder)
@@ -248,7 +246,6 @@ func (m *MemoryStorage) DescribeConfigurationRecorders(_ context.Context, names 
 		return result, nil
 	}
 
-	// Return specified recorders
 	result := make([]*ConfigurationRecorder, 0, len(names))
 
 	for _, name := range names {
@@ -382,7 +379,6 @@ func (m *MemoryStorage) DescribeConfigRules(_ context.Context, names []string) (
 	defer m.mu.RUnlock()
 
 	if len(names) == 0 {
-		// Return all rules
 		result := make([]*ConfigRule, 0, len(m.Rules))
 		for _, rule := range m.Rules {
 			result = append(result, rule)
@@ -391,7 +387,6 @@ func (m *MemoryStorage) DescribeConfigRules(_ context.Context, names []string) (
 		return result, nil
 	}
 
-	// Return specified rules
 	result := make([]*ConfigRule, 0, len(names))
 
 	for _, name := range names {
@@ -413,7 +408,6 @@ func (m *MemoryStorage) GetComplianceDetailsByConfigRule(_ context.Context, req 
 		return nil, "", &Error{Code: errNoSuchConfigRule, Message: "Config rule not found"}
 	}
 
-	// Return empty results for MVP
 	return []*EvaluationResult{}, "", nil
 }
 
