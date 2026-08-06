@@ -1,10 +1,6 @@
-// Package cloudcontrol provides AWS Cloud Control API emulation. Cloud
-// Control is AWS's unified CRUD interface that exposes any
-// CloudFormation-modeled resource type through the same six operations
-// (Create / Read / Update / Delete / List / status polling). Implementing
-// it lets clients that target Cloud Control — most notably the
-// terraform-provider-awscc — drive a kumo-modeled resource without
-// per-service handler implementations on the kumo side.
+// Package cloudcontrol provides AWS Cloud Control API emulation, letting
+// clients that target Cloud Control — most notably terraform-provider-awscc
+// — drive any kumo-modeled resource through the same six CRUD operations.
 package cloudcontrol
 
 import (

@@ -29,18 +29,9 @@ type mapUnitRunner struct {
 }
 
 // runMapUnits executes the processor once per unit, honoring MaxConcurrency
-// (0 or negative means unlimited).
-//
-// When tolerant is false (the default: no ToleratedFailurePercentage/
-// ToleratedFailureCount configured), the first unit to fail cancels the
-// remaining units via cancel and its error is returned immediately --
-// matching real AWS Inline-mode Map, where any iteration failure fails the
-// whole state.
-//
-// When tolerant is true, every unit runs to completion regardless of
-// individual failures, cancel is never called, and runMapUnits always
-// returns a nil error; the caller (executeMapState) decides whether the
-// aggregate failure count exceeds the configured threshold.
+// (0/negative = unlimited). Non-tolerant: the first failure cancels the rest
+// and returns immediately (matches AWS Inline-mode Map). Tolerant: every
+// unit runs to completion; the caller checks the aggregate failure count.
 func runMapUnits(ctx context.Context, e *executionEngine, processor *stateMachineDefinition, units []mapUnit, maxConcurrency int, tolerant bool, cancel context.CancelFunc) ([]mapUnitResult, error) {
 	r := &mapUnitRunner{
 		e:         e,

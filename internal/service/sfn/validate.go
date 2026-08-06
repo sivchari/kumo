@@ -21,10 +21,8 @@ const (
 	defaultValidateMaxResults = 100
 )
 
-// Diagnostic codes. The first block reuses AWS's own documented codes where
-// kumo's check matches their meaning exactly. The second block is best
-// effort: AWS does not document a code for these two checks, so kumo names
-// them descriptively rather than guessing at an undocumented AWS string.
+// Diagnostic codes. First block reuses AWS's documented codes; second block
+// is best-effort naming for checks AWS does not document a code for.
 const (
 	codeInvalidJSONDescription  = "INVALID_JSON_DESCRIPTION"
 	codeSchemaValidationFailed  = "SCHEMA_VALIDATION_FAILED"
@@ -46,17 +44,11 @@ var terminalStateTypes = map[string]bool{
 }
 
 // pathFieldTypes, resultFieldTypes, resultSelectorTypes, and
-// retryCatchTypes are the sets of state Types the ASL spec's "Table of
-// State Types and Fields (JSONPath)"
+// retryCatchTypes are the state Types the ASL spec's state-type/field table
 // (https://states-language.net/spec.html#statetypetable) allows each
-// data-flow field group on:
-//
-//   - InputPath/OutputPath: every state type except Fail.
-//   - ResultPath/Parameters: Task, Parallel, Map, Pass (the states that can
-//     generate a result, plus Pass, which uses Parameters/ResultPath to
-//     shape its Result-or-input).
-//   - ResultSelector: Task, Parallel, Map only (not Pass).
-//   - Retry/Catch: Task, Parallel, Map only.
+// data-flow field group on: InputPath/OutputPath on all but Fail;
+// ResultPath/Parameters on Task/Parallel/Map/Pass; ResultSelector on
+// Task/Parallel/Map; Retry/Catch on Task/Parallel/Map.
 var (
 	pathFieldTypes = map[string]bool{
 		"Task": true, "Parallel": true, "Map": true, "Pass": true,
@@ -87,10 +79,7 @@ type stateFieldRule struct {
 
 // mapDistributedOnlyFields are Map state fields AWS documents only under
 // Distributed mode (see requireDistributedModeForFields in mapstate.go):
-// they are absent from the Inline Map state field list at
-// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-inline.html
-// but present at
-// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html.
+// absent from AWS's Inline Map field list, present only in Distributed Map's.
 var mapDistributedOnlyFields = []struct {
 	name  string
 	isSet func(*stateDefinition) bool
@@ -103,11 +92,10 @@ var mapDistributedOnlyFields = []struct {
 }
 
 // validateStateMachineDefinition runs kumo's best-effort structural checks
-// against a Step Functions definition and returns diagnostics in AWS's
-// documented ValidateStateMachineDefinition shape. Definitions that
+// and returns diagnostics in AWS's documented shape. Definitions
 // CreateStateMachine already accepts must keep validating with no ERROR
-// diagnostics; only genuinely broken or kumo-unsupported constructs are
-// flagged, so this never rejects anything the engine can actually run.
+// diagnostics -- only genuinely broken or kumo-unsupported constructs are
+// flagged.
 func validateStateMachineDefinition(definition string) []validateDiagnostic {
 	var def stateMachineDefinition
 	if err := json.Unmarshal([]byte(definition), &def); err != nil {
@@ -149,10 +137,9 @@ func (v *definitionValidator) addWarning(code, location, message string) {
 	})
 }
 
-// validateStateMachine validates one state machine's worth of States --
-// the top-level definition, or a Parallel Branch / Map ItemProcessor
-// sub-definition -- prefixing every diagnostic's location with
-// locationPrefix so nested diagnostics point at the right JSON path.
+// validateStateMachine validates one state machine's worth of States (the
+// top-level definition, or a nested Branch/ItemProcessor), prefixing each
+// diagnostic's location with locationPrefix.
 func (v *definitionValidator) validateStateMachine(def *stateMachineDefinition, locationPrefix string) {
 	if def.StartAt == "" {
 		v.addError(codeSchemaValidationFailed, locationPrefix+"/StartAt", "state machine is missing required field \"StartAt\"")
@@ -229,12 +216,9 @@ func (v *definitionValidator) validateState(name string, state *stateDefinition,
 	}
 }
 
-// validateStateFields flags any data-flow field (InputPath, OutputPath,
-// ResultPath, Parameters, ResultSelector, Retry, Catch) set on a state Type
-// the spec's field table does not allow it on -- for example, a ResultPath
-// on a Wait state -- so a definition that structurally validates does not
-// still surprise the caller when it runs (the pipeline in iodata.go and
-// retry.go simply never reads a field its state type does not support).
+// validateStateFields flags a data-flow field set on a state Type the
+// spec's field table disallows (e.g. ResultPath on a Wait state), so a
+// definition that validates doesn't still surprise the caller at runtime.
 func (v *definitionValidator) validateStateFields(name string, state *stateDefinition, location string) {
 	for _, rule := range stateDataFlowFieldSet {
 		if !rule.isSet(state) || rule.allowed[state.Type] {
@@ -268,12 +252,10 @@ func (v *definitionValidator) validateCatchers(name string, state *stateDefiniti
 	}
 }
 
-// validateTaskState checks a Task state's required Resource field, and, for
-// the .waitForTaskToken integration pattern, that Parameters actually
-// references the task token ($$.Task.Token) -- otherwise the integration
-// fires but no caller can ever resolve the token, so the state can only
-// ever fail with States.Timeout. AWS rejects this at CreateStateMachine
-// time.
+// validateTaskState checks Resource is set, and for .waitForTaskToken
+// tasks, that Parameters references $$.Task.Token -- otherwise no caller
+// can ever resolve it and the state can only fail with States.Timeout. AWS
+// rejects this at CreateStateMachine time.
 func (v *definitionValidator) validateTaskState(name string, state *stateDefinition, location string) {
 	if state.Resource == "" {
 		v.addError(codeInvalidResource, location+"/Resource", fmt.Sprintf("Task state %q is missing required field \"Resource\"", name))
@@ -371,10 +353,9 @@ func (v *definitionValidator) validateMapState(name string, state *stateDefiniti
 }
 
 // validateMapDistributedFields checks the Distributed-mode rules
-// requireDistributedModeForFields enforces at runtime (see mapstate.go),
-// and flags constructs kumo does not implement at all. processor is nil
-// when neither ItemProcessor nor Iterator was set (already reported by
-// validateMapState).
+// requireDistributedModeForFields enforces at runtime, and flags
+// unimplemented constructs. processor is nil when neither ItemProcessor nor
+// Iterator was set (already reported by validateMapState).
 func (v *definitionValidator) validateMapDistributedFields(name string, state *stateDefinition, processor *stateMachineDefinition, location string) {
 	if processor != nil && isDistributedMode(processor) {
 		v.validateDistributedExecutionType(name, processor, location)
@@ -397,12 +378,9 @@ func (v *definitionValidator) validateDistributedExecutionType(name string, proc
 	))
 }
 
-// warnDistributedOnlyFields flags Map fields AWS documents as
-// Distributed-mode-only (see mapDistributedOnlyFields) that are set
-// without ProcessorConfig.Mode "DISTRIBUTED": requireDistributedModeForFields
-// fails these at runtime, so a definition that structurally validates does
-// not still surprise the caller when it runs -- the class of gap reported
-// in issue #861.
+// warnDistributedOnlyFields flags Distributed-mode-only Map fields (see
+// mapDistributedOnlyFields) set without ProcessorConfig.Mode "DISTRIBUTED":
+// requireDistributedModeForFields fails these at runtime (issue #861).
 func (v *definitionValidator) warnDistributedOnlyFields(name string, state *stateDefinition, location string) {
 	for _, field := range mapDistributedOnlyFields {
 		if !field.isSet(state) {
@@ -416,14 +394,9 @@ func (v *definitionValidator) warnDistributedOnlyFields(name string, state *stat
 	}
 }
 
-// warnUnimplementedMapConstructs flags Map/ItemReader/ResultWriter
-// constructs kumo's engine still does not implement at all (see
-// itemreader.go, resultwriter.go), so a definition that structurally
-// validates does not still surprise the caller when it runs. ItemBatcher's
-// MaxItemsPerBatchPath/MaxInputBytesPerBatchPath and the Map state's own
-// ToleratedFailurePercentagePath/ToleratedFailureCountPath are implemented
-// (see buildProcessorUnits in itembatcher.go and resolveMapTolerance in
-// maptolerance.go), so neither warns anymore.
+// warnUnimplementedMapConstructs flags ItemReader/ResultWriter constructs
+// kumo's engine does not implement at all, so a definition that
+// structurally validates doesn't surprise the caller at runtime.
 func (v *definitionValidator) warnUnimplementedMapConstructs(name string, state *stateDefinition, location string) {
 	v.warnUnimplementedItemReaderConstructs(name, state.ItemReader, location)
 	v.warnUnimplementedResultWriterConstructs(name, state.ResultWriter, location)
@@ -452,11 +425,9 @@ func (v *definitionValidator) warnUnimplementedItemReaderConstructs(name string,
 	}
 }
 
-// warnUnimplementedResultWriterConstructs flags the ResultWriter
-// combinations kumo still does not implement: WriterConfig.Transformation
-// "NONE", and WriterConfig used without Resource/Parameters ("preview"
-// mode, which AWS documents as valid but kumo does not implement -- see
-// writeMapResultToS3 in resultwriter.go).
+// warnUnimplementedResultWriterConstructs flags ResultWriter combinations
+// kumo doesn't implement: Transformation "NONE", and WriterConfig without
+// Resource/Parameters ("preview" mode, valid per AWS but unimplemented).
 func (v *definitionValidator) warnUnimplementedResultWriterConstructs(name string, raw json.RawMessage, location string) {
 	var def resultWriterDef
 	if len(raw) == 0 || json.Unmarshal(raw, &def) != nil || len(def.WriterConfig) == 0 {

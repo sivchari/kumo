@@ -7,18 +7,16 @@ import (
 
 // Handler implements Cloud Control CRUD for one CloudFormation-style
 // resource type (e.g. "AWS::S3::Bucket"). Each method takes and returns
-// the JSON-serialised resource state — Cloud Control's wire format is
-// "DesiredState as a JSON string", so handlers operate on string-typed
-// JSON to avoid double encode/decode.
+// JSON-serialised resource state, matching Cloud Control's wire format,
+// to avoid double encode/decode.
 type Handler interface {
 	// TypeName returns the resource type the handler serves, e.g.
 	// "AWS::S3::Bucket".
 	TypeName() string
 
 	// Create provisions a new resource from the supplied desired-state
-	// JSON. Returns the primary identifier (the value Cloud Control uses
-	// to address the resource on subsequent calls) and the read-back
-	// state, which may differ from desired (server-assigned fields, etc.).
+	// JSON. Returns the primary identifier and the read-back state, which
+	// may differ from desired (server-assigned fields, etc.).
 	Create(ctx context.Context, desiredState []byte) (identifier string, state []byte, err error)
 
 	// Read returns the current state of the resource addressed by
@@ -35,9 +33,7 @@ type Handler interface {
 	Delete(ctx context.Context, identifier string) error
 
 	// List returns identifiers + state for every resource of this type.
-	// kumo doesn't paginate Cloud Control responses today; pagination can
-	// be added later through a separate List(ctx, after) signature without
-	// breaking existing handlers.
+	// kumo doesn't paginate Cloud Control responses today.
 	List(ctx context.Context) ([]ResourceDescription, error)
 }
 
@@ -86,13 +82,8 @@ func (r *Registry) Get(typeName string) (Handler, bool) {
 // every imported handler shows up in defaultRegistry().
 var defaultHandlers []Handler
 
-// registerDefaultHandler appends a handler to the package-level list. It
-// is the entry point per-resource init() functions use, e.g.:
-//
-//	func init() { registerDefaultHandler(&S3Bucket{}) }
-//
-// The handler will be present in every Service constructed via
-// defaultRegistry() / init().
+// registerDefaultHandler is the entry point per-resource init() functions
+// use, e.g. `func init() { registerDefaultHandler(&S3Bucket{}) }`.
 func registerDefaultHandler(h Handler) {
 	defaultHandlers = append(defaultHandlers, h)
 }

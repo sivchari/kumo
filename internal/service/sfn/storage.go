@@ -143,10 +143,8 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	}
 
 	s.engine = newExecutionEngine(s.baseURL)
-	// Wire the engine's states:startExecution and Map Run bookkeeping back
-	// to this same storage -- see executionStarter in nestedexec.go and
-	// mapRunTracker in maprun.go for why this is a direct reference rather
-	// than an HTTP round trip.
+	// Wire the engine's states:startExecution and Map Run bookkeeping back to
+	// this storage as a direct reference rather than an HTTP round trip.
 	s.engine.starter = s
 	s.engine.mapRuns = s
 
@@ -332,11 +330,9 @@ func (s *MemoryStorage) StartExecution(ctx context.Context, stateMachineArn, nam
 	return s.startExecutionAtDepth(ctx, stateMachineArn, name, input, traceHeader, 0)
 }
 
-// startNestedExecution implements executionStarter (see nestedexec.go) for
-// a states:startExecution Task: identical to StartExecution except it
-// carries the caller's nesting depth through to the child's own runExecution
-// goroutine, since StartExecution's own ctx parameter cannot (see
-// nestedExecutionDepthKey's doc in nestedexec.go).
+// startNestedExecution implements executionStarter for a
+// states:startExecution Task: like StartExecution, but carries the caller's
+// nesting depth through since StartExecution's ctx parameter cannot.
 func (s *MemoryStorage) startNestedExecution(ctx context.Context, stateMachineArn, name, input string, depth int) (*Execution, error) {
 	return s.startExecutionAtDepth(ctx, stateMachineArn, name, input, "", depth)
 }
@@ -389,18 +385,16 @@ func (s *MemoryStorage) startExecutionAtDepth(_ context.Context, stateMachineArn
 	return copyExecution(exec), nil
 }
 
-// executionTimeoutCap is kumo's own safety valve on how long a background
-// execution goroutine may run, independent of whether the definition sets
-// its own TimeoutSeconds. Standard state machine executions have no default
-// timeout in real AWS; this cap exists purely to bound the emulator's own
-// resource usage, so it must never be reported as a real States.Timeout --
-// see executionTimeoutDiagnosis.
+// executionTimeoutCap bounds how long a background execution goroutine may
+// run, independent of the definition's own TimeoutSeconds (real AWS has no
+// default execution timeout). This is purely an emulator resource cap and
+// must never be reported as a real States.Timeout -- see
+// executionTimeoutDiagnosis.
 const executionTimeoutCap = 5 * time.Minute
 
 // runExecution executes the state machine in a background goroutine, bounded
-// by min(definition TimeoutSeconds, executionTimeoutCap). depth is this
-// execution's states:startExecution nesting depth (0 for a top-level
-// execution reached via StartExecution; see startNestedExecution).
+// by min(definition TimeoutSeconds, executionTimeoutCap). depth is the
+// states:startExecution nesting depth (0 for a top-level execution).
 func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string, lastEventID int64, depth int) {
 	def, err := parseDefinition(definition)
 	if err != nil {
@@ -432,12 +426,10 @@ func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string
 	s.succeedExecution(ed, lastEventID, output)
 }
 
-// executionContext builds the context a top-level execution runs under. The
-// deadline is min(definition TimeoutSeconds, executionTimeoutCap): kumo
-// always enforces its own cap so a runaway execution cannot leak a goroutine
-// forever, even when the definition sets no timeout or one longer than the
-// cap. definitionTimeoutApplies reports whether the definition's own
-// TimeoutSeconds is the tighter (and therefore effective) bound.
+// executionContext builds the execution's context with deadline
+// min(definition TimeoutSeconds, executionTimeoutCap), so a runaway
+// execution can never leak a goroutine. definitionTimeoutApplies reports
+// whether the definition's own TimeoutSeconds was the tighter bound.
 func executionContext(def *stateMachineDefinition) (ctx context.Context, cancel context.CancelFunc, definitionTimeoutApplies bool) {
 	effective := executionTimeoutCap
 
@@ -454,12 +446,10 @@ func executionContext(def *stateMachineDefinition) (ctx context.Context, cancel 
 	return ctx, cancel, definitionTimeoutApplies
 }
 
-// executionTimeoutDiagnosis reports the error code and cause for an
-// execution that hit its context deadline. A definition-set TimeoutSeconds
-// that was reached is a real States.Timeout; kumo's own executionTimeoutCap
-// firing on its own is an emulator implementation detail with no AWS
-// equivalent, so it is reported as States.Runtime with a cause that says so,
-// keeping the two causes distinguishable.
+// executionTimeoutDiagnosis reports the timeout error code/cause: a reached
+// definition TimeoutSeconds is a real States.Timeout, while kumo's own
+// executionTimeoutCap firing is an emulator-only detail reported as
+// States.Runtime instead, keeping the two distinguishable.
 func executionTimeoutDiagnosis(def *stateMachineDefinition, definitionTimeoutApplies bool) (code, cause string) {
 	if definitionTimeoutApplies {
 		return errorStatesTimeout, fmt.Sprintf("State machine execution exceeded its TimeoutSeconds (%d)", *def.TimeoutSeconds)

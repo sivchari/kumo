@@ -630,10 +630,9 @@ func (s *Service) DeleteActivity(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, &DeleteActivityResponse{})
 }
 
-// GetActivityTask handles the GetActivityTask API: a worker's long poll for
-// a scheduled task. It blocks for up to activityPollTimeout inside
-// s.storage.GetActivityTask, so the HTTP response itself is only written
-// once a task arrives or the poll window elapses.
+// GetActivityTask handles the GetActivityTask API: a worker's long poll.
+// It blocks inside s.storage.GetActivityTask, so the HTTP response is
+// only written once a task arrives or the poll window elapses.
 func (s *Service) GetActivityTask(w http.ResponseWriter, r *http.Request) {
 	var req GetActivityTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -655,13 +654,10 @@ func (s *Service) GetActivityTask(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ValidateStateMachineDefinition runs kumo's structural checks against the
-// supplied definition and reports diagnostics in AWS's documented shape.
-//
-// terraform-provider-aws calls ValidateStateMachineDefinition during the
-// plan phase of every aws_sfn_state_machine, before issuing CreateStateMachine.
-// Without it, `tofu plan` fails with InvalidAction and the resource never
-// reaches the create path.
+// ValidateStateMachineDefinition runs kumo's structural checks and reports
+// diagnostics in AWS's documented shape. terraform-provider-aws calls this
+// during every plan phase before CreateStateMachine; without it, `tofu
+// plan` fails with InvalidAction.
 func (s *Service) ValidateStateMachineDefinition(w http.ResponseWriter, r *http.Request) {
 	var req ValidateStateMachineDefinitionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -737,11 +733,9 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, &UntagResourceResponse{})
 }
 
-// ListStateMachineVersions lists versions for a state machine.
-//
-// Versions are not modeled in storage. terraform-provider-aws calls this
-// on every refresh; the StateMachineVersions field must be present even
-// when empty.
+// ListStateMachineVersions lists versions for a state machine. Versions
+// are not modeled in storage; terraform-provider-aws calls this on every
+// refresh and requires the field present even when empty.
 func (s *Service) ListStateMachineVersions(w http.ResponseWriter, r *http.Request) {
 	var req ListStateMachineVersionsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

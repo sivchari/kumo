@@ -6,21 +6,14 @@ import (
 	"time"
 )
 
-// choiceRule is a single rule within a Choice state's Choices array. Per the
-// Amazon States Language spec it is either a Data-test Expression (a
-// "Variable" JSONPath plus exactly one comparison operator) or a Boolean
-// Expression (And/Or/Not combining nested rules).
+// choiceRule is a single rule within a Choice state's Choices array: either
+// a Data-test Expression (Variable path + one comparison operator) or a
+// Boolean Expression (And/Or/Not combining nested rules). Every comparator
+// has a "*Path" variant resolving its operand from a Path instead of a
+// literal.
 //
-// Every comparison operator also has a "*Path" variant (e.g.
-// "StringEqualsPath"), whose value is a Path resolved against the state's
-// effective input to yield the comparison operand, instead of a static
-// literal -- see resolveStringOperand/resolveNumericOperand/
-// resolveBooleanOperand.
-//
-// JSON tags are lowerCamelCase rather than the Amazon States Language's own
-// PascalCase (e.g. "Variable", "StringEquals"); encoding/json matches object
-// keys to struct fields case-insensitively when there is no exact match, so
-// definitions using the spec's PascalCase field names still decode correctly.
+// JSON tags are lowerCamelCase; encoding/json matches ASL's PascalCase
+// field names case-insensitively, so definitions still decode correctly.
 type choiceRule struct {
 	Variable string `json:"variable"`
 	Next     string `json:"next"`
@@ -219,12 +212,9 @@ func evaluateStringMatches(value any, pattern string) (matched, handled bool, er
 	return stringMatchesGlob(s, segments), true, nil
 }
 
-// parseStringMatchesPattern splits a StringMatches pattern into the literal
-// segments between its unescaped "*" wildcards, per
-// https://states-language.net/spec.html's StringMatches rules: "*" matches
-// zero or more characters; "\*" is a literal "*"; "\\" is a literal "\";
-// any other use of "\" (including a trailing, unescaped one) is a runtime
-// error.
+// parseStringMatchesPattern splits pattern into literal segments between
+// unescaped "*" wildcards. "\*" is a literal "*", "\\" a literal "\"; any
+// other backslash use (including a trailing one) is a runtime error.
 func parseStringMatchesPattern(pattern string) ([]string, error) {
 	var (
 		segments []string
@@ -261,11 +251,9 @@ func parseStringMatchesPattern(pattern string) ([]string, error) {
 	return segments, nil
 }
 
-// stringMatchesGlob reports whether value matches a StringMatches pattern
-// already split into segments by parseStringMatchesPattern: segments[0]
-// must prefix value and segments[len-1] must suffix it (the sole segment
-// must equal value exactly when there was no wildcard at all), with every
-// segment in between required to appear, in order, somewhere between them.
+// stringMatchesGlob reports whether value matches segments produced by
+// parseStringMatchesPattern: segments[0] must prefix value, segments[-1]
+// must suffix it, and every segment between must appear in order.
 func stringMatchesGlob(value string, segments []string) bool {
 	if len(segments) == 1 {
 		return value == segments[0]
@@ -289,11 +277,9 @@ func stringMatchesGlob(value string, segments []string) bool {
 	return strings.HasSuffix(value, segments[len(segments)-1])
 }
 
-// evaluateTypeCheck evaluates IsNumeric/IsString/IsBoolean/IsTimestamp: each
-// takes a boolean operand and matches when value's type (JSON number/
-// string/boolean, or -- for IsTimestamp -- an RFC3339 string) equals it,
-// mirroring how IsNull compares (value == nil) against its own boolean
-// operand. handled is false if rule sets none of them.
+// evaluateTypeCheck evaluates IsNumeric/IsString/IsBoolean/IsTimestamp:
+// each matches when value's type equals the boolean operand. handled is
+// false if rule sets none of them.
 func evaluateTypeCheck(rule *choiceRule, value any) (matched, handled bool) {
 	switch {
 	case rule.IsNumeric != nil:
@@ -346,11 +332,9 @@ func compareStringWith(value any, static, path *string, input map[string]any, ma
 	return ok && matches(cmp), true, nil
 }
 
-// resolveStringOperand resolves a String*/Timestamp* comparator's operand:
-// the static value if set, else the "*Path" variant's Path resolved
-// against input. ok is false if path resolves to a non-string value, per
-// the spec's "if the values are not both of the appropriate type... the
-// comparison will return false".
+// resolveStringOperand resolves a String*/Timestamp* comparator's operand
+// (static value, or the "*Path" variant resolved against input). ok is
+// false if path resolves to a non-string value.
 func resolveStringOperand(static, path *string, input map[string]any) (want string, ok bool, err error) {
 	if static != nil {
 		return *static, true, nil
@@ -480,10 +464,9 @@ func evaluateTimestampComparison(rule *choiceRule, value any, input map[string]a
 	}
 }
 
-// compareTimestampWith resolves a Timestamp* comparator's operand -- from a
-// static value or, for the "*Path" variant, by resolving path against
-// input -- and reports whether value satisfies it per matches. The operand
-// is a string in both cases, so this reuses resolveStringOperand.
+// compareTimestampWith resolves a Timestamp* comparator's operand and
+// reports whether value satisfies it per matches; reuses
+// resolveStringOperand since the operand is a string in both cases.
 func compareTimestampWith(value any, static, path *string, input map[string]any, matches func(cmp int) bool) (matched, handled bool, err error) {
 	want, ok, err := resolveStringOperand(static, path, input)
 	if err != nil {

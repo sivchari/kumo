@@ -138,9 +138,10 @@ type MapRun struct {
 // and .../API_MapRunItemCounts.html), reused directly as both MapRun's own
 // storage field type and (embedded in DescribeMapRunResponse) the wire type,
 // the same way Tag and LoggingConfiguration double as both elsewhere in this
-// file. Every field except FailuresNotRedrivable/PendingRedrive is
-// documented "Required: Yes", so none but those two get "omitempty" -- a
-// legitimate 0 count must still be sent, not omitted.
+// file.
+//
+// Every field except FailuresNotRedrivable/PendingRedrive is "Required: Yes"
+// per AWS, so only those two get omitempty.
 type MapRunCounts struct {
 	Total                 int64 `json:"total"`
 	Succeeded             int64 `json:"succeeded"`

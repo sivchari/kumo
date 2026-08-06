@@ -27,10 +27,9 @@ func (s *MemoryStorage) activityARN(name string) string {
 	return fmt.Sprintf("arn:aws:states:%s:%s:activity:%s", s.region, s.accountID, name)
 }
 
-// CreateActivity creates an activity. Per AWS documentation, CreateActivity
-// is idempotent on name: a repeated call for a name that already has an
-// activity returns the existing ActivityArn/CreationDate unchanged, and any
-// different Tags on the repeat request are ignored rather than applied.
+// CreateActivity creates an activity. It is idempotent on name: a repeat
+// call returns the existing ActivityArn/CreationDate unchanged and ignores
+// any different Tags.
 func (s *MemoryStorage) CreateActivity(_ context.Context, name string, tags []Tag) (*Activity, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

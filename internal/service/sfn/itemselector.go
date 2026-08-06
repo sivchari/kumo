@@ -6,13 +6,8 @@ import (
 )
 
 // applyItemSelector transforms every item per the Map state's ItemSelector
-// field, which works identically in Inline and Distributed mode (see
-// https://docs.aws.amazon.com/step-functions/latest/dg/input-output-itemselector.html).
-// ItemSelector's key-value pairs may be static values, "$."-prefixed
-// JSONPath references against the Map state's own input (mapInput), or
-// "$$."-prefixed Context object references: $$.Map.Item.Value (the
-// current item) and $$.Map.Item.Index (its 0-based index). An unset
-// ItemSelector leaves items unchanged.
+// field. Values may be static, "$."-prefixed paths against mapInput, or
+// "$$."-prefixed Context refs. An unset ItemSelector leaves items unchanged.
 func applyItemSelector(raw json.RawMessage, items []json.RawMessage, mapInput string) ([]json.RawMessage, error) {
 	if len(raw) == 0 {
 		return items, nil
@@ -49,8 +44,7 @@ func applyItemSelector(raw json.RawMessage, items []json.RawMessage, mapInput st
 
 // mapItemContext builds the "$$." Context object exposed to ItemSelector
 // for one item: {"Map": {"Item": {"Index": index, "Value": <item>}}}.
-// Map.Item.Source (which real AWS sets for S3 ListObjectsV2 datasets) is
-// not modeled; kumo's ItemReader always yields STATE_DATA-equivalent items.
+// Map.Item.Source (AWS sets it for S3 ListObjectsV2 datasets) is not modeled.
 func mapItemContext(index int, item json.RawMessage) (map[string]any, error) {
 	var value any
 	if err := json.Unmarshal(item, &value); err != nil {

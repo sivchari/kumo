@@ -3,20 +3,16 @@ package sfn
 import "fmt"
 
 // mapTolerance is a Map state's resolved ToleratedFailurePercentage/
-// ToleratedFailureCount (see
-// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html#state-map-fields-failure-tolerance).
+// ToleratedFailureCount.
 type mapTolerance struct {
 	percentage *float64
 	count      *int
 }
 
-// resolveMapTolerance reads a Map state's tolerance fields, resolving
-// ToleratedFailurePercentagePath/ToleratedFailureCountPath against input
-// (the Map state's effective input) when set, preferring the Path form over
-// its static counterpart -- see resolveOptionalFloatPath/
-// resolveOptionalIntPath in wait.go. Only requireDistributedModeForFields
-// lets these fields take effect at all (they are Distributed-mode-only), so
-// resolveMapTolerance itself does not need to check mode.
+// resolveMapTolerance reads a Map state's tolerance fields, preferring the
+// *Path form over its static counterpart when both are set. It does not
+// check Distributed mode itself -- requireDistributedModeForFields already
+// gates whether these fields take effect at all.
 func resolveMapTolerance(state *stateDefinition, input string) (mapTolerance, error) {
 	percentage, err := resolveOptionalFloatPath(state.ToleratedFailurePercentage, state.ToleratedFailurePercentagePath, input)
 	if err != nil {
@@ -32,10 +28,9 @@ func resolveMapTolerance(state *stateDefinition, input string) (mapTolerance, er
 }
 
 // enabled reports whether either threshold was configured. When neither is
-// set, AWS's documented default (a 0% tolerated failure percentage) means
-// any single item failure fails the Map Run; runMapProcessorUnits achieves
-// that identical result more cheaply via the non-tolerant fast-fail path in
-// runMapUnits, without needing every unit to run to completion first.
+// set, AWS's default (0% tolerance) means any single failure fails the Map
+// Run; runMapProcessorUnits achieves that more cheaply via the non-tolerant
+// fast-fail path, without running every unit to completion first.
 func (t mapTolerance) enabled() bool {
 	return t.percentage != nil || t.count != nil
 }

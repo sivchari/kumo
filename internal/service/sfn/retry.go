@@ -10,11 +10,8 @@ import (
 
 // retrier is a single entry in a Task/Parallel/Map state's Retry field.
 //
-// JSON tags are lowerCamelCase rather than the Amazon States Language's own
-// PascalCase (e.g. "ErrorEquals", "IntervalSeconds"); encoding/json matches
-// object keys to struct fields case-insensitively when there is no exact
-// match, so definitions using the spec's PascalCase field names still decode
-// correctly.
+// JSON tags are lowerCamelCase, not ASL's PascalCase; encoding/json matches
+// keys case-insensitively so PascalCase definitions still decode correctly.
 type retrier struct {
 	ErrorEquals     []string `json:"errorEquals"`
 	IntervalSeconds *int     `json:"intervalSeconds"`
@@ -22,9 +19,8 @@ type retrier struct {
 	BackoffRate     *float64 `json:"backoffRate"`
 	MaxDelaySeconds *int     `json:"maxDelaySeconds"`
 
-	// JitterStrategy is accepted but not implemented: kumo is a
-	// deterministic emulator, and randomizing retry delays would make retry
-	// timing (and therefore test timing) non-reproducible.
+	// JitterStrategy is accepted but not implemented: kumo is a deterministic
+	// emulator, and randomized delays would make retry timing non-reproducible.
 	JitterStrategy string `json:"jitterStrategy"`
 }
 
@@ -44,31 +40,12 @@ const (
 	defaultRetryBackoffRate     = 2.0
 )
 
-// runRetryCatchResultPipeline executes work (a state's own work for one
-// execution, already given whatever effective input the caller computed
-// for it -- see executeTaskStateWithPolicy, executeParallelStateWithPolicy,
-// and executeMapStateWithPolicy in executor.go/parallel.go/mapstate.go,
-// which each fold InputPath/Parameters differently), applying that state's
-// Retry and Catch policy: retries are attempted first, using the matching
-// Retrier's backoff schedule; if retries do not resolve the error, or no
-// Retrier matches, the first matching Catcher routes to its Next state
-// with the Catcher's Error Output merged into the state's raw
-// (un-filtered) input via the Catcher's own ResultPath.
-//
-// On success, the result passes through ResultSelector, ResultPath, and
-// OutputPath to produce the effective output (see applyResultPipeline). On
-// a Catch match, only OutputPath applies to the Catcher's output --
-// ResultSelector/ResultPath are skipped, since the Catcher already shaped
-// its own output via its own ResultPath -- because OutputPath is a
-// state-level field that applies to the state's output regardless of
-// which path produced it (see applyCatchResult). An unmatched error
-// propagates unchanged: per AWS, a data-flow failure itself (e.g. an
-// unresolvable ResultPath) reports as States.Runtime, which is never
-// caught (see errorNameMatches), so such failures never reach Retry/Catch
-// in the first place.
-//
-// The return shape mirrors executeState: nextOverride is non-empty only
-// when a Catcher matched.
+// runRetryCatchResultPipeline applies work's Retry policy, then Catch on
+// failure or the Result pipeline on success. On a Catch match, only
+// OutputPath applies to the Catcher's output -- ResultSelector/ResultPath
+// are skipped since the Catcher already shaped its own output via its own
+// ResultPath. nextOverride (second return) is non-empty only when a
+// Catcher matched.
 func (e *executionEngine) runRetryCatchResultPipeline(
 	ctx context.Context, name string, state *stateDefinition, rawInput, effectiveInput string,
 	work func(context.Context) (string, error),
@@ -102,10 +79,8 @@ func (e *executionEngine) applyCatchResult(name string, state *stateDefinition, 
 	return out, catchNext, nil
 }
 
-// applyResultPipeline turns a state's own successful result into its
-// effective output: ResultSelector produces the effective result,
-// ResultPath merges it into effectiveInput, and OutputPath narrows the
-// merged output.
+// applyResultPipeline turns a successful result into the state's effective
+// output via ResultSelector -> ResultPath -> OutputPath, in that order.
 func (e *executionEngine) applyResultPipeline(name string, state *stateDefinition, effectiveInput, result string) (string, string, error) {
 	effectiveResult, err := applyResultSelector(state.ResultSelector, result)
 	if err != nil {
@@ -125,12 +100,10 @@ func (e *executionEngine) applyResultPipeline(name string, state *stateDefinitio
 	return out, "", nil
 }
 
-// runWithRetry executes fn, applying the state's Retry policy. Per the
-// spec, the interpreter scans the Retriers in order and uses the first one
-// whose ErrorEquals matches the reported error; each Retrier's attempt
-// budget (MaxAttempts) is independent of the others, and the budgets reset
-// whenever the state is entered anew, which holds naturally here since
-// runWithRetry is scoped to a single state execution.
+// runWithRetry executes fn under the state's Retry policy: the first
+// Retrier whose ErrorEquals matches wins, and each Retrier's MaxAttempts
+// budget is independent and resets on every state execution (this function
+// is scoped to one).
 func (e *executionEngine) runWithRetry(ctx context.Context, state *stateDefinition, fn func(context.Context) (string, error)) (string, error) {
 	attemptsUsed := make([]int, len(state.Retry))
 
@@ -170,11 +143,9 @@ func matchingRetrierIndex(retriers []retrier, errName string) int {
 	return -1
 }
 
-// errorNameMatches reports whether errName is matched by an ErrorEquals
-// list from a Retrier or Catcher. States.Runtime is a special case: per AWS
-// documentation it "isn't retriable, and will always cause the execution to
-// fail" -- it is never matched, even by an explicit "States.Runtime" entry
-// or by the States.ALL wildcard.
+// errorNameMatches reports whether errName matches an ErrorEquals list.
+// States.Runtime is never matched, even by an explicit entry or States.ALL
+// -- per AWS it "isn't retriable, and will always cause the execution to fail".
 func errorNameMatches(errorEquals []string, errName string) bool {
 	if errName == errorStatesRuntime {
 		return false
@@ -266,12 +237,9 @@ func applyCatch(state *stateDefinition, input string, err error) (output, next s
 	return "", "", false, nil
 }
 
-// buildCatchOutput builds a Catcher's output: the Error Output object
-// {"Error": errName, "Cause": cause}, merged into the state's original
-// (raw) input per the Catcher's own ResultPath -- "works exactly like a
-// state's top-level ResultPath" per the spec's JSONPath Catchers section,
-// so it reuses applyResultPath, supporting the same "$", null, and
-// arbitrary-depth "$.a.b.c" semantics.
+// buildCatchOutput builds the Error Output object {"Error", "Cause"} and
+// merges it into the state's raw input via the Catcher's own ResultPath,
+// which "works exactly like a state's top-level ResultPath" per the spec.
 func buildCatchOutput(rawResultPath json.RawMessage, input, errName, cause string) (string, error) {
 	errorOutput := map[string]string{"Error": errName, "Cause": cause}
 

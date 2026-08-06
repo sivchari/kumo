@@ -7,11 +7,9 @@ import (
 	"sync"
 )
 
-// executeParallelStateWithPolicy executes a Parallel state's full standard
-// field pipeline: InputPath and Parameters build the effective input fed to
-// every Branch's StartAt state, Retry and Catch govern the branches as a
-// whole, and on success ResultSelector/ResultPath/OutputPath shape the
-// effective output.
+// executeParallelStateWithPolicy builds the effective input from
+// InputPath/Parameters, then runs it through the Retry/Catch/
+// ResultSelector/ResultPath/OutputPath pipeline.
 func (e *executionEngine) executeParallelStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	effectiveInput, err := resolveEffectiveInput(state.InputPath, state.Parameters, input)
 	if err != nil {
@@ -23,11 +21,9 @@ func (e *executionEngine) executeParallelStateWithPolicy(ctx context.Context, na
 	})
 }
 
-// executeParallelState runs every Branch concurrently against the same
-// state input and collects their outputs, in branch order, as a JSON array.
-// The first branch to fail cancels the remaining branches and the Parallel
-// state fails with States.BranchFailed, carrying the branch's own failure
-// as the cause, matching real Step Functions.
+// executeParallelState runs each Branch concurrently and collects outputs in
+// branch order as a JSON array. The first branch to fail cancels the rest
+// and fails the state with States.BranchFailed, matching real Step Functions.
 func (e *executionEngine) executeParallelState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	if len(state.Branches) == 0 {
 		return "", fmt.Errorf("parallel state %q: Branches is required", name)

@@ -9,10 +9,9 @@ import (
 	"time"
 )
 
-// isActivityResource reports whether resource is an activity ARN created
-// via CreateActivity (arn:aws:states:{region}:{account}:activity:{name}),
-// as opposed to the arn:aws:states:::service:action shape optimized
-// integrations use, which always leaves the region/account segments empty.
+// isActivityResource reports whether resource is an activity ARN
+// (arn:aws:states:{region}:{account}:activity:{name}), as opposed to the
+// arn:aws:states:::service:action shape optimized integrations use.
 func isActivityResource(resource string) bool {
 	return strings.HasPrefix(resource, "arn:aws:states:") && strings.Contains(resource, ":activity:")
 }
@@ -44,15 +43,10 @@ func (r *activityQueueRegistry) get(arn string) *activityQueue {
 	return q
 }
 
-// executeActivityTask executes a Task state whose Resource references an
-// activity created via CreateActivity: it resolves the task's input
-// (resolved Parameters if set, else the effective input verbatim -- the
-// same fallback executeLambdaFunctionTask in executor.go uses for the
-// directly-specified-function integration), enqueues it for a
-// GetActivityTask poller, and then waits for SendTaskSuccess/SendTaskFailure
-// exactly like a callback Task state (see awaitTaskToken in
-// callback_task.go), honoring the same TimeoutSeconds/HeartbeatSeconds
-// semantics.
+// executeActivityTask executes a Task state whose Resource is an activity
+// ARN: enqueues the resolved input for a GetActivityTask poller, then waits
+// for SendTaskSuccess/SendTaskFailure like a callback Task state, honoring
+// the same TimeoutSeconds/HeartbeatSeconds semantics.
 func (e *executionEngine) executeActivityTask(ctx context.Context, name string, state *stateDefinition, resource, input string) (string, error) {
 	taskInput := input
 
@@ -82,9 +76,8 @@ func (e *executionEngine) executeActivityTask(ctx context.Context, name string, 
 const activityPollTimeout = 60 * time.Second
 
 // GetActivityTask long-polls for a task scheduled against activityArn,
-// returning an empty taskToken if none arrives within the poll window --
-// per AWS's documented behavior of responding with "a taskToken with a
-// null string" once the 60-second poll elapses.
+// returning an empty taskToken if none arrives within the poll window,
+// matching AWS's documented null-string response on timeout.
 func (s *MemoryStorage) GetActivityTask(ctx context.Context, activityArn, _ string) (string, string, error) {
 	s.mu.RLock()
 	_, exists := s.Activities[activityArn]
@@ -121,10 +114,9 @@ func (s *MemoryStorage) SendTaskHeartbeat(_ context.Context, taskToken string) e
 	return tokenServiceError(s.engine.tokens.heartbeatToken(taskToken))
 }
 
-// tokenServiceError turns a tokenRegistry result code (tokenErrDoesNotExist,
-// tokenErrTimedOut, or "" for success) into the ServiceError handlers.go
-// expects, matching AWS's documented SendTaskSuccess/SendTaskFailure/
-// SendTaskHeartbeat error messages.
+// tokenServiceError turns a tokenRegistry result code into the
+// ServiceError handlers.go expects, matching AWS's documented error
+// messages for these APIs.
 func tokenServiceError(code string) error {
 	switch code {
 	case "":

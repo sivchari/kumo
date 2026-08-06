@@ -67,12 +67,10 @@ type GetResourceRequestStatusInput struct {
 }
 
 // ProgressEvent is the wire shape Cloud Control returns from every
-// asynchronous operation. kumo runs all operations synchronously, so we
-// always return SUCCESS — the field is still populated for SDK
-// compatibility. EventTime is encoded as Unix-epoch seconds (a float)
-// because the AWS JSON 1.0 protocol decodes timestamps as numbers; an
-// RFC3339 string trips the SDK's `expected Timestamp to be a JSON Number`
-// check.
+// asynchronous operation. kumo runs everything synchronously, so
+// OperationStatus is always SUCCESS. EventTime is a float (Unix-epoch
+// seconds) because the AWS JSON 1.0 protocol decodes timestamps as
+// numbers; an RFC3339 string trips the SDK's timestamp check.
 type ProgressEvent struct {
 	TypeName        string  `json:"TypeName,omitempty"`
 	Identifier      string  `json:"Identifier,omitempty"`
@@ -127,10 +125,8 @@ func writeJSON(w http.ResponseWriter, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// writeError writes an AWS JSON error response. code becomes __type and
-// is what AWS SDK clients use to populate the error name. Cloud Control
-// always returns 400 for application errors; transport errors don't
-// flow through here.
+// writeError writes an AWS JSON error response. code becomes __type,
+// which AWS SDK clients use to populate the error name.
 func writeError(w http.ResponseWriter, code, message string) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
 	w.Header().Set("x-amzn-RequestId", uuid.New().String())

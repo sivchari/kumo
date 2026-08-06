@@ -6,14 +6,8 @@ import (
 )
 
 // itemBatcherDef is the decoded ItemBatcher field. JSON tags are
-// lowerCamelCase rather than the Amazon States Language's own PascalCase;
-// see retrier in retry.go for why this still decodes AWS's PascalCase field
-// names correctly.
-//
-// MaxItemsPerBatchPath and MaxInputBytesPerBatchPath (the dynamic,
-// reference-path forms of MaxItemsPerBatch/MaxInputBytesPerBatch) are
-// resolved against the Map state's input in buildProcessorUnits, preferring
-// the Path form over its static counterpart when both are set.
+// lowerCamelCase but still decode AWS's PascalCase field names (see retry.go).
+// The *Path fields take precedence over their static counterparts when both are set.
 type itemBatcherDef struct {
 	MaxItemsPerBatch          *int           `json:"maxItemsPerBatch"`
 	MaxInputBytesPerBatch     *int           `json:"maxInputBytesPerBatch"`
@@ -22,20 +16,17 @@ type itemBatcherDef struct {
 	BatchInput                map[string]any `json:"batchInput"`
 }
 
-// mapUnit is a single processor invocation: either one dataset item (no
-// ItemBatcher) or a batch envelope (with ItemBatcher). itemCount is how
-// many original dataset items this unit represents, which is what
-// ToleratedFailurePercentage/ToleratedFailureCount count against (see
-// mapTolerance in mapstate.go).
+// mapUnit is a single processor invocation: one item, or a batch envelope
+// when ItemBatcher is set. itemCount is how many original items it
+// represents, which tolerance thresholds count against.
 type mapUnit struct {
 	input     string
 	itemCount int
 }
 
 // buildProcessorUnits groups items into one mapUnit per item, or, when
-// ItemBatcher is set, into batch envelopes shaped exactly as AWS documents
-// for the processor's input: {"BatchInput": {...}, "Items": [...]} (see
-// https://docs.aws.amazon.com/step-functions/latest/dg/input-output-itembatcher.html).
+// ItemBatcher is set, into batch envelopes shaped as AWS documents:
+// {"BatchInput": {...}, "Items": [...]}.
 func buildProcessorUnits(raw json.RawMessage, items []json.RawMessage, mapInput string) ([]mapUnit, error) {
 	if len(raw) == 0 {
 		return itemUnits(items), nil
@@ -110,10 +101,8 @@ func resolveBatchInput(batchInput map[string]any, mapInput string) (map[string]a
 }
 
 // groupIntoBatches splits items into batches bounded by maxItems and/or
-// maxBytes (either may be nil, but buildProcessorUnits requires at least
-// one to be set). A batch always contains at least one item, even if that
-// item alone exceeds maxBytes, so a single oversized item cannot stall
-// batching entirely.
+// maxBytes. A batch always contains at least one item, even if that item
+// alone exceeds maxBytes, so a single oversized item cannot stall batching.
 func groupIntoBatches(items []json.RawMessage, maxItems, maxBytes *int) [][]json.RawMessage {
 	var (
 		batches      [][]json.RawMessage
@@ -155,9 +144,8 @@ func newBatch(maxItems *int, totalItems int) []json.RawMessage {
 }
 
 // marshalBatchEnvelope builds one child processor invocation's input JSON.
-// A plain map (rather than a struct) is used so the wire keys "BatchInput"
-// and "Items" -- which must match AWS's documented envelope exactly -- do
-// not require a struct-tag casing exception.
+// Uses a plain map so the wire keys "BatchInput"/"Items" (must match AWS's
+// envelope exactly) don't require a struct-tag casing exception.
 func marshalBatchEnvelope(batchInput map[string]any, items []json.RawMessage) (string, error) {
 	envelope := map[string]any{
 		"BatchInput": batchInput,
