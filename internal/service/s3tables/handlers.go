@@ -20,13 +20,13 @@ const (
 func (s *Service) CreateTableBucket(w http.ResponseWriter, r *http.Request) {
 	var req CreateTableBucketRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Invalid request body")
+		writeError(w, errBadRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket name is required")
+		writeError(w, errBadRequest, "Table bucket name is required", http.StatusBadRequest)
 
 		return
 	}
@@ -45,7 +45,7 @@ func (s *Service) CreateTableBucket(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteTableBucket(w http.ResponseWriter, r *http.Request) {
 	arn := extractTableBucketARN(getURLPath(r))
 	if arn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN is required")
+		writeError(w, errBadRequest, "Table bucket ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -63,7 +63,7 @@ func (s *Service) DeleteTableBucket(w http.ResponseWriter, r *http.Request) {
 func (s *Service) GetTableBucket(w http.ResponseWriter, r *http.Request) {
 	arn := extractTableBucketARN(getURLPath(r))
 	if arn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN is required")
+		writeError(w, errBadRequest, "Table bucket ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -113,20 +113,20 @@ func (s *Service) ListTableBuckets(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateNamespace(w http.ResponseWriter, r *http.Request) {
 	tableBucketArn := extractTableBucketARNFromNamespacePath(getURLPath(r))
 	if tableBucketArn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN is required")
+		writeError(w, errBadRequest, "Table bucket ARN is required", http.StatusBadRequest)
 
 		return
 	}
 
 	var req CreateNamespaceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Invalid request body")
+		writeError(w, errBadRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if len(req.Namespace) == 0 {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Namespace is required")
+		writeError(w, errBadRequest, "Namespace is required", http.StatusBadRequest)
 
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Service) CreateNamespace(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteNamespace(w http.ResponseWriter, r *http.Request) {
 	tableBucketArn, namespace := extractNamespaceParams(getURLPath(r))
 	if tableBucketArn == "" || namespace == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN and namespace are required")
+		writeError(w, errBadRequest, "Table bucket ARN and namespace are required", http.StatusBadRequest)
 
 		return
 	}
@@ -166,7 +166,7 @@ func (s *Service) DeleteNamespace(w http.ResponseWriter, r *http.Request) {
 func (s *Service) GetNamespace(w http.ResponseWriter, r *http.Request) {
 	tableBucketArn, namespace := extractNamespaceParams(getURLPath(r))
 	if tableBucketArn == "" || namespace == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN and namespace are required")
+		writeError(w, errBadRequest, "Table bucket ARN and namespace are required", http.StatusBadRequest)
 
 		return
 	}
@@ -191,7 +191,7 @@ func (s *Service) GetNamespace(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListNamespaces(w http.ResponseWriter, r *http.Request) {
 	tableBucketArn := extractTableBucketARNFromNamespacePath(getURLPath(r))
 	if tableBucketArn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN is required")
+		writeError(w, errBadRequest, "Table bucket ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -222,26 +222,26 @@ func (s *Service) ListNamespaces(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 	tableBucketArn, namespace := extractTablePathParams(getURLPath(r))
 	if tableBucketArn == "" || namespace == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN and namespace are required")
+		writeError(w, errBadRequest, "Table bucket ARN and namespace are required", http.StatusBadRequest)
 
 		return
 	}
 
 	var req CreateTableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Invalid request body")
+		writeError(w, errBadRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table name is required")
+		writeError(w, errBadRequest, "Table name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.Format == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table format is required")
+		writeError(w, errBadRequest, "Table format is required", http.StatusBadRequest)
 
 		return
 	}
@@ -263,7 +263,7 @@ func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteTable(w http.ResponseWriter, r *http.Request) {
 	tableBucketArn, namespace, tableName := extractFullTableParams(getURLPath(r))
 	if tableBucketArn == "" || namespace == "" || tableName == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN, namespace, and table name are required")
+		writeError(w, errBadRequest, "Table bucket ARN, namespace, and table name are required", http.StatusBadRequest)
 
 		return
 	}
@@ -285,7 +285,7 @@ func (s *Service) GetTable(w http.ResponseWriter, r *http.Request) {
 	tableName := r.URL.Query().Get("name")
 
 	if tableBucketArn == "" || namespace == "" || tableName == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN, namespace, and table name are required")
+		writeError(w, errBadRequest, "Table bucket ARN, namespace, and table name are required", http.StatusBadRequest)
 
 		return
 	}
@@ -319,7 +319,7 @@ func (s *Service) GetTable(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListTables(w http.ResponseWriter, r *http.Request) {
 	tableBucketArn, namespace := extractTablePathParams(getURLPath(r))
 	if tableBucketArn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Table bucket ARN is required")
+		writeError(w, errBadRequest, "Table bucket ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -481,7 +481,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 // writeError writes an error response.
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, code, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
@@ -511,10 +511,10 @@ func handleError(w http.ResponseWriter, err error) {
 			status = http.StatusInternalServerError
 		}
 
-		writeError(w, status, s3tablesErr.Code, s3tablesErr.Message)
+		writeError(w, s3tablesErr.Code, s3tablesErr.Message, status)
 
 		return
 	}
 
-	writeError(w, http.StatusInternalServerError, errInternalError, "Internal server error")
+	writeError(w, errInternalError, "Internal server error", http.StatusInternalServerError)
 }

@@ -11,7 +11,7 @@ import (
 func (s *Service) CreateDataLake(w http.ResponseWriter, r *http.Request) {
 	var req CreateDataLakeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -30,7 +30,7 @@ func (s *Service) CreateDataLake(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteDataLake(w http.ResponseWriter, r *http.Request) {
 	var req DeleteDataLakeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -62,7 +62,7 @@ func (s *Service) ListDataLakes(w http.ResponseWriter, r *http.Request) {
 func (s *Service) UpdateDataLake(w http.ResponseWriter, r *http.Request) {
 	var req UpdateDataLakeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -81,7 +81,7 @@ func (s *Service) UpdateDataLake(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 	var req CreateSubscriberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -129,7 +129,7 @@ func (s *Service) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateSubscriberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -155,7 +155,7 @@ func (s *Service) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 
 		maxResults, err = strconv.Atoi(maxResultsStr)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, errValidation, "Invalid maxResults")
+			writeError(w, errValidation, "Invalid maxResults", http.StatusBadRequest)
 
 			return
 		}
@@ -180,7 +180,7 @@ func (s *Service) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateAwsLogSource(w http.ResponseWriter, r *http.Request) {
 	var req CreateAwsLogSourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -199,7 +199,7 @@ func (s *Service) CreateAwsLogSource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteAwsLogSource(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAwsLogSourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -218,7 +218,7 @@ func (s *Service) DeleteAwsLogSource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListLogSources(w http.ResponseWriter, r *http.Request) {
 	var req ListLogSourcesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -242,7 +242,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 
 	var req TagResourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -293,7 +293,7 @@ func writeJSON(w http.ResponseWriter, data any) {
 	}
 }
 
-func writeError(w http.ResponseWriter, statusCode int, code, message string) {
+func writeError(w http.ResponseWriter, code, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
@@ -320,10 +320,10 @@ func handleStorageError(w http.ResponseWriter, err error) {
 			statusCode = http.StatusConflict
 		}
 
-		writeError(w, statusCode, slErr.Code, slErr.Message)
+		writeError(w, slErr.Code, slErr.Message, statusCode)
 
 		return
 	}
 
-	writeError(w, http.StatusInternalServerError, "InternalException", err.Error())
+	writeError(w, "InternalException", err.Error(), http.StatusInternalServerError)
 }

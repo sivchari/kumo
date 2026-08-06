@@ -27,19 +27,19 @@ const (
 func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 	var req CreateClusterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Invalid request body")
+		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Cluster name is required")
+		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.RoleArn == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Role ARN is required")
+		writeError(w, errInvalidParameter, "Role ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -58,7 +58,7 @@ func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 	name := extractClusterName(r.URL.Path)
 	if name == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Cluster name is required")
+		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
 		return
 	}
@@ -77,7 +77,7 @@ func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DescribeCluster(w http.ResponseWriter, r *http.Request) {
 	name := extractClusterName(r.URL.Path)
 	if name == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Cluster name is required")
+		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
 		return
 	}
@@ -112,7 +112,7 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 
 	clusters, next, err := s.storage.ListClusters(r.Context(), maxResults, nextToken)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, errInternalServerError, err.Error())
+		writeError(w, errInternalServerError, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -131,14 +131,14 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateNodegroup(w http.ResponseWriter, r *http.Request) {
 	clusterName := extractClusterName(r.URL.Path)
 	if clusterName == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Cluster name is required")
+		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	var req CreateNodegroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Invalid request body")
+		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -146,19 +146,19 @@ func (s *Service) CreateNodegroup(w http.ResponseWriter, r *http.Request) {
 	req.ClusterName = clusterName
 
 	if req.NodegroupName == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Nodegroup name is required")
+		writeError(w, errInvalidParameter, "Nodegroup name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.NodeRole == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Node role is required")
+		writeError(w, errInvalidParameter, "Node role is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if len(req.Subnets) == 0 {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Subnets are required")
+		writeError(w, errInvalidParameter, "Subnets are required", http.StatusBadRequest)
 
 		return
 	}
@@ -177,7 +177,7 @@ func (s *Service) CreateNodegroup(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteNodegroup(w http.ResponseWriter, r *http.Request) {
 	clusterName, nodegroupName := extractClusterAndNodegroupName(r.URL.Path)
 	if clusterName == "" || nodegroupName == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Cluster name and nodegroup name are required")
+		writeError(w, errInvalidParameter, "Cluster name and nodegroup name are required", http.StatusBadRequest)
 
 		return
 	}
@@ -196,7 +196,7 @@ func (s *Service) DeleteNodegroup(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DescribeNodegroup(w http.ResponseWriter, r *http.Request) {
 	clusterName, nodegroupName := extractClusterAndNodegroupName(r.URL.Path)
 	if clusterName == "" || nodegroupName == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Cluster name and nodegroup name are required")
+		writeError(w, errInvalidParameter, "Cluster name and nodegroup name are required", http.StatusBadRequest)
 
 		return
 	}
@@ -215,7 +215,7 @@ func (s *Service) DescribeNodegroup(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListNodegroups(w http.ResponseWriter, r *http.Request) {
 	clusterName := extractClusterName(r.URL.Path)
 	if clusterName == "" {
-		writeError(w, http.StatusBadRequest, errInvalidParameter, "Cluster name is required")
+		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
 		return
 	}
@@ -292,7 +292,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 // writeError writes an error response.
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, code, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
@@ -320,10 +320,10 @@ func handleError(w http.ResponseWriter, err error) {
 			status = http.StatusConflict
 		}
 
-		writeError(w, status, eksErr.Code, eksErr.Message)
+		writeError(w, eksErr.Code, eksErr.Message, status)
 
 		return
 	}
 
-	writeError(w, http.StatusInternalServerError, errInternalServerError, "Internal server error")
+	writeError(w, errInternalServerError, "Internal server error", http.StatusInternalServerError)
 }

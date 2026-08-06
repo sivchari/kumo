@@ -11,7 +11,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, errType, message string) {
+func writeError(w http.ResponseWriter, errType, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("x-amzn-ErrorType", errType)
 	w.WriteHeader(status)
@@ -25,7 +25,7 @@ func writeError(w http.ResponseWriter, status int, errType, message string) {
 func (s *Service) AssociateRepository(w http.ResponseWriter, r *http.Request) {
 	var input AssociateRepositoryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "ValidationException", "invalid request body")
+		writeError(w, "ValidationException", "invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -44,7 +44,7 @@ func (s *Service) DescribeRepositoryAssociation(w http.ResponseWriter, r *http.R
 
 	assoc, err := s.storage.DescribeRepositoryAssociation(arn)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "NotFoundException", err.Error())
+		writeError(w, "NotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -61,7 +61,7 @@ func (s *Service) DisassociateRepository(w http.ResponseWriter, r *http.Request)
 
 	assoc, err := s.storage.DisassociateRepository(arn)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "NotFoundException", err.Error())
+		writeError(w, "NotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -85,14 +85,14 @@ func (s *Service) ListRepositoryAssociations(w http.ResponseWriter, _ *http.Requ
 func (s *Service) CreateCodeReview(w http.ResponseWriter, r *http.Request) {
 	var input CreateCodeReviewInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "ValidationException", "invalid request body")
+		writeError(w, "ValidationException", "invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	review, err := s.storage.CreateCodeReview(&input)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "NotFoundException", err.Error())
+		writeError(w, "NotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -108,7 +108,7 @@ func (s *Service) DescribeCodeReview(w http.ResponseWriter, r *http.Request) {
 
 	review, err := s.storage.DescribeCodeReview(arn)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -141,13 +141,13 @@ func (s *Service) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 func (s *Service) PutRecommendationFeedback(w http.ResponseWriter, r *http.Request) {
 	var input PutRecommendationFeedbackInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "ValidationException", "invalid request body")
+		writeError(w, "ValidationException", "invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if err := s.storage.PutRecommendationFeedback(&input); err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -162,7 +162,7 @@ func (s *Service) DescribeRecommendationFeedback(w http.ResponseWriter, r *http.
 
 	fb, err := s.storage.DescribeRecommendationFeedback(arn, recommendationID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
