@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/directoryservice"
 	"github.com/aws/aws-sdk-go-v2/service/directoryservice/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newDSClient(t *testing.T) *directoryservice.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return directoryservice.NewFromConfig(cfg, func(o *directoryservice.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return directoryservice.NewFromConfig(awsConfig(t), func(o *directoryservice.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

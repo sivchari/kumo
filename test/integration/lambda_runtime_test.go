@@ -18,7 +18,7 @@ import (
 
 // lambdaRuntimeAPIHost is the host:port a handler uses to reach kumo's
 // Runtime API (AWS_LAMBDA_RUNTIME_API=<host>/_runtime/{functionName}).
-const lambdaRuntimeAPIHost = "localhost:4566"
+var lambdaRuntimeAPIHost = strings.TrimPrefix(testEndpoint(), "http://")
 
 // TestLambdaRuntime_Invoke proves that an unmodified lambda.Start binary runs
 // against kumo via the Runtime API (no external RIE): the binary is started

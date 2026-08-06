@@ -14,8 +14,6 @@ import (
 	dynamodbv1 "github.com/aws/aws-sdk-go/service/dynamodb"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/smithy-go"
@@ -25,18 +23,8 @@ import (
 func newDynamoDBClient(t *testing.T) *dynamodb.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return dynamodb.NewFromConfig(awsConfig(t), func(o *dynamodb.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
@@ -44,8 +32,8 @@ func newDynamoDBV1Client(t *testing.T) *dynamodbv1.DynamoDB {
 	t.Helper()
 
 	sess, err := awsv1session.NewSession(&awsv1.Config{
-		Region:      awsv1.String("us-east-1"),
-		Endpoint:    awsv1.String("http://localhost:4566"),
+		Region:      awsv1.String(testRegion()),
+		Endpoint:    awsv1.String(testEndpoint()),
 		Credentials: awsv1creds.NewStaticCredentials("test", "test", ""),
 	})
 	if err != nil {

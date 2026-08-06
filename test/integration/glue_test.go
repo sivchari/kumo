@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/glue/types"
 	"github.com/sivchari/golden"
@@ -16,18 +14,8 @@ import (
 func newGlueClient(t *testing.T) *glue.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return glue.NewFromConfig(cfg, func(o *glue.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return glue.NewFromConfig(awsConfig(t), func(o *glue.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/athena/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newAthenaClient(t *testing.T) *athena.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return athena.NewFromConfig(cfg, func(o *athena.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return athena.NewFromConfig(awsConfig(t), func(o *athena.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

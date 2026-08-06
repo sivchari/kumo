@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/sivchari/golden"
@@ -20,18 +18,8 @@ import (
 func newSFNClient(t *testing.T) *sfn.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return sfn.NewFromConfig(cfg, func(o *sfn.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return sfn.NewFromConfig(awsConfig(t), func(o *sfn.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

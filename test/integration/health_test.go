@@ -10,7 +10,7 @@ import (
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	resp, err := http.Get("http://localhost:4566/health")
+	resp, err := http.Get(testEndpoint() + "/health")
 	if err != nil {
 		t.Fatalf("failed to get health endpoint: %v", err)
 	}

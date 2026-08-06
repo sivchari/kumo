@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/servicequotas"
 	"github.com/sivchari/golden"
 )
@@ -15,18 +13,8 @@ import (
 func newServiceQuotasClient(t *testing.T) *servicequotas.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return servicequotas.NewFromConfig(cfg, func(o *servicequotas.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return servicequotas.NewFromConfig(awsConfig(t), func(o *servicequotas.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

@@ -39,7 +39,7 @@ func TestS3_CORS(t *testing.T) {
 	</CORSConfiguration>`
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		"http://localhost:4566/"+bucketName+"?cors",
+		testEndpoint()+"/"+bucketName+"?cors",
 		bytes.NewReader([]byte(corsXML)))
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestS3_CORS(t *testing.T) {
 
 	// 4. GET with matching Origin - should have CORS headers.
 	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://localhost:4566/"+bucketName+"/test.txt", nil)
+		testEndpoint()+"/"+bucketName+"/test.txt", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestS3_CORS(t *testing.T) {
 
 	// 5. GET with non-matching Origin - should NOT have CORS headers.
 	getReq2, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://localhost:4566/"+bucketName+"/test.txt", nil)
+		testEndpoint()+"/"+bucketName+"/test.txt", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestS3_CORS(t *testing.T) {
 
 	// 6. OPTIONS preflight with matching Origin.
 	optReq, err := http.NewRequestWithContext(ctx, http.MethodOptions,
-		"http://localhost:4566/"+bucketName+"/test.txt", nil)
+		testEndpoint()+"/"+bucketName+"/test.txt", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestS3_CORS(t *testing.T) {
 
 	// 7. GET without Origin - should NOT have CORS headers.
 	getReq3, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://localhost:4566/"+bucketName+"/test.txt", nil)
+		testEndpoint()+"/"+bucketName+"/test.txt", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

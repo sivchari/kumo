@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/resiliencehub"
 	"github.com/aws/aws-sdk-go-v2/service/resiliencehub/types"
 	"github.com/sivchari/golden"
@@ -16,18 +14,8 @@ import (
 func newResilienceHubClient(t *testing.T) *resiliencehub.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return resiliencehub.NewFromConfig(cfg, func(o *resiliencehub.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return resiliencehub.NewFromConfig(awsConfig(t), func(o *resiliencehub.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

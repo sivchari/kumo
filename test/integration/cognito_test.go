@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/sivchari/golden"
@@ -16,18 +14,8 @@ import (
 func newCognitoClient(t *testing.T) *cognitoidentityprovider.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return cognitoidentityprovider.NewFromConfig(cfg, func(o *cognitoidentityprovider.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return cognitoidentityprovider.NewFromConfig(awsConfig(t), func(o *cognitoidentityprovider.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

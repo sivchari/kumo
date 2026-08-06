@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/firehose"
 	"github.com/aws/aws-sdk-go-v2/service/firehose/types"
 	"github.com/sivchari/golden"
@@ -269,17 +267,7 @@ func TestFirehose_UpdateDestination(t *testing.T) {
 func createFirehoseClient(t *testing.T) *firehose.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return firehose.NewFromConfig(cfg, func(o *firehose.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return firehose.NewFromConfig(awsConfig(t), func(o *firehose.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }

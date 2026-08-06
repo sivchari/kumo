@@ -59,7 +59,7 @@ func TestLambda_AsyncInvokeRetriesUntilEndpointUp(t *testing.T) {
 	createBody, _ := json.Marshal(createReq)
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://localhost:4566/lambda/2015-03-31/functions", bytes.NewReader(createBody))
+		testEndpoint()+"/lambda/2015-03-31/functions", bytes.NewReader(createBody))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)

@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
 	"github.com/sivchari/golden"
 )
@@ -16,18 +14,8 @@ import (
 func newRedshiftClient(t *testing.T) *redshift.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return redshift.NewFromConfig(cfg, func(o *redshift.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return redshift.NewFromConfig(awsConfig(t), func(o *redshift.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

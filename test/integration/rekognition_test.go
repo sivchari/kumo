@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition/types"
 	"github.com/sivchari/golden"
@@ -16,18 +14,8 @@ import (
 func newRekognitionClient(t *testing.T) *rekognition.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return rekognition.NewFromConfig(cfg, func(o *rekognition.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return rekognition.NewFromConfig(awsConfig(t), func(o *rekognition.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

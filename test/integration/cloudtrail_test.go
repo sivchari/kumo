@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/sivchari/golden"
 )
@@ -16,18 +14,8 @@ import (
 func newCloudTrailClient(t *testing.T) *cloudtrail.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return cloudtrail.NewFromConfig(cfg, func(o *cloudtrail.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return cloudtrail.NewFromConfig(awsConfig(t), func(o *cloudtrail.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

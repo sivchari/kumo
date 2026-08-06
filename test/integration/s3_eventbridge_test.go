@@ -42,7 +42,7 @@ func TestS3_EventBridgeNotification(t *testing.T) {
 	notifXML := `<NotificationConfiguration><EventBridgeConfiguration></EventBridgeConfiguration></NotificationConfiguration>`
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		"http://localhost:4566/"+bucketName+"?notification",
+		testEndpoint()+"/"+bucketName+"?notification",
 		bytes.NewReader([]byte(notifXML)))
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +207,7 @@ func TestS3_NotificationToSQS(t *testing.T) {
 		`</NotificationConfiguration>`
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		"http://localhost:4566/"+bucketName+"?notification",
+		testEndpoint()+"/"+bucketName+"?notification",
 		bytes.NewReader([]byte(notifXML)))
 	if err != nil {
 		t.Fatal(err)
@@ -356,7 +356,7 @@ func TestS3_NotificationToLambda(t *testing.T) {
 		`</NotificationConfiguration>`
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		"http://localhost:4566/"+bucketName+"?notification",
+		testEndpoint()+"/"+bucketName+"?notification",
 		bytes.NewReader([]byte(notifXML)))
 	if err != nil {
 		t.Fatal(err)

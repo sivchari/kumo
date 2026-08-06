@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/configservice"
 	"github.com/aws/aws-sdk-go-v2/service/configservice/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newConfigServiceClient(t *testing.T) *configservice.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return configservice.NewFromConfig(cfg, func(o *configservice.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return configservice.NewFromConfig(awsConfig(t), func(o *configservice.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

@@ -13,28 +13,18 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/apigateway"
 	"github.com/aws/aws-sdk-go-v2/service/apigateway/types"
 )
 
-const kumoEndpoint = "http://localhost:4566"
+var kumoEndpoint = testEndpoint()
 
 // executeAPIClient builds an API Gateway client targeting kumoEndpoint, so
 // resources are created on the same server the stage URL is invoked against.
 func executeAPIClient(t *testing.T) *apigateway.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "")),
-	)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-
-	return apigateway.NewFromConfig(cfg, func(o *apigateway.Options) {
+	return apigateway.NewFromConfig(awsConfig(t), func(o *apigateway.Options) {
 		o.BaseEndpoint = aws.String(kumoEndpoint + "/apigateway")
 	})
 }

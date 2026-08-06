@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
 )
@@ -19,15 +17,7 @@ import (
 func executeAPIV2Client(t *testing.T) *apigatewayv2.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "")),
-	)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-
-	return apigatewayv2.NewFromConfig(cfg, func(o *apigatewayv2.Options) {
+	return apigatewayv2.NewFromConfig(awsConfig(t), func(o *apigatewayv2.Options) {
 		o.BaseEndpoint = aws.String(kumoEndpoint + "/apigatewayv2")
 	})
 }

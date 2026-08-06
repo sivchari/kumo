@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/scheduler"
 	"github.com/aws/aws-sdk-go-v2/service/scheduler/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newSchedulerClient(t *testing.T) *scheduler.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return scheduler.NewFromConfig(cfg, func(o *scheduler.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566/scheduler")
+	return scheduler.NewFromConfig(awsConfig(t), func(o *scheduler.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint() + "/scheduler")
 	})
 }
 
