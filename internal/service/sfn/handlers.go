@@ -65,9 +65,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateStateMachine handles the CreateStateMachine API.
 func (s *Service) CreateStateMachine(w http.ResponseWriter, r *http.Request) {
 	var req CreateStateMachineRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -89,9 +87,7 @@ func (s *Service) CreateStateMachine(w http.ResponseWriter, r *http.Request) {
 // DeleteStateMachine handles the DeleteStateMachine API.
 func (s *Service) DeleteStateMachine(w http.ResponseWriter, r *http.Request) {
 	var req DeleteStateMachineRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -107,9 +103,7 @@ func (s *Service) DeleteStateMachine(w http.ResponseWriter, r *http.Request) {
 // DescribeStateMachine handles the DescribeStateMachine API.
 func (s *Service) DescribeStateMachine(w http.ResponseWriter, r *http.Request) {
 	var req DescribeStateMachineRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -141,9 +135,7 @@ func (s *Service) DescribeStateMachine(w http.ResponseWriter, r *http.Request) {
 // ListStateMachines handles the ListStateMachines API.
 func (s *Service) ListStateMachines(w http.ResponseWriter, r *http.Request) {
 	var req ListStateMachinesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -175,9 +167,7 @@ func (s *Service) ListStateMachines(w http.ResponseWriter, r *http.Request) {
 // StartExecution handles the StartExecution API.
 func (s *Service) StartExecution(w http.ResponseWriter, r *http.Request) {
 	var req StartExecutionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -199,9 +189,7 @@ func (s *Service) StartExecution(w http.ResponseWriter, r *http.Request) {
 // StopExecution handles the StopExecution API.
 func (s *Service) StopExecution(w http.ResponseWriter, r *http.Request) {
 	var req StopExecutionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -227,9 +215,7 @@ func (s *Service) StopExecution(w http.ResponseWriter, r *http.Request) {
 // DescribeExecution handles the DescribeExecution API.
 func (s *Service) DescribeExecution(w http.ResponseWriter, r *http.Request) {
 	var req DescribeExecutionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -271,9 +257,7 @@ func (s *Service) DescribeExecution(w http.ResponseWriter, r *http.Request) {
 // ListExecutions handles the ListExecutions API.
 func (s *Service) ListExecutions(w http.ResponseWriter, r *http.Request) {
 	var req ListExecutionsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -318,9 +302,7 @@ func (s *Service) ListExecutions(w http.ResponseWriter, r *http.Request) {
 // GetExecutionHistory handles the GetExecutionHistory API.
 func (s *Service) GetExecutionHistory(w http.ResponseWriter, r *http.Request) {
 	var req GetExecutionHistoryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -357,9 +339,7 @@ func (s *Service) GetExecutionHistory(w http.ResponseWriter, r *http.Request) {
 // DescribeMapRun handles the DescribeMapRun API.
 func (s *Service) DescribeMapRun(w http.ResponseWriter, r *http.Request) {
 	var req DescribeMapRunRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -409,9 +389,7 @@ func mapRunToDescribeResponse(mr *MapRun) *DescribeMapRunResponse {
 // ListMapRuns handles the ListMapRuns API.
 func (s *Service) ListMapRuns(w http.ResponseWriter, r *http.Request) {
 	var req ListMapRunsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -455,6 +433,18 @@ func writeError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
+// decodeSFNRequest decodes the JSON request body into req, writing the
+// standard SFN decode-failure error and returning false on failure.
+func decodeSFNRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
 // handleError handles service errors.
 func handleError(w http.ResponseWriter, err error) {
 	var svcErr *ServiceError
@@ -485,9 +475,7 @@ func getErrorStatus(code string) int {
 // SendTaskSuccess handles the SendTaskSuccess API.
 func (s *Service) SendTaskSuccess(w http.ResponseWriter, r *http.Request) {
 	var req SendTaskSuccessRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -503,9 +491,7 @@ func (s *Service) SendTaskSuccess(w http.ResponseWriter, r *http.Request) {
 // SendTaskFailure handles the SendTaskFailure API.
 func (s *Service) SendTaskFailure(w http.ResponseWriter, r *http.Request) {
 	var req SendTaskFailureRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -521,9 +507,7 @@ func (s *Service) SendTaskFailure(w http.ResponseWriter, r *http.Request) {
 // SendTaskHeartbeat handles the SendTaskHeartbeat API.
 func (s *Service) SendTaskHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var req SendTaskHeartbeatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -539,9 +523,7 @@ func (s *Service) SendTaskHeartbeat(w http.ResponseWriter, r *http.Request) {
 // CreateActivity handles the CreateActivity API.
 func (s *Service) CreateActivity(w http.ResponseWriter, r *http.Request) {
 	var req CreateActivityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -561,9 +543,7 @@ func (s *Service) CreateActivity(w http.ResponseWriter, r *http.Request) {
 // DescribeActivity handles the DescribeActivity API.
 func (s *Service) DescribeActivity(w http.ResponseWriter, r *http.Request) {
 	var req DescribeActivityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -584,9 +564,7 @@ func (s *Service) DescribeActivity(w http.ResponseWriter, r *http.Request) {
 // ListActivities handles the ListActivities API.
 func (s *Service) ListActivities(w http.ResponseWriter, r *http.Request) {
 	var req ListActivitiesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -615,9 +593,7 @@ func (s *Service) ListActivities(w http.ResponseWriter, r *http.Request) {
 // DeleteActivity handles the DeleteActivity API.
 func (s *Service) DeleteActivity(w http.ResponseWriter, r *http.Request) {
 	var req DeleteActivityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -635,9 +611,7 @@ func (s *Service) DeleteActivity(w http.ResponseWriter, r *http.Request) {
 // only written once a task arrives or the poll window elapses.
 func (s *Service) GetActivityTask(w http.ResponseWriter, r *http.Request) {
 	var req GetActivityTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -660,9 +634,7 @@ func (s *Service) GetActivityTask(w http.ResponseWriter, r *http.Request) {
 // plan` fails with InvalidAction.
 func (s *Service) ValidateStateMachineDefinition(w http.ResponseWriter, r *http.Request) {
 	var req ValidateStateMachineDefinitionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -681,9 +653,7 @@ func (s *Service) ValidateStateMachineDefinition(w http.ResponseWriter, r *http.
 // ListTagsForResource returns tags for a state machine.
 func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsForResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -700,9 +670,7 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 // TagResource adds tags to a state machine.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -718,9 +686,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource removes tags from a state machine.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -738,9 +704,7 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 // refresh and requires the field present even when empty.
 func (s *Service) ListStateMachineVersions(w http.ResponseWriter, r *http.Request) {
 	var req ListStateMachineVersionsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 
@@ -760,9 +724,7 @@ func (s *Service) ListStateMachineVersions(w http.ResponseWriter, r *http.Reques
 // ListStateMachineAliases lists aliases for a state machine.
 func (s *Service) ListStateMachineAliases(w http.ResponseWriter, r *http.Request) {
 	var req ListStateMachineAliasesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeSFNRequest(w, r, &req) {
 		return
 	}
 

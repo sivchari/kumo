@@ -65,9 +65,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateKey handles the CreateKey API.
 func (s *Service) CreateKey(w http.ResponseWriter, r *http.Request) {
 	var req CreateKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -88,9 +86,7 @@ func (s *Service) CreateKey(w http.ResponseWriter, r *http.Request) {
 // DescribeKey handles the DescribeKey API.
 func (s *Service) DescribeKey(w http.ResponseWriter, r *http.Request) {
 	var req DescribeKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -111,9 +107,7 @@ func (s *Service) DescribeKey(w http.ResponseWriter, r *http.Request) {
 // ListKeys handles the ListKeys API.
 func (s *Service) ListKeys(w http.ResponseWriter, r *http.Request) {
 	var req ListKeysRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -144,9 +138,7 @@ func (s *Service) ListKeys(w http.ResponseWriter, r *http.Request) {
 // EnableKey handles the EnableKey API.
 func (s *Service) EnableKey(w http.ResponseWriter, r *http.Request) {
 	var req EnableKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -162,9 +154,7 @@ func (s *Service) EnableKey(w http.ResponseWriter, r *http.Request) {
 // DisableKey handles the DisableKey API.
 func (s *Service) DisableKey(w http.ResponseWriter, r *http.Request) {
 	var req DisableKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -180,9 +170,7 @@ func (s *Service) DisableKey(w http.ResponseWriter, r *http.Request) {
 // ScheduleKeyDeletion handles the ScheduleKeyDeletion API.
 func (s *Service) ScheduleKeyDeletion(w http.ResponseWriter, r *http.Request) {
 	var req ScheduleKeyDeletionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -206,9 +194,7 @@ func (s *Service) ScheduleKeyDeletion(w http.ResponseWriter, r *http.Request) {
 // Encrypt handles the Encrypt API.
 func (s *Service) Encrypt(w http.ResponseWriter, r *http.Request) {
 	var req EncryptRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -238,9 +224,7 @@ func (s *Service) Encrypt(w http.ResponseWriter, r *http.Request) {
 // Decrypt handles the Decrypt API.
 func (s *Service) Decrypt(w http.ResponseWriter, r *http.Request) {
 	var req DecryptRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -270,9 +254,7 @@ func (s *Service) Decrypt(w http.ResponseWriter, r *http.Request) {
 // GenerateDataKey handles the GenerateDataKey API.
 func (s *Service) GenerateDataKey(w http.ResponseWriter, r *http.Request) {
 	var req GenerateDataKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -302,9 +284,7 @@ func (s *Service) GenerateDataKey(w http.ResponseWriter, r *http.Request) {
 // Sign handles the Sign API.
 func (s *Service) Sign(w http.ResponseWriter, r *http.Request) {
 	var req SignRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -330,9 +310,7 @@ func (s *Service) Sign(w http.ResponseWriter, r *http.Request) {
 // Verify handles the Verify API.
 func (s *Service) Verify(w http.ResponseWriter, r *http.Request) {
 	var req VerifyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -365,9 +343,7 @@ func (s *Service) Verify(w http.ResponseWriter, r *http.Request) {
 // GetPublicKey handles the GetPublicKey API.
 func (s *Service) GetPublicKey(w http.ResponseWriter, r *http.Request) {
 	var req GetPublicKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -398,9 +374,7 @@ func (s *Service) GetPublicKey(w http.ResponseWriter, r *http.Request) {
 // CreateAlias handles the CreateAlias API.
 func (s *Service) CreateAlias(w http.ResponseWriter, r *http.Request) {
 	var req CreateAliasRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -416,9 +390,7 @@ func (s *Service) CreateAlias(w http.ResponseWriter, r *http.Request) {
 // DeleteAlias handles the DeleteAlias API.
 func (s *Service) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAliasRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -434,9 +406,7 @@ func (s *Service) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 // ListAliases handles the ListAliases API.
 func (s *Service) ListAliases(w http.ResponseWriter, r *http.Request) {
 	var req ListAliasesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeKMSRequest(w, r, &req) {
 		return
 	}
 
@@ -515,6 +485,30 @@ func writeKMSError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }
 
+// decodeKMSRequest decodes the JSON request body into req, writing the
+// standard KMS decode-failure error and returning false on failure.
+func decodeKMSRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		writeKMSError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
+// requireKMSKeyID writes the standard KMS "KeyId is required" error and
+// returns false if decodeErr is non-nil or keyID is empty.
+func requireKMSKeyID(w http.ResponseWriter, decodeErr error, keyID string) bool {
+	if decodeErr != nil || keyID == "" {
+		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
 // handleKMSError handles KMS errors.
 func handleKMSError(w http.ResponseWriter, err error) {
 	var svcErr *ServiceError
@@ -543,9 +537,9 @@ func getErrorStatus(code string) int {
 // GetKeyPolicy handles the GetKeyPolicy API.
 func (s *Service) GetKeyPolicy(w http.ResponseWriter, r *http.Request) {
 	var req GetKeyPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
-		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+	err := json.NewDecoder(r.Body).Decode(&req)
 
+	if !requireKMSKeyID(w, err, req.KeyID) {
 		return
 	}
 
@@ -565,9 +559,9 @@ func (s *Service) GetKeyPolicy(w http.ResponseWriter, r *http.Request) {
 // PutKeyPolicy handles the PutKeyPolicy API.
 func (s *Service) PutKeyPolicy(w http.ResponseWriter, r *http.Request) {
 	var req PutKeyPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
-		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+	err := json.NewDecoder(r.Body).Decode(&req)
 
+	if !requireKMSKeyID(w, err, req.KeyID) {
 		return
 	}
 
@@ -584,9 +578,9 @@ func (s *Service) PutKeyPolicy(w http.ResponseWriter, r *http.Request) {
 // AWS always returns a single policy named "default".
 func (s *Service) ListKeyPolicies(w http.ResponseWriter, r *http.Request) {
 	var req ListKeyPoliciesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
-		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+	err := json.NewDecoder(r.Body).Decode(&req)
 
+	if !requireKMSKeyID(w, err, req.KeyID) {
 		return
 	}
 
@@ -605,9 +599,9 @@ func (s *Service) ListKeyPolicies(w http.ResponseWriter, r *http.Request) {
 // ListResourceTags handles the ListResourceTags API.
 func (s *Service) ListResourceTags(w http.ResponseWriter, r *http.Request) {
 	var req ListResourceTagsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
-		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+	err := json.NewDecoder(r.Body).Decode(&req)
 
+	if !requireKMSKeyID(w, err, req.KeyID) {
 		return
 	}
 
@@ -627,9 +621,9 @@ func (s *Service) ListResourceTags(w http.ResponseWriter, r *http.Request) {
 // TagResource handles the TagResource API.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
-		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+	err := json.NewDecoder(r.Body).Decode(&req)
 
+	if !requireKMSKeyID(w, err, req.KeyID) {
 		return
 	}
 
@@ -645,9 +639,9 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource handles the UntagResource API.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
-		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+	err := json.NewDecoder(r.Body).Decode(&req)
 
+	if !requireKMSKeyID(w, err, req.KeyID) {
 		return
 	}
 
@@ -663,9 +657,9 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 // GetKeyRotationStatus handles the GetKeyRotationStatus API.
 func (s *Service) GetKeyRotationStatus(w http.ResponseWriter, r *http.Request) {
 	var req GetKeyRotationStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.KeyID == "" {
-		writeKMSError(w, "ValidationException", "KeyId is required", http.StatusBadRequest)
+	err := json.NewDecoder(r.Body).Decode(&req)
 
+	if !requireKMSKeyID(w, err, req.KeyID) {
 		return
 	}
 

@@ -56,9 +56,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateUserPool handles the CreateUserPool API.
 func (s *Service) CreateUserPool(w http.ResponseWriter, r *http.Request) {
 	var req CreateUserPoolRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -88,9 +86,7 @@ func (s *Service) CreateUserPool(w http.ResponseWriter, r *http.Request) {
 // DescribeUserPool handles the DescribeUserPool API.
 func (s *Service) DescribeUserPool(w http.ResponseWriter, r *http.Request) {
 	var req DescribeUserPoolRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -111,9 +107,7 @@ func (s *Service) DescribeUserPool(w http.ResponseWriter, r *http.Request) {
 // ListUserPools handles the ListUserPools API.
 func (s *Service) ListUserPools(w http.ResponseWriter, r *http.Request) {
 	var req ListUserPoolsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -141,9 +135,7 @@ func (s *Service) ListUserPools(w http.ResponseWriter, r *http.Request) {
 // DeleteUserPool handles the DeleteUserPool API.
 func (s *Service) DeleteUserPool(w http.ResponseWriter, r *http.Request) {
 	var req DeleteUserPoolRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -159,9 +151,7 @@ func (s *Service) DeleteUserPool(w http.ResponseWriter, r *http.Request) {
 // CreateUserPoolClient handles the CreateUserPoolClient API.
 func (s *Service) CreateUserPoolClient(w http.ResponseWriter, r *http.Request) {
 	var req CreateUserPoolClientRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -182,9 +172,7 @@ func (s *Service) CreateUserPoolClient(w http.ResponseWriter, r *http.Request) {
 // DescribeUserPoolClient handles the DescribeUserPoolClient API.
 func (s *Service) DescribeUserPoolClient(w http.ResponseWriter, r *http.Request) {
 	var req DescribeUserPoolClientRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -205,9 +193,7 @@ func (s *Service) DescribeUserPoolClient(w http.ResponseWriter, r *http.Request)
 // ListUserPoolClients handles the ListUserPoolClients API.
 func (s *Service) ListUserPoolClients(w http.ResponseWriter, r *http.Request) {
 	var req ListUserPoolClientsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -235,9 +221,7 @@ func (s *Service) ListUserPoolClients(w http.ResponseWriter, r *http.Request) {
 // DeleteUserPoolClient handles the DeleteUserPoolClient API.
 func (s *Service) DeleteUserPoolClient(w http.ResponseWriter, r *http.Request) {
 	var req DeleteUserPoolClientRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -253,9 +237,7 @@ func (s *Service) DeleteUserPoolClient(w http.ResponseWriter, r *http.Request) {
 // AdminCreateUser handles the AdminCreateUser API.
 func (s *Service) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req AdminCreateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -276,9 +258,7 @@ func (s *Service) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 // AdminGetUser handles the AdminGetUser API.
 func (s *Service) AdminGetUser(w http.ResponseWriter, r *http.Request) {
 	var req AdminGetUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -304,9 +284,7 @@ func (s *Service) AdminGetUser(w http.ResponseWriter, r *http.Request) {
 // AdminDeleteUser handles the AdminDeleteUser API.
 func (s *Service) AdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	var req AdminDeleteUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -322,9 +300,7 @@ func (s *Service) AdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 // ListUsers handles the ListUsers API.
 func (s *Service) ListUsers(w http.ResponseWriter, r *http.Request) {
 	var req ListUsersRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -352,9 +328,7 @@ func (s *Service) ListUsers(w http.ResponseWriter, r *http.Request) {
 // SignUp handles the SignUp API.
 func (s *Service) SignUp(w http.ResponseWriter, r *http.Request) {
 	var req SignUpRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -386,9 +360,7 @@ func (s *Service) SignUp(w http.ResponseWriter, r *http.Request) {
 // ConfirmSignUp handles the ConfirmSignUp API.
 func (s *Service) ConfirmSignUp(w http.ResponseWriter, r *http.Request) {
 	var req ConfirmSignUpRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -404,9 +376,7 @@ func (s *Service) ConfirmSignUp(w http.ResponseWriter, r *http.Request) {
 // InitiateAuth handles the InitiateAuth API.
 func (s *Service) InitiateAuth(w http.ResponseWriter, r *http.Request) {
 	var req InitiateAuthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -652,6 +622,18 @@ func writeError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
 }
 
+// decodeCognitoRequest decodes the JSON request body into req, writing the
+// standard Cognito decode-failure error and returning false on failure.
+func decodeCognitoRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
 // handleError handles service errors.
 func handleError(w http.ResponseWriter, err error) {
 	var svcErr *ServiceError
@@ -682,9 +664,7 @@ func getErrorStatus(code string) int {
 // GetUserPoolMfaConfig handles the GetUserPoolMfaConfig API.
 func (s *Service) GetUserPoolMfaConfig(w http.ResponseWriter, r *http.Request) {
 	var req GetUserPoolMfaConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 
@@ -718,9 +698,7 @@ func (s *Service) GetUserPoolMfaConfig(w http.ResponseWriter, r *http.Request) {
 // SetUserPoolMfaConfig handles the SetUserPoolMfaConfig API.
 func (s *Service) SetUserPoolMfaConfig(w http.ResponseWriter, r *http.Request) {
 	var req SetUserPoolMfaConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeCognitoRequest(w, r, &req) {
 		return
 	}
 

@@ -59,9 +59,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateEventBus handles the CreateEventBus API.
 func (s *Service) CreateEventBus(w http.ResponseWriter, r *http.Request) {
 	var req CreateEventBusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -82,9 +80,7 @@ func (s *Service) CreateEventBus(w http.ResponseWriter, r *http.Request) {
 // DeleteEventBus handles the DeleteEventBus API.
 func (s *Service) DeleteEventBus(w http.ResponseWriter, r *http.Request) {
 	var req DeleteEventBusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -100,9 +96,7 @@ func (s *Service) DeleteEventBus(w http.ResponseWriter, r *http.Request) {
 // DescribeEventBus handles the DescribeEventBus API.
 func (s *Service) DescribeEventBus(w http.ResponseWriter, r *http.Request) {
 	var req DescribeEventBusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -125,9 +119,7 @@ func (s *Service) DescribeEventBus(w http.ResponseWriter, r *http.Request) {
 // ListEventBuses handles the ListEventBuses API.
 func (s *Service) ListEventBuses(w http.ResponseWriter, r *http.Request) {
 	var req ListEventBusesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -160,9 +152,7 @@ func (s *Service) ListEventBuses(w http.ResponseWriter, r *http.Request) {
 // PutRule handles the PutRule API.
 func (s *Service) PutRule(w http.ResponseWriter, r *http.Request) {
 	var req PutRuleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -183,9 +173,7 @@ func (s *Service) PutRule(w http.ResponseWriter, r *http.Request) {
 // DeleteRule handles the DeleteRule API.
 func (s *Service) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	var req DeleteRuleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -201,9 +189,7 @@ func (s *Service) DeleteRule(w http.ResponseWriter, r *http.Request) {
 // DescribeRule handles the DescribeRule API.
 func (s *Service) DescribeRule(w http.ResponseWriter, r *http.Request) {
 	var req DescribeRuleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -231,9 +217,7 @@ func (s *Service) DescribeRule(w http.ResponseWriter, r *http.Request) {
 // ListRules handles the ListRules API.
 func (s *Service) ListRules(w http.ResponseWriter, r *http.Request) {
 	var req ListRulesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -270,9 +254,7 @@ func (s *Service) ListRules(w http.ResponseWriter, r *http.Request) {
 // PutTargets handles the PutTargets API.
 func (s *Service) PutTargets(w http.ResponseWriter, r *http.Request) {
 	var req PutTargetsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -294,9 +276,7 @@ func (s *Service) PutTargets(w http.ResponseWriter, r *http.Request) {
 // RemoveTargets handles the RemoveTargets API.
 func (s *Service) RemoveTargets(w http.ResponseWriter, r *http.Request) {
 	var req RemoveTargetsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -318,9 +298,7 @@ func (s *Service) RemoveTargets(w http.ResponseWriter, r *http.Request) {
 // ListTargetsByRule handles the ListTargetsByRule API.
 func (s *Service) ListTargetsByRule(w http.ResponseWriter, r *http.Request) {
 	var req ListTargetsByRuleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -362,9 +340,7 @@ func (s *Service) ListTargetsByRule(w http.ResponseWriter, r *http.Request) {
 // PutEvents handles the PutEvents API.
 func (s *Service) PutEvents(w http.ResponseWriter, r *http.Request) {
 	var req PutEventsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -394,9 +370,7 @@ func (s *Service) PutEvents(w http.ResponseWriter, r *http.Request) {
 // CreateConnection handles the CreateConnection API.
 func (s *Service) CreateConnection(w http.ResponseWriter, r *http.Request) {
 	var req CreateConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -418,9 +392,7 @@ func (s *Service) CreateConnection(w http.ResponseWriter, r *http.Request) {
 // DescribeConnection handles the DescribeConnection API.
 func (s *Service) DescribeConnection(w http.ResponseWriter, r *http.Request) {
 	var req DescribeConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -445,9 +417,7 @@ func (s *Service) DescribeConnection(w http.ResponseWriter, r *http.Request) {
 // DeleteConnection handles the DeleteConnection API.
 func (s *Service) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 	var req DeleteConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -467,9 +437,7 @@ func (s *Service) DeleteConnection(w http.ResponseWriter, r *http.Request) {
 // CreateAPIDestination handles the CreateApiDestination API.
 func (s *Service) CreateAPIDestination(w http.ResponseWriter, r *http.Request) {
 	var req CreateAPIDestinationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -491,9 +459,7 @@ func (s *Service) CreateAPIDestination(w http.ResponseWriter, r *http.Request) {
 // DescribeAPIDestination handles the DescribeApiDestination API.
 func (s *Service) DescribeAPIDestination(w http.ResponseWriter, r *http.Request) {
 	var req DescribeAPIDestinationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -520,9 +486,7 @@ func (s *Service) DescribeAPIDestination(w http.ResponseWriter, r *http.Request)
 // DeleteAPIDestination handles the DeleteApiDestination API.
 func (s *Service) DeleteAPIDestination(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAPIDestinationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -538,9 +502,7 @@ func (s *Service) DeleteAPIDestination(w http.ResponseWriter, r *http.Request) {
 // ListTagsForResource handles the ListTagsForResource API.
 func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsForResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -557,9 +519,7 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 // TagResource handles the TagResource API.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -575,9 +535,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource handles the UntagResource API.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
-
+	if !decodeEventBridgeRequest(w, r, &req) {
 		return
 	}
 
@@ -611,6 +569,18 @@ func writeResponse(w http.ResponseWriter, resp any) {
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeAmzJSON11, code, message, status)
+}
+
+// decodeEventBridgeRequest decodes the JSON request body into req, writing the
+// standard EventBridge decode-failure error and returning false on failure.
+func decodeEventBridgeRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		writeError(w, "ValidationException", "Invalid request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
 }
 
 // handleError handles service errors.

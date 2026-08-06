@@ -9,21 +9,11 @@ import (
 // CreateApp handles the CreateApp API.
 func (s *Service) CreateApp(w http.ResponseWriter, r *http.Request) {
 	var req CreateAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Name is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.Name, "Name") {
 		return
 	}
 
@@ -40,21 +30,11 @@ func (s *Service) CreateApp(w http.ResponseWriter, r *http.Request) {
 // DescribeApp handles the DescribeApp API.
 func (s *Service) DescribeApp(w http.ResponseWriter, r *http.Request) {
 	var req DescribeAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.AppARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "appArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AppARN, "appArn") {
 		return
 	}
 
@@ -71,21 +51,11 @@ func (s *Service) DescribeApp(w http.ResponseWriter, r *http.Request) {
 // UpdateApp handles the UpdateApp API.
 func (s *Service) UpdateApp(w http.ResponseWriter, r *http.Request) {
 	var req UpdateAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.AppARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "appArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AppARN, "appArn") {
 		return
 	}
 
@@ -102,21 +72,11 @@ func (s *Service) UpdateApp(w http.ResponseWriter, r *http.Request) {
 // DeleteApp handles the DeleteApp API.
 func (s *Service) DeleteApp(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.AppARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "appArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AppARN, "appArn") {
 		return
 	}
 
@@ -153,30 +113,15 @@ func (s *Service) ListApps(w http.ResponseWriter, r *http.Request) {
 // CreateResiliencyPolicy handles the CreateResiliencyPolicy API.
 func (s *Service) CreateResiliencyPolicy(w http.ResponseWriter, r *http.Request) {
 	var req CreateResiliencyPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.PolicyName == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "policyName is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.PolicyName, "policyName") {
 		return
 	}
 
-	if req.Tier == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "tier is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.Tier, "tier") {
 		return
 	}
 
@@ -193,21 +138,11 @@ func (s *Service) CreateResiliencyPolicy(w http.ResponseWriter, r *http.Request)
 // DescribeResiliencyPolicy handles the DescribeResiliencyPolicy API.
 func (s *Service) DescribeResiliencyPolicy(w http.ResponseWriter, r *http.Request) {
 	var req DescribeResiliencyPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.PolicyARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "policyArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.PolicyARN, "policyArn") {
 		return
 	}
 
@@ -224,21 +159,11 @@ func (s *Service) DescribeResiliencyPolicy(w http.ResponseWriter, r *http.Reques
 // UpdateResiliencyPolicy handles the UpdateResiliencyPolicy API.
 func (s *Service) UpdateResiliencyPolicy(w http.ResponseWriter, r *http.Request) {
 	var req UpdateResiliencyPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.PolicyARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "policyArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.PolicyARN, "policyArn") {
 		return
 	}
 
@@ -255,21 +180,11 @@ func (s *Service) UpdateResiliencyPolicy(w http.ResponseWriter, r *http.Request)
 // DeleteResiliencyPolicy handles the DeleteResiliencyPolicy API.
 func (s *Service) DeleteResiliencyPolicy(w http.ResponseWriter, r *http.Request) {
 	var req DeleteResiliencyPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.PolicyARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "policyArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.PolicyARN, "policyArn") {
 		return
 	}
 
@@ -306,39 +221,19 @@ func (s *Service) ListResiliencyPolicies(w http.ResponseWriter, r *http.Request)
 // StartAppAssessment handles the StartAppAssessment API.
 func (s *Service) StartAppAssessment(w http.ResponseWriter, r *http.Request) {
 	var req StartAppAssessmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.AppARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "appArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AppARN, "appArn") {
 		return
 	}
 
-	if req.AppVersion == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "appVersion is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AppVersion, "appVersion") {
 		return
 	}
 
-	if req.AssessmentName == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "assessmentName is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AssessmentName, "assessmentName") {
 		return
 	}
 
@@ -355,21 +250,11 @@ func (s *Service) StartAppAssessment(w http.ResponseWriter, r *http.Request) {
 // DescribeAppAssessment handles the DescribeAppAssessment API.
 func (s *Service) DescribeAppAssessment(w http.ResponseWriter, r *http.Request) {
 	var req DescribeAppAssessmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.AssessmentARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "assessmentArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AssessmentARN, "assessmentArn") {
 		return
 	}
 
@@ -386,21 +271,11 @@ func (s *Service) DescribeAppAssessment(w http.ResponseWriter, r *http.Request) 
 // DeleteAppAssessment handles the DeleteAppAssessment API.
 func (s *Service) DeleteAppAssessment(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAppAssessmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.AssessmentARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "assessmentArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.AssessmentARN, "assessmentArn") {
 		return
 	}
 
@@ -440,21 +315,11 @@ func (s *Service) ListAppAssessments(w http.ResponseWriter, r *http.Request) {
 // TagResource handles the TagResource API.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "resourceArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.ResourceARN, "resourceArn") {
 		return
 	}
 
@@ -470,21 +335,11 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource handles the UntagResource API.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "resourceArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.ResourceARN, "resourceArn") {
 		return
 	}
 
@@ -500,21 +355,11 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 // ListTagsForResource handles the ListTagsForResource API.
 func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsForResourceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "Invalid request body",
-		})
-
+	if !decodeResilienceHubRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		writeError(w, http.StatusBadRequest, &Error{
-			Code:    "ValidationException",
-			Message: "resourceArn is required",
-		})
-
+	if !requireResilienceHubParameter(w, req.ResourceARN, "resourceArn") {
 		return
 	}
 
@@ -526,6 +371,37 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, &ListTagsForResourceResponse{Tags: tags})
+}
+
+// decodeResilienceHubRequest decodes the JSON request body into req, writing
+// the standard ResilienceHub decode-failure error and returning false on
+// failure.
+func decodeResilienceHubRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		writeError(w, http.StatusBadRequest, &Error{
+			Code:    "ValidationException",
+			Message: "Invalid request body",
+		})
+
+		return false
+	}
+
+	return true
+}
+
+// requireResilienceHubParameter writes the standard ResilienceHub
+// ValidationException error and returns false if value is empty.
+func requireResilienceHubParameter(w http.ResponseWriter, value, name string) bool {
+	if value == "" {
+		writeError(w, http.StatusBadRequest, &Error{
+			Code:    "ValidationException",
+			Message: name + " is required",
+		})
+
+		return false
+	}
+
+	return true
 }
 
 // writeJSON writes a JSON response.
