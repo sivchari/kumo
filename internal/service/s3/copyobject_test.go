@@ -10,6 +10,10 @@ import (
 
 const sseAlgorithmAWSKMS = "aws:kms"
 
+// testBucketDefaultKMSKeyID is the KMS key ID used across SSE
+// bucket-default-encryption fallback tests.
+const testBucketDefaultKMSKeyID = "bucket-default-key"
+
 func TestCopyObjectReplacesMetadataWhenDirectiveIsReplace(t *testing.T) {
 	t.Parallel()
 
