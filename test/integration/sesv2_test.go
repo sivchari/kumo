@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
+	"github.com/aws/smithy-go"
 	"github.com/sivchari/golden"
 )
 
@@ -571,6 +573,57 @@ func TestSESv2_ListEmailTemplates(t *testing.T) {
 	}
 
 	golden.New(t, golden.WithIgnoreFields("CreatedTimestamp")).Assert(t.Name(), match)
+}
+
+func TestSESv2_EmailTemplate_DuplicateCreate(t *testing.T) {
+	client := newSESv2Client(t)
+	ctx := t.Context()
+
+	const name = "tmpl-duplicate"
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteEmailTemplate(context.Background(), &sesv2.DeleteEmailTemplateInput{
+			TemplateName: aws.String(name),
+		})
+	})
+
+	input := &sesv2.CreateEmailTemplateInput{
+		TemplateName: aws.String(name),
+		TemplateContent: &types.EmailTemplateContent{
+			Subject: aws.String("S"),
+		},
+	}
+
+	if _, err := client.CreateEmailTemplate(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := client.CreateEmailTemplate(ctx, input)
+	if err == nil {
+		t.Fatal("expected error on duplicate CreateEmailTemplate")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "AlreadyExistsException" {
+		t.Fatalf("expected AlreadyExistsException, got: %T: %v", err, err)
+	}
+}
+
+func TestSESv2_EmailTemplate_GetNotFound(t *testing.T) {
+	client := newSESv2Client(t)
+	ctx := t.Context()
+
+	_, err := client.GetEmailTemplate(ctx, &sesv2.GetEmailTemplateInput{
+		TemplateName: aws.String("no-such-template"),
+	})
+	if err == nil {
+		t.Fatal("expected error for missing template")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "NotFoundException" {
+		t.Fatalf("expected NotFoundException, got: %T: %v", err, err)
+	}
 }
 
 func TestSESv2_SendBulkEmail(t *testing.T) {

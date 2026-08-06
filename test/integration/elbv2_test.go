@@ -601,6 +601,58 @@ func TestELBv2_TargetGroupAttributes(t *testing.T) {
 	}
 }
 
+func TestELBv2_TagsRoundtrip(t *testing.T) {
+	client := newELBv2Client(t)
+	ctx := t.Context()
+
+	lbRes, err := client.CreateLoadBalancer(ctx, &elasticloadbalancingv2.CreateLoadBalancerInput{
+		Name:    aws.String("tags-test-lb"),
+		Subnets: []string{"subnet-aaaa1111"},
+	})
+	if err != nil {
+		t.Fatalf("CreateLoadBalancer: %v", err)
+	}
+
+	lbArn := lbRes.LoadBalancers[0].LoadBalancerArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteLoadBalancer(context.Background(), &elasticloadbalancingv2.DeleteLoadBalancerInput{
+			LoadBalancerArn: lbArn,
+		})
+	})
+
+	addResult, err := client.AddTags(ctx, &elasticloadbalancingv2.AddTagsInput{
+		ResourceArns: []string{*lbArn},
+		Tags: []types.Tag{
+			{Key: aws.String("Environment"), Value: aws.String("test")},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AddTags: %v", err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_add", addResult)
+
+	descResult, err := client.DescribeTags(ctx, &elasticloadbalancingv2.DescribeTagsInput{
+		ResourceArns: []string{*lbArn},
+	})
+	if err != nil {
+		t.Fatalf("DescribeTags: %v", err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResourceArn", "ResultMetadata")).Assert(t.Name()+"_describe", descResult)
+
+	removeResult, err := client.RemoveTags(ctx, &elasticloadbalancingv2.RemoveTagsInput{
+		ResourceArns: []string{*lbArn},
+		TagKeys:      []string{"Environment"},
+	})
+	if err != nil {
+		t.Fatalf("RemoveTags: %v", err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_remove", removeResult)
+}
+
 func lookupLBAttr(attrs []types.LoadBalancerAttribute, key string) string {
 	for _, a := range attrs {
 		if a.Key != nil && *a.Key == key && a.Value != nil {

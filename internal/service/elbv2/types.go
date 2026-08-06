@@ -823,12 +823,20 @@ type XMLListenerAttributesResult struct {
 type XMLAddTagsResponse struct {
 	XMLName          xml.Name            `xml:"AddTagsResponse"`
 	Xmlns            string              `xml:"xmlns,attr"`
+	Result           XMLAddTagsResult    `xml:"AddTagsResult"`
 	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
 }
+
+// XMLAddTagsResult is an empty result for AddTags.
+type XMLAddTagsResult struct{}
 
 // XMLRemoveTagsResponse is the XML response for RemoveTags.
 type XMLRemoveTagsResponse struct {
 	XMLName          xml.Name            `xml:"RemoveTagsResponse"`
 	Xmlns            string              `xml:"xmlns,attr"`
+	Result           XMLRemoveTagsResult `xml:"RemoveTagsResult"`
 	ResponseMetadata XMLResponseMetadata `xml:"ResponseMetadata"`
 }
+
+// XMLRemoveTagsResult is an empty result for RemoveTags.
+type XMLRemoveTagsResult struct{}
