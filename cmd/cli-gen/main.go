@@ -22,7 +22,17 @@ import (
 func main() {
 	outDir := flag.String("out", "cli", "directory to write generated cli/gen_*.go files into (relative paths resolve against the repo root)")
 	dryRun := flag.Bool("dry-run", false, "print discovery/render diagnostics without writing any files")
+	coverage := flag.Bool("coverage", false, "print a per-service CLI coverage table (see `make cli-coverage`) and exit without writing any files")
 	flag.Parse()
+
+	if *coverage {
+		if err := runCoverage(os.Stdout, service.Services()); err != nil {
+			fmt.Fprintln(os.Stderr, "cli-gen:", err)
+			os.Exit(1)
+		}
+
+		return
+	}
 
 	if err := run(*outDir, *dryRun); err != nil {
 		fmt.Fprintln(os.Stderr, "cli-gen:", err)
