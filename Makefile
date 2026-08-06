@@ -1,4 +1,4 @@
-.PHONY: build run test test-fuzz test-integration test-terraform test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme cli-gen
+.PHONY: build run test test-fuzz test-integration test-terraform test-helm-e2e clean docker lint lint-fix fmt fmt-diff readme cli-gen cli-coverage
 
 BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
@@ -60,6 +60,11 @@ readme:
 # discovery/render diagnostics without writing any files.
 cli-gen:
 	go run ./cmd/cli-gen
+
+# Print a per-service CLI coverage table (auto-generated vs hand-written vs
+# uncovered), to spot gaps when adding a new service.
+cli-coverage:
+	go run ./cmd/cli-gen -coverage
 
 # Docker
 docker:
