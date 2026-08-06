@@ -3,6 +3,8 @@ package cligen
 import (
 	"reflect"
 	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 // FlagOverride replaces the auto-derived flag kind for a specific Input
@@ -11,11 +13,46 @@ import (
 // message bytes) can hook in without changing discover/flags logic.
 type FlagOverride struct {
 	Kind FlagKind
+	// CustomFunc is the cli package function name to call for a
+	// FlagCustomFunc override: func(raw string) (FieldType, error). Empty
+	// for every other Kind.
+	CustomFunc string
 }
+
+// decodeDynamoDBJSON is the hand-written cli.decodeDynamoDBJSON function
+// (cli/support_dynamodb.go) that every dynamodb Input field typed
+// map[string]types.AttributeValue below is routed through: AttributeValue is
+// a Smithy union (interface) type, so encoding/json cannot unmarshal
+// directly into it the way FlagJSONBlob does for plain structs.
+const decodeDynamoDBJSON = "decodeDynamoDBJSON"
 
 // fieldOverrides overrides flag derivation for specific fields, keyed by the
 // SDK Input struct's reflect.Type and then by Go field name.
-var fieldOverrides = map[reflect.Type]map[string]FlagOverride{}
+var fieldOverrides = map[reflect.Type]map[string]FlagOverride{
+	reflect.TypeOf(dynamodb.PutItemInput{}): {
+		"Item":                      {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+	},
+	reflect.TypeOf(dynamodb.GetItemInput{}): {
+		"Key": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+	},
+	reflect.TypeOf(dynamodb.DeleteItemInput{}): {
+		"Key":                       {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+	},
+	reflect.TypeOf(dynamodb.UpdateItemInput{}): {
+		"Key":                       {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+	},
+	reflect.TypeOf(dynamodb.QueryInput{}): {
+		"ExclusiveStartKey":         {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+	},
+	reflect.TypeOf(dynamodb.ScanInput{}): {
+		"ExclusiveStartKey":         {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+	},
+}
 
 // skipAutoGeneration lists, per kumo service name, the SDK action names that
 // must never be auto-generated because a hand-written

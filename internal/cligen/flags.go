@@ -26,10 +26,11 @@ func DeriveFields(serviceName, action string, inputType reflect.Type) FieldsResu
 
 		if override, ok := fieldOverrides[inputType][f.Name]; ok {
 			result.Flags = append(result.Flags, FieldFlag{
-				FieldName: f.Name,
-				FlagName:  toKebabCase(f.Name),
-				Kind:      override.Kind,
-				Pointer:   f.Type.Kind() == reflect.Pointer,
+				FieldName:  f.Name,
+				FlagName:   toKebabCase(f.Name),
+				Kind:       override.Kind,
+				CustomFunc: override.CustomFunc,
+				Pointer:    f.Type.Kind() == reflect.Pointer,
 			})
 
 			continue

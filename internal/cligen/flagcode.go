@@ -22,7 +22,7 @@ var reservedLocalNames = map[string]bool{
 // buildFlagView computes the Go source snippets (variable declaration, flag
 // registration, and input-field assignment) for one derived flag, and
 // records any imports its FlagKind requires on imports.
-func buildFlagView(f FieldFlag, actionUse string, imports *importSet) (flagView, error) {
+func buildFlagView(f *FieldFlag, actionUse string, imports *importSet) (flagView, error) {
 	v := flagVarName(f.FieldName)
 	desc := toWords(f.FieldName)
 
@@ -67,6 +67,8 @@ func buildFlagView(f FieldFlag, actionUse string, imports *importSet) (flagView,
 		imports.needTypes()
 
 		return kvArrayFlag(f, v, desc, actionUse), nil
+	case FlagCustomFunc:
+		return customFuncFlag(f, v, desc, actionUse), nil
 	default:
 		return flagView{}, fmt.Errorf("unsupported flag kind %v for field %s", f.Kind, f.FieldName)
 	}
@@ -88,7 +90,7 @@ func flagVarName(fieldName string) string {
 	return v
 }
 
-func stringFlag(f FieldFlag, v, desc string) flagView {
+func stringFlag(f *FieldFlag, v, desc string) flagView {
 	assign := fmt.Sprintf("if %s != \"\" {\n\tinput.%s = %s\n}", v, f.FieldName, pointerWrap(f, "aws.String", v))
 	if !f.Pointer {
 		assign = fmt.Sprintf("if %s != \"\" {\n\tinput.%s = %s\n}", v, f.FieldName, v)
@@ -102,7 +104,7 @@ func stringFlag(f FieldFlag, v, desc string) flagView {
 	}
 }
 
-func intFlag(f FieldFlag, v, desc, registerFn, wrapFn string) flagView {
+func intFlag(f *FieldFlag, v, desc, registerFn, wrapFn string) flagView {
 	goType := "int32"
 	if registerFn == "Int64Var" {
 		goType = "int64"
@@ -121,7 +123,7 @@ func intFlag(f FieldFlag, v, desc, registerFn, wrapFn string) flagView {
 	}
 }
 
-func boolFlag(f FieldFlag, v, desc string) flagView {
+func boolFlag(f *FieldFlag, v, desc string) flagView {
 	assign := fmt.Sprintf("if %s {\n\tinput.%s = %s\n}", v, f.FieldName, pointerWrap(f, "aws.Bool", v))
 	if !f.Pointer {
 		assign = fmt.Sprintf("if %s {\n\tinput.%s = %s\n}", v, f.FieldName, v)
@@ -135,7 +137,7 @@ func boolFlag(f FieldFlag, v, desc string) flagView {
 	}
 }
 
-func stringEnumFlag(f FieldFlag, v, desc string) flagView {
+func stringEnumFlag(f *FieldFlag, v, desc string) flagView {
 	typeName := "types." + f.ElemType.Name()
 
 	assign := fmt.Sprintf("if %s != \"\" {\n\tinput.%s = %s(%s)\n}", v, f.FieldName, typeName, v)
@@ -151,7 +153,7 @@ func stringEnumFlag(f FieldFlag, v, desc string) flagView {
 	}
 }
 
-func bytesBase64Flag(f FieldFlag, v, desc, actionUse string) flagView {
+func bytesBase64Flag(f *FieldFlag, v, desc, actionUse string) flagView {
 	assign := fmt.Sprintf(
 		"if %s != \"\" {\n\tdecoded, err := base64.StdEncoding.DecodeString(%s)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"%s: decode --%s: %%w\", err)\n\t}\n\tinput.%s = decoded\n}",
 		v, v, actionUse, f.FlagName, f.FieldName,
@@ -165,7 +167,7 @@ func bytesBase64Flag(f FieldFlag, v, desc, actionUse string) flagView {
 	}
 }
 
-func timeFlag(f FieldFlag, v, desc, actionUse string) flagView {
+func timeFlag(f *FieldFlag, v, desc, actionUse string) flagView {
 	set := fmt.Sprintf("input.%s = parsed", f.FieldName)
 	if f.Pointer {
 		set = fmt.Sprintf("input.%s = &parsed", f.FieldName)
@@ -184,7 +186,7 @@ func timeFlag(f FieldFlag, v, desc, actionUse string) flagView {
 	}
 }
 
-func stringArrayFlag(f FieldFlag, v, desc string) flagView {
+func stringArrayFlag(f *FieldFlag, v, desc string) flagView {
 	assign := fmt.Sprintf("if len(%s) > 0 {\n\tinput.%s = %s\n}", v, f.FieldName, v)
 
 	return flagView{
@@ -195,7 +197,7 @@ func stringArrayFlag(f FieldFlag, v, desc string) flagView {
 	}
 }
 
-func stringEnumArrayFlag(f FieldFlag, v, desc string) flagView {
+func stringEnumArrayFlag(f *FieldFlag, v, desc string) flagView {
 	typeName := "types." + f.ElemType.Name()
 
 	assign := fmt.Sprintf(
@@ -211,7 +213,7 @@ func stringEnumArrayFlag(f FieldFlag, v, desc string) flagView {
 	}
 }
 
-func jsonBlobFlag(f FieldFlag, v, desc, actionUse string) flagView {
+func jsonBlobFlag(f *FieldFlag, v, desc, actionUse string) flagView {
 	assign := fmt.Sprintf(
 		"if %s != \"\" {\n\tif err := json.Unmarshal([]byte(%s), &input.%s); err != nil {\n\t\treturn fmt.Errorf(\"%s: parse --%s: %%w\", err)\n\t}\n}",
 		v, v, f.FieldName, actionUse, f.FlagName,
@@ -225,7 +227,7 @@ func jsonBlobFlag(f FieldFlag, v, desc, actionUse string) flagView {
 	}
 }
 
-func kvFlag(f FieldFlag, v, desc, actionUse string) flagView {
+func kvFlag(f *FieldFlag, v, desc, actionUse string) flagView {
 	typeName := "types." + f.ElemType.Name()
 
 	set := fmt.Sprintf("input.%s = val", f.FieldName)
@@ -246,7 +248,7 @@ func kvFlag(f FieldFlag, v, desc, actionUse string) flagView {
 	}
 }
 
-func kvArrayFlag(f FieldFlag, v, desc, actionUse string) flagView {
+func kvArrayFlag(f *FieldFlag, v, desc, actionUse string) flagView {
 	typeName := "types." + f.ElemType.Name()
 
 	assign := fmt.Sprintf(
@@ -262,9 +264,31 @@ func kvArrayFlag(f FieldFlag, v, desc, actionUse string) flagView {
 	}
 }
 
+// customFuncFlag builds a flag for a FlagCustomFunc field: a raw string flag
+// that, when non-empty, is decoded by calling f.CustomFunc (a hand-written
+// cli package function, e.g. decodeDynamoDBJSON) instead of json.Unmarshal.
+func customFuncFlag(f *FieldFlag, v, desc, actionUse string) flagView {
+	set := fmt.Sprintf("input.%s = decoded", f.FieldName)
+	if f.Pointer {
+		set = fmt.Sprintf("input.%s = &decoded", f.FieldName)
+	}
+
+	assign := fmt.Sprintf(
+		"if %s != \"\" {\n\tdecoded, err := %s(%s)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"%s: parse --%s: %%w\", err)\n\t}\n\t%s\n}",
+		v, f.CustomFunc, v, actionUse, f.FlagName, set,
+	)
+
+	return flagView{
+		VarName:  v,
+		VarDecl:  fmt.Sprintf("var %s string", v),
+		Register: fmt.Sprintf("cmd.Flags().StringVar(&%s, %q, \"\", %q)", v, f.FlagName, desc+" (JSON)"),
+		Assign:   assign,
+	}
+}
+
 // pointerWrap returns wrapFn(v) when f.Pointer is true; used by scalar flag
 // builders whose Input field is *T rather than T.
-func pointerWrap(f FieldFlag, wrapFn, v string) string {
+func pointerWrap(f *FieldFlag, wrapFn, v string) string {
 	if !f.Pointer {
 		return v
 	}
