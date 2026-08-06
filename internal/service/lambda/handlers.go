@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 const pathSegmentFunctions = "functions"
@@ -572,10 +574,7 @@ func functionToConfiguration(fn *Function) *FunctionConfiguration {
 
 // writeJSONResponse writes a JSON response.
 func writeJSONResponse(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Amzn-Requestid", uuid.New().String())
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	service.WriteJSONResponseWithStatus(w, service.ContentTypeJSON, status, v)
 }
 
 // writeFunctionError writes a Lambda error response.
