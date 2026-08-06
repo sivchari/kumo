@@ -639,9 +639,7 @@ func resolveParametersWithContext(params map[string]any, input string, contextDa
 // the lazily-parsed input (nil until first use); the possibly newly parsed
 // value is returned so the caller can reuse it for later references,
 // keeping the input JSON unmarshaled at most once per resolveParameters
-// call. inputData -- and therefore the path resolution against it -- uses
-// resolveAnyJSONPath rather than resolveJSONPath, since the input is not
-// always a JSON object (see resolveParametersWithContext).
+// call.
 func resolveJSONPathRef(key string, value any, input string, inputData any, contextData map[string]any) (any, any, error) {
 	pathStr, ok := value.(string)
 	if !ok {
@@ -653,7 +651,7 @@ func resolveJSONPathRef(key string, value any, input string, inputData any, cont
 			return nil, inputData, fmt.Errorf("jsonPath reference for key %q uses the Context object (%q), which is only available in ItemSelector", key, pathStr)
 		}
 
-		resolvedValue, err := resolveJSONPath(contextData, "$"+strings.TrimPrefix(pathStr, "$$"))
+		resolvedValue, err := resolveAnyJSONPath("$"+strings.TrimPrefix(pathStr, "$$"), contextData)
 		if err != nil {
 			return nil, inputData, fmt.Errorf("resolve Context object path %q for key %q: %w", pathStr, key, err)
 		}
@@ -684,41 +682,6 @@ func resolveStaticValue(value any, input string, contextData map[string]any) (an
 	}
 
 	return resolveParametersWithContext(subMap, input, contextData)
-}
-
-// resolveJSONPath resolves a simple JSONPath expression ("$" or "$.field") against the input data.
-// Only single-level field access is supported (e.g., "$.message"), plus "$" for the whole input.
-func resolveJSONPath(data map[string]any, path string) (any, error) {
-	if path == "$" {
-		return data, nil
-	}
-
-	if !strings.HasPrefix(path, "$.") {
-		return nil, fmt.Errorf("unsupported JSONPath %q: must start with $", path)
-	}
-
-	field := strings.TrimPrefix(path, "$.")
-
-	// Support nested field access like "$.a.b.c".
-	parts := strings.Split(field, ".")
-
-	var current any = data
-
-	for _, part := range parts {
-		m, ok := current.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("jsonPath %q: cannot access field %q on non-object", path, part)
-		}
-
-		val, exists := m[part]
-		if !exists {
-			return nil, fmt.Errorf("jsonPath %q: field %q not found", path, part)
-		}
-
-		current = val
-	}
-
-	return current, nil
 }
 
 // executeSQSSendMessage sends a message to SQS via HTTP.
