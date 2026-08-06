@@ -11,7 +11,7 @@ import (
 func (s *Service) CreateKxEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req CreateKxEnvironmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -62,7 +62,7 @@ func (s *Service) ListKxEnvironments(w http.ResponseWriter, r *http.Request) {
 
 		maxResults, err = strconv.Atoi(maxResultsStr)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, errValidation, "Invalid maxResults")
+			writeError(w, errValidation, "Invalid maxResults", http.StatusBadRequest)
 
 			return
 		}
@@ -86,7 +86,7 @@ func (s *Service) UpdateKxEnvironment(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateKxEnvironmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -109,7 +109,7 @@ func (s *Service) CreateKxDatabase(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateKxDatabaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -165,7 +165,7 @@ func (s *Service) ListKxDatabases(w http.ResponseWriter, r *http.Request) {
 
 		maxResults, err = strconv.Atoi(maxResultsStr)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, errValidation, "Invalid maxResults")
+			writeError(w, errValidation, "Invalid maxResults", http.StatusBadRequest)
 
 			return
 		}
@@ -190,7 +190,7 @@ func (s *Service) UpdateKxDatabase(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateKxDatabaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -214,7 +214,7 @@ func (s *Service) CreateKxUser(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateKxUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -270,7 +270,7 @@ func (s *Service) ListKxUsers(w http.ResponseWriter, r *http.Request) {
 
 		maxResults, err = strconv.Atoi(maxResultsStr)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, errValidation, "Invalid maxResults")
+			writeError(w, errValidation, "Invalid maxResults", http.StatusBadRequest)
 
 			return
 		}
@@ -295,7 +295,7 @@ func (s *Service) UpdateKxUser(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateKxUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -319,7 +319,7 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 
 	var req TagResourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -370,7 +370,7 @@ func writeJSON(w http.ResponseWriter, data any) {
 	}
 }
 
-func writeError(w http.ResponseWriter, statusCode int, code, message string) {
+func writeError(w http.ResponseWriter, code, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
@@ -397,10 +397,10 @@ func handleStorageError(w http.ResponseWriter, err error) {
 			statusCode = http.StatusConflict
 		}
 
-		writeError(w, statusCode, fsErr.Code, fsErr.Message)
+		writeError(w, fsErr.Code, fsErr.Message, statusCode)
 
 		return
 	}
 
-	writeError(w, http.StatusInternalServerError, "InternalException", err.Error())
+	writeError(w, "InternalException", err.Error(), http.StatusInternalServerError)
 }

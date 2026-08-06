@@ -11,7 +11,7 @@ import (
 func (s *Service) CreateBackupVault(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("backupVaultName")
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup vault name is required")
+		writeError(w, "InvalidParameterValueException", "backup vault name is required", http.StatusBadRequest)
 
 		return
 	}
@@ -19,7 +19,7 @@ func (s *Service) CreateBackupVault(w http.ResponseWriter, r *http.Request) {
 	var input CreateBackupVaultInput
 	if r.Body != nil && r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			writeError(w, http.StatusBadRequest, "InvalidRequestException", "invalid request body")
+			writeError(w, "InvalidRequestException", "invalid request body", http.StatusBadRequest)
 
 			return
 		}
@@ -28,12 +28,12 @@ func (s *Service) CreateBackupVault(w http.ResponseWriter, r *http.Request) {
 	vault, err := s.storage.CreateVault(name, &input)
 	if err != nil {
 		if strings.Contains(err.Error(), "AlreadyExistsException") {
-			writeError(w, http.StatusConflict, "AlreadyExistsException", err.Error())
+			writeError(w, "AlreadyExistsException", err.Error(), http.StatusConflict)
 
 			return
 		}
 
-		writeError(w, http.StatusInternalServerError, "ServiceUnavailableException", err.Error())
+		writeError(w, "ServiceUnavailableException", err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -49,14 +49,14 @@ func (s *Service) CreateBackupVault(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DescribeBackupVault(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("backupVaultName")
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup vault name is required")
+		writeError(w, "InvalidParameterValueException", "backup vault name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	vault, err := s.storage.DescribeVault(name)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -76,13 +76,13 @@ func (s *Service) ListBackupVaults(w http.ResponseWriter, _ *http.Request) {
 func (s *Service) DeleteBackupVault(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("backupVaultName")
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup vault name is required")
+		writeError(w, "InvalidParameterValueException", "backup vault name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if err := s.storage.DeleteVault(name); err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -94,20 +94,20 @@ func (s *Service) DeleteBackupVault(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateBackupPlan(w http.ResponseWriter, r *http.Request) {
 	var input CreateBackupPlanInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "InvalidRequestException", "invalid request body")
+		writeError(w, "InvalidRequestException", "invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if input.BackupPlan == nil || input.BackupPlan.BackupPlanName == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup plan name is required")
+		writeError(w, "InvalidParameterValueException", "backup plan name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	plan, err := s.storage.CreatePlan(&input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "ServiceUnavailableException", err.Error())
+		writeError(w, "ServiceUnavailableException", err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -124,14 +124,14 @@ func (s *Service) CreateBackupPlan(w http.ResponseWriter, r *http.Request) {
 func (s *Service) GetBackupPlan(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("backupPlanId")
 	if planID == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup plan ID is required")
+		writeError(w, "InvalidParameterValueException", "backup plan ID is required", http.StatusBadRequest)
 
 		return
 	}
 
 	plan, err := s.storage.GetPlan(planID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -157,13 +157,13 @@ func (s *Service) ListBackupPlans(w http.ResponseWriter, _ *http.Request) {
 func (s *Service) DeleteBackupPlan(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("backupPlanId")
 	if planID == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup plan ID is required")
+		writeError(w, "InvalidParameterValueException", "backup plan ID is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if err := s.storage.DeletePlan(planID); err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -175,20 +175,20 @@ func (s *Service) DeleteBackupPlan(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateBackupSelection(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("backupPlanId")
 	if planID == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup plan ID is required")
+		writeError(w, "InvalidParameterValueException", "backup plan ID is required", http.StatusBadRequest)
 
 		return
 	}
 
 	var input CreateBackupSelectionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "InvalidRequestException", "invalid request body")
+		writeError(w, "InvalidRequestException", "invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if input.BackupSelection == nil || input.BackupSelection.SelectionName == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "selection name is required")
+		writeError(w, "InvalidParameterValueException", "selection name is required", http.StatusBadRequest)
 
 		return
 	}
@@ -196,12 +196,12 @@ func (s *Service) CreateBackupSelection(w http.ResponseWriter, r *http.Request) 
 	selection, err := s.storage.CreateSelection(planID, &input)
 	if err != nil {
 		if strings.Contains(err.Error(), "ResourceNotFoundException") {
-			writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+			writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 			return
 		}
 
-		writeError(w, http.StatusInternalServerError, "ServiceUnavailableException", err.Error())
+		writeError(w, "ServiceUnavailableException", err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -219,14 +219,14 @@ func (s *Service) GetBackupSelection(w http.ResponseWriter, r *http.Request) {
 	selectionID := r.PathValue("selectionId")
 
 	if planID == "" || selectionID == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "plan ID and selection ID are required")
+		writeError(w, "InvalidParameterValueException", "plan ID and selection ID are required", http.StatusBadRequest)
 
 		return
 	}
 
 	selection, err := s.storage.GetSelection(planID, selectionID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -243,7 +243,7 @@ func (s *Service) GetBackupSelection(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListBackupSelections(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("backupPlanId")
 	if planID == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "backup plan ID is required")
+		writeError(w, "InvalidParameterValueException", "backup plan ID is required", http.StatusBadRequest)
 
 		return
 	}
@@ -260,13 +260,13 @@ func (s *Service) DeleteBackupSelection(w http.ResponseWriter, r *http.Request) 
 	selectionID := r.PathValue("selectionId")
 
 	if planID == "" || selectionID == "" {
-		writeError(w, http.StatusBadRequest, "InvalidParameterValueException", "plan ID and selection ID are required")
+		writeError(w, "InvalidParameterValueException", "plan ID and selection ID are required", http.StatusBadRequest)
 
 		return
 	}
 
 	if err := s.storage.DeleteSelection(planID, selectionID); err != nil {
-		writeError(w, http.StatusNotFound, "ResourceNotFoundException", err.Error())
+		writeError(w, "ResourceNotFoundException", err.Error(), http.StatusNotFound)
 
 		return
 	}
@@ -280,7 +280,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, code, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("x-amzn-ErrorType", code)
 	w.WriteHeader(status)

@@ -12,19 +12,19 @@ import (
 func (s *Service) CreateSchemaMapping(w http.ResponseWriter, r *http.Request) {
 	var req CreateSchemaMappingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.SchemaName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "schemaName is required")
+		writeError(w, errValidation, "schemaName is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if len(req.MappedInputFields) == 0 {
-		writeError(w, http.StatusBadRequest, errValidation, "mappedInputFields is required")
+		writeError(w, errValidation, "mappedInputFields is required", http.StatusBadRequest)
 
 		return
 	}
@@ -43,7 +43,7 @@ func (s *Service) CreateSchemaMapping(w http.ResponseWriter, r *http.Request) {
 func (s *Service) GetSchemaMapping(w http.ResponseWriter, r *http.Request) {
 	schemaName := r.PathValue("schemaName")
 	if schemaName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "schemaName is required")
+		writeError(w, errValidation, "schemaName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -62,7 +62,7 @@ func (s *Service) GetSchemaMapping(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteSchemaMapping(w http.ResponseWriter, r *http.Request) {
 	schemaName := r.PathValue("schemaName")
 	if schemaName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "schemaName is required")
+		writeError(w, errValidation, "schemaName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -96,13 +96,13 @@ func (s *Service) ListSchemaMappings(w http.ResponseWriter, r *http.Request) {
 func (s *Service) CreateMatchingWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req CreateMatchingWorkflowRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.WorkflowName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "workflowName is required")
+		writeError(w, errValidation, "workflowName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -121,7 +121,7 @@ func (s *Service) CreateMatchingWorkflow(w http.ResponseWriter, r *http.Request)
 func (s *Service) GetMatchingWorkflow(w http.ResponseWriter, r *http.Request) {
 	workflowName := r.PathValue("workflowName")
 	if workflowName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "workflowName is required")
+		writeError(w, errValidation, "workflowName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -140,7 +140,7 @@ func (s *Service) GetMatchingWorkflow(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteMatchingWorkflow(w http.ResponseWriter, r *http.Request) {
 	workflowName := r.PathValue("workflowName")
 	if workflowName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "workflowName is required")
+		writeError(w, errValidation, "workflowName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -174,13 +174,13 @@ func (s *Service) ListMatchingWorkflows(w http.ResponseWriter, r *http.Request) 
 func (s *Service) CreateIDMappingWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req CreateIDMappingWorkflowRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errValidation, "Invalid request body")
+		writeError(w, errValidation, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.WorkflowName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "workflowName is required")
+		writeError(w, errValidation, "workflowName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -199,7 +199,7 @@ func (s *Service) CreateIDMappingWorkflow(w http.ResponseWriter, r *http.Request
 func (s *Service) GetIDMappingWorkflow(w http.ResponseWriter, r *http.Request) {
 	workflowName := r.PathValue("workflowName")
 	if workflowName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "workflowName is required")
+		writeError(w, errValidation, "workflowName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -218,7 +218,7 @@ func (s *Service) GetIDMappingWorkflow(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteIDMappingWorkflow(w http.ResponseWriter, r *http.Request) {
 	workflowName := r.PathValue("workflowName")
 	if workflowName == "" {
-		writeError(w, http.StatusBadRequest, errValidation, "workflowName is required")
+		writeError(w, errValidation, "workflowName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -273,7 +273,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 	}
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, code, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
@@ -295,10 +295,10 @@ func handleError(w http.ResponseWriter, err error) {
 			status = http.StatusConflict
 		}
 
-		writeError(w, status, erErr.Code, erErr.Message)
+		writeError(w, erErr.Code, erErr.Message, status)
 
 		return
 	}
 
-	writeError(w, http.StatusInternalServerError, errInternalError, "Internal server error")
+	writeError(w, errInternalError, "Internal server error", http.StatusInternalServerError)
 }

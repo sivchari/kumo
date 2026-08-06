@@ -13,19 +13,19 @@ import (
 func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 	var req CreateClusterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Invalid request body")
+		writeError(w, errBadRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.ClusterName == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Cluster name is required")
+		writeError(w, errBadRequest, "Cluster name is required", http.StatusBadRequest)
 
 		return
 	}
 
 	if req.BrokerNodeGroupInfo == nil {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Broker node group info is required")
+		writeError(w, errBadRequest, "Broker node group info is required", http.StatusBadRequest)
 
 		return
 	}
@@ -56,7 +56,7 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 
 	clusters, next, err := s.storage.ListClusters(r.Context(), maxResults, nextToken)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, errInternalError, err.Error())
+		writeError(w, errInternalError, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -75,7 +75,7 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DescribeCluster(w http.ResponseWriter, r *http.Request) {
 	clusterArn := extractClusterArn(r.URL.Path)
 	if clusterArn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Cluster ARN is required")
+		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -94,7 +94,7 @@ func (s *Service) DescribeCluster(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 	clusterArn := extractClusterArn(r.URL.Path)
 	if clusterArn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Cluster ARN is required")
+		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -113,7 +113,7 @@ func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 func (s *Service) GetBootstrapBrokers(w http.ResponseWriter, r *http.Request) {
 	clusterArn := extractClusterArn(r.URL.Path)
 	if clusterArn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Cluster ARN is required")
+		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
 		return
 	}
@@ -132,14 +132,14 @@ func (s *Service) GetBootstrapBrokers(w http.ResponseWriter, r *http.Request) {
 func (s *Service) UpdateClusterConfiguration(w http.ResponseWriter, r *http.Request) {
 	clusterArn := extractClusterArn(r.URL.Path)
 	if clusterArn == "" {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Cluster ARN is required")
+		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
 		return
 	}
 
 	var req UpdateClusterConfigurationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, errBadRequest, "Invalid request body")
+		writeError(w, errBadRequest, "Invalid request body", http.StatusBadRequest)
 
 		return
 	}
@@ -189,7 +189,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 // writeError writes an error response.
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, code, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
@@ -217,10 +217,10 @@ func handleError(w http.ResponseWriter, err error) {
 			status = http.StatusConflict
 		}
 
-		writeError(w, status, mskErr.Code, mskErr.Message)
+		writeError(w, mskErr.Code, mskErr.Message, status)
 
 		return
 	}
 
-	writeError(w, http.StatusInternalServerError, errInternalError, "Internal server error")
+	writeError(w, errInternalError, "Internal server error", http.StatusInternalServerError)
 }
