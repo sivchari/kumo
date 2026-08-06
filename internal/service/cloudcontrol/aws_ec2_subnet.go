@@ -134,10 +134,9 @@ func (h *awsEC2Subnet) List(ctx context.Context) ([]ResourceDescription, error) 
 	return out, nil
 }
 
-// subnetStateJSON serialises a Subnet for read responses. The full
-// CloudFormation schema is emitted (with null / empty defaults for what
-// kumo doesn't model) because terraform-provider-awscc requires every
-// Computed property to be resolved after apply.
+// subnetStateJSON emits the full CloudFormation schema (null / empty
+// defaults for what kumo doesn't model) because terraform-provider-awscc
+// requires every Computed property to be resolved after apply.
 func subnetStateJSON(s *ec2.Subnet) ([]byte, error) {
 	state := map[string]any{
 		"SubnetId":                      s.SubnetID,

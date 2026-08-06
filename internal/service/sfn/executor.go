@@ -21,18 +21,14 @@ type stateMachineDefinition struct {
 	StartAt string                     `json:"StartAt"`
 	States  map[string]stateDefinition `json:"States"`
 
-	// ProcessorConfig selects a Map state's ItemProcessor processing mode
-	// (see mapstate.go). It is decoded on every stateMachineDefinition,
-	// since Parallel Branches reuse this same struct, but it is only
-	// meaningful when this stateMachineDefinition is itself a Map state's
-	// ItemProcessor.
+	// ProcessorConfig selects a Map state's ItemProcessor processing mode.
+	// Decoded on every stateMachineDefinition (Parallel Branches reuse this
+	// struct) but only meaningful when it is itself a Map's ItemProcessor.
 	ProcessorConfig *processorConfig `json:"ProcessorConfig"`
 
-	// TimeoutSeconds bounds the whole execution's wall-clock time. It is only
-	// meaningful on the top-level definition; MemoryStorage.runExecution is
-	// the sole reader of this field, since sub-state-machines (Parallel
-	// Branches / Map ItemProcessor) reuse this same struct but must not
-	// inherit an outer execution's timeout as their own.
+	// TimeoutSeconds bounds the whole execution's wall-clock time. Only
+	// meaningful on the top-level definition -- sub-state-machines (Parallel
+	// Branches / Map ItemProcessor) reuse this struct but must not inherit it.
 	TimeoutSeconds *int `json:"TimeoutSeconds"`
 }
 
@@ -48,16 +44,10 @@ type stateDefinition struct {
 	Result     any            `json:"Result"`
 	Comment    string         `json:"Comment"`
 
-	// ResultSelector, ResultPath, InputPath, and OutputPath are the
-	// remaining fields of the standard data-flow pipeline (see iodata.go).
-	// ResultPath, InputPath, and OutputPath are left as raw JSON so an
-	// explicit "null" (which, per the ASL spec, discards data) can be told
-	// apart from the field being absent (which defaults to "$", no
-	// filtering/replacement); both would otherwise unmarshal to the same
-	// value through a plain *string. Per the spec's per-state field table,
-	// not every state type honors every field -- see resolveEffectiveInput,
-	// runRetryCatchResultPipeline in retry.go, and validateStateFields in
-	// validate.go for which types actually apply which fields.
+	// ResultPath, InputPath, and OutputPath are raw JSON so an explicit "null"
+	// (discards data, per ASL) can be told apart from the field being absent
+	// (defaults to "$"); both would otherwise unmarshal identically through a
+	// plain *string. Not every state type honors every field.
 	ResultSelector map[string]any  `json:"ResultSelector"`
 	ResultPath     json.RawMessage `json:"ResultPath"`
 	InputPath      json.RawMessage `json:"InputPath"`
@@ -84,20 +74,11 @@ type stateDefinition struct {
 	// Parallel state fields.
 	Branches []stateMachineDefinition `json:"Branches"`
 
-	// Map state fields. ItemProcessor is the current field name; Iterator is
-	// the legacy alias for the same sub-state-machine. If both are present,
-	// ItemProcessor takes precedence. See mapstate.go, itemselector.go,
-	// itemreader.go, itembatcher.go, and resultwriter.go for how
-	// ItemSelector/ItemReader/ItemBatcher/ResultWriter are implemented, and
-	// requireDistributedModeForFields in mapstate.go for which of these
-	// fields require ItemProcessor.ProcessorConfig.Mode "DISTRIBUTED".
-	// MaxItemsPerBatchPath/MaxInputBytesPerBatchPath/MaxConcurrencyPath/
-	// ToleratedFailurePercentagePath/ToleratedFailureCountPath (the dynamic,
-	// reference-path forms of these fields) are resolved against the Map
-	// state's effective input, preferring the Path form when both it and
-	// the static field are set -- see resolveMaxConcurrency in mapstate.go,
-	// resolveMapTolerance in maptolerance.go, and buildProcessorUnits in
-	// itembatcher.go.
+	// Map state fields. ItemProcessor is the current name; Iterator is the
+	// legacy alias for the same sub-state-machine (ItemProcessor takes
+	// precedence if both are present). Several fields require Distributed
+	// mode; their "*Path" variants are resolved against the effective input,
+	// preferring the Path form when both it and the static field are set.
 	ItemsPath                  string                  `json:"ItemsPath"`
 	ItemProcessor              *stateMachineDefinition `json:"ItemProcessor"`
 	Iterator                   *stateMachineDefinition `json:"Iterator"`
@@ -116,33 +97,23 @@ type stateDefinition struct {
 	ToleratedFailureCountPath      string `json:"ToleratedFailureCountPath"`
 
 	// Task state timeout fields. TimeoutSeconds/TimeoutSecondsPath bound a
-	// single execution attempt of the task (see timeout.go); per the ASL
-	// spec's default of 99999999 seconds (~3.17 years) when absent, kumo
-	// treats "unset" as no timeout at all rather than wrapping every task in
-	// a multi-year context.
+	// single execution attempt. kumo treats "unset" as no timeout at all
+	// rather than the spec's ~3.17-year default.
 	TimeoutSeconds     *int   `json:"TimeoutSeconds"`
 	TimeoutSecondsPath string `json:"TimeoutSecondsPath"`
 
-	// HeartbeatSeconds is enforced only for callback (.waitForTaskToken) and
-	// activity Task states (see heartbeatInterval and awaitTaskToken in
-	// callback_task.go, and executeActivityTask in activity_task.go): those
-	// are the only Task states that can ever receive a SendTaskHeartbeat.
-	// For every other (ordinary HTTP) Task state it is decoded but not
-	// enforced, since such a task can never send a heartbeat -- enforcing it
-	// there would fail every task that sets it, for a reason kumo can never
-	// satisfy. HeartbeatSecondsPath is decoded but not implemented at all
-	// (see heartbeatInterval).
+	// HeartbeatSeconds is enforced only for callback/activity Task states --
+	// the only ones that can ever receive a SendTaskHeartbeat. Ordinary Task
+	// states decode but never enforce it, since they can never send one.
+	// HeartbeatSecondsPath is decoded but not implemented.
 	HeartbeatSeconds     *int   `json:"HeartbeatSeconds"`
 	HeartbeatSecondsPath string `json:"HeartbeatSecondsPath"`
 }
 
-// Execution error codes surfaced via DescribeExecution. States.TaskFailed is
-// reserved for failures of a Task state's work itself; States.NoChoiceMatched
-// is reserved for a Choice state with no matching rule and no Default;
-// States.Timeout is reported when a Task or the whole execution exceeds its
-// TimeoutSeconds; States.ALL is the Retry/Catch wildcard that matches any
-// other Error Name; every other engine-level failure (unsupported state, bad
-// definition wiring) is States.Runtime.
+// Execution error codes surfaced via DescribeExecution: States.TaskFailed
+// for Task work failures, States.NoChoiceMatched for an unmatched Choice
+// with no Default, States.Timeout for a Task/execution deadline, States.ALL
+// is the Retry/Catch wildcard, everything else is States.Runtime.
 const (
 	errorStatesRuntime         = "States.Runtime"
 	errorStatesTaskFailed      = "States.TaskFailed"
@@ -249,20 +220,15 @@ type executionEngine struct {
 	// override this directly to keep runtime bounded.
 	activityPollTimeout time.Duration
 
-	// starter services the states:startExecution Task integration (see
-	// nestedexec.go). It is wired to the same MemoryStorage that owns this
-	// engine (see NewMemoryStorage in storage.go) rather than an HTTP round
-	// trip back to kumo's own server, since it recurses into kumo's own SFN
-	// engine -- see nestedexec.go's executionStarter doc for why. It is nil
-	// for engines built directly via newExecutionEngine in tests that never
-	// exercise states:startExecution.
+	// starter services the states:startExecution Task integration. Wired
+	// directly to MemoryStorage rather than an HTTP round trip, since it
+	// recurses into kumo's own SFN engine. Nil for engines built via
+	// newExecutionEngine in tests that never exercise it.
 	starter executionStarter
 
-	// mapRuns records distributed-mode Map Runs (see maprun.go), wired the
-	// same way as starter and for the same reason: it is storage
-	// bookkeeping, not a real AWS service call. It is nil for engines built
-	// directly via newExecutionEngine in tests that never exercise a
-	// Distributed Map.
+	// mapRuns records distributed-mode Map Runs, wired the same way as
+	// starter since it is storage bookkeeping, not a real AWS call. Nil for
+	// engines built via newExecutionEngine in tests that never exercise it.
 	mapRuns mapRunTracker
 }
 
@@ -318,10 +284,9 @@ func (e *executionEngine) execute(ctx context.Context, def *stateMachineDefiniti
 			return output, nil
 		}
 
-		// nextOverride is set by states that pick their own successor
-		// dynamically: Choice, and any Task/Parallel/Map whose Catch routed
-		// to a fallback state. It always takes priority over End/Next, since
-		// a Catch must be able to redirect even a state marked End: true.
+		// nextOverride is set by states with a dynamic successor (Choice, or
+		// a Catch-routed fallback) and always takes priority over End/Next,
+		// so a Catch can redirect even a state marked End: true.
 		if nextOverride != "" {
 			currentInput = output
 			currentState = nextOverride
@@ -342,10 +307,9 @@ func (e *executionEngine) execute(ctx context.Context, def *stateMachineDefiniti
 	}
 }
 
-// executeState executes a single state and returns its output and, for
-// states that determine the next state dynamically (Choice), the name of
-// that next state. nextOverride is empty for states that use the state's own
-// Next/End fields.
+// executeState executes a single state, returning its output and, for
+// Choice (which picks its next state dynamically), that state's name.
+// nextOverride is empty when the state uses its own Next/End fields.
 func (e *executionEngine) executeState(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	switch state.Type {
 	case "Pass":
@@ -375,14 +339,11 @@ func (e *executionEngine) executeState(ctx context.Context, name string, state *
 	}
 }
 
-// executeTaskStateWithPolicy executes a Task state's full standard field
-// pipeline: InputPath narrows the raw input to the effective input, Retry
-// and Catch govern the work itself (each attempt individually bounded by
-// TimeoutSeconds/TimeoutSecondsPath; see executeTaskStateWithTimeout in
-// timeout.go), and on success ResultSelector/ResultPath/OutputPath shape
-// the effective output. Parameters is resolved inside executeTaskState,
-// against the effective input, since its resolved value doubles as the
-// resource invocation's request payload rather than a generic JSON blob.
+// executeTaskStateWithPolicy executes a Task state's standard field
+// pipeline: InputPath narrows input, Retry/Catch govern the work (each
+// attempt bounded by TimeoutSeconds), then ResultSelector/ResultPath/
+// OutputPath shape the output. Parameters is resolved inside
+// executeTaskState since its value doubles as the request payload.
 func (e *executionEngine) executeTaskStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	effectiveInput, err := applyInputPath(state.InputPath, input)
 	if err != nil {
@@ -394,11 +355,9 @@ func (e *executionEngine) executeTaskStateWithPolicy(ctx context.Context, name s
 	})
 }
 
-// executePassState executes a Pass state's full standard field pipeline:
-// InputPath and Parameters build the effective input, Result (if present)
-// -- else the effective input itself -- is the state's result, and
-// ResultPath/OutputPath shape the effective output. Pass has no
-// ResultSelector; see the spec's per-state field table.
+// executePassState executes a Pass state: InputPath/Parameters build the
+// effective input, Result (or the input itself) is the result, and
+// ResultPath/OutputPath shape the output. Pass has no ResultSelector.
 func (e *executionEngine) executePassState(name string, state *stateDefinition, input string) (string, error) {
 	effectiveInput, err := resolveEffectiveInput(state.InputPath, state.Parameters, input)
 	if err != nil {
@@ -429,13 +388,10 @@ func (e *executionEngine) executePassState(name string, state *stateDefinition, 
 	return output, nil
 }
 
-// executeChoiceState executes a Choice state: InputPath narrows the raw
-// input to the effective input, which the Choice Rules -- including the
-// "*Path" comparators (see choice.go) -- are evaluated against; the first
-// matching rule's Next is chosen, falling back to Default. Choice has no
-// Parameters/ResultSelector/ResultPath (it produces no result of its own),
-// so the state output is simply the effective input, narrowed by
-// OutputPath.
+// executeChoiceState executes a Choice state: the Choice Rules are
+// evaluated against the effective input, choosing the first match's Next
+// (falling back to Default). Choice has no result of its own, so output
+// is just the effective input narrowed by OutputPath.
 func (e *executionEngine) executeChoiceState(name string, state *stateDefinition, input string) (string, string, error) {
 	effectiveInput, err := applyInputPath(state.InputPath, input)
 	if err != nil {
@@ -511,12 +467,10 @@ func (e *executionEngine) executeFailState(state *stateDefinition) error {
 }
 
 // executeTaskState executes a Task state by calling the appropriate
-// service. Callback (.waitForTaskToken) and activity resources are
-// dispatched before the ordinary integrations below, since both pause the
-// state on a task token rather than completing from the integration call's
-// own response; wrapCallbackTaskResult -- not wrapTaskResult -- wraps their
-// result, so a taskTimeoutError from a HeartbeatSeconds/TimeoutSeconds
-// expiry reaches executionErrorCode unwrapped (see wrapCallbackTaskResult).
+// service. Callback and activity resources are dispatched first since
+// they pause on a task token rather than the integration's own response;
+// wrapCallbackTaskResult (not wrapTaskResult) wraps their result so a
+// timeout reaches executionErrorCode unwrapped.
 func (e *executionEngine) executeTaskState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	resource := state.Resource
 	if resource == "" {
@@ -562,12 +516,9 @@ func wrapTaskResult(output string, err error) (string, error) {
 }
 
 // wrapCallbackTaskResult is wrapTaskResult's counterpart for callback and
-// activity Task states: a taskTimeoutError (HeartbeatSeconds/TimeoutSeconds
-// expiry, or a SendTaskFailure's own reported error via failStateError) must
-// reach executionErrorCode unwrapped, since executionErrorCode checks for
-// *taskFailedError before *taskTimeoutError/*failStateError -- wrapping
-// either in *taskFailedError here would misreport a real States.Timeout or
-// SendTaskFailure error as States.TaskFailed instead.
+// activity Task states: taskTimeoutError/failStateError must reach
+// executionErrorCode unwrapped, since it checks *taskFailedError first --
+// wrapping either here would misreport them as States.TaskFailed.
 func wrapCallbackTaskResult(output string, err error) (string, error) {
 	if err == nil {
 		return output, nil
@@ -594,17 +545,15 @@ func resolveParameters(params map[string]any, input string) (map[string]any, err
 
 // resolveParametersWithContext extends resolveParameters with an optional
 // Context object ($$.) lookup: contextData is nil everywhere except
-// ItemSelector (see itemselector.go), which is the only place the Amazon
-// States Language allows "$$." references.
+// ItemSelector, the only place ASL allows "$$." references.
 func resolveParametersWithContext(params map[string]any, input string, contextData map[string]any) (map[string]any, error) {
 	if params == nil {
 		return map[string]any{}, nil
 	}
 
-	// inputData is parsed lazily on the first JSONPath reference and reused.
-	// It is typed any, not map[string]any, since a Payload Template's input
-	// is not always a JSON object -- ResultSelector, in particular, resolves
-	// against a Parallel/Map state's result, which is a JSON array.
+	// inputData is parsed lazily on first JSONPath reference and reused. It
+	// is typed any, not map[string]any, since ResultSelector resolves
+	// against a Parallel/Map result, which is a JSON array.
 	var inputData any
 
 	resolved := make(map[string]any, len(params))
@@ -634,12 +583,10 @@ func resolveParametersWithContext(params map[string]any, input string, contextDa
 	return resolved, nil
 }
 
-// resolveJSONPathRef resolves a "key.$" JSONPath reference against the
-// input, or, for a "$$."-prefixed path, against contextData. inputData is
-// the lazily-parsed input (nil until first use); the possibly newly parsed
-// value is returned so the caller can reuse it for later references,
-// keeping the input JSON unmarshaled at most once per resolveParameters
-// call.
+// resolveJSONPathRef resolves a "key.$" reference against input, or
+// against contextData for a "$$."-prefixed path. inputData is returned
+// (possibly newly parsed) so callers reuse it and unmarshal input at
+// most once per resolveParameters call.
 func resolveJSONPathRef(key string, value any, input string, inputData any, contextData map[string]any) (any, any, error) {
 	pathStr, ok := value.(string)
 	if !ok {
@@ -806,13 +753,11 @@ func (e *executionEngine) executeLambdaInvoke(ctx context.Context, params map[st
 	return string(result), nil
 }
 
-// executeLambdaFunctionTask invokes a Lambda function specified directly by
-// ARN in a Task state's Resource field (the "directly specified function
-// resource" integration, as opposed to the optimized
-// arn:aws:states:::lambda:invoke integration). With this integration the
-// state input becomes the invocation payload verbatim, or resolved
-// Parameters if given, and the task output is the function's response
-// payload directly with no ExecutedVersion/Payload/StatusCode wrapping.
+// executeLambdaFunctionTask invokes a Lambda function specified directly
+// by ARN (the "directly specified function resource" integration, as
+// opposed to arn:aws:states:::lambda:invoke): input (or resolved
+// Parameters) becomes the payload verbatim, and output is the response
+// payload with no wrapping.
 func (e *executionEngine) executeLambdaFunctionTask(ctx context.Context, name, resourceARN string, params map[string]any, input string) (string, error) {
 	functionName := extractLambdaFunctionName(resourceARN)
 

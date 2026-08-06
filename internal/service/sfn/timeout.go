@@ -7,10 +7,9 @@ import (
 	"time"
 )
 
-// taskTimeoutError marks a Task state whose invocation attempt exceeded its
-// TimeoutSeconds/TimeoutSecondsPath. Per the Amazon States Language spec
-// this reports as States.Timeout which, unlike States.Runtime, is an
-// ordinary named error: Retry/Catch can match it like any other Error Name.
+// taskTimeoutError marks a Task invocation that exceeded its
+// TimeoutSeconds/TimeoutSecondsPath. Unlike States.Runtime, it reports as
+// States.Timeout, an ordinary named error Retry/Catch can match.
 type taskTimeoutError struct {
 	state string
 }
@@ -19,11 +18,9 @@ func (e *taskTimeoutError) Error() string {
 	return fmt.Sprintf("state %q: task execution exceeded TimeoutSeconds", e.state)
 }
 
-// executeTaskStateWithTimeout wraps a single Task state invocation attempt
-// in a context bounded by TimeoutSeconds/TimeoutSecondsPath. It is called
-// once per Retry attempt (see executeTaskStateWithPolicy), so each attempt
-// gets its own fresh timeout window: TimeoutSeconds bounds one execution
-// attempt of the task, not the state's total retry budget.
+// executeTaskStateWithTimeout wraps one Task invocation attempt in a context
+// bounded by TimeoutSeconds/TimeoutSecondsPath. Called once per Retry
+// attempt, so the timeout bounds a single attempt, not the retry budget.
 func (e *executionEngine) executeTaskStateWithTimeout(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	timeout, err := taskTimeout(state, input)
 	if err != nil {
@@ -45,11 +42,9 @@ func (e *executionEngine) executeTaskStateWithTimeout(ctx context.Context, name 
 	return output, err
 }
 
-// taskTimeout resolves a Task state's timeout duration from TimeoutSeconds
-// or TimeoutSecondsPath, preferring the path form when both are set. It
-// returns zero -- meaning "do not wrap the call in a timeout context at all"
-// -- when neither field is set, since the spec's default of 99999999
-// seconds (~3.17 years) is effectively unbounded.
+// taskTimeout resolves the timeout from TimeoutSeconds/TimeoutSecondsPath
+// (path preferred). Returns zero (no timeout context) when neither is set,
+// since the spec's default of 99999999 seconds is effectively unbounded.
 func taskTimeout(state *stateDefinition, input string) (time.Duration, error) {
 	switch {
 	case state.TimeoutSecondsPath != "":

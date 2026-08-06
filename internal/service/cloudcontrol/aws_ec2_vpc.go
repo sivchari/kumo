@@ -9,22 +9,16 @@ import (
 	"github.com/sivchari/kumo/internal/service/ec2"
 )
 
-// awsEC2VPC adapts the AWS::EC2::VPC Cloud Control type to kumo's EC2
-// storage. Properties model the CloudFormation surface, but only the
-// fields kumo's storage actually persists are honoured today —
-// additional CFN properties (Ipv6CidrBlock, EnableDnsHostnames, …) can
-// be wired through ModifyVpcAttribute calls in a follow-up without
-// changing the wire shape.
+// awsEC2VPC adapts AWS::EC2::VPC to kumo's EC2 storage. Only the fields
+// kumo's storage actually persists are honoured; other CFN properties can
+// be wired through ModifyVpcAttribute later without changing the wire shape.
 type awsEC2VPC struct{}
 
 func init() {
 	registerDefaultHandler(&awsEC2VPC{})
 }
 
-// vpcProperties is the JSON shape AWS::EC2::VPC uses on the wire. JSON
-// tags are PascalCase to match AWS CloudFormation; the Go field names
-// stay idiomatic (DNS upper-cased) even though the JSON spelling uses
-// "Dns".
+// vpcProperties is the JSON shape AWS::EC2::VPC uses on the wire.
 type vpcProperties struct {
 	VpcID              string `json:"VpcId,omitempty"`
 	CidrBlock          string `json:"CidrBlock,omitempty"`
@@ -88,10 +82,9 @@ func (h *awsEC2VPC) Read(ctx context.Context, identifier string) ([]byte, error)
 	return vpcStateJSON(vpcs[0])
 }
 
-// Update is currently read-back-only. The mutable VPC attributes
-// (EnableDnsHostnames, EnableDnsSupport) ride a separate AWS API
-// (ModifyVpcAttribute); wiring those through Cloud Control's PatchDocument
-// flow is a follow-up.
+// Update is read-back-only: the mutable VPC attributes (EnableDnsHostnames,
+// EnableDnsSupport) ride a separate AWS API (ModifyVpcAttribute), not yet
+// wired through Cloud Control's PatchDocument flow.
 func (h *awsEC2VPC) Update(ctx context.Context, identifier string, _ []byte) ([]byte, error) {
 	return h.Read(ctx, identifier)
 }
@@ -139,11 +132,9 @@ func (h *awsEC2VPC) List(ctx context.Context) ([]ResourceDescription, error) {
 	return out, nil
 }
 
-// vpcStateJSON is the shared serialiser for read paths so Create / Read /
-// List all produce the same wire shape. The full CloudFormation schema
-// is emitted (with null / empty defaults for what kumo doesn't model)
-// because terraform-provider-awscc treats every Computed property as
-// "must be known after apply".
+// vpcStateJSON emits the full CloudFormation schema (null / empty defaults
+// for what kumo doesn't model) because terraform-provider-awscc treats
+// every Computed property as "must be known after apply".
 func vpcStateJSON(v *ec2.Vpc) ([]byte, error) {
 	state := map[string]any{
 		"VpcId":                 v.VpcID,

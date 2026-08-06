@@ -6,11 +6,8 @@ import (
 )
 
 // resolveAnyJSONPath resolves "$" or "$.field[.field...]" against an
-// already-decoded JSON value of any shape. Only single-level field access
-// is supported per path segment (e.g., "$.message"), plus "$" for the
-// whole input. It does not require the root value to be a JSON object, so
-// e.g. Map state's ItemsPath can select the entire input when the input
-// itself is a JSON array.
+// already-decoded JSON value of any shape. Unlike other JSONPath resolvers,
+// the root need not be an object, so Map's ItemsPath can select an array.
 func resolveAnyJSONPath(path string, data any) (any, error) {
 	if path == "$" {
 		return data, nil

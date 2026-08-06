@@ -9,11 +9,10 @@ import (
 	"github.com/sivchari/kumo/internal/service/iam"
 )
 
-// awsIAMRole adapts AWS::IAM::Role to kumo's IAM storage. The
-// CloudFormation surface accepts AssumeRolePolicyDocument as either a
-// JSON string or a structured object; AWS clients send the structured
-// form, but the IAM storage stores it as a string, so we re-marshal on
-// the way in and just echo the stored string on the way out.
+// awsIAMRole adapts AWS::IAM::Role to kumo's IAM storage.
+// AssumeRolePolicyDocument arrives as either a JSON string or a structured
+// object, but the IAM storage stores it as a string, so we re-marshal it
+// on the way in and echo the stored string on the way out.
 type awsIAMRole struct{}
 
 func init() {
@@ -142,11 +141,9 @@ func (h *awsIAMRole) List(ctx context.Context) ([]ResourceDescription, error) {
 	return out, nil
 }
 
-// roleStateJSON serialises a Role for read responses. The full
-// CloudFormation schema is emitted (with null / empty defaults for what
-// kumo doesn't model — managed policies, permissions boundary, inline
-// policies, tags) because terraform-provider-awscc treats every Computed
-// property as "must be known after apply".
+// roleStateJSON emits the full CloudFormation schema (null / empty
+// defaults for what kumo doesn't model) because terraform-provider-awscc
+// treats every Computed property as "must be known after apply".
 func roleStateJSON(r *iam.Role) ([]byte, error) {
 	var policy any
 	if r.AssumeRolePolicyDocument != "" {

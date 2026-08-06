@@ -7,13 +7,11 @@ import (
 	"time"
 )
 
-// resourceStartExecutionBase is the Task Resource for the "AWS Step
-// Functions integrates with its own API" service integration
-// (https://docs.aws.amazon.com/step-functions/latest/dg/connect-stepfunctions.html):
-// starting a nested execution of another (or the same) state machine.
+// resourceStartExecutionBase is the Task Resource for starting a nested
+// execution of another (or the same) state machine.
 // startExecutionSyncSuffix/startExecutionSyncV2Suffix are its "Run a Job"
-// (.sync) variants; unlike most other optimized integrations, startExecution
-// does NOT support .waitForTaskToken -- see classifyStartExecutionResource.
+// (.sync) variants; unlike most optimized integrations, startExecution does
+// NOT support .waitForTaskToken (see classifyStartExecutionResource).
 const (
 	resourceStartExecutionBase  = "arn:aws:states:::states:startExecution"
 	startExecutionSyncSuffix    = ".sync"
@@ -23,11 +21,9 @@ const (
 )
 
 // nestedExecutionMaxDepth caps how many states:startExecution calls may
-// nest before kumo reports a States.Runtime error. This guards against a
-// state machine starting itself (directly, or via a cycle of state
-// machines) and running forever; real AWS instead bounds this indirectly
-// via account-level running-execution quotas, which kumo does not model, so
-// this fixed depth cap is a documented emulator-only bound.
+// nest, guarding against a state machine recursively starting itself. Real
+// AWS bounds this indirectly via running-execution quotas kumo doesn't
+// model; this fixed depth is an emulator-only substitute.
 const nestedExecutionMaxDepth = 5
 
 // nestedExecutionPollInterval is how often a .sync/.sync:2 Task polls the
@@ -57,12 +53,8 @@ const (
 // classifyStartExecutionResource identifies which
 // arn:aws:states:::states:startExecution* variant resource selects. ok is
 // false for any other suffix (including .waitForTaskToken, which AWS does
-// not document as supported for this integration -- see
-// https://docs.aws.amazon.com/step-functions/latest/dg/connect-stepfunctions.html's
-// "Optimized integrations in Step Functions" table, which lists AWS Step
-// Functions as supporting only Request Response and Run a Job), so callers
-// reject it with a clear "unsupported task resource" error instead of
-// silently treating it as fire-and-forget.
+// not support for this integration), so callers reject it explicitly
+// instead of silently treating it as fire-and-forget.
 func classifyStartExecutionResource(resource string) (variant startExecutionVariant, ok bool) {
 	switch resource {
 	case resourceStartExecutionBase:
@@ -77,14 +69,11 @@ func classifyStartExecutionResource(resource string) (variant startExecutionVari
 }
 
 // nestedExecutionDepthKey is the context.Context key carrying the current
-// nesting depth through one execution's own synchronous call graph (see
-// withNestedExecutionDepth). It does not, and cannot, cross the boundary
-// into a child execution's own background goroutine -- MemoryStorage.
-// StartExecution intentionally ignores its caller's context, since an
-// execution must outlive the request that started it -- so the depth for a
-// child execution is instead passed explicitly to
-// MemoryStorage.startExecutionAtDepth/runExecution (see storage.go) and
-// re-installed into that child's own context there.
+// nesting depth through one execution's synchronous call graph. It cannot
+// cross into a child execution's background goroutine (StartExecution
+// intentionally ignores its caller's context, since an execution must
+// outlive the request that started it), so depth is instead passed
+// explicitly to MemoryStorage.startExecutionAtDepth/runExecution.
 type nestedExecutionDepthKey struct{}
 
 // withNestedExecutionDepth returns a context carrying depth as the current
@@ -103,36 +92,22 @@ func nestedExecutionDepthFromContext(ctx context.Context) int {
 
 // executionStarter is the subset of Storage the states:startExecution
 // integration needs. executionEngine calls back into the same MemoryStorage
-// that constructed it (see the storage field wiring in NewMemoryStorage,
-// storage.go) rather than looping an HTTP request back to kumo's own
-// server, the way the SQS/Lambda/S3 integrations address those (separate)
-// services: this integration recurses into kumo's own SFN engine, and the
-// recursion-depth guard above needs to travel with the Go call stack via
-// context.Context. A real HTTP round trip could still carry that via a
-// custom header, but real AWS's StartExecution API has no such field, and
-// kumo already has a direct reference to the very storage object that would
-// answer that HTTP call -- looping back out over HTTP to reach code in the
-// same process is unnecessary indirection with its own failure modes (e.g.
-// exhausting the shared http.Client's connections under deep nesting).
+// that constructed it, rather than looping an HTTP request the way
+// SQS/Lambda/S3 integrations do: this recurses into kumo's own SFN engine,
+// and the recursion-depth guard needs to travel via context.Context, which
+// an HTTP round trip would complicate for no benefit.
 type executionStarter interface {
 	// startNestedExecution is StartExecution's counterpart for a nested
-	// (states:startExecution-originated) call: depth is the nesting depth
-	// the new execution runs at, threaded explicitly since context values
-	// do not survive StartExecution's intentional context detachment (see
-	// nestedExecutionDepthKey).
+	// call: depth is threaded explicitly since context values do not
+	// survive StartExecution's intentional context detachment.
 	startNestedExecution(ctx context.Context, stateMachineArn, name, input string, depth int) (*Execution, error)
 	DescribeExecution(ctx context.Context, executionArn string) (*Execution, error)
 }
 
 // executeStartExecutionTask executes a Task state whose Resource is
-// arn:aws:states:::states:startExecution (optionally suffixed .sync or
-// .sync:2): it starts a child execution of Parameters.StateMachineArn with
-// Parameters.Input (default "{}") and Parameters.Name, then -- for the
-// .sync/.sync:2 variants -- waits for it to finish and reports a child
-// failure as this Task's own failure (wrapTaskResult then reports
-// States.TaskFailed, matching every other Task integration's failure
-// mapping; see AWS's own documented behavior for nested workflow
-// executions).
+// arn:aws:states:::states:startExecution (optionally .sync/.sync:2): starts
+// a child execution, then for .sync/.sync:2 waits for it and reports a
+// child failure as this Task's own States.TaskFailed.
 func (e *executionEngine) executeStartExecutionTask(ctx context.Context, resource string, params map[string]any) (string, error) {
 	variant, ok := classifyStartExecutionResource(resource)
 	if !ok {
@@ -202,9 +177,8 @@ func startExecutionSuffixFor(variant startExecutionVariant) string {
 }
 
 // awaitChildExecution polls DescribeExecution until executionArn leaves
-// RUNNING, or ctx is done (the Task's own TimeoutSeconds, Retry/Catch
-// context, or the outer execution's own deadline all apply here exactly as
-// they would to any other Task invocation).
+// RUNNING, or ctx is done -- the Task's TimeoutSeconds/Retry/Catch context
+// applies here like any other Task invocation.
 func (e *executionEngine) awaitChildExecution(ctx context.Context, executionArn string) (*Execution, error) {
 	ticker := time.NewTicker(nestedExecutionPollInterval)
 	defer ticker.Stop()
@@ -227,10 +201,9 @@ func (e *executionEngine) awaitChildExecution(ctx context.Context, executionArn 
 	}
 }
 
-// marshalStartExecutionInput builds a child execution's input JSON from a
-// startExecution Task's resolved Parameters.Input: absent input defaults to
-// "{}", matching AWS's own StartExecution requirement that input always be
-// at least an empty JSON object.
+// marshalStartExecutionInput builds a child execution's input JSON from
+// Parameters.Input; absent input defaults to "{}", matching AWS's
+// StartExecution requirement that input always be at least an empty object.
 func marshalStartExecutionInput(v any) (string, error) {
 	if v == nil {
 		return "{}", nil
@@ -246,8 +219,7 @@ func marshalStartExecutionInput(v any) (string, error) {
 
 // marshalStartExecutionAsyncOutput builds the plain (fire-and-forget)
 // startExecution Task's output: {executionArn, startDate}, matching AWS's
-// documented StartExecution API response shape exactly (see
-// https://docs.aws.amazon.com/step-functions/latest/apireference/API_StartExecution.html).
+// StartExecution API response shape.
 func marshalStartExecutionAsyncOutput(exec *Execution) (string, error) {
 	encoded, err := json.Marshal(map[string]any{
 		"executionArn": exec.ExecutionArn,
@@ -262,9 +234,8 @@ func marshalStartExecutionAsyncOutput(exec *Execution) (string, error) {
 
 // describeExecutionEnvelope builds the DescribeExecution-shaped fields
 // shared by both .sync and .sync:2 output (everything except "output",
-// which differs -- see marshalSyncExecutionOutput/marshalSyncV2ExecutionOutput),
-// using AWS's documented DescribeExecution response field names (see
-// https://docs.aws.amazon.com/step-functions/latest/apireference/API_DescribeExecution.html).
+// which differs between the two -- see marshalSyncExecutionOutput/
+// marshalSyncV2ExecutionOutput).
 func describeExecutionEnvelope(exec *Execution) map[string]any {
 	env := map[string]any{
 		"executionArn":    exec.ExecutionArn,
@@ -284,9 +255,7 @@ func describeExecutionEnvelope(exec *Execution) map[string]any {
 
 // marshalSyncExecutionOutput builds the .sync Task's output: the
 // DescribeExecution-style envelope with "output" left as a JSON string,
-// exactly as the child execution itself reports it -- see AWS's documented
-// "Nested state machines return the following" table at
-// https://docs.aws.amazon.com/step-functions/latest/dg/connect-stepfunctions.html.
+// exactly as the child execution itself reports it.
 func marshalSyncExecutionOutput(exec *Execution) (string, error) {
 	env := describeExecutionEnvelope(exec)
 	env["output"] = exec.Output

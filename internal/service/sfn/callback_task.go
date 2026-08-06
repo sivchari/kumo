@@ -12,11 +12,9 @@ import (
 // https://docs.aws.amazon.com/step-functions/latest/dg/connect-to-resource.html.
 const callbackResourceSuffix = ".waitForTaskToken"
 
-// callbackIntegrations are the optimized service integrations kumo supports
-// with .waitForTaskToken appended. AWS documents Lambda and SQS (among
-// others) as supporting the "Wait for a Callback with Task Token" pattern;
-// kumo implements the two integrations it already supports without the
-// suffix (see executeTaskState in executor.go).
+// callbackIntegrations are the optimized service integrations kumo
+// supports with .waitForTaskToken appended (AWS supports more; kumo only
+// implements the two integrations it already has without the suffix).
 var callbackIntegrations = map[string]bool{
 	"arn:aws:states:::lambda:invoke":   true,
 	"arn:aws:states:::sqs:sendMessage": true,
@@ -38,15 +36,10 @@ func isCallbackResource(resource string) (baseResource string, ok bool) {
 	return resource[:suffixStart], true
 }
 
-// executeCallbackTask executes a Task state whose Resource uses the "Wait
-// for a Callback with Task Token" pattern: it generates a task token,
-// injects it into the resolved Parameters via the Context object
-// ($$.Task.Token), fires the underlying integration once, and then blocks
-// until SendTaskSuccess/SendTaskFailure resolves the token or the wait
-// times out. TimeoutSeconds bounds the whole wait; HeartbeatSeconds, if
-// set, must see a SendTaskHeartbeat within every interval or the wait times
-// out early -- both report States.Timeout, per AWS's documentation for this
-// pattern.
+// executeCallbackTask executes a .waitForTaskToken Task state: injects a
+// task token into Parameters via $$.Task.Token, fires the integration
+// once, then blocks until SendTaskSuccess/SendTaskFailure or a
+// TimeoutSeconds/HeartbeatSeconds timeout (both report States.Timeout).
 func (e *executionEngine) executeCallbackTask(ctx context.Context, name string, state *stateDefinition, baseResource, input string) (string, error) {
 	if !callbackIntegrations[baseResource] {
 		return "", fmt.Errorf("unsupported %s resource %q", callbackResourceSuffix, baseResource)
@@ -70,21 +63,18 @@ func (e *executionEngine) executeCallbackTask(ctx context.Context, name string, 
 	return e.awaitTaskToken(ctx, name, token, state, pending)
 }
 
-// taskTokenContext builds the Context object subset ($$.Task.Token) a
-// callback/activity Task state's Parameters may reference via
-// resolveParametersWithContext. kumo does not model the rest of the
-// Context object ($$.Execution, $$.State, ...); see mapItemContext in
-// itemselector.go for the only other place the Context object is built.
+// taskTokenContext builds the $$.Task.Token Context object subset a
+// callback/activity Task state's Parameters may reference. kumo does not
+// model the rest of the Context object ($$.Execution, $$.State, ...).
 func taskTokenContext(token string) map[string]any {
 	return map[string]any{
 		"Task": map[string]any{"Token": token},
 	}
 }
 
-// fireCallbackIntegration performs the "fire" half of a callback task: the
-// underlying integration call itself, discarding its response, since a
-// callback task's real output comes from SendTaskSuccess, not the
-// integration's own response.
+// fireCallbackIntegration performs the "fire" half of a callback task,
+// discarding the integration's response since the real output comes from
+// SendTaskSuccess, not this call.
 func (e *executionEngine) fireCallbackIntegration(ctx context.Context, baseResource string, params map[string]any) error {
 	switch baseResource {
 	case "arn:aws:states:::sqs:sendMessage":
@@ -100,14 +90,10 @@ func (e *executionEngine) fireCallbackIntegration(ctx context.Context, baseResou
 	}
 }
 
-// awaitTaskToken blocks until token is resolved by SendTaskSuccess/
-// SendTaskFailure, a HeartbeatSeconds interval elapses with no
-// SendTaskHeartbeat, or ctx is done (TimeoutSeconds, or an outer
-// execution-level deadline). All three timeout paths report the same
-// taskTimeoutError (see timeout.go), which executionErrorCode surfaces as
-// States.Timeout; on any of them, token is released so a
-// SendTaskSuccess/Failure that arrives afterward correctly reports
-// TaskTimedOut instead of resolving a state that has already failed.
+// awaitTaskToken blocks until token is resolved, a HeartbeatSeconds
+// interval elapses with no heartbeat, or ctx is done. All timeout paths
+// release token, so a late SendTaskSuccess/Failure correctly reports
+// TaskTimedOut instead of resolving an already-failed state.
 func (e *executionEngine) awaitTaskToken(ctx context.Context, name, token string, state *stateDefinition, pending *pendingCallback) (string, error) {
 	heartbeat := heartbeatInterval(state)
 
@@ -152,9 +138,7 @@ func (e *executionEngine) timeoutOrLateResult(name, token string, pending *pendi
 }
 
 // heartbeatInterval resolves a Task state's HeartbeatSeconds, returning
-// zero if unset. HeartbeatSecondsPath is decoded (see stateDefinition in
-// retry.go) but not implemented -- it is a dynamic reference-path form AWS
-// documents far less prominently than the static field.
+// zero if unset. HeartbeatSecondsPath is decoded but not implemented.
 func heartbeatInterval(state *stateDefinition) time.Duration {
 	if state.HeartbeatSeconds == nil {
 		return 0

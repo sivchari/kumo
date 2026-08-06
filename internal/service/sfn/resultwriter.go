@@ -47,20 +47,11 @@ type resultWriterConfig struct {
 	Transformation string `json:"transformation"`
 }
 
-// writeMapResultToS3 uploads outputs -- the Map state's would-be plain-array
-// result, reshaped per WriterConfig.Transformation and serialized per
-// WriterConfig.OutputType -- as a single file to kumo's S3 under
-// Parameters.Prefix, and returns the Map state's output in AWS's documented
-// {MapRunArn, ResultWriterDetails: {Bucket, Key}} shape (see
-// https://docs.aws.amazon.com/step-functions/latest/dg/input-output-resultwriter.html#export-s3).
-// mapRunArn is "" when the Map Run could not be recorded (see
-// startMapRunIfDistributed in maprun.go), in which case the field is
-// omitted entirely rather than sent empty.
-//
-// This is a deliberate emulator simplification of AWS's real behavior: AWS
-// partitions results into a manifest.json plus per-status
-// SUCCEEDED_n.json/FAILED_n.json files; kumo writes one combined result
-// file instead.
+// writeMapResultToS3 uploads outputs as a single combined file (a
+// deliberate emulator simplification of AWS's manifest.json + per-status
+// SUCCEEDED_n.json/FAILED_n.json layout), returning the documented
+// {MapRunArn, ResultWriterDetails: {Bucket, Key}} shape. mapRunArn is
+// omitted when "" (Map Run could not be recorded).
 func writeMapResultToS3(ctx context.Context, e *executionEngine, raw json.RawMessage, outputs []json.RawMessage, mapInput, mapRunArn string) (string, error) {
 	var def resultWriterDef
 	if err := json.Unmarshal(raw, &def); err != nil {
@@ -109,20 +100,12 @@ func writeMapResultToS3(ctx context.Context, e *executionEngine, raw json.RawMes
 	return marshalResultWriterOutput(bucket, key, mapRunArn)
 }
 
-// applyResultWriterTransformation reshapes outputs (one entry per processor
-// unit) per WriterConfig.Transformation:
-//
-//   - "" or COMPACT (kumo's default, matching AWS's own documented default
-//     "when ResultWriter is not specified"): outputs unchanged, each entry
-//     keeping whatever shape its own unit produced.
-//   - FLATTEN: any entry that is itself a JSON array has its elements
-//     spliced into the result in place of the array; other entries pass
-//     through unchanged.
-//   - NONE: rejected. AWS's NONE wraps each entry in a DescribeExecution-
-//     style envelope (ExecutionArn, Status, StartDate, ...) describing the
-//     real child *execution* that produced it; kumo runs every Map unit
-//     in-process rather than as one (see mapstate.go), so it has none of
-//     that data to report and would have to fabricate it.
+// applyResultWriterTransformation reshapes outputs per
+// WriterConfig.Transformation: "" or COMPACT (the default) passes outputs
+// through unchanged; FLATTEN splices any array-valued entry's elements into
+// the result. NONE is rejected -- it requires per-item child-execution
+// metadata (ExecutionArn, Status, ...) kumo doesn't track since Map units
+// run in-process rather than as real child executions.
 func applyResultWriterTransformation(outputs []json.RawMessage, transformation string) ([]json.RawMessage, error) {
 	switch strings.ToUpper(transformation) {
 	case "", resultWriterTransformationCompact:
@@ -139,11 +122,9 @@ func applyResultWriterTransformation(outputs []json.RawMessage, transformation s
 	}
 }
 
-// flattenResultWriterOutputs implements Transformation FLATTEN: an entry
-// that unmarshals as a JSON array contributes its own elements instead of
-// itself (dropping a JSON null this way too, matching a failed unit
-// contributing nothing to the flattened success list); every other entry
-// passes through unchanged.
+// flattenResultWriterOutputs splices array-valued entries' elements into the
+// result; other entries pass through unchanged. A JSON null entry is
+// dropped this way too, matching a failed unit contributing nothing.
 func flattenResultWriterOutputs(outputs []json.RawMessage) []json.RawMessage {
 	flattened := make([]json.RawMessage, 0, len(outputs))
 
@@ -196,10 +177,9 @@ func resultWriterKey(prefix string) string {
 	return strings.TrimSuffix(prefix, "/") + "/" + resultWriterFileName
 }
 
-// marshalResultWriterOutput builds the Map state's output when ResultWriter
-// exported to S3: {"MapRunArn": ..., "ResultWriterDetails": {"Bucket": ...,
-// "Key": ...}}. A plain map is used so the wire keys need not be exempted
-// from tagliatelle.
+// marshalResultWriterOutput builds the Map state's
+// {MapRunArn, ResultWriterDetails: {Bucket, Key}} output. Uses a plain map
+// so the wire keys need not be exempted from tagliatelle.
 func marshalResultWriterOutput(bucket, key, mapRunArn string) (string, error) {
 	result := map[string]any{
 		"ResultWriterDetails": map[string]any{

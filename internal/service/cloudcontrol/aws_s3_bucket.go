@@ -9,11 +9,9 @@ import (
 	"github.com/sivchari/kumo/internal/service/s3"
 )
 
-// awsS3Bucket adapts the AWS::S3::Bucket Cloud Control resource type to
-// kumo's existing S3 storage. The Properties payload is full-schema:
-// every CloudFormation-modelled property is emitted (with null / empty
-// defaults when kumo doesn't model it yet) so terraform-provider-awscc's
-// "unknown after apply" plan resolves cleanly.
+// awsS3Bucket adapts AWS::S3::Bucket to kumo's S3 storage. The Properties
+// payload is full-schema (null / empty defaults for what kumo doesn't
+// model) so terraform-provider-awscc's "unknown after apply" plan resolves.
 type awsS3Bucket struct{}
 
 func init() {
@@ -111,11 +109,10 @@ func (h *awsS3Bucket) List(ctx context.Context) ([]ResourceDescription, error) {
 	return out, nil
 }
 
-// s3BucketStateJSON emits the full AWS::S3::Bucket CloudFormation schema
-// for the named bucket. Sub-resources kumo doesn't model (encryption,
-// lifecycle, replication, …) come back as JSON null so the awscc
-// provider's "(known after apply)" plan resolves without a placeholder
-// being left behind.
+// s3BucketStateJSON emits the full AWS::S3::Bucket CloudFormation schema.
+// Sub-resources kumo doesn't model (encryption, lifecycle, replication, …)
+// come back as JSON null so the awscc provider's "(known after apply)"
+// plan resolves.
 func s3BucketStateJSON(name string) []byte {
 	state := map[string]any{
 		"BucketName":                       name,

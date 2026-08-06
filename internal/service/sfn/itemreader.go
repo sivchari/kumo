@@ -34,10 +34,8 @@ const (
 )
 
 // itemReaderTransformationLoadAndFlatten is ReaderConfig.Transformation's
-// only non-default value, meaningful only for s3:listObjectsV2: it reads
-// and parses the actual object contents (per InputType) referenced by each
-// listing entry, instead of returning the S3 object metadata itself. kumo
-// does not implement it -- see readItemsFromS3ListObjectsV2 -- since it is
+// only non-default value (s3:listObjectsV2 only): reads and parses each
+// listed object's contents instead of returning metadata. Not implemented --
 // effectively a second, nested ItemReader pass per listed object.
 const itemReaderTransformationLoadAndFlatten = "LOAD_AND_FLATTEN"
 
@@ -50,9 +48,8 @@ type itemReaderDef struct {
 }
 
 // itemReaderConfig is ItemReader.ReaderConfig. ItemsPointer and
-// CSVDelimiter are not implemented. MaxItemsPath is resolved against the
-// Map state's input in readItemsFromS3, preferring it over the static
-// MaxItems when both are set.
+// CSVDelimiter are not implemented. MaxItemsPath takes precedence over
+// the static MaxItems when both are set.
 type itemReaderConfig struct {
 	InputType         string   `json:"inputType"`
 	CSVHeaderLocation string   `json:"csvHeaderLocation"`
@@ -121,9 +118,8 @@ func readItemsFromS3GetObject(ctx context.Context, e *executionEngine, params ma
 }
 
 // readItemsFromS3ListObjectsV2 implements the s3:listObjectsV2 ItemReader
-// Resource: items are the object summaries AWS's own ListObjectsV2 API
-// action returns (Etag, Key, LastModified, Size, StorageClass -- see
-// marshalS3ObjectSummaries), not the objects' own contents.
+// Resource: items are object summaries (Etag, Key, LastModified, Size,
+// StorageClass), not the objects' own contents.
 func readItemsFromS3ListObjectsV2(ctx context.Context, e *executionEngine, params map[string]any, cfg *itemReaderConfig) ([]json.RawMessage, error) {
 	if strings.EqualFold(cfg.Transformation, itemReaderTransformationLoadAndFlatten) {
 		return nil, fmt.Errorf(
@@ -181,12 +177,9 @@ func (e *executionEngine) getS3Object(ctx context.Context, bucket, key string) (
 // XML format (see timeFormatISO in internal/service/s3/handlers.go).
 const s3ListObjectsV2TimeFormat = "2006-01-02T15:04:05.000Z"
 
-// s3ListBucketResult mirrors just the fields of kumo's own S3
-// ListObjectsV2 XML response (see ListBucketResult in
-// internal/service/s3/types.go) that the ItemReader s3:listObjectsV2
-// integration needs. It is redefined here rather than imported since kumo
-// services only ever talk to each other over HTTP (see
-// getS3Object/putS3Object), never via direct package imports.
+// s3ListBucketResult mirrors the fields of kumo's own S3 ListObjectsV2 XML
+// response this integration needs. Redefined here (not imported) since kumo
+// services only talk to each other over HTTP, never via package imports.
 type s3ListBucketResult struct {
 	XMLName               xml.Name          `xml:"ListBucketResult"`
 	IsTruncated           bool              `xml:"IsTruncated"`
@@ -273,8 +266,7 @@ func (e *executionEngine) getS3ListObjectsV2Page(ctx context.Context, bucket, pr
 
 // marshalS3ObjectSummaries converts S3 object metadata into the item shape
 // AWS documents for s3:listObjectsV2 (without LOAD_AND_FLATTEN): Etag, Key,
-// LastModified (Unix seconds), Size, StorageClass -- see
-// https://docs.aws.amazon.com/step-functions/latest/dg/input-output-itemreader.html.
+// LastModified (Unix seconds), Size, StorageClass.
 func marshalS3ObjectSummaries(objects []s3ObjectSummary) ([]json.RawMessage, error) {
 	items := make([]json.RawMessage, len(objects))
 

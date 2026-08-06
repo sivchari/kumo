@@ -15,27 +15,18 @@ type activityTask struct {
 }
 
 // activityQueueWaiter is a single GetActivityTask long poll blocked waiting
-// for a task. claimed and ch are both guarded by the owning activityQueue's
-// mutex, so enqueue and poll never race over which of them delivers (or
-// fails to deliver) a given task; see activityQueue's own doc comment.
+// for a task. claimed and ch are guarded by activityQueue's mutex so
+// enqueue and poll never race over delivery.
 type activityQueueWaiter struct {
 	ch      chan *activityTask
 	claimed bool
 }
 
-// activityQueue implements one activity's task hand-off: a Task state
-// enqueues a scheduled task, and GetActivityTask pollers dequeue one --
-// each task delivered to exactly one poller, per AWS's GetActivityTask
-// documentation. When a poller is already waiting, enqueue hands the task
-// to it directly; otherwise the task sits in pending until a poller
-// arrives.
-//
-// A poller that times out or whose context is done must still check
-// whether it was claimed after all: enqueue may have already committed to
-// delivering it a task (under waiters's lock) in the same instant the
-// poller decided to give up. Coordinating this through the same mutex
-// enqueue uses to pick a waiter is what makes delivery exactly-once even
-// under that race, without ever silently dropping a scheduled task.
+// activityQueue hands off one activity's scheduled tasks to GetActivityTask
+// pollers, each task delivered to exactly one poller (per AWS's
+// GetActivityTask docs). A poller that gives up on timeout must recheck
+// under the same mutex whether enqueue already claimed it in that instant,
+// so delivery stays exactly-once without ever dropping a task.
 type activityQueue struct {
 	mu      sync.Mutex
 	pending []*activityTask
@@ -101,11 +92,9 @@ func (q *activityQueue) poll(ctx context.Context, timeout time.Duration) *activi
 	return q.giveUpOrClaimed(w)
 }
 
-// giveUpOrClaimed resolves the race between a poller's own timeout/context
-// cancellation and enqueue claiming the same waiter: if enqueue had already
-// claimed w by the time this runs (under the same lock enqueue used), w.ch
-// is guaranteed to have a task ready to read; otherwise w is removed from
-// the queue so no later enqueue can claim it.
+// giveUpOrClaimed resolves the race between a poller giving up and enqueue
+// claiming the same waiter: if already claimed, w.ch is guaranteed to have
+// a task ready; otherwise w is removed so no later enqueue can claim it.
 func (q *activityQueue) giveUpOrClaimed(w *activityQueueWaiter) *activityTask {
 	q.mu.Lock()
 

@@ -7,17 +7,13 @@ import (
 	"time"
 )
 
-// executeWaitState executes a Wait state by sleeping for the duration
-// determined by Seconds, SecondsPath, Timestamp, or TimestampPath, resolved
-// against the effective input (InputPath applied to the raw input). Wait
-// has no Parameters/Result/ResultPath: its output is always its (possibly
-// filtered) input, narrowed once more by OutputPath.
+// executeWaitState sleeps for the duration from Seconds/SecondsPath/
+// Timestamp/TimestampPath. Wait has no Parameters/Result/ResultPath: its
+// output is always its (possibly filtered) input via OutputPath.
 //
-// The wait is not artificially capped: kumo sleeps for the full requested
-// duration but honors ctx cancellation, and every execution already runs
-// under the timeout context applied in MemoryStorage.runExecution
-// (min(definition TimeoutSeconds, executionTimeoutCap)), which bounds how
-// long any single Wait can actually block.
+// The wait itself is not capped, but honors ctx cancellation and runs under
+// the outer execution timeout (MemoryStorage.runExecution), which bounds
+// how long it can actually block.
 func (e *executionEngine) executeWaitState(ctx context.Context, state *stateDefinition, input string) (string, error) {
 	effectiveInput, err := applyInputPath(state.InputPath, input)
 	if err != nil {
@@ -145,14 +141,10 @@ func resolvePath(path, input string) (any, error) {
 	return value, nil
 }
 
-// resolveOptionalIntPath resolves the dynamic "*Path" variant of an
-// otherwise-static optional integer field, preferring path over static when
-// both are set -- the same precedence taskTimeout gives
-// TimeoutSecondsPath/TimeoutSeconds. It returns static unchanged (possibly
-// nil) when path is empty. Shared by the several Map/ItemReader/ItemBatcher
-// fields with this exact shape: ReaderConfig.MaxItems(Path),
-// ItemBatcher.MaxItemsPerBatch(Path)/MaxInputBytesPerBatch(Path), and
-// ToleratedFailureCount(Path).
+// resolveOptionalIntPath resolves a static-or-"*Path" optional int field,
+// preferring path over static when both are set (same precedence as
+// taskTimeout's TimeoutSecondsPath/TimeoutSeconds). Returns static
+// unchanged when path is empty.
 func resolveOptionalIntPath(static *int, path, input string) (*int, error) {
 	if path == "" {
 		return static, nil

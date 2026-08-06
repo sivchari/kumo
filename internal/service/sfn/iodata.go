@@ -8,33 +8,18 @@ import (
 
 // This file implements the Amazon States Language's standard data-flow
 // field pipeline (InputPath, Parameters, ResultSelector, ResultPath,
-// OutputPath), shared by every state type per
-// https://states-language.net/spec.html#filters:
+// OutputPath), shared by every state type: raw input -> effective input
+// (via InputPath/Parameters) -> result (the state's own work) -> effective
+// result (via ResultSelector) -> effective output (result merged into
+// effective input per ResultPath, then narrowed by OutputPath).
 //
-//   - "raw input" is the JSON text a state receives.
-//   - "effective input" is the raw input after InputPath (and, on the state
-//     types that support it, Parameters).
-//   - "result" is whatever the state's own work produces (a Task response,
-//     a Parallel/Map branch-output array, a Pass state's Result-or-input).
-//   - "effective result" is the result after ResultSelector.
-//   - "effective output" is the effective result merged into the effective
-//     input per ResultPath, then narrowed by OutputPath.
-//
-// A state that fails to apply one of these fields (a ResultPath that
-// cannot address its base, an OutputPath that matches nothing, malformed
-// JSON) reports a plain error, which executionErrorCode surfaces as
-// States.Runtime: per AWS's own documentation, States.Runtime is "often
-// caused by errors at runtime, such as attempting to apply InputPath or
-// OutputPath on a null JSON payload," is not retriable, and is never
-// matched by Retry/Catch (including the States.ALL wildcard) -- see
-// errorNameMatches in retry.go.
+// A state that fails to apply one of these fields reports a plain error,
+// which executionErrorCode surfaces as States.Runtime: not retriable, and
+// never matched by Retry/Catch (including the States.ALL wildcard).
 
-// parsePathField interprets a JSONPath-valued field (InputPath, OutputPath,
-// ResultPath, or a Catcher's ResultPath) decoded as raw JSON so that an
-// explicit "null" -- which per the spec discards the raw input/result --
-// can be told apart from the field being absent from the definition, which
-// defaults to "$" (no filtering or replacement); both would otherwise
-// unmarshal to the same value through a plain *string.
+// parsePathField interprets a JSONPath-valued field decoded as raw JSON so
+// an explicit "null" (discards data) can be told apart from the field
+// being absent (defaults to "$"); both unmarshal identically via *string.
 func parsePathField(raw json.RawMessage) (path string, isNull bool, err error) {
 	if len(raw) == 0 {
 		return "$", false, nil
@@ -116,12 +101,10 @@ func applyPathField(raw json.RawMessage, data string) (string, error) {
 	return string(out), nil
 }
 
-// resolveEffectiveInput computes a state's effective input: InputPath
-// applied to the raw input, then -- on the state types where Parameters
-// means "the Payload Template that becomes the effective input" (Task,
-// Parallel, Pass; Map's "Parameters" is instead the deprecated alias for
-// ItemSelector, so callers for Map must not use this helper) -- Parameters
-// resolved against that filtered input.
+// resolveEffectiveInput computes a state's effective input: InputPath then
+// Parameters resolved against it. Only for Task/Parallel/Pass -- Map's
+// "Parameters" is the deprecated ItemSelector alias, so Map must not use
+// this helper.
 func resolveEffectiveInput(inputPath json.RawMessage, parameters map[string]any, rawInput string) (string, error) {
 	filtered, err := applyInputPath(inputPath, rawInput)
 	if err != nil {
@@ -145,11 +128,9 @@ func resolveEffectiveInput(inputPath json.RawMessage, parameters map[string]any,
 	return string(out), nil
 }
 
-// applyResultSelector transforms a state's result per ResultSelector, a
-// Payload Template resolved the same way as Parameters -- static values, or
-// "$."-prefixed JSONPath references, except resolved against the result
-// itself rather than the state's input. A nil ResultSelector leaves the
-// result unchanged, per its spec default of "no effect".
+// applyResultSelector transforms result per ResultSelector, resolved like
+// Parameters but against the result itself, not the state's input. A nil
+// ResultSelector leaves the result unchanged.
 func applyResultSelector(selector map[string]any, result string) (string, error) {
 	if selector == nil {
 		return result, nil
@@ -168,12 +149,10 @@ func applyResultSelector(selector map[string]any, result string) (string, error)
 	return string(out), nil
 }
 
-// applyResultPath merges a state's effective result into its effective
-// input per ResultPath (default "$", meaning the result replaces the input
-// entirely). An explicit null ResultPath discards the result, passing the
-// effective input through unchanged. Any other Reference Path injects the
-// result at that location, relative to the effective input, creating
-// intermediate objects as needed.
+// applyResultPath merges result into effectiveInput per ResultPath:
+// default "$" replaces input with result; null discards result; any other
+// Reference Path injects result at that location, creating intermediate
+// objects as needed.
 func applyResultPath(raw json.RawMessage, effectiveInput, result string) (string, error) {
 	path, isNull, err := parsePathField(raw)
 	if err != nil {
@@ -196,11 +175,9 @@ func applyResultPath(raw json.RawMessage, effectiveInput, result string) (string
 	return out, nil
 }
 
-// injectResultPath injects a JSON-encoded result into base at an
-// arbitrary-depth "$.a.b.c" Reference Path, creating intermediate objects
-// as needed and overwriting whatever was already at that location -- see
-// the spec's "Input and Output Processing" section's worked example of
-// "$.master.result.sum" building a chain of new fields.
+// injectResultPath injects result into base at an arbitrary-depth
+// "$.a.b.c" Reference Path, creating intermediate objects as needed and
+// overwriting whatever was already there.
 func injectResultPath(path, base, result string) (string, error) {
 	field, ok := strings.CutPrefix(path, "$.")
 	if !ok || field == "" {

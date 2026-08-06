@@ -6,58 +6,44 @@ import (
 	"github.com/google/uuid"
 )
 
-// Task token error codes, matching AWS's documented SendTaskSuccess/
-// SendTaskFailure/SendTaskHeartbeat errors: TaskDoesNotExist ("the activity
-// does not exist") is a token kumo has never seen; TaskTimedOut ("the task
-// token has either expired or the task associated with the token has
-// already been closed") is a token that was valid but has since resolved
-// (success, failure, or its own timeout) or already been reported on.
+// Task token error codes: TaskDoesNotExist is a token kumo has never seen;
+// TaskTimedOut is one that was valid but has since resolved or already
+// been reported on.
 const (
 	tokenErrDoesNotExist = "TaskDoesNotExist"
 	tokenErrTimedOut     = "TaskTimedOut"
 )
 
-// callbackResult carries the outcome delivered by SendTaskSuccess or
-// SendTaskFailure for a single waiting task token. err is nil for a
-// success; for a failure it is a failStateError carrying the reported
-// Error/Cause, so it flows through Retry/Catch exactly like any other named
-// error.
+// callbackResult carries the outcome of SendTaskSuccess/SendTaskFailure
+// for a waiting task token. err is nil on success; on failure it is a
+// failStateError so it flows through Retry/Catch like any named error.
 type callbackResult struct {
 	output string
 	err    error
 }
 
 // pendingCallback is a single task token's wait state, shared between the
-// executor goroutine blocked on it (see awaitTaskToken in callback_task.go
-// and executeActivityTask in activity_task.go) and the SendTaskSuccess/
-// SendTaskFailure/SendTaskHeartbeat handlers that resolve it. done and
-// heartbeat are both buffered so a resolving call never blocks on a waiter
-// that has already stopped listening (e.g. TimeoutSeconds expired first).
+// blocked executor goroutine and the SendTaskSuccess/Failure/Heartbeat
+// handlers that resolve it. done and heartbeat are buffered so a resolving
+// call never blocks on a waiter that already stopped listening.
 type pendingCallback struct {
 	done      chan callbackResult
 	heartbeat chan struct{}
 }
 
-// tokenRegistry tracks every task token currently awaited by a callback
-// Task state (.waitForTaskToken) or an activity Task state, and the
-// executor goroutines waiting on them. It is entirely in-memory: waiting
-// tokens do not need to survive a kumo restart, since the execution
-// goroutine SendTaskSuccess/Failure ultimately resumes does not survive one
+// tokenRegistry tracks every task token currently awaited by a callback or
+// activity Task state. It is in-memory only: waiting tokens need not
+// survive a restart since the execution goroutine they resume doesn't
 // either.
 //
-// The registry's own mutex is intentionally separate from
-// MemoryStorage.mu: an executor goroutine blocks on pendingCallback.done
-// without holding any lock (see awaitTaskToken), and every registry method
-// below only ever holds this mutex for the duration of a single map
-// operation, so SendTaskSuccess/Failure/Heartbeat requests are never
-// blocked behind a long-running execution.
+// Its mutex is intentionally separate from MemoryStorage.mu and is only
+// ever held for a single map operation, so SendTaskSuccess/Failure/
+// Heartbeat requests are never blocked behind a long-running execution.
 type tokenRegistry struct {
 	mu     sync.Mutex
 	active map[string]*pendingCallback
 	// closed records every token that has ever left active, so a late
-	// SendTaskSuccess/Failure/Heartbeat for it reports TaskTimedOut instead
-	// of TaskDoesNotExist, which AWS reserves for a token that never
-	// existed.
+	// request for it reports TaskTimedOut instead of TaskDoesNotExist.
 	closed map[string]bool
 }
 
@@ -86,11 +72,9 @@ func (r *tokenRegistry) register() (string, *pendingCallback) {
 	return token, pending
 }
 
-// release removes token from the active set without resolving it, moving it
-// to closed. Callers use this when they abandon a token before any
-// SendTaskSuccess/Failure resolves it (a callback integration call that
-// itself failed, or the wait timing out), so a late SendTaskSuccess/Failure
-// for that token correctly reports TaskTimedOut rather than succeeding.
+// release moves token from active to closed without resolving it, for
+// when a token is abandoned before SendTaskSuccess/Failure (integration
+// call failed, or the wait timed out) so a late call reports TaskTimedOut.
 func (r *tokenRegistry) release(token string) {
 	r.mu.Lock()
 	delete(r.active, token)

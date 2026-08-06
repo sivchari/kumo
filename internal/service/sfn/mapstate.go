@@ -22,13 +22,9 @@ const (
 )
 
 // executeMapStateWithPolicy executes a Map state's full standard field
-// pipeline: InputPath builds the effective input that ItemsPath resolves
-// the Items Array against (Map's own "Parameters" field, when present, is
-// the deprecated alias for ItemSelector rather than the standard
-// effective-input Payload Template, so it is deliberately not folded in
-// here -- see resolveEffectiveInput), Retry and Catch govern item
-// processing as a whole, and on success ResultSelector/ResultPath/
-// OutputPath shape the effective output.
+// pipeline. Map's "Parameters" field is the deprecated alias for
+// ItemSelector, not the standard effective-input Payload Template, so it
+// is deliberately not folded into InputPath here (see resolveEffectiveInput).
 func (e *executionEngine) executeMapStateWithPolicy(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	effectiveInput, err := applyInputPath(state.InputPath, input)
 	if err != nil {
@@ -40,16 +36,11 @@ func (e *executionEngine) executeMapStateWithPolicy(ctx context.Context, name st
 	})
 }
 
-// executeMapState resolves a Map state's item list (from ItemsPath or, in
-// Distributed mode, ItemReader), applies ItemSelector, groups items into
-// processor units (individually, or via ItemBatcher), and runs every unit
-// through the state's ItemProcessor (or its legacy alias, Iterator),
-// bounding concurrency at MaxConcurrency when it is positive.
-//
-// Both Inline and Distributed mode run each unit in-process in kumo, rather
-// than as a real child *execution* (see maprun.go's mapRunCountsFromResults
-// doc for the consequences of that simplification); a Distributed-mode run
-// is still recorded as a queryable Map Run (see runMapProcessorUnits).
+// executeMapState resolves a Map state's item list, applies ItemSelector,
+// groups items into processor units, and runs every unit through
+// ItemProcessor (or its legacy alias Iterator). Both Inline and Distributed
+// mode run each unit in-process rather than as a real child execution; a
+// Distributed-mode run is still recorded as a queryable Map Run.
 func (e *executionEngine) executeMapState(ctx context.Context, name string, state *stateDefinition, input string) (string, error) {
 	processor, err := itemProcessorDefinition(state)
 	if err != nil {
@@ -79,12 +70,9 @@ func (e *executionEngine) executeMapState(ctx context.Context, name string, stat
 }
 
 // runMapProcessorUnits runs every processor unit and shapes the Map
-// state's output: the ExceedToleratedFailureThreshold check, the plain
-// item-output array, or -- when ResultWriter is set -- the
-// ResultWriterDetails{Bucket, Key} shape (see resultwriter.go). For a
-// Distributed-mode processor it also records the run as a Map Run (see
-// maprun.go), whose ARN (when recorded) is included in the ResultWriter
-// output.
+// state's output: item-output array, or -- when ResultWriter is set --
+// ResultWriterDetails{Bucket, Key}. Also records a Map Run for a
+// Distributed-mode processor, whose ARN is included in ResultWriter output.
 func (e *executionEngine) runMapProcessorUnits(ctx context.Context, name string, state *stateDefinition, processor *stateMachineDefinition, units []mapUnit, totalItems int, input string) (string, error) {
 	tolerance, err := resolveMapTolerance(state, input)
 	if err != nil {
@@ -142,9 +130,7 @@ func (e *executionEngine) runMapProcessorUnits(ctx context.Context, name string,
 }
 
 // resolveMaxConcurrency resolves a Map state's MaxConcurrency, preferring
-// MaxConcurrencyPath when set (the same precedence every other *Path field
-// in this package gives its static counterpart -- see taskTimeout in
-// timeout.go).
+// MaxConcurrencyPath over the static value when both are set.
 func resolveMaxConcurrency(state *stateDefinition, input string) (int, error) {
 	if state.MaxConcurrencyPath == "" {
 		return state.MaxConcurrency, nil
@@ -159,12 +145,10 @@ func resolveMaxConcurrency(state *stateDefinition, input string) (int, error) {
 }
 
 // collectMapResults turns per-unit results into the Map state's output
-// array and the total count of dataset items that failed. A failed unit
-// contributes a JSON null for every item it represented, rather than being
-// omitted, so the output array's length always matches the unit count --
-// an emulator simplification, since AWS does not document the exact
-// per-item output shape for a partially-failed Map Run that isn't exported
-// via ResultWriter.
+// array and the total count of failed dataset items. A failed unit
+// contributes a JSON null (not omitted), so the output array length always
+// matches the unit count -- an emulator simplification since AWS does not
+// document this shape for a partially-failed Map Run.
 func collectMapResults(units []mapUnit, results []mapUnitResult) (outputs []json.RawMessage, failedItems int) {
 	outputs = make([]json.RawMessage, len(results))
 
@@ -183,9 +167,8 @@ func collectMapResults(units []mapUnit, results []mapUnitResult) (outputs []json
 }
 
 // itemProcessorDefinition returns the Map state's sub-state-machine.
-// ItemProcessor is the current field name; Iterator is the legacy alias for
-// the same sub-state-machine. If both are present, ItemProcessor takes
-// precedence.
+// Iterator is the legacy alias for ItemProcessor; if both are present,
+// ItemProcessor takes precedence.
 func itemProcessorDefinition(state *stateDefinition) (*stateMachineDefinition, error) {
 	switch {
 	case state.ItemProcessor != nil:
@@ -206,12 +189,9 @@ func isDistributedMode(processor *stateMachineDefinition) bool {
 
 // requireDistributedModeForFields enforces AWS's rule that ItemReader,
 // ItemBatcher, ResultWriter, ToleratedFailurePercentage, and
-// ToleratedFailureCount are Distributed-mode-only Map state fields (see
-// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-inline.html,
-// whose field list omits all five, versus
-// https://docs.aws.amazon.com/step-functions/latest/dg/state-map-distributed.html,
-// which documents them). validateMapDistributedFields in validate.go
-// reports the same rule as a definition-time diagnostic.
+// ToleratedFailureCount are Distributed-mode-only Map state fields.
+// validateMapDistributedFields (validate.go) reports the same rule at
+// definition time.
 func requireDistributedModeForFields(state *stateDefinition, processor *stateMachineDefinition) error {
 	if isDistributedMode(processor) {
 		return nil
