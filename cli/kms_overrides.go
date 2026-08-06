@@ -12,70 +12,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newKMSCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "kms",
-		Short: "KMS commands",
-	}
-
-	cmd.AddCommand(
-		newKMSCreateKeyCmd(),
-		newKMSCreateAliasCmd(),
+// KMSOverrideCommands returns the KMS commands cli-gen cannot auto-generate:
+// Sign and Verify operate on raw message bytes and need bespoke
+// base64/raw-bytes handling that the generic field-kind rules don't cover
+// (see internal/cligen/overrides.go's skipAutoGeneration).
+func KMSOverrideCommands() []*cobra.Command {
+	return []*cobra.Command{
 		newKMSSignCmd(),
 		newKMSVerifyCmd(),
-		newKMSGetPublicKeyCmd(),
-	)
-
-	return cmd
-}
-
-func newKMSCreateKeyCmd() *cobra.Command {
-	var description, keyUsage, keySpec string
-
-	cmd := &cobra.Command{
-		Use:   "create-key",
-		Short: "Create a KMS key",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := newAWSConfig(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			client := kms.NewFromConfig(cfg, func(o *kms.Options) {
-				o.BaseEndpoint = aws.String(endpointURL)
-			})
-
-			input := &kms.CreateKeyInput{}
-			if description != "" {
-				input.Description = aws.String(description)
-			}
-
-			if keyUsage != "" {
-				input.KeyUsage = types.KeyUsageType(keyUsage)
-			}
-
-			if keySpec != "" {
-				input.KeySpec = types.KeySpec(keySpec)
-			}
-
-			out, err := client.CreateKey(cmd.Context(), input)
-			if err != nil {
-				return fmt.Errorf("create-key failed: %w", err)
-			}
-
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
-			}
-
-			return nil
-		},
 	}
-
-	cmd.Flags().StringVar(&description, "description", "", "Key description")
-	cmd.Flags().StringVar(&keyUsage, "key-usage", "", "Key usage (ENCRYPT_DECRYPT or SIGN_VERIFY)")
-	cmd.Flags().StringVar(&keySpec, "key-spec", "", "Key spec (e.g. SYMMETRIC_DEFAULT, RSA_2048, ECC_NIST_P256)")
-
-	return cmd
 }
 
 func newKMSSignCmd() *cobra.Command {
@@ -173,76 +118,6 @@ func newKMSVerifyCmd() *cobra.Command {
 	cmd.Flags().StringVar(&signature, "signature", "", "Base64-encoded signature")
 	cmd.Flags().StringVar(&messageType, "message-type", "", "Message type (RAW or DIGEST)")
 	cmd.Flags().StringVar(&signingAlgorithm, "signing-algorithm", "", "Signing algorithm (e.g. RSASSA_PKCS1_V1_5_SHA_256)")
-
-	return cmd
-}
-
-func newKMSGetPublicKeyCmd() *cobra.Command {
-	var keyID string
-
-	cmd := &cobra.Command{
-		Use:   "get-public-key",
-		Short: "Get the public key of an asymmetric KMS key",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := newAWSConfig(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			client := kms.NewFromConfig(cfg, func(o *kms.Options) {
-				o.BaseEndpoint = aws.String(endpointURL)
-			})
-
-			out, err := client.GetPublicKey(cmd.Context(), &kms.GetPublicKeyInput{
-				KeyId: aws.String(keyID),
-			})
-			if err != nil {
-				return fmt.Errorf("get-public-key failed: %w", err)
-			}
-
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
-			}
-
-			return nil
-		},
-	}
-
-	cmd.Flags().StringVar(&keyID, "key-id", "", "Key ID, ARN, or alias")
-
-	return cmd
-}
-
-func newKMSCreateAliasCmd() *cobra.Command {
-	var targetKeyID, aliasName string
-
-	cmd := &cobra.Command{
-		Use:   "create-alias",
-		Short: "Create a KMS alias",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := newAWSConfig(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			client := kms.NewFromConfig(cfg, func(o *kms.Options) {
-				o.BaseEndpoint = aws.String(endpointURL)
-			})
-
-			_, err = client.CreateAlias(cmd.Context(), &kms.CreateAliasInput{
-				TargetKeyId: aws.String(targetKeyID),
-				AliasName:   aws.String(aliasName),
-			})
-			if err != nil {
-				return fmt.Errorf("create-alias failed: %w", err)
-			}
-
-			return nil
-		},
-	}
-
-	cmd.Flags().StringVar(&targetKeyID, "target-key-id", "", "Target key ID")
-	cmd.Flags().StringVar(&aliasName, "alias-name", "", "Alias name")
 
 	return cmd
 }

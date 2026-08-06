@@ -27,21 +27,25 @@ func NewRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&region, "region", "ap-northeast-1", "AWS region")
 
 	cmd.AddCommand(
-		newACMCmd(),
 		newAmplifyCmd(),
 		newAPIGatewayCmd(),
 		newAPIGatewayV2Cmd(),
 		newAppMeshCmd(),
 		newAppSyncCmd(),
-		newAthenaCmd(),
 		newBackupCmd(),
 		newS3Cmd(),
 		newS3APICmd(),
+	)
+
+	// Services covered by cli-gen (see internal/cligen and `make cli-gen`).
+	cmd.AddCommand(
+		newACMCmd(),
+		newAthenaCmd(),
 		newDynamoDBCmd(),
-		newSQSCmd(),
+		newEventsCmd(),
 		newKMSCmd(),
 		newKinesisCmd(),
-		newEventsCmd(),
+		newSQSCmd(),
 	)
 
 	return cmd

@@ -45,6 +45,27 @@ var overrideServices = map[string]bool{
 	"kms":   true,
 }
 
+// suppressOutputPrint lists, per kumo service and SDK action name, actions
+// whose generated command must not print the response body even though the
+// Output type has content, to preserve existing hand-written CLI behavior
+// (e.g. dynamodb's hand-written update-time-to-live never printed output).
+var suppressOutputPrint = map[string][]string{
+	"dynamodb": {"UpdateTimeToLive"},
+}
+
+// isOutputPrintSuppressed reports whether the generated command for
+// serviceName's action must not print its response, regardless of what
+// hasOutputContent(action.OutputType) would otherwise decide.
+func isOutputPrintSuppressed(serviceName, action string) bool {
+	for _, a := range suppressOutputPrint[serviceName] {
+		if a == action {
+			return true
+		}
+	}
+
+	return false
+}
+
 // isSkippedAction reports whether action has been manually overridden for
 // serviceName and must not be auto-generated.
 func isSkippedAction(serviceName, action string) bool {
