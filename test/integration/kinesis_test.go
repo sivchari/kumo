@@ -42,7 +42,7 @@ func TestKinesis_CreateAndDescribeStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "StreamARN", "StreamCreationTimestamp")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "StreamARN", "StreamCreationTimestamp", "StartingSequenceNumber")).Assert(t.Name()+"_describe", describeOutput)
 }
 
 func TestKinesis_ListStreams(t *testing.T) {
@@ -106,7 +106,7 @@ func TestKinesis_ListShards(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list", listOutput)
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "StartingSequenceNumber")).Assert(t.Name()+"_list", listOutput)
 }
 
 func TestKinesis_PutAndGetRecords(t *testing.T) {

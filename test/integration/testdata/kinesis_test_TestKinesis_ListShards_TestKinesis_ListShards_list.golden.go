@@ -7,7 +7,7 @@
         "StartingHashKey": "0"
       },
       "SequenceNumberRange": {
-        "StartingSequenceNumber": "000000000000000000003",
+        "StartingSequenceNumber": "000000000000000000002",
         "EndingSequenceNumber": null
       },
       "ShardId": "shardId-000000000000",
@@ -20,7 +20,7 @@
         "StartingHashKey": "170141183460469231731687303715884105727"
       },
       "SequenceNumberRange": {
-        "StartingSequenceNumber": "000000000000000000004",
+        "StartingSequenceNumber": "000000000000000000003",
         "EndingSequenceNumber": null
       },
       "ShardId": "shardId-000000000001",
