@@ -4,11 +4,13 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/smithy-go"
 	"github.com/sivchari/golden"
 )
 
@@ -853,5 +855,167 @@ func TestIAM_InstanceProfileLifecycle(t *testing.T) {
 	}
 	if got := len(getAfter.InstanceProfile.Roles); got != 0 {
 		t.Errorf("after RemoveRole, profile.Roles = %d entries, want 0", got)
+	}
+}
+
+func TestIAM_UpdateRole(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+	roleName := "test-update-role"
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+		Description:              aws.String("before"),
+		MaxSessionDuration:       aws.Int32(3600),
+	}); err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteRole(context.Background(), &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+	})
+
+	if _, err := client.UpdateRole(ctx, &iam.UpdateRoleInput{
+		RoleName:           aws.String(roleName),
+		Description:        aws.String("after"),
+		MaxSessionDuration: aws.Int32(7200),
+	}); err != nil {
+		t.Fatalf("UpdateRole: %v", err)
+	}
+
+	getResult, err := client.GetRole(ctx, &iam.GetRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "RoleId", "Arn", "CreateDate")).Assert(t.Name()+"_get_after_update", getResult)
+
+	// MaxSessionDuration-only update must leave Description untouched.
+	if _, err := client.UpdateRole(ctx, &iam.UpdateRoleInput{
+		RoleName:           aws.String(roleName),
+		MaxSessionDuration: aws.Int32(10800),
+	}); err != nil {
+		t.Fatalf("UpdateRole (partial): %v", err)
+	}
+
+	getPartial, err := client.GetRole(ctx, &iam.GetRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "RoleId", "Arn", "CreateDate")).Assert(t.Name()+"_get_after_partial_update", getPartial)
+}
+
+func TestIAM_UpdateAssumeRolePolicy(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+	roleName := "test-update-trust-policy-role"
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName: aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(
+			`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}`),
+	}); err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteRole(context.Background(), &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+	})
+
+	if _, err := client.UpdateAssumeRolePolicy(ctx, &iam.UpdateAssumeRolePolicyInput{
+		RoleName: aws.String(roleName),
+		PolicyDocument: aws.String(
+			`{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}`),
+	}); err != nil {
+		t.Fatalf("UpdateAssumeRolePolicy: %v", err)
+	}
+
+	getResult, err := client.GetRole(ctx, &iam.GetRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "RoleId", "Arn", "CreateDate")).Assert(t.Name()+"_get", getResult)
+}
+
+func TestIAM_TagRoleUpsert(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+	roleName := "test-tag-role-upsert"
+
+	if _, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+		Tags: []types.Tag{
+			{Key: aws.String("Name"), Value: aws.String("first")},
+			{Key: aws.String("Owner"), Value: aws.String("team-a")},
+		},
+	}); err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteRole(context.Background(), &iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+	})
+
+	// TagRole must upsert by key: "Name" is overwritten, "Owner" is
+	// preserved, "alchemy_stage" is appended.
+	if _, err := client.TagRole(ctx, &iam.TagRoleInput{
+		RoleName: aws.String(roleName),
+		Tags: []types.Tag{
+			{Key: aws.String("Name"), Value: aws.String("second")},
+			{Key: aws.String("alchemy_stage"), Value: aws.String("dev")},
+		},
+	}); err != nil {
+		t.Fatalf("TagRole: %v", err)
+	}
+
+	getResult, err := client.GetRole(ctx, &iam.GetRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata", "RoleId", "Arn", "CreateDate")).Assert(t.Name()+"_get", getResult)
+}
+
+func TestIAM_UpdateRoleNotFound(t *testing.T) {
+	client := newIAMClient(t)
+	ctx := t.Context()
+
+	_, err := client.UpdateRole(ctx, &iam.UpdateRoleInput{
+		RoleName:    aws.String("no-such-role"),
+		Description: aws.String("x"),
+	})
+	if err == nil {
+		t.Fatal("expected error from UpdateRole on missing role")
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "NoSuchEntity" {
+		t.Fatalf("expected NoSuchEntity, got: %T: %v", err, err)
+	}
+
+	_, err = client.UpdateAssumeRolePolicy(ctx, &iam.UpdateAssumeRolePolicyInput{
+		RoleName:       aws.String("no-such-role"),
+		PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[]}`),
+	})
+	if err == nil {
+		t.Fatal("expected error from UpdateAssumeRolePolicy on missing role")
+	}
+
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "NoSuchEntity" {
+		t.Fatalf("expected NoSuchEntity, got: %T: %v", err, err)
 	}
 }
