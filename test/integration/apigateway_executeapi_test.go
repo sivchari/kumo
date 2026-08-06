@@ -174,6 +174,29 @@ func callStage(t *testing.T, method, apiID, stage, path string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
+// callDefaultStage invokes a deployed $default stage via the virtual-hosted
+// execute-api endpoint. Unlike a named stage (see callStage), $default does
+// not contribute a path segment to the invoke URL.
+func callDefaultStage(t *testing.T, method, apiID, path string) (int, string) {
+	t.Helper()
+
+	url := kumoEndpoint + path
+
+	req, _ := http.NewRequestWithContext(t.Context(), method, url, nil)
+	req.Host = apiID + ".execute-api.localhost"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("call default stage: %v", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	return resp.StatusCode, string(body)
+}
+
 // TestExecuteAPI_LambdaProxy proves a Lambda function created in kumo is
 // actually invoked through the deployed stage URL and its proxy response is
 // returned to the caller.
