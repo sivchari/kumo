@@ -122,11 +122,16 @@ func renderService(name string, actions []Action) (string, []Diagnostic, error) 
 		return "", diagnostics, nil
 	}
 
+	use := binding.CommandUse
+	if use == "" {
+		use = name
+	}
+
 	view := serviceView{
 		KumoName:     name,
 		SDKIdent:     path.Base(binding.ImportPath),
 		CLIName:      binding.CLIName,
-		Use:          name,
+		Use:          use,
 		Short:        binding.CLIName + " commands",
 		SDKImport:    binding.ImportPath,
 		HasOverrides: overrideServices[name],

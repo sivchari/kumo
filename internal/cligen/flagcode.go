@@ -7,12 +7,16 @@ import (
 )
 
 // reservedLocalNames are identifiers already used inside a generated leaf
-// command's RunE closure (see templates/service.go.tmpl); a flag variable
-// name colliding with one of these is renamed by appending "Value".
+// command's RunE closure (see templates/service.go.tmpl), plus predeclared
+// Go identifiers that a field name could collide with (e.g. sfn's
+// SendTaskFailure.Error field would otherwise lower-case to "error",
+// shadowing the builtin error type that RunE's own signature needs). A flag
+// variable name colliding with one of these is renamed by appending "Value".
 var reservedLocalNames = map[string]bool{
 	"cmd": true, "err": true, "cfg": true, "client": true,
 	"input": true, "out": true, "ctx": true, "decoded": true,
 	"parsed": true, "val": true, "raw": true,
+	"error": true,
 }
 
 // buildFlagView computes the Go source snippets (variable declaration, flag

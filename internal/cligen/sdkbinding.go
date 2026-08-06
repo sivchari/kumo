@@ -11,11 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/appsync"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/backup"
+	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -32,6 +36,11 @@ type sdkBinding struct {
 	ClientType reflect.Type
 	ImportPath string
 	CLIName    string
+	// CommandUse overrides the cobra Use for the service command when the
+	// AWS CLI's command name differs from Service.Name() (e.g. the Step
+	// Functions service is named "states" but the AWS CLI command is
+	// "stepfunctions"). Empty means use Service.Name().
+	CommandUse string
 }
 
 // sdkBindings is the static "serviceName -> aws-sdk-go-v2 client" map seeding
@@ -132,5 +141,33 @@ var sdkBindings = map[string]sdkBinding{
 		ClientType: reflect.TypeOf(sts.Client{}),
 		ImportPath: "github.com/aws/aws-sdk-go-v2/service/sts",
 		CLIName:    "STS",
+	},
+	// The kumo service package is internal/service/cloudwatchlogs, but its
+	// Service.Name() returns "logs" (matching the AWS CLI's own `aws logs`
+	// command name) - keyed by service.Service.Name(), not package name.
+	"logs": {
+		ClientType: reflect.TypeOf(cloudwatchlogs.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs",
+		CLIName:    "Logs",
+	},
+	// The kumo service package is internal/service/sfn, but its
+	// Service.Name() returns "states" (matching the AWS CLI's own
+	// `aws stepfunctions` service identifier, which uses "states" as the
+	// API/X-Amz-Target namespace) - keyed by service.Service.Name().
+	"states": {
+		ClientType: reflect.TypeOf(sfn.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/sfn",
+		CLIName:    "SFN",
+		CommandUse: "stepfunctions",
+	},
+	"iam": {
+		ClientType: reflect.TypeOf(iam.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/iam",
+		CLIName:    "IAM",
+	},
+	"cloudformation": {
+		ClientType: reflect.TypeOf(cloudformation.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/cloudformation",
+		CLIName:    "CloudFormation",
 	},
 }
