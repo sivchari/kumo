@@ -270,7 +270,6 @@ func (s *MemoryStorage) CreateCostCategoryDefinition(_ context.Context, req *Cre
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate name
 	for _, cc := range s.CostCategories {
 		if cc.Name == req.Name {
 			return nil, &ServiceError{
@@ -498,7 +497,6 @@ func getMockTags(tagKey, searchString string) []string {
 	}
 
 	if tagKey != "" {
-		// Return tag values for specific key
 		tagValues := map[string][]string{
 			"Environment": {"production", "staging", "development"},
 			"Project":     {"project-a", "project-b", "project-c"},

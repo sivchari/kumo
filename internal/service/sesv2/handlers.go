@@ -505,7 +505,6 @@ func extractPathParam(path, prefix string) string {
 		return ""
 	}
 
-	// Remove any trailing path segments.
 	if idx := strings.Index(param, "/"); idx != -1 {
 		param = param[:idx]
 	}

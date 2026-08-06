@@ -275,7 +275,6 @@ func (m *MemoryStorage) ListApplications(_ context.Context, req *ListApplication
 	var summaries []*ApplicationSummary
 
 	for _, app := range m.Applications {
-		// Apply state filter.
 		if len(stateFilter) > 0 && !stateFilter[app.State] {
 			continue
 		}
@@ -326,7 +325,6 @@ func (m *MemoryStorage) UpdateApplication(_ context.Context, req *UpdateApplicat
 		}
 	}
 
-	// Update fields.
 	if req.Architecture != "" {
 		app.Architecture = req.Architecture
 	}
@@ -387,7 +385,6 @@ func (m *MemoryStorage) DeleteApplication(_ context.Context, applicationID strin
 		}
 	}
 
-	// Check for running job runs.
 	for _, jr := range m.JobRuns[applicationID] {
 		if jr.State == JobRunStateRunning || jr.State == JobRunStatePending || jr.State == JobRunStateScheduled {
 			return &Error{
@@ -397,7 +394,6 @@ func (m *MemoryStorage) DeleteApplication(_ context.Context, applicationID strin
 		}
 	}
 
-	// Mark as terminated and delete.
 	app.State = ApplicationStateTerminated
 	app.UpdatedAt = AWSTimestamp{Time: time.Now()}
 
@@ -597,12 +593,10 @@ func (m *MemoryStorage) ListJobRuns(_ context.Context, req *ListJobRunsInput) (*
 	var summaries []*JobRunSummary
 
 	for _, jr := range m.JobRuns[req.ApplicationID] {
-		// Apply state filter.
 		if len(stateFilter) > 0 && !stateFilter[jr.State] {
 			continue
 		}
 
-		// Apply mode filter.
 		if req.Mode != "" && jr.Mode != req.Mode {
 			continue
 		}

@@ -296,7 +296,6 @@ func (s *MemoryStorage) CreateTable(_ context.Context, catalogID, databaseName s
 		}
 	}
 
-	// Check if database exists.
 	dbKey := databaseKey(catalogID, databaseName)
 	if _, exists := s.Databases[dbKey]; !exists {
 		return &Error{

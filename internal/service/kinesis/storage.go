@@ -325,7 +325,6 @@ func (s *MemoryStorage) DescribeStream(_ context.Context, streamName string, lim
 		return nil, nil, false, &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
 	}
 
-	// Collect and sort shards.
 	shards := make([]*Shard, 0, len(sd.Shards))
 	for _, shardData := range sd.Shards {
 		shards = append(shards, shardData.Shard)
@@ -335,7 +334,6 @@ func (s *MemoryStorage) DescribeStream(_ context.Context, streamName string, lim
 		return shards[i].ShardID < shards[j].ShardID
 	})
 
-	// Apply pagination.
 	startIndex := 0
 
 	if exclusiveStartShardID != "" {
@@ -373,7 +371,6 @@ func (s *MemoryStorage) ListStreams(_ context.Context, exclusiveStartStreamName 
 		limit = 100
 	}
 
-	// Collect and sort stream names.
 	names := make([]string, 0, len(s.Streams))
 	for name := range s.Streams {
 		names = append(names, name)
@@ -381,7 +378,6 @@ func (s *MemoryStorage) ListStreams(_ context.Context, exclusiveStartStreamName 
 
 	sort.Strings(names)
 
-	// Apply pagination.
 	startIndex := 0
 
 	if exclusiveStartStreamName != "" {
@@ -425,7 +421,6 @@ func (s *MemoryStorage) ListShards(_ context.Context, streamName, _ string, maxR
 		maxResults = 100
 	}
 
-	// Collect and sort shards.
 	shards := make([]*Shard, 0, len(sd.Shards))
 	for _, shardData := range sd.Shards {
 		shards = append(shards, shardData.Shard)
@@ -456,7 +451,6 @@ func (s *MemoryStorage) PutRecord(_ context.Context, streamName string, data []b
 		return "", "", &ServiceError{Code: errInvalidArgument, Message: "Invalid PartitionKey"}
 	}
 
-	// Determine shard based on hash key.
 	hashKey := explicitHashKey
 	if hashKey == "" {
 		hashKey = computeHashKey(partitionKey)
@@ -631,7 +625,6 @@ func (s *MemoryStorage) GetRecords(_ context.Context, shardIterator string, limi
 	records := make([]*Record, endPos-startPos)
 	copy(records, shardData.Records[startPos:endPos])
 
-	// Create next iterator.
 	delete(s.shardIterators, shardIterator)
 
 	nextIteratorID := fmt.Sprintf("%s:%s:%d:%d", iterData.streamName, iterData.shardID, endPos, time.Now().UnixNano())

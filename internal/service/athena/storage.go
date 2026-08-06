@@ -61,7 +61,6 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		QueryResults:    make(map[string]*ResultSet),
 	}
 
-	// Create the default "primary" workgroup.
 	s.WorkGroups["primary"] = &WorkGroup{
 		Name:         "primary",
 		State:        WorkGroupStateEnabled,
@@ -153,7 +152,6 @@ func (s *MemoryStorage) StartQueryExecution(_ context.Context, query, workGroup 
 		workGroup = "primary"
 	}
 
-	// Verify workgroup exists.
 	if _, ok := s.WorkGroups[workGroup]; !ok {
 		return nil, &ServiceError{
 			Code:    errInvalidRequestException,
@@ -279,7 +277,6 @@ func (s *MemoryStorage) GetQueryResults(_ context.Context, queryExecutionID, _ s
 
 	rs, ok := s.QueryResults[queryExecutionID]
 	if !ok {
-		// Return empty result set.
 		return &ResultSet{
 			Rows:              []Row{},
 			ResultSetMetadata: &ResultSetMetadata{ColumnInfo: []ColumnInfo{}},
@@ -361,7 +358,6 @@ func (s *MemoryStorage) DeleteWorkGroup(_ context.Context, name string, recursiv
 		}
 	}
 
-	// Check if there are any query executions in this workgroup.
 	if !recursiveDelete {
 		for _, qe := range s.QueryExecutions {
 			if qe.WorkGroup == name {
@@ -373,7 +369,6 @@ func (s *MemoryStorage) DeleteWorkGroup(_ context.Context, name string, recursiv
 		}
 	}
 
-	// Delete query executions if recursive delete.
 	if recursiveDelete {
 		for id, qe := range s.QueryExecutions {
 			if qe.WorkGroup == name {

@@ -242,12 +242,10 @@ func (s *MemoryStorage) ListGraphqlAPIs(_ context.Context, input *ListGraphqlAPI
 	allAPIs := make([]GraphqlAPI, 0, len(s.APIs))
 
 	for _, data := range s.APIs {
-		// Filter by API type if specified.
 		if input.APIType != "" && data.API.APIType != input.APIType {
 			continue
 		}
 
-		// Filter by owner if specified.
 		if input.Owner != "" && data.API.Owner != input.Owner {
 			continue
 		}
@@ -255,12 +253,10 @@ func (s *MemoryStorage) ListGraphqlAPIs(_ context.Context, input *ListGraphqlAPI
 		allAPIs = append(allAPIs, *data.API)
 	}
 
-	// Sort by API ID for consistent pagination.
 	sort.Slice(allAPIs, func(i, j int) bool {
 		return allAPIs[i].APIId < allAPIs[j].APIId
 	})
 
-	// Determine start index from nextToken.
 	startIndex := 0
 
 	if input.NextToken != "" {
@@ -272,13 +268,11 @@ func (s *MemoryStorage) ListGraphqlAPIs(_ context.Context, input *ListGraphqlAPI
 		}
 	}
 
-	// Determine max results.
 	maxResults := int(input.MaxResults)
 	if maxResults <= 0 {
 		maxResults = defaultMaxResults
 	}
 
-	// Apply pagination.
 	endIndex := startIndex + maxResults
 	if endIndex > len(allAPIs) {
 		endIndex = len(allAPIs)
@@ -286,7 +280,6 @@ func (s *MemoryStorage) ListGraphqlAPIs(_ context.Context, input *ListGraphqlAPI
 
 	result := allAPIs[startIndex:endIndex]
 
-	// Generate next token if there are more results.
 	var nextToken string
 	if endIndex < len(allAPIs) {
 		nextToken = base64.StdEncoding.EncodeToString([]byte(strconv.Itoa(endIndex)))

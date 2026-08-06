@@ -285,14 +285,12 @@ func (s *MemoryStorage) DeleteUserPool(_ context.Context, userPoolID string) err
 		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
 	}
 
-	// Delete associated clients.
 	for clientID, client := range s.UserPoolClients {
 		if client.UserPoolID == userPoolID {
 			delete(s.UserPoolClients, clientID)
 		}
 	}
 
-	// Delete associated users.
 	delete(s.Users, userPoolID)
 	delete(s.UserPools, userPoolID)
 
@@ -335,7 +333,6 @@ func (s *MemoryStorage) CreateUserPoolClient(_ context.Context, req *CreateUserP
 		client.ClientSecret = generateSecret()
 	}
 
-	// Set defaults.
 	if client.RefreshTokenValidity == 0 {
 		client.RefreshTokenValidity = 30
 	}
@@ -519,7 +516,6 @@ func (s *MemoryStorage) SignUp(_ context.Context, req *SignUpRequest) (*User, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Find user pool by client ID.
 	var userPoolID string
 
 	for _, client := range s.UserPoolClients {
@@ -559,7 +555,6 @@ func (s *MemoryStorage) SignUp(_ context.Context, req *SignUpRequest) (*User, er
 
 	s.Users[userPoolID][req.Username] = user
 
-	// Generate confirmation code (simulated).
 	s.ConfirmationCodes[req.Username] = "123456"
 
 	s.saveLocked()
@@ -572,7 +567,6 @@ func (s *MemoryStorage) ConfirmSignUp(_ context.Context, clientID, username, cod
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Find user pool by client ID.
 	var userPoolID string
 
 	for _, client := range s.UserPoolClients {
@@ -614,7 +608,6 @@ func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Find user pool by client ID.
 	var userPoolID string
 
 	for _, client := range s.UserPoolClients {
@@ -645,7 +638,6 @@ func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest
 		return nil, &ServiceError{Code: errNotAuthorized, Message: "User is not confirmed"}
 	}
 
-	// Generate tokens.
 	accessToken := generateToken()
 	idToken := generateToken()
 	refreshToken := generateToken()

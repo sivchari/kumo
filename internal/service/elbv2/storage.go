@@ -278,7 +278,6 @@ func (m *MemoryStorage) DeleteLoadBalancer(_ context.Context, loadBalancerArn st
 		}
 	}
 
-	// Delete associated listeners.
 	for arn, listener := range m.Listeners {
 		if listener.LoadBalancerArn == loadBalancerArn {
 			delete(m.Listeners, arn)
@@ -300,7 +299,6 @@ func (m *MemoryStorage) DescribeLoadBalancers(_ context.Context, arns, names []s
 	result := make([]*LoadBalancer, 0)
 
 	if len(arns) == 0 && len(names) == 0 {
-		// Return all load balancers.
 		for _, lb := range m.LoadBalancers {
 			result = append(result, lb)
 		}
@@ -308,13 +306,11 @@ func (m *MemoryStorage) DescribeLoadBalancers(_ context.Context, arns, names []s
 		return result, nil
 	}
 
-	// Filter by ARNs.
 	arnSet := make(map[string]bool)
 	for _, arn := range arns {
 		arnSet[arn] = true
 	}
 
-	// Filter by names.
 	nameSet := make(map[string]bool)
 	for _, name := range names {
 		nameSet[name] = true
@@ -484,7 +480,6 @@ func (m *MemoryStorage) DescribeTargetGroups(_ context.Context, arns, names []st
 	result := make([]*TargetGroup, 0)
 
 	if len(arns) == 0 && len(names) == 0 && lbArn == "" {
-		// Return all target groups.
 		for _, tg := range m.TargetGroups {
 			result = append(result, tg)
 		}
@@ -492,13 +487,11 @@ func (m *MemoryStorage) DescribeTargetGroups(_ context.Context, arns, names []st
 		return result, nil
 	}
 
-	// Filter by ARNs.
 	arnSet := make(map[string]bool)
 	for _, arn := range arns {
 		arnSet[arn] = true
 	}
 
-	// Filter by names.
 	nameSet := make(map[string]bool)
 	for _, name := range names {
 		nameSet[name] = true
@@ -605,11 +598,9 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 
 	listenerID := uuid.New().String()[:17]
 
-	// Parse load balancer ID from ARN for listener ARN.
 	lbIDStart := len(req.LoadBalancerArn) - 17
 	lbID := req.LoadBalancerArn[lbIDStart:]
 
-	// Get load balancer type from the ARN.
 	lbType := lb.Type[:3]
 
 	arn := fmt.Sprintf("arn:aws:elasticloadbalancing:%s:%s:listener/%s/%s/%s/%s",

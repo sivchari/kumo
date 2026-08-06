@@ -57,7 +57,6 @@ func (s *Service) DeleteComputeEnvironment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Extract name from ARN if provided.
 	name := extractResourceName(req.ComputeEnvironment)
 
 	if err := s.storage.DeleteComputeEnvironment(r.Context(), name); err != nil {
@@ -78,7 +77,6 @@ func (s *Service) DescribeComputeEnvironments(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Extract names from ARNs if provided.
 	names := make([]string, 0, len(req.ComputeEnvironments))
 
 	for _, ce := range req.ComputeEnvironments {

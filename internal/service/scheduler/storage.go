@@ -90,7 +90,6 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		_ = storage.Load(ms.dataDir, "scheduler", ms)
 	}
 
-	// Create default schedule group.
 	ms.ScheduleGroups[defaultGroupName] = &ScheduleGroup{
 		Name:         defaultGroupName,
 		ARN:          generateScheduleGroupARN(ms.region, defaultAccountID, defaultGroupName),
@@ -174,7 +173,6 @@ func (m *MemoryStorage) CreateSchedule(_ context.Context, name string, req *Crea
 		return nil, &Error{Code: errConflictException, Message: "Schedule already exists: " + name}
 	}
 
-	// Check if group exists.
 	if _, exists := m.ScheduleGroups[groupName]; !exists {
 		return nil, &Error{Code: errResourceNotFound, Message: "ScheduleGroup not found: " + groupName}
 	}
@@ -248,7 +246,6 @@ func (m *MemoryStorage) UpdateSchedule(_ context.Context, name string, req *Upda
 		return nil, &Error{Code: errResourceNotFound, Message: "Schedule not found: " + name}
 	}
 
-	// Update fields.
 	schedule.Description = req.Description
 	schedule.ScheduleExpression = req.ScheduleExpression
 	schedule.ScheduleExpressionTimezone = defaultString(req.ScheduleExpressionTimezone, defaultTimezone)
@@ -375,7 +372,6 @@ func (m *MemoryStorage) DeleteScheduleGroup(_ context.Context, name string) erro
 		return &Error{Code: errResourceNotFound, Message: "ScheduleGroup not found: " + name}
 	}
 
-	// Check if any schedules use this group.
 	for _, schedule := range m.Schedules {
 		if schedule.GroupName == name {
 			return &Error{Code: errConflictException, Message: "ScheduleGroup has schedules: " + name}

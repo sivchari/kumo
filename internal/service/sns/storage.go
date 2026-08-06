@@ -175,7 +175,6 @@ func (m *MemoryStorage) CreateTopic(_ context.Context, name string, attributes m
 
 	arn := m.buildTopicARN(name)
 
-	// Return existing topic if it exists.
 	if topic, exists := m.Topics[arn]; exists {
 		return topic, nil
 	}
@@ -263,7 +262,6 @@ func (m *MemoryStorage) DeleteTopic(_ context.Context, topicARN string) error {
 		}
 	}
 
-	// Delete all subscriptions for this topic.
 	for subARN := range topic.Subscriptions {
 		delete(m.Subscriptions, subARN)
 	}
@@ -364,18 +362,15 @@ func (m *MemoryStorage) ListTopics(_ context.Context, nextToken string) ([]*Topi
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Collect all topics.
 	allTopics := make([]*Topic, 0, len(m.Topics))
 	for _, topic := range m.Topics {
 		allTopics = append(allTopics, topic)
 	}
 
-	// Sort by ARN for consistent ordering.
 	sort.Slice(allTopics, func(i, j int) bool {
 		return allTopics[i].ARN < allTopics[j].ARN
 	})
 
-	// Handle pagination.
 	startIdx := 0
 	maxResults := 100
 
@@ -413,7 +408,6 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 		}
 	}
 
-	// Validate protocol.
 	validProtocols := map[string]bool{
 		"http": true, "https": true, "email": true, "email-json": true,
 		"sms": true, "sqs": true, "application": true, "lambda": true,
@@ -504,7 +498,6 @@ func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) e
 		}
 	}
 
-	// Remove from topic's subscriptions.
 	if topic, exists := m.Topics[subscription.TopicARN]; exists {
 		delete(topic.Subscriptions, subscriptionARN)
 	}
@@ -573,7 +566,6 @@ func matchesFilterPolicy(filterPolicyJSON string, attributes map[string]MessageA
 		return true
 	}
 
-	// Parse the filter policy.
 	var policy map[string][]json.RawMessage
 	if err := json.Unmarshal([]byte(filterPolicyJSON), &policy); err != nil {
 		// Malformed policy -- deliver to be safe (same as AWS fallback).
@@ -725,7 +717,6 @@ func matchAnythingBut(obj map[string]json.RawMessage, value string, exists bool)
 
 // deliverMessage delivers a message to a subscription.
 func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
-	// Check FilterPolicy before delivering.
 	if sub.SubscriptionAttributes != nil {
 		if fp, ok := sub.SubscriptionAttributes["FilterPolicy"]; ok {
 			if !matchesFilterPolicy(fp, attributes) {
@@ -757,7 +748,6 @@ func (m *MemoryStorage) deliverToSQS(ctx context.Context, sub *Subscription, mes
 
 	raw := isRawMessageDelivery(sub)
 
-	// Build the message body based on RawMessageDelivery setting.
 	body := message
 	if !raw {
 		body = buildSNSNotificationEnvelope(sub.TopicARN, message, subject, messageID, attributes)
@@ -861,18 +851,15 @@ func (m *MemoryStorage) ListSubscriptions(_ context.Context, nextToken string) (
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Collect all subscriptions.
 	allSubs := make([]*Subscription, 0, len(m.Subscriptions))
 	for _, sub := range m.Subscriptions {
 		allSubs = append(allSubs, sub)
 	}
 
-	// Sort by ARN for consistent ordering.
 	sort.Slice(allSubs, func(i, j int) bool {
 		return allSubs[i].ARN < allSubs[j].ARN
 	})
 
-	// Handle pagination.
 	startIdx := 0
 	maxResults := 100
 
@@ -910,18 +897,15 @@ func (m *MemoryStorage) ListSubscriptionsByTopic(_ context.Context, topicARN, ne
 		}
 	}
 
-	// Collect subscriptions for this topic.
 	allSubs := make([]*Subscription, 0, len(topic.Subscriptions))
 	for _, sub := range topic.Subscriptions {
 		allSubs = append(allSubs, sub)
 	}
 
-	// Sort by ARN for consistent ordering.
 	sort.Slice(allSubs, func(i, j int) bool {
 		return allSubs[i].ARN < allSubs[j].ARN
 	})
 
-	// Handle pagination.
 	startIdx := 0
 	maxResults := 100
 
@@ -957,7 +941,6 @@ func (m *MemoryStorage) buildTopicARN(name string) string {
 
 // buildSubscriptionARN builds an ARN for a subscription.
 func (m *MemoryStorage) buildSubscriptionARN(topicARN string) string {
-	// Extract topic name from ARN.
 	parts := strings.Split(topicARN, ":")
 	topicName := parts[len(parts)-1]
 

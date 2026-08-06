@@ -138,7 +138,6 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate maxResults: must be between 1 and 100 if specified
 	if req.MaxResults != 0 && (req.MaxResults < 1 || req.MaxResults > 100) {
 		writeECSError(w, "InvalidParameterException", "maxResults must be between 1 and 100", http.StatusBadRequest)
 

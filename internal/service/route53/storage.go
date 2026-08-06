@@ -207,7 +207,6 @@ func (s *MemoryStorage) DeleteHostedZone(id string) error {
 		return ErrHostedZoneNotFound
 	}
 
-	// Check if hosted zone has record sets (other than NS and SOA)
 	if records, ok := s.RecordSets[id]; ok {
 		for i := range records {
 			if records[i].Type != "NS" && records[i].Type != "SOA" {
@@ -219,7 +218,6 @@ func (s *MemoryStorage) DeleteHostedZone(id string) error {
 	delete(s.HostedZones, id)
 	delete(s.RecordSets, id)
 
-	// Clean up tags associated with the hosted zone.
 	bareID := strings.TrimPrefix(id, "/hostedzone/")
 	delete(s.Tags, "hostedzone/"+bareID)
 
@@ -285,7 +283,6 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 
 	s.RecordSets[hostedZoneID] = records
 
-	// Update record count
 	if zone, exists := s.HostedZones[hostedZoneID]; exists {
 		zone.ResourceRecordSetCount = int64(len(records))
 	}
@@ -344,7 +341,6 @@ func (s *MemoryStorage) ListTagsForResource(resourceType, resourceID string) ([]
 		return []Tag{}, nil
 	}
 
-	// Return a copy.
 	out := make([]Tag, len(tags))
 	copy(out, tags)
 
@@ -360,7 +356,6 @@ func (s *MemoryStorage) ChangeTagsForResource(resourceType, resourceID string, a
 
 	tags := s.Tags[key]
 
-	// Remove tags by key.
 	for _, rk := range removeKeys {
 		for i := range tags {
 			if tags[i].Key == rk {
@@ -371,7 +366,6 @@ func (s *MemoryStorage) ChangeTagsForResource(resourceType, resourceID string, a
 		}
 	}
 
-	// Add/update tags.
 	for _, at := range addTags {
 		found := false
 

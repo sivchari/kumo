@@ -724,7 +724,6 @@ func extractMeshName(path string) string {
 
 	remainder := strings.TrimPrefix(path, meshPathPrefix)
 
-	// Remove any trailing path segments.
 	if idx := strings.Index(remainder, "/"); idx != -1 {
 		remainder = remainder[:idx]
 	}

@@ -171,7 +171,6 @@ func (m *MemoryStorage) CreateSecret(_ context.Context, req *CreateSecretRequest
 		VersionIDs:      make(map[string]*SecretVersion),
 	}
 
-	// Create initial version if secret value is provided.
 	if req.SecretString != "" || len(req.SecretBinary) > 0 {
 		version := &SecretVersion{
 			VersionID:     versionID,
@@ -211,7 +210,6 @@ func (m *MemoryStorage) GetSecretValue(_ context.Context, secretID, versionID, v
 		}
 	}
 
-	// Default to AWSCURRENT if no version specified.
 	if versionStage == "" && versionID == "" {
 		versionStage = stageCurrent
 	}
@@ -221,7 +219,6 @@ func (m *MemoryStorage) GetSecretValue(_ context.Context, secretID, versionID, v
 	if versionID != "" {
 		version = secret.VersionIDs[versionID]
 	} else {
-		// Find version by stage.
 		for _, v := range secret.VersionIDs {
 			if slices.Contains(v.VersionStages, versionStage) {
 				version = v
@@ -238,7 +235,6 @@ func (m *MemoryStorage) GetSecretValue(_ context.Context, secretID, versionID, v
 		}
 	}
 
-	// Update last accessed date.
 	now := time.Now()
 	secret.LastAccessedDate = &now
 
@@ -272,12 +268,10 @@ func (m *MemoryStorage) PutSecretValue(_ context.Context, secretID, clientToken,
 		versionID = uuid.New().String()
 	}
 
-	// Default stages.
 	if len(versionStages) == 0 {
 		versionStages = []string{stageCurrent}
 	}
 
-	// Remove AWSCURRENT stage from previous version.
 	m.rotateVersionStages(secret)
 
 	version := &SecretVersion{
@@ -316,7 +310,6 @@ func (m *MemoryStorage) DeleteSecret(_ context.Context, secretID string, recover
 	now := time.Now()
 
 	if forceDelete {
-		// Immediately delete.
 		delete(m.Secrets, secret.Name)
 		delete(m.Policies, secret.Name)
 		secret.DeletedDate = &now
@@ -349,11 +342,9 @@ func (m *MemoryStorage) ListSecrets(_ context.Context, maxResults int, nextToken
 		maxResults = 100
 	}
 
-	// Collect all secrets.
 	allSecrets := make([]*Secret, 0, len(m.Secrets))
 
 	for _, secret := range m.Secrets {
-		// Skip deleted secrets unless requested.
 		if secret.DeletedDate != nil && !includePlannedDeletion {
 			continue
 		}
@@ -361,12 +352,10 @@ func (m *MemoryStorage) ListSecrets(_ context.Context, maxResults int, nextToken
 		allSecrets = append(allSecrets, secret)
 	}
 
-	// Sort by name for consistent ordering.
 	sort.Slice(allSecrets, func(i, j int) bool {
 		return allSecrets[i].Name < allSecrets[j].Name
 	})
 
-	// Handle pagination.
 	startIdx := 0
 
 	if nextToken != "" {
@@ -493,12 +482,10 @@ func (m *MemoryStorage) rotateVersionStages(secret *Secret) {
 
 // findSecret finds a secret by name or ARN.
 func (m *MemoryStorage) findSecret(secretID string) *Secret {
-	// Try by name first.
 	if secret, exists := m.Secrets[secretID]; exists {
 		return secret
 	}
 
-	// Try by ARN (exact match).
 	for _, secret := range m.Secrets {
 		if secret.ARN == secretID {
 			return secret

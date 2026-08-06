@@ -241,8 +241,6 @@ func (s *Service) StartSchemaCreation(w http.ResponseWriter, r *http.Request) {
 
 // extractPathParam extracts a path parameter from the request URL.
 func extractPathParam(r *http.Request, param string) string {
-	// The server router should set path parameters.
-	// For now, we'll parse them from the URL path.
 	// Expected paths:
 	// - /apis/{apiId}
 	// - /apis/{apiId}/datasources

@@ -13,7 +13,6 @@ import (
 func (s *Service) CreatePipe(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get pipe name from URL path.
 	name := extractPipeName(r.URL.Path)
 	if name == "" {
 		writeError(w, errValidationException, "Pipe name is required", http.StatusBadRequest)
@@ -53,7 +52,6 @@ func (s *Service) CreatePipe(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DescribePipe(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get pipe name from URL path.
 	name := extractPipeName(r.URL.Path)
 	if name == "" {
 		writeError(w, errValidationException, "Pipe name is required", http.StatusBadRequest)
@@ -96,7 +94,6 @@ func (s *Service) DescribePipe(w http.ResponseWriter, r *http.Request) {
 func (s *Service) UpdatePipe(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get pipe name from URL path.
 	name := extractPipeName(r.URL.Path)
 	if name == "" {
 		writeError(w, errValidationException, "Pipe name is required", http.StatusBadRequest)
@@ -136,7 +133,6 @@ func (s *Service) UpdatePipe(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DeletePipe(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get pipe name from URL path.
 	name := extractPipeName(r.URL.Path)
 	if name == "" {
 		writeError(w, errValidationException, "Pipe name is required", http.StatusBadRequest)
@@ -167,7 +163,6 @@ func (s *Service) DeletePipe(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListPipes(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Parse query parameters.
 	query := r.URL.Query()
 	req := &ListPipesInput{
 		CurrentState: query.Get("CurrentState"),
@@ -178,7 +173,6 @@ func (s *Service) ListPipes(w http.ResponseWriter, r *http.Request) {
 		TargetPrefix: query.Get("TargetPrefix"),
 	}
 
-	// Parse limit if provided.
 	if limitStr := query.Get("Limit"); limitStr != "" {
 		var limit int32
 
@@ -267,7 +261,6 @@ func (s *Service) StopPipe(w http.ResponseWriter, r *http.Request) {
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get resource ARN from URL path.
 	arn := extractResourceArn(r.URL.Path)
 	if arn == "" {
 		writeError(w, errValidationException, "Resource ARN is required", http.StatusBadRequest)
@@ -275,7 +268,6 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// URL decode the ARN.
 	decodedArn, err := url.PathUnescape(arn)
 	if err != nil {
 		writeError(w, errValidationException, "Invalid resource ARN", http.StatusBadRequest)
@@ -303,7 +295,6 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get resource ARN from URL path.
 	arn := extractResourceArn(r.URL.Path)
 	if arn == "" {
 		writeError(w, errValidationException, "Resource ARN is required", http.StatusBadRequest)
@@ -311,7 +302,6 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// URL decode the ARN.
 	decodedArn, err := url.PathUnescape(arn)
 	if err != nil {
 		writeError(w, errValidationException, "Invalid resource ARN", http.StatusBadRequest)
@@ -319,7 +309,6 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get tag keys from query parameters.
 	tagKeys := r.URL.Query()["tagKeys"]
 
 	if err := s.storage.UntagResource(ctx, decodedArn, tagKeys); err != nil {
@@ -335,7 +324,6 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get resource ARN from URL path.
 	arn := extractResourceArn(r.URL.Path)
 	if arn == "" {
 		writeError(w, errValidationException, "Resource ARN is required", http.StatusBadRequest)
@@ -343,7 +331,6 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// URL decode the ARN.
 	decodedArn, err := url.PathUnescape(arn)
 	if err != nil {
 		writeError(w, errValidationException, "Invalid resource ARN", http.StatusBadRequest)
@@ -369,7 +356,6 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 
 // extractPipeName extracts the pipe name from a URL path like /v1/pipes/{Name}.
 func extractPipeName(path string) string {
-	// Remove prefix and extract name.
 	const prefix = "/v1/pipes/"
 
 	if !strings.HasPrefix(path, prefix) {
@@ -387,7 +373,6 @@ func extractPipeName(path string) string {
 
 // extractPipeNameFromAction extracts the pipe name from a URL path like /v1/pipes/{Name}/{action}.
 func extractPipeNameFromAction(path, action string) string {
-	// Remove prefix and extract name.
 	const prefix = "/v1/pipes/"
 
 	if !strings.HasPrefix(path, prefix) {
@@ -407,7 +392,6 @@ func extractPipeNameFromAction(path, action string) string {
 
 // extractResourceArn extracts the resource ARN from a URL path like /tags/{arn}.
 func extractResourceArn(path string) string {
-	// Remove prefix and extract ARN.
 	const prefix = "/tags/"
 
 	if !strings.HasPrefix(path, prefix) {

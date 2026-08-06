@@ -159,7 +159,6 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate caller reference.
 	for _, d := range s.Distributions {
 		if d.DistributionConfig != nil && d.DistributionConfig.CallerReference == config.CallerReference {
 			return nil, &Error{
@@ -169,7 +168,6 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 		}
 	}
 
-	// Generate distribution ID.
 	id := generateDistributionID()
 	etag := generateETag()
 	now := time.Now()
@@ -235,10 +233,8 @@ func (s *MemoryStorage) ListDistributions(_ context.Context, marker string, maxI
 		dists = append(dists, d)
 	}
 
-	// Sort by ID for consistent ordering.
 	sortDistributionsByID(dists)
 
-	// Apply marker-based pagination.
 	startIdx := 0
 
 	if marker != "" {
@@ -251,12 +247,10 @@ func (s *MemoryStorage) ListDistributions(_ context.Context, marker string, maxI
 		}
 	}
 
-	// Slice the results.
 	endIdx := min(startIdx+maxItems, len(dists))
 
 	result := dists[startIdx:endIdx]
 
-	// Determine next marker.
 	var nextMarker string
 	if endIdx < len(dists) {
 		nextMarker = dists[endIdx-1].ID
@@ -278,7 +272,6 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 		}
 	}
 
-	// Validate ETag.
 	if dist.ETag != etag {
 		return nil, &Error{
 			Code:    errInvalidIfMatchVersion,
@@ -286,7 +279,6 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 		}
 	}
 
-	// Update distribution.
 	newETag := generateETag()
 	dist.ETag = newETag
 	dist.LastModifiedTime = time.Now()
@@ -323,7 +315,6 @@ func (s *MemoryStorage) DeleteDistribution(_ context.Context, id, etag string) e
 		}
 	}
 
-	// Validate ETag.
 	if dist.ETag != etag {
 		return &Error{
 			Code:    errInvalidIfMatchVersion,
@@ -344,7 +335,6 @@ func (s *MemoryStorage) CreateInvalidation(_ context.Context, distributionID str
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if distribution exists.
 	if _, exists := s.Distributions[distributionID]; !exists {
 		return nil, &Error{
 			Code:    errDistributionNotFound,
@@ -352,7 +342,6 @@ func (s *MemoryStorage) CreateInvalidation(_ context.Context, distributionID str
 		}
 	}
 
-	// Generate invalidation ID.
 	id := generateInvalidationID()
 	now := time.Now()
 
@@ -366,7 +355,6 @@ func (s *MemoryStorage) CreateInvalidation(_ context.Context, distributionID str
 		},
 	}
 
-	// Store invalidation.
 	if s.Invalidations[distributionID] == nil {
 		s.Invalidations[distributionID] = make(map[string]*Invalidation)
 	}
@@ -383,7 +371,6 @@ func (s *MemoryStorage) GetInvalidation(_ context.Context, distributionID, inval
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Check if distribution exists.
 	if _, exists := s.Distributions[distributionID]; !exists {
 		return nil, &Error{
 			Code:    errDistributionNotFound,
@@ -415,7 +402,6 @@ func (s *MemoryStorage) ListInvalidations(_ context.Context, distributionID, mar
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Check if distribution exists.
 	if _, exists := s.Distributions[distributionID]; !exists {
 		return nil, "", &Error{
 			Code:    errDistributionNotFound,
@@ -437,10 +423,8 @@ func (s *MemoryStorage) ListInvalidations(_ context.Context, distributionID, mar
 		invs = append(invs, inv)
 	}
 
-	// Sort by ID for consistent ordering.
 	sortInvalidationsByID(invs)
 
-	// Apply marker-based pagination.
 	startIdx := 0
 
 	if marker != "" {
@@ -453,12 +437,10 @@ func (s *MemoryStorage) ListInvalidations(_ context.Context, distributionID, mar
 		}
 	}
 
-	// Slice the results.
 	endIdx := min(startIdx+maxItems, len(invs))
 
 	result := invs[startIdx:endIdx]
 
-	// Determine next marker.
 	var nextMarker string
 	if endIdx < len(invs) {
 		nextMarker = invs[endIdx-1].ID

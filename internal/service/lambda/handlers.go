@@ -656,7 +656,6 @@ func (s *Service) DeleteEventSourceMapping(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Return the mapping with state set to Deleting
 	mapping.State = "Deleting"
 	writeJSONResponse(w, http.StatusOK, mapping)
 }

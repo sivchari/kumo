@@ -758,7 +758,6 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store tags from x-amz-tagging header (URL-encoded query string format).
 	if header := r.Header.Get("X-Amz-Tagging"); header != "" {
 		tags, err := parseTaggingHeader(header)
 		if err == nil && len(tags) > 0 {
@@ -774,13 +773,10 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 
-	// Emit EventBridge notification if enabled.
 	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
 
-	// Deliver S3 event notification to configured SQS queues.
 	go s.emitSQSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
 
-	// Invoke configured Lambda functions.
 	go s.emitLambdaNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
 }
 
@@ -1257,7 +1253,6 @@ func (s *Service) DeleteObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return version info in headers if applicable
 	if deleteMarker != nil {
 		if deleteMarker.VersionID != "" {
 			w.Header().Set("x-amz-version-id", deleteMarker.VersionID)
@@ -1386,7 +1381,6 @@ func (s *Service) HeadObject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
 	w.Header().Set("Accept-Ranges", "bytes")
 
-	// Set metadata headers
 	for k, v := range obj.Metadata {
 		if k != contentTypeHeader {
 			w.Header().Set("x-amz-meta-"+k, v)
@@ -2019,13 +2013,11 @@ func checkPresignedURL(w http.ResponseWriter, r *http.Request) bool {
 // validatePresignedURL validates the presigned URL expiration.
 // Returns nil if the URL is valid, or an error if expired.
 func validatePresignedURL(r *http.Request) error {
-	// Get the date when the URL was signed
 	amzDate := r.URL.Query().Get("X-Amz-Date")
 	if amzDate == "" {
 		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "X-Amz-Date must be in the ISO8601 Long Format"}
 	}
 
-	// Get the expiration in seconds
 	expiresStr := r.URL.Query().Get("X-Amz-Expires")
 	if expiresStr == "" {
 		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "X-Amz-Expires must be provided"}
@@ -2042,13 +2034,11 @@ func validatePresignedURL(r *http.Request) error {
 		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "X-Amz-Expires must be less than 604800 seconds"}
 	}
 
-	// Parse the signing date (format: 20060102T150405Z)
 	signTime, err := time.Parse("20060102T150405Z", amzDate)
 	if err != nil {
 		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "Invalid X-Amz-Date format"}
 	}
 
-	// Check if the URL has expired
 	expirationTime := signTime.Add(time.Duration(expires) * time.Second)
 	if time.Now().After(expirationTime) {
 		return &PresignedURLError{Code: "AccessDenied", Message: "Request has expired"}
@@ -2272,7 +2262,6 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Parse the XML request body
 	var req CompleteMultipartUploadRequest
 	if err := xml.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeS3Error(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
@@ -2301,13 +2290,10 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 
 	writeXMLResponse(w, result)
 
-	// Emit EventBridge notification if enabled.
 	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
 
-	// Deliver S3 event notification to configured SQS queues.
 	go s.emitSQSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
 
-	// Invoke configured Lambda functions.
 	go s.emitLambdaNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
 }
 

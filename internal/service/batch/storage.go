@@ -225,12 +225,10 @@ func (s *MemoryStorage) DescribeComputeEnvironments(_ context.Context, names []s
 	var result []ComputeEnvironment
 
 	if len(names) == 0 {
-		// Return all compute environments.
 		for _, ce := range s.ComputeEnvironments {
 			result = append(result, *ce)
 		}
 	} else {
-		// Return specified compute environments.
 		for _, name := range names {
 			if ce, exists := s.ComputeEnvironments[name]; exists {
 				result = append(result, *ce)
@@ -313,12 +311,10 @@ func (s *MemoryStorage) DescribeJobQueues(_ context.Context, names []string) ([]
 	var result []JobQueue
 
 	if len(names) == 0 {
-		// Return all job queues.
 		for _, jq := range s.JobQueues {
 			result = append(result, *jq)
 		}
 	} else {
-		// Return specified job queues.
 		for _, name := range names {
 			if jq, exists := s.JobQueues[name]; exists {
 				result = append(result, *jq)
@@ -348,7 +344,6 @@ func (s *MemoryStorage) RegisterJobDefinition(_ context.Context, input *Register
 		}
 	}
 
-	// Increment revision.
 	revision := s.JobDefRevisions[input.JobDefinitionName] + 1
 	s.JobDefRevisions[input.JobDefinitionName] = revision
 

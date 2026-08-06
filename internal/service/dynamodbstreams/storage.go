@@ -87,7 +87,6 @@ func (m *MemoryStorage) DescribeStream(streamARN string, _ int32, _ string) (*St
 
 // GetShardIterator creates a shard iterator for reading stream records.
 func (m *MemoryStorage) GetShardIterator(streamARN, shardID, iteratorType, _ string) (string, error) {
-	// Verify the stream and shard exist.
 	_, shards, err := m.store.DescribeStream(streamARN)
 	if err != nil {
 		return "", fmt.Errorf("get-shard-iterator failed: %w", err)
@@ -168,13 +167,11 @@ func (m *MemoryStorage) GetRecords(shardIterator string, limit int32) ([]RecordO
 		return nil, nil, fmt.Errorf("get-records failed: %w", err)
 	}
 
-	// Convert stream records to output format.
 	outputs := make([]RecordOutput, len(records))
 	for i, rec := range records {
 		outputs[i] = convertStreamRecord(rec)
 	}
 
-	// Create next iterator.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

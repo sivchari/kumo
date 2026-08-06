@@ -303,7 +303,6 @@ func (m *MemoryStorage) CreateDBInstance(_ context.Context, input *CreateDBInsta
 
 	m.Instances[input.DBInstanceIdentifier] = instance
 
-	// Add instance to cluster's DBClusterMembers if associated with a cluster.
 	if input.DBClusterIdentifier != "" {
 		if cluster, exists := m.Clusters[input.DBClusterIdentifier]; exists {
 			isWriter := len(cluster.DBClusterMembers) == 0
@@ -335,7 +334,6 @@ func (m *MemoryStorage) DeleteDBInstance(_ context.Context, identifier string, _
 
 	instance.DBInstanceStatus = DBInstanceStatusDeleting
 
-	// Remove instance from cluster's DBClusterMembers.
 	if instance.DBClusterIdentifier != "" {
 		if cluster, clusterExists := m.Clusters[instance.DBClusterIdentifier]; clusterExists {
 			members := make([]DBClusterMember, 0, len(cluster.DBClusterMembers))

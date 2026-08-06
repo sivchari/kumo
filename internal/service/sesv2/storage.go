@@ -47,10 +47,8 @@ type Storage interface {
 	DeleteEmailTemplate(ctx context.Context, name string) error
 	ListEmailTemplates(ctx context.Context, nextToken string, pageSize int32) ([]*EmailTemplate, string, error)
 
-	// Send Email.
 	SendEmail(ctx context.Context, req *SendEmailRequest) (string, error)
 
-	// Send Bulk Email.
 	SendBulkEmail(ctx context.Context, req *SendBulkEmailRequest) (*SendBulkEmailResponse, error)
 
 	// Get sent emails (for testing purposes).
@@ -296,7 +294,6 @@ func (s *MemoryStorage) CreateConfigurationSet(_ context.Context, req *CreateCon
 		Tags:              req.Tags,
 	}
 
-	// Set defaults if not provided.
 	if configSet.SendingOptions == nil {
 		configSet.SendingOptions = &SendingOptions{SendingEnabled: true}
 	}
@@ -503,7 +500,6 @@ func (s *MemoryStorage) SendEmail(_ context.Context, req *SendEmailRequest) (str
 		}
 	}
 
-	// Basic validation.
 	// Destination is not required when Content.Raw is set,
 	// because recipients can be extracted from MIME headers.
 	hasDestination := req.Destination != nil &&
@@ -518,7 +514,6 @@ func (s *MemoryStorage) SendEmail(_ context.Context, req *SendEmailRequest) (str
 		}
 	}
 
-	// Generate message ID.
 	messageID := uuid.New().String()
 
 	// Extract content based on email type.
@@ -540,7 +535,6 @@ func (s *MemoryStorage) SendEmail(_ context.Context, req *SendEmailRequest) (str
 		subject, body, htmlBody = extractSimpleEmailContent(req.Content.Simple)
 	}
 
-	// Store the sent email.
 	sentEmail := &SentEmail{
 		MessageID:            messageID,
 		FromEmailAddress:     req.FromEmailAddress,

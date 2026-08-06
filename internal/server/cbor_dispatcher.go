@@ -72,7 +72,6 @@ func (d *CBORProtocolDispatcher) Register(serviceName string, handler CBORServic
 // ServeHTTP implements http.Handler and dispatches to the appropriate service.
 // It handles requests to /service/{serviceName}/operation/{operationName}.
 func (d *CBORProtocolDispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Parse URL: /service/{serviceName}/operation/{operationName}
 	path := r.URL.Path
 	if !strings.HasPrefix(path, "/service/") {
 		WriteCBORError(w, "InvalidPath", "Path must start with /service/", http.StatusBadRequest)
@@ -80,7 +79,6 @@ func (d *CBORProtocolDispatcher) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Remove "/service/" prefix
 	remaining := strings.TrimPrefix(path, "/service/")
 	parts := strings.Split(remaining, "/operation/")
 

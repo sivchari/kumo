@@ -60,14 +60,12 @@ func (d *QueryProtocolDispatcher) RegisterAction(action, servicePrefix, serviceI
 
 // ServeHTTP implements http.Handler and dispatches to the appropriate service.
 func (d *QueryProtocolDispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Parse form data.
 	if err := r.ParseForm(); err != nil {
 		writeQueryError(w, "InvalidParameterValue", "Failed to parse form data")
 
 		return
 	}
 
-	// Get Action parameter.
 	action := r.FormValue("Action")
 	if action == "" {
 		writeQueryError(w, "MissingAction", "Action parameter is required")
@@ -75,7 +73,6 @@ func (d *QueryProtocolDispatcher) ServeHTTP(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Identify the target service from User-Agent header.
 	svcID := parseServiceFromUserAgent(r.Header.Get("User-Agent"))
 
 	entry, err := d.resolveHandler(svcID, action)
@@ -256,17 +253,14 @@ func formToJSON(form map[string][]string) []byte {
 // parseFormValue converts a form value string to appropriate JSON type.
 // Numeric strings are converted to numbers for proper JSON unmarshaling.
 func parseFormValue(s string) any {
-	// Try to parse as integer.
 	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return i
 	}
 
-	// Try to parse as boolean.
 	if b, err := strconv.ParseBool(s); err == nil {
 		return b
 	}
 
-	// Return as string.
 	return s
 }
 

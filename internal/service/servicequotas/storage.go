@@ -394,19 +394,16 @@ func (m *MemoryStorage) RequestServiceQuotaIncrease(_ context.Context, serviceCo
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check if the service exists
 	serviceQuotas, exists := m.Quotas[serviceCode]
 	if !exists {
 		return nil, &Error{Code: errNoSuchResourceException, Message: "Service not found: " + serviceCode}
 	}
 
-	// Check if the quota exists
 	quota, exists := serviceQuotas[quotaCode]
 	if !exists {
 		return nil, &Error{Code: errNoSuchResourceException, Message: "Quota not found: " + quotaCode}
 	}
 
-	// Check if the quota is adjustable
 	if !quota.Adjustable {
 		return nil, &Error{Code: errIllegalArgumentException, Message: "Quota is not adjustable: " + quotaCode}
 	}

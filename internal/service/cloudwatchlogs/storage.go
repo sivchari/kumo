@@ -300,7 +300,6 @@ func (m *MemoryStorage) PutLogEvents(_ context.Context, groupName, streamName st
 		}
 		streamData.Events = append(streamData.Events, logEvent)
 
-		// Update stream timestamps
 		if streamData.Stream.FirstEventTimestamp == nil {
 			streamData.Stream.FirstEventTimestamp = &event.Timestamp
 		}
@@ -310,10 +309,8 @@ func (m *MemoryStorage) PutLogEvents(_ context.Context, groupName, streamName st
 		streamData.Stream.StoredBytes += int64(len(event.Message))
 	}
 
-	// Update group stored bytes
 	groupData.Group.StoredBytes += sumEventBytes(events)
 
-	// Generate new sequence token
 	newToken := uuid.New().String()
 	streamData.Stream.UploadSequenceToken = newToken
 
@@ -350,10 +347,8 @@ func (m *MemoryStorage) GetLogEvents(_ context.Context, req *GetLogEventsRequest
 		limit = min(int(*req.Limit), maxLimit)
 	}
 
-	// Filter events by time range
 	filteredEvents := filterEventsByTime(streamData.Events, req.StartTime, req.EndTime)
 
-	// Sort events
 	startFromHead := req.StartFromHead != nil && *req.StartFromHead
 	if startFromHead {
 		sort.Slice(filteredEvents, func(i, j int) bool {
@@ -365,12 +360,10 @@ func (m *MemoryStorage) GetLogEvents(_ context.Context, req *GetLogEventsRequest
 		})
 	}
 
-	// Apply limit
 	if len(filteredEvents) > limit {
 		filteredEvents = filteredEvents[:limit]
 	}
 
-	// Convert to output format
 	outputEvents := make([]OutputLogEvent, 0, len(filteredEvents))
 	now := time.Now().UnixMilli()
 
@@ -410,12 +403,10 @@ func (m *MemoryStorage) FilterLogEvents(_ context.Context, req *FilterLogEventsR
 	limit := getLimit(req.Limit)
 	allEvents, searchedStreams := m.filterEventsFromStreams(groupData, req)
 
-	// Sort by timestamp
 	sort.Slice(allEvents, func(i, j int) bool {
 		return allEvents[i].Timestamp < allEvents[j].Timestamp
 	})
 
-	// Apply limit
 	if len(allEvents) > limit {
 		allEvents = allEvents[:limit]
 	}
@@ -517,7 +508,6 @@ func (m *MemoryStorage) DescribeLogGroups(_ context.Context, req *DescribeLogGro
 	limit := getLimit(req.Limit)
 	groups := m.filterLogGroups(req)
 
-	// Sort by name
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].LogGroupName < groups[j].LogGroupName
 	})

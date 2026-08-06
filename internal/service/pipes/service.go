@@ -45,7 +45,6 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("PUT", "/v1/pipes/{name}", s.UpdatePipe)
 	r.Handle("DELETE", "/v1/pipes/{name}", s.DeletePipe)
 
-	// List pipes.
 	r.Handle("GET", "/v1/pipes", s.ListPipes)
 
 	// Pipe control operations.

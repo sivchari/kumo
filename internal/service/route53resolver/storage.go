@@ -353,7 +353,6 @@ func (s *MemoryStorage) DeleteResolverRule(_ context.Context, id string) (*Resol
 		}
 	}
 
-	// Check if rule is associated with any VPC
 	for _, assoc := range s.Associations {
 		if assoc.ResolverRuleID == id {
 			return nil, &ResolverError{
@@ -397,7 +396,6 @@ func (s *MemoryStorage) AssociateResolverRule(_ context.Context, req *AssociateR
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if rule exists
 	if _, exists := s.Rules[req.ResolverRuleID]; !exists {
 		return nil, &ResolverError{
 			Code:    errResourceNotFound,
@@ -405,7 +403,6 @@ func (s *MemoryStorage) AssociateResolverRule(_ context.Context, req *AssociateR
 		}
 	}
 
-	// Check if association already exists
 	for _, assoc := range s.Associations {
 		if assoc.ResolverRuleID == req.ResolverRuleID && assoc.VPCID == req.VPCID {
 			return nil, &ResolverError{

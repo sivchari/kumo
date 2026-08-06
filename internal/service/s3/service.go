@@ -238,7 +238,6 @@ func matchesEventFilter(filters []string, eventName string) bool {
 			return true
 		}
 
-		// Handle wildcard: "s3:ObjectCreated:*" matches "s3:ObjectCreated:Put"
 		if strings.HasSuffix(f, "*") {
 			prefix := strings.TrimSuffix(f, "*")
 			if strings.HasPrefix(eventName, prefix) {

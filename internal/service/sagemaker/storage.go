@@ -215,17 +215,14 @@ func (m *MemoryStorage) CreateNotebookInstance(_ context.Context, req *CreateNot
 		LastModifiedTime:       now,
 	}
 
-	// Set default volume size if not specified.
 	if instance.VolumeSizeInGB == 0 {
 		instance.VolumeSizeInGB = 5
 	}
 
-	// Set default direct internet access.
 	if instance.DirectInternetAccess == "" {
 		instance.DirectInternetAccess = "Enabled"
 	}
 
-	// Set default root access.
 	if instance.RootAccess == "" {
 		instance.RootAccess = "Enabled"
 	}

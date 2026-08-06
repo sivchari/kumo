@@ -241,7 +241,6 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 		return qd.Queue, nil
 	}
 
-	// Check FIFO queue requirements.
 	isFifo := strings.HasSuffix(name, ".fifo")
 	if attributes["FifoQueue"] == attrValueTrue && !isFifo {
 		return nil, &QueueError{
@@ -267,7 +266,6 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 		ContentBasedDeduplication: attributes["ContentBasedDeduplication"] == attrValueTrue,
 	}
 
-	// Apply attributes.
 	applyQueueAttributes(queue, attributes)
 
 	qd := &QueueData{
@@ -438,7 +436,6 @@ func (qd *QueueData) validateFIFO(body, messageGroupID, messageDeduplicationID s
 		}
 	}
 
-	// Clean up expired deduplication entries.
 	for id, entry := range qd.DeduplicationCache {
 		if now.After(entry.ExpiresAt) {
 			delete(qd.DeduplicationCache, id)
@@ -454,10 +451,8 @@ func (qd *QueueData) validateFIFO(body, messageGroupID, messageDeduplicationID s
 		}
 	}
 
-	// Generate sequence number.
 	qd.SequenceCounter++
 
-	// Add to deduplication cache (5-minute TTL).
 	qd.DeduplicationCache[dedupID] = DeduplicationEntry{
 		MessageID: "",
 		ExpiresAt: now.Add(5 * time.Minute),
@@ -535,7 +530,6 @@ func (s *MemoryStorage) SendMessage(_ context.Context, queueURL, body string, de
 
 	qd.Messages = append(qd.Messages, msg)
 
-	// Notify long-polling receivers.
 	select {
 	case qd.notify <- struct{}{}:
 	default:
@@ -622,13 +616,11 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 
 	now := time.Now()
 
-	// Re-enqueue inflight messages whose visibility timeout has expired.
 	s.requeueExpiredMessages(qd, now)
 
 	result := make([]*Message, 0, maxMessages)
 	remaining := make([]*Message, 0, len(qd.Messages))
 
-	// For FIFO queues, track which message groups are locked (have in-flight messages).
 	lockedGroups := qd.lockedMessageGroups()
 
 	for _, msg := range qd.Messages {
@@ -644,7 +636,6 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 			continue
 		}
 
-		// FIFO: skip messages from groups that are locked (have in-flight messages).
 		if lockedGroups != nil && msg.MessageGroupID != "" {
 			if _, locked := lockedGroups[msg.MessageGroupID]; locked {
 				remaining = append(remaining, msg)
@@ -653,7 +644,6 @@ func (s *MemoryStorage) receiveMessagesLocked(queueURL string, maxMessages, visi
 			}
 		}
 
-		// Deliver the message: make invisible and add to inflight.
 		if s.deliverMessage(qd, msg, now, visibilityTimeout) {
 			result = append(result, msg)
 		}
@@ -784,7 +774,6 @@ func (s *MemoryStorage) GetQueueAttributes(_ context.Context, queueURL string, a
 		allAttrs["RedrivePolicy"] = q.RedrivePolicy
 	}
 
-	// Check if "All" is requested.
 	if slices.Contains(attributeNames, "All") {
 		return allAttrs, nil
 	}
@@ -879,10 +868,8 @@ func (s *MemoryStorage) moveToDeadLetterQueue(dlqArn string, msg *Message) {
 		return
 	}
 
-	// Find the DLQ by ARN.
 	for _, qd := range s.Queues {
 		if qd.Queue.ARN == dlqArn {
-			// Reset message for DLQ.
 			dlqMsg := &Message{
 				MessageID:         msg.MessageID,
 				Body:              msg.Body,
@@ -896,7 +883,6 @@ func (s *MemoryStorage) moveToDeadLetterQueue(dlqArn string, msg *Message) {
 
 			qd.Messages = append(qd.Messages, dlqMsg)
 
-			// Notify long-polling receivers on the DLQ.
 			select {
 			case qd.notify <- struct{}{}:
 			default:

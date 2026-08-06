@@ -113,7 +113,6 @@ func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure name ends with a dot
 	name := req.Name
 	if !strings.HasSuffix(name, ".") {
 		name += "."
@@ -203,12 +202,10 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sort zones by ID for consistent pagination.
 	sort.Slice(zones, func(i, j int) bool {
 		return zones[i].ID < zones[j].ID
 	})
 
-	// Find starting position based on marker.
 	startIdx := 0
 
 	if marker != "" {

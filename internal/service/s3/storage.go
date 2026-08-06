@@ -422,7 +422,6 @@ func (s *MemoryStorage) ListBuckets(_ context.Context) ([]Bucket, error) {
 		})
 	}
 
-	// Sort by name for consistent ordering
 	sort.Slice(buckets, func(i, j int) bool {
 		return buckets[i].Name < buckets[j].Name
 	})
@@ -481,7 +480,6 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 
 	putObjectVersion(b, key, obj)
 
-	// Always update current object
 	b.Objects[key] = obj
 
 	s.saveLocked()
@@ -493,7 +491,6 @@ func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io
 func putObjectVersion(b *MemoryBucket, key string, obj *Object) {
 	switch b.VersioningStatus {
 	case VersioningEnabled:
-		// Generate version ID
 		b.VersionIDCounter++
 		obj.VersionID = fmt.Sprintf("v%d", b.VersionIDCounter)
 
@@ -503,7 +500,6 @@ func putObjectVersion(b *MemoryBucket, key string, obj *Object) {
 		// For suspended versioning, use "null" version ID
 		obj.VersionID = VersionIDNull
 
-		// Remove any existing "null" version
 		versions := b.Versions[key]
 		newVersions := make([]*Object, 0, len(versions))
 
@@ -541,7 +537,6 @@ func (s *MemoryStorage) GetObject(_ context.Context, bucket, key string) (*Objec
 		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
 	}
 
-	// Check if current version is a delete marker
 	if obj.IsDeleteMarker {
 		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
 	}
@@ -629,7 +624,6 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
 	}
 
-	// Handle versioning - create delete marker for enabled buckets
 	if b.VersioningStatus == VersioningEnabled {
 		b.VersionIDCounter++
 		deleteMarker := &Object{
@@ -639,7 +633,6 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 			LastModified:   time.Now(),
 		}
 
-		// Prepend delete marker to versions
 		b.Versions[key] = append([]*Object{deleteMarker}, b.Versions[key]...)
 		b.Objects[key] = deleteMarker
 
@@ -739,7 +732,6 @@ func (s *MemoryStorage) HeadObject(_ context.Context, bucket, key string) (*Obje
 		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
 	}
 
-	// Return metadata only (no body)
 	return &Object{
 		Key:                  obj.Key,
 		ContentType:          obj.ContentType,
@@ -770,7 +762,6 @@ func (s *MemoryStorage) ListObjects(_ context.Context, bucket, prefix, delimiter
 	objects := make([]Object, 0)
 	commonPrefixes := make(map[string]bool)
 
-	// Collect all matching keys.
 	keys := make([]string, 0, len(b.Objects))
 
 	for key := range b.Objects {
@@ -779,7 +770,6 @@ func (s *MemoryStorage) ListObjects(_ context.Context, bucket, prefix, delimiter
 		}
 	}
 
-	// Sort keys for consistent ordering
 	sort.Strings(keys)
 
 	for _, key := range keys {
@@ -787,10 +777,8 @@ func (s *MemoryStorage) ListObjects(_ context.Context, bucket, prefix, delimiter
 
 		// Handle delimiter
 		if delimiter != "" {
-			// Find the part after prefix
 			remainder := strings.TrimPrefix(key, prefix)
 			if idx := strings.Index(remainder, delimiter); idx >= 0 {
-				// This is a common prefix
 				commonPrefix := prefix + remainder[:idx+len(delimiter)]
 				commonPrefixes[commonPrefix] = true
 
@@ -810,7 +798,6 @@ func (s *MemoryStorage) ListObjects(_ context.Context, bucket, prefix, delimiter
 		}
 	}
 
-	// Convert common prefixes to sorted slice
 	prefixList := make([]string, 0, len(commonPrefixes))
 	for p := range commonPrefixes {
 		prefixList = append(prefixList, p)
@@ -913,7 +900,6 @@ func processVersionKeys(b *MemoryBucket, keys []string, prefix, delimiter string
 			break
 		}
 
-		// Handle delimiter for common prefixes
 		if delimiter != "" {
 			if cp := extractCommonPrefix(key, prefix, delimiter); cp != "" {
 				commonPrefixes[cp] = true
@@ -922,7 +908,6 @@ func processVersionKeys(b *MemoryBucket, keys []string, prefix, delimiter string
 			}
 		}
 
-		// Add versions for this key
 		added := addKeyVersions(b, key, &objects, maxKeys-count)
 		count += added
 	}
@@ -944,7 +929,6 @@ func extractCommonPrefix(key, prefix, delimiter string) string {
 func addKeyVersions(b *MemoryBucket, key string, objects *[]Object, limit int) int {
 	versions := b.Versions[key]
 	if len(versions) == 0 {
-		// No versioning history, include current object if exists
 		if obj, exists := b.Objects[key]; exists {
 			*objects = append(*objects, objectToVersionInfo(obj))
 
@@ -1198,7 +1182,6 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 		return nil, err
 	}
 
-	// Calculate final ETag (MD5 of MD5s + "-" + number of parts)
 	etag := calculateMultipartETag(parts, upload.Parts)
 
 	obj := &Object{
@@ -1246,7 +1229,6 @@ func assembleMultipartBody(upload *MultipartUpload, parts []PartRequest, uploadI
 			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
 		}
 
-		// Verify ETag matches
 		if part.ETag != pr.ETag && part.ETag != fmt.Sprintf("%q", strings.Trim(pr.ETag, "\"")) {
 			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
 		}
@@ -1329,7 +1311,6 @@ func (s *MemoryStorage) ListMultipartUploads(_ context.Context, bucket, prefix s
 		}
 	}
 
-	// Sort by key and then by upload ID for consistent ordering
 	sort.Slice(uploads, func(i, j int) bool {
 		if uploads[i].Key != uploads[j].Key {
 			return uploads[i].Key < uploads[j].Key
@@ -1369,12 +1350,10 @@ func (s *MemoryStorage) ListParts(_ context.Context, bucket, key, uploadID strin
 		parts = append(parts, part)
 	}
 
-	// Sort by part number
 	sort.Slice(parts, func(i, j int) bool {
 		return parts[i].PartNumber < parts[j].PartNumber
 	})
 
-	// Limit to maxParts
 	if len(parts) > maxParts {
 		parts = parts[:maxParts]
 	}
@@ -1384,7 +1363,6 @@ func (s *MemoryStorage) ListParts(_ context.Context, bucket, key, uploadID strin
 
 // generateUploadID generates a unique upload ID.
 func generateUploadID() string {
-	// Generate a UUID-based upload ID similar to AWS format
 	return strings.ReplaceAll(fmt.Sprintf("%s%s", randomHex(8), randomHex(8)), "-", "")
 }
 
@@ -1404,19 +1382,16 @@ func randomHex(n int) string {
 func calculateMultipartETag(partRequests []PartRequest, parts map[int]*Part) string {
 	const md5Size = 16 // MD5 produces 16 bytes
 
-	// Concatenate all part ETags (raw MD5 values)
 	md5Concat := make([]byte, 0, len(partRequests)*md5Size)
 
 	for _, pr := range partRequests {
 		part := parts[pr.PartNumber]
-		// Extract raw MD5 from ETag (remove quotes)
 		etag := strings.Trim(part.ETag, "\"")
 
 		md5Bytes, _ := hex.DecodeString(etag)
 		md5Concat = append(md5Concat, md5Bytes...)
 	}
 
-	// Calculate MD5 of concatenated MD5s
 	finalHash := md5.Sum(md5Concat) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
 
 	return fmt.Sprintf("%q", fmt.Sprintf("%s-%d", hex.EncodeToString(finalHash[:]), len(partRequests)))

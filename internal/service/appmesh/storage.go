@@ -851,7 +851,6 @@ func (m *MemoryStorage) DeleteVirtualRouter(_ context.Context, meshName, virtual
 		}
 	}
 
-	// Check if router has any routes.
 	if len(m.Routes[meshName][virtualRouterName]) > 0 {
 		return nil, &Error{
 			Code:    errResourceInUseException,

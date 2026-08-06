@@ -143,7 +143,6 @@ func (s *MemoryStorage) CreateDirectory(_ context.Context, req *CreateDirectoryR
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check for duplicate directory name.
 	for _, d := range s.Directories {
 		if d.Name == req.Name {
 			return nil, &Error{
@@ -207,25 +206,21 @@ func (s *MemoryStorage) DescribeDirectories(_ context.Context, directoryIDs []st
 	var directories []*Directory
 
 	if len(directoryIDs) > 0 {
-		// Return specific directories.
 		for _, id := range directoryIDs {
 			if d, exists := s.Directories[id]; exists {
 				directories = append(directories, d)
 			}
 		}
 	} else {
-		// Return all directories.
 		for _, d := range s.Directories {
 			directories = append(directories, d)
 		}
 	}
 
-	// Sort by directory ID for consistent pagination.
 	sort.Slice(directories, func(i, j int) bool {
 		return directories[i].DirectoryID < directories[j].DirectoryID
 	})
 
-	// Handle pagination.
 	start := 0
 
 	if nextToken != "" {
@@ -311,7 +306,6 @@ func (s *MemoryStorage) DescribeSnapshots(_ context.Context, directoryID string,
 	var snapshots []*Snapshot
 
 	if len(snapshotIDs) > 0 {
-		// Return specific snapshots.
 		for _, id := range snapshotIDs {
 			snap, exists := s.Snapshots[id]
 			if !exists {
@@ -325,7 +319,6 @@ func (s *MemoryStorage) DescribeSnapshots(_ context.Context, directoryID string,
 			snapshots = append(snapshots, snap)
 		}
 	} else {
-		// Return all snapshots.
 		for _, snap := range s.Snapshots {
 			if directoryID != "" && snap.DirectoryID != directoryID {
 				continue
@@ -335,12 +328,10 @@ func (s *MemoryStorage) DescribeSnapshots(_ context.Context, directoryID string,
 		}
 	}
 
-	// Sort by snapshot ID for consistent pagination.
 	sort.Slice(snapshots, func(i, j int) bool {
 		return snapshots[i].SnapshotID < snapshots[j].SnapshotID
 	})
 
-	// Handle pagination.
 	start := 0
 
 	if nextToken != "" {

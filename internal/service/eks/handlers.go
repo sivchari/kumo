@@ -256,7 +256,6 @@ func (s *Service) ListNodegroups(w http.ResponseWriter, r *http.Request) {
 // extractClusterName extracts the cluster name from the URL path.
 // Expected paths: /eks/clusters/{name} or /eks/clusters/{name}/node-groups...
 func extractClusterName(path string) string {
-	// Remove leading slash and split.
 	path = strings.TrimPrefix(path, "/")
 	parts := strings.Split(path, "/")
 
