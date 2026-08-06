@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newELBv2Client(t *testing.T) *elasticloadbalancingv2.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return elasticloadbalancingv2.NewFromConfig(cfg, func(o *elasticloadbalancingv2.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return elasticloadbalancingv2.NewFromConfig(awsConfig(t), func(o *elasticloadbalancingv2.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

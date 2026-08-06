@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ebs"
 	"github.com/aws/aws-sdk-go-v2/service/ebs/types"
 	"github.com/sivchari/golden"
@@ -20,18 +18,8 @@ import (
 func newEBSClient(t *testing.T) *ebs.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return ebs.NewFromConfig(cfg, func(o *ebs.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return ebs.NewFromConfig(awsConfig(t), func(o *ebs.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

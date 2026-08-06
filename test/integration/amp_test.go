@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/amp"
 	"github.com/sivchari/golden"
 )
@@ -16,18 +14,8 @@ import (
 func newAMPClient(t *testing.T) *amp.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return amp.NewFromConfig(cfg, func(o *amp.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return amp.NewFromConfig(awsConfig(t), func(o *amp.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/sivchari/golden"
@@ -19,18 +17,8 @@ import (
 func newSESClient(t *testing.T) *ses.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return ses.NewFromConfig(cfg, func(o *ses.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return ses.NewFromConfig(awsConfig(t), func(o *ses.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
@@ -289,7 +277,7 @@ func TestSES_Mailbox(t *testing.T) {
 	}
 
 	// Check mailbox via kumo-specific endpoint.
-	resp, err := http.Get("http://localhost:4566/_aws/ses?email=" + source)
+	resp, err := http.Get(testEndpoint() + "/_aws/ses?email=" + source)
 	if err != nil {
 		t.Fatal(err)
 	}

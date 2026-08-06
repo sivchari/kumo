@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/sivchari/golden"
@@ -18,18 +16,8 @@ import (
 func newCloudWatchClient(t *testing.T) *cloudwatch.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return cloudwatch.NewFromConfig(cfg, func(o *cloudwatch.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return cloudwatch.NewFromConfig(awsConfig(t), func(o *cloudwatch.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

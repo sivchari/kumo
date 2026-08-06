@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3control"
 	"github.com/aws/aws-sdk-go-v2/service/s3control/types"
 	smithyendpoints "github.com/aws/smithy-go/endpoints"
@@ -21,7 +19,7 @@ import (
 type s3ControlEndpointResolver struct{}
 
 func (r *s3ControlEndpointResolver) ResolveEndpoint(_ context.Context, params s3control.EndpointParameters) (smithyendpoints.Endpoint, error) {
-	u, _ := url.Parse("http://localhost:4566")
+	u, _ := url.Parse(testEndpoint())
 
 	return smithyendpoints.Endpoint{URI: *u}, nil
 }
@@ -29,17 +27,7 @@ func (r *s3ControlEndpointResolver) ResolveEndpoint(_ context.Context, params s3
 func newS3ControlClient(t *testing.T) *s3control.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return s3control.NewFromConfig(cfg, func(o *s3control.Options) {
+	return s3control.NewFromConfig(awsConfig(t), func(o *s3control.Options) {
 		o.EndpointResolverV2 = &s3ControlEndpointResolver{}
 	})
 }

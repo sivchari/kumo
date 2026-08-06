@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/sivchari/golden"
@@ -20,18 +18,8 @@ import (
 func newSESv2Client(t *testing.T) *sesv2.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return sesv2.NewFromConfig(cfg, func(o *sesv2.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566/ses")
+	return sesv2.NewFromConfig(awsConfig(t), func(o *sesv2.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint() + "/ses")
 	})
 }
 
@@ -304,7 +292,7 @@ func TestSESv2_SendRawEmail(t *testing.T) {
 	}
 
 	// Verify sent email via kumo-specific endpoint.
-	resp, err := http.Get("http://localhost:4566/kumo/ses/v2/sent-emails")
+	resp, err := http.Get(testEndpoint() + "/kumo/ses/v2/sent-emails")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +343,7 @@ func TestSESv2_SendRawEmailWithoutDestination(t *testing.T) {
 	}
 
 	// Verify sent email via kumo-specific endpoint.
-	resp, err := http.Get("http://localhost:4566/kumo/ses/v2/sent-emails")
+	resp, err := http.Get(testEndpoint() + "/kumo/ses/v2/sent-emails")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +410,7 @@ func TestSESv2_GetSentEmails(t *testing.T) {
 	}
 
 	// Get sent emails via kumo-specific endpoint.
-	resp, err := http.Get("http://localhost:4566/kumo/ses/v2/sent-emails")
+	resp, err := http.Get(testEndpoint() + "/kumo/ses/v2/sent-emails")
 	if err != nil {
 		t.Fatal(err)
 	}

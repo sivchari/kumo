@@ -264,7 +264,7 @@ func TestCloudFront_EdgeSignedCookie(t *testing.T) {
 		})
 	})
 
-	edgeURL := fmt.Sprintf("http://localhost:4566/kumo/cdn/%s/test.txt", distID)
+	edgeURL := fmt.Sprintf("%s/kumo/cdn/%s/test.txt", testEndpoint(), distID)
 
 	t.Run("no_credentials_returns_403", func(t *testing.T) {
 		t.Parallel()

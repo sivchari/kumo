@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/finspace"
 	"github.com/sivchari/golden"
 )
@@ -15,18 +13,8 @@ import (
 func newFinSpaceClient(t *testing.T) *finspace.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return finspace.NewFromConfig(cfg, func(o *finspace.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return finspace.NewFromConfig(awsConfig(t), func(o *finspace.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

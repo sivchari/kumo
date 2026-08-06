@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/sivchari/golden"
@@ -21,18 +19,8 @@ import (
 func newKMSClient(t *testing.T) *kms.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return kms.NewFromConfig(cfg, func(o *kms.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return kms.NewFromConfig(awsConfig(t), func(o *kms.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

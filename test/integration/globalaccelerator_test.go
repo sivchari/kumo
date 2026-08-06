@@ -27,7 +27,7 @@ func newGlobalAcceleratorClient(t *testing.T) *globalaccelerator.Client {
 	}
 
 	return globalaccelerator.NewFromConfig(cfg, func(o *globalaccelerator.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

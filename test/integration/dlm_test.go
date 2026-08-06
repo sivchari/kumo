@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dlm"
 	"github.com/aws/aws-sdk-go-v2/service/dlm/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newDLMClient(t *testing.T) *dlm.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return dlm.NewFromConfig(cfg, func(o *dlm.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566/dlm")
+	return dlm.NewFromConfig(awsConfig(t), func(o *dlm.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint() + "/dlm")
 	})
 }
 

@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/codeguruprofiler"
 	"github.com/aws/aws-sdk-go-v2/service/codeguruprofiler/types"
 	"github.com/sivchari/golden"
@@ -16,18 +14,8 @@ import (
 func newCodeGuruProfilerClient(t *testing.T) *codeguruprofiler.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return codeguruprofiler.NewFromConfig(cfg, func(o *codeguruprofiler.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return codeguruprofiler.NewFromConfig(awsConfig(t), func(o *codeguruprofiler.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

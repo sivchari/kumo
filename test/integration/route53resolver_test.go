@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/route53resolver"
 	"github.com/aws/aws-sdk-go-v2/service/route53resolver/types"
 	"github.com/sivchari/golden"
@@ -16,18 +14,8 @@ import (
 func newRoute53ResolverClient(t *testing.T) *route53resolver.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return route53resolver.NewFromConfig(cfg, func(o *route53resolver.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return route53resolver.NewFromConfig(awsConfig(t), func(o *route53resolver.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

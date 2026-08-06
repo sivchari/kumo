@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/macie2"
 	"github.com/aws/aws-sdk-go-v2/service/macie2/types"
 	smithymiddleware "github.com/aws/smithy-go/middleware"
@@ -19,18 +17,8 @@ import (
 func newMacie2Client(t *testing.T) *macie2.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return macie2.NewFromConfig(cfg, func(o *macie2.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return macie2.NewFromConfig(awsConfig(t), func(o *macie2.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 		// Disable host prefix to route requests to localhost.
 		o.APIOptions = append(o.APIOptions, func(stack *smithymiddleware.Stack) error {
 			return stack.Serialize.Add(smithymiddleware.SerializeMiddlewareFunc(

@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/sivchari/golden"
@@ -22,18 +20,8 @@ import (
 func newLambdaClient(t *testing.T) *lambda.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return lambda.NewFromConfig(cfg, func(o *lambda.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566/lambda")
+	return lambda.NewFromConfig(awsConfig(t), func(o *lambda.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint() + "/lambda")
 	})
 }
 
@@ -218,7 +206,7 @@ func TestLambda_InvokeWithEndpoint(t *testing.T) {
 	createBody, _ := json.Marshal(createReq)
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://localhost:4566/lambda/2015-03-31/functions", bytes.NewReader(createBody))
+		testEndpoint()+"/lambda/2015-03-31/functions", bytes.NewReader(createBody))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -233,7 +221,7 @@ func TestLambda_InvokeWithEndpoint(t *testing.T) {
 
 	t.Cleanup(func() {
 		delReq, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
-			"http://localhost:4566/lambda/2015-03-31/functions/"+functionName, nil)
+			testEndpoint()+"/lambda/2015-03-31/functions/"+functionName, nil)
 		delResp, _ := http.DefaultClient.Do(delReq)
 		if delResp != nil {
 			delResp.Body.Close()
@@ -243,7 +231,7 @@ func TestLambda_InvokeWithEndpoint(t *testing.T) {
 	// Invoke function.
 	payload := []byte(`{"key": "value"}`)
 	invokeReq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://localhost:4566/lambda/2015-03-31/functions/"+functionName+"/invocations",
+		testEndpoint()+"/lambda/2015-03-31/functions/"+functionName+"/invocations",
 		bytes.NewReader(payload))
 	invokeReq.Header.Set("Content-Type", "application/json")
 

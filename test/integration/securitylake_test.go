@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/securitylake"
 	"github.com/aws/aws-sdk-go-v2/service/securitylake/types"
 	"github.com/sivchari/golden"
@@ -16,18 +14,8 @@ import (
 func newSecurityLakeClient(t *testing.T) *securitylake.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return securitylake.NewFromConfig(cfg, func(o *securitylake.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return securitylake.NewFromConfig(awsConfig(t), func(o *securitylake.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

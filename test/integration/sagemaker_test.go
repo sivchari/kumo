@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
 	"github.com/aws/aws-sdk-go-v2/service/sagemaker/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newSageMakerClient(t *testing.T) *sagemaker.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return sagemaker.NewFromConfig(cfg, func(o *sagemaker.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return sagemaker.NewFromConfig(awsConfig(t), func(o *sagemaker.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

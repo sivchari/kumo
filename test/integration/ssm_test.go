@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/sivchari/golden"
@@ -17,18 +15,8 @@ import (
 func newSSMClient(t *testing.T) *ssm.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return ssm.NewFromConfig(cfg, func(o *ssm.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return ssm.NewFromConfig(awsConfig(t), func(o *ssm.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

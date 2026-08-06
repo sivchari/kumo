@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -25,18 +23,8 @@ import (
 func newEventBridgeClient(t *testing.T) *eventbridge.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return eventbridge.NewFromConfig(cfg, func(o *eventbridge.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return eventbridge.NewFromConfig(awsConfig(t), func(o *eventbridge.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
@@ -392,7 +380,7 @@ func TestEventBridge_PutEvents_Delivery(t *testing.T) {
 	}
 
 	// Check delivered events via kumo endpoint.
-	resp, err := http.Get("http://localhost:4566/kumo/eventbridge/delivered-events")
+	resp, err := http.Get(testEndpoint() + "/kumo/eventbridge/delivered-events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +479,7 @@ func TestEventBridge_PutEvents_SQSDelivery(t *testing.T) {
 
 	for range 10 {
 		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-			QueueUrl:        aws.String("http://localhost:4566/000000000000/" + queueName),
+			QueueUrl:        aws.String(testEndpoint() + "/000000000000/" + queueName),
 			WaitTimeSeconds: 1,
 		})
 		if err != nil {
@@ -583,7 +571,7 @@ func TestEventBridge_PutEvents_InputPath(t *testing.T) {
 
 	for range 10 {
 		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-			QueueUrl:        aws.String("http://localhost:4566/000000000000/" + queueName),
+			QueueUrl:        aws.String(testEndpoint() + "/000000000000/" + queueName),
 			WaitTimeSeconds: 1,
 		})
 		if err != nil {
@@ -691,7 +679,7 @@ func TestEventBridge_PutEvents_InputTransformer(t *testing.T) {
 			Name: aws.String(busName),
 		})
 		_, _ = sqsClient.DeleteQueue(cleanupCtx, &sqs.DeleteQueueInput{
-			QueueUrl: aws.String("http://localhost:4566/000000000000/" + queueName),
+			QueueUrl: aws.String(testEndpoint() + "/000000000000/" + queueName),
 		})
 	})
 
@@ -717,7 +705,7 @@ func TestEventBridge_PutEvents_InputTransformer(t *testing.T) {
 
 	for range 10 {
 		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-			QueueUrl:        aws.String("http://localhost:4566/000000000000/" + queueName),
+			QueueUrl:        aws.String(testEndpoint() + "/000000000000/" + queueName),
 			WaitTimeSeconds: 1,
 		})
 		if err != nil {
@@ -874,7 +862,7 @@ func TestEventBridge_PutEvents_LambdaDelivery(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://localhost:4566/lambda/2015-03-31/functions", bytes.NewReader(createReq))
+		testEndpoint()+"/lambda/2015-03-31/functions", bytes.NewReader(createReq))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -889,7 +877,7 @@ func TestEventBridge_PutEvents_LambdaDelivery(t *testing.T) {
 
 	t.Cleanup(func() {
 		delReq, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
-			"http://localhost:4566/lambda/2015-03-31/functions/"+functionName, nil)
+			testEndpoint()+"/lambda/2015-03-31/functions/"+functionName, nil)
 
 		delResp, _ := http.DefaultClient.Do(delReq)
 		if delResp != nil {
