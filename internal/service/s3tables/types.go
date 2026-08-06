@@ -1,7 +1,11 @@
 // Package s3tables provides S3 Tables service emulation for kumo.
 package s3tables
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // TableBucket represents an S3 table bucket.
 type TableBucket struct {
@@ -219,15 +223,7 @@ type TableSummary struct {
 }
 
 // Error represents an S3 Tables error.
-type Error struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // Error codes.
 const (

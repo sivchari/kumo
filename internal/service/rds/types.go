@@ -2,6 +2,8 @@ package rds
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // DBInstance represents an RDS database instance.
@@ -298,15 +300,7 @@ type DeleteDBSnapshotOutput struct {
 // Error types.
 
 // Error represents an RDS error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // ErrorResponse represents an RDS error response.
 type ErrorResponse struct {

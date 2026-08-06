@@ -2,6 +2,8 @@ package redshift
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Cluster represents a Redshift cluster.
@@ -97,15 +99,7 @@ type DescribeClusterSnapshotsInput struct {
 // Error types.
 
 // Error represents a Redshift error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
 
 // ErrorResponse represents a Redshift error response.
 type ErrorResponse struct {

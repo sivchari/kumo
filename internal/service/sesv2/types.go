@@ -4,6 +4,8 @@ package sesv2
 import (
 	"strconv"
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // epochSeconds is a time.Time-compatible value that JSON-marshals as a
@@ -347,12 +349,4 @@ type ErrorResponse struct {
 }
 
 // IdentityError represents an SES error.
-type IdentityError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *IdentityError) Error() string {
-	return e.Message
-}
+type IdentityError = service.CodedError

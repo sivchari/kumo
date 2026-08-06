@@ -3,6 +3,8 @@ package secretsmanager
 
 import (
 	"time"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // Secret represents a secret in Secrets Manager.
@@ -256,15 +258,7 @@ type ErrorResponse struct {
 }
 
 // SecretError represents a Secrets Manager error.
-type SecretError struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *SecretError) Error() string {
-	return e.Message
-}
+type SecretError = service.CodedError
 
 // ExternalSecretRotationMetadataItem represents the metadata for external secret rotation.
 type ExternalSecretRotationMetadataItem struct {

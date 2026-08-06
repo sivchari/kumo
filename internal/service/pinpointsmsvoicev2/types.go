@@ -1,7 +1,11 @@
 //nolint:tagliatelle // AWS Pinpoint SMS Voice v2 API uses PascalCase for JSON tags
 package pinpointsmsvoicev2
 
-import "time"
+import (
+	"time"
+
+	"github.com/sivchari/kumo/internal/service"
+)
 
 // SentTextMessage represents a sent text message for debugging purposes.
 type SentTextMessage struct {
@@ -40,12 +44,4 @@ type ErrorResponse struct {
 }
 
 // Error represents a service error.
-type Error struct {
-	Code    string
-	Message string
-}
-
-// Error implements the error interface.
-func (e *Error) Error() string {
-	return e.Message
-}
+type Error = service.CodedError
