@@ -17,9 +17,51 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	ebtypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/sivchari/golden"
 )
+
+// TestS3_GetBucketNotificationConfiguration_EventBridge verifies that
+// GetBucketNotificationConfiguration echoes back an EventBridgeConfiguration
+// after PutBucketNotificationConfiguration enables it.
+func TestS3_GetBucketNotificationConfiguration_EventBridge(t *testing.T) {
+	s3Client := newS3Client(t)
+	ctx := t.Context()
+	bucketName := "s3-eb-notif-get-roundtrip"
+
+	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = s3Client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+	})
+
+	_, err = s3Client.PutBucketNotificationConfiguration(ctx, &s3.PutBucketNotificationConfigurationInput{
+		Bucket: aws.String(bucketName),
+		NotificationConfiguration: &s3types.NotificationConfiguration{
+			EventBridgeConfiguration: &s3types.EventBridgeConfiguration{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to put bucket notification configuration: %v", err)
+	}
+
+	getResult, err := s3Client.GetBucketNotificationConfiguration(ctx, &s3.GetBucketNotificationConfigurationInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		t.Fatalf("failed to get bucket notification configuration: %v", err)
+	}
+
+	if getResult.EventBridgeConfiguration == nil {
+		t.Fatal("expected EventBridgeConfiguration to be returned, got nil")
+	}
+}
 
 func TestS3_EventBridgeNotification(t *testing.T) {
 	s3Client := newS3Client(t)

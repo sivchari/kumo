@@ -1959,6 +1959,68 @@ func TestS3_PutObjectFallsBackToBucketDefaultEncryption(t *testing.T) {
 	}
 }
 
+// TestS3_PutObjectRequestSSEHeadersWinOverBucketDefault verifies that
+// explicit SSE headers on a PutObject request take precedence over the
+// destination bucket's default encryption, matching AWS's PutObject
+// semantics.
+func TestS3_PutObjectRequestSSEHeadersWinOverBucketDefault(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-sse-request-wins"
+	key := "encrypted.txt"
+
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	if _, err := client.PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
+		Bucket: aws.String(bucket),
+		ServerSideEncryptionConfiguration: &types.ServerSideEncryptionConfiguration{
+			Rules: []types.ServerSideEncryptionRule{
+				{
+					ApplyServerSideEncryptionByDefault: &types.ServerSideEncryptionByDefault{
+						SSEAlgorithm:   types.ServerSideEncryptionAwsKms,
+						KMSMasterKeyID: aws.String("bucket-default-key"),
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("failed to put bucket encryption: %v", err)
+	}
+
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(key),
+		Body:                 strings.NewReader("secret"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms,
+		SSEKMSKeyId:          aws.String("request-key"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	headOutput, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if aws.ToString(headOutput.SSEKMSKeyId) != "request-key" {
+		t.Errorf("SSEKMSKeyId: got %q, want %q", aws.ToString(headOutput.SSEKMSKeyId), "request-key")
+	}
+}
+
 // postPresignedForm builds a multipart/form-data body from the presigned POST
 // fields plus the object content (the file field is written last, as AWS
 // requires) and sends it to the presigned URL.
