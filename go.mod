@@ -17,9 +17,15 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/athena v1.57.6
 	github.com/aws/aws-sdk-go-v2/service/backup v1.55.2
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.76.1
+	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.66.3
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.81.1
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.57.3
+	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.36.4
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.319.1
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.60.4
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.90.0
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.45.25
+	github.com/aws/aws-sdk-go-v2/service/firehose v1.46.4
 	github.com/aws/aws-sdk-go-v2/service/iam v1.58.1
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.43.7
 	github.com/aws/aws-sdk-go-v2/service/kms v1.51.1

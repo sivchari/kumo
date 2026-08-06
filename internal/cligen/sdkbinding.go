@@ -12,9 +12,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/backup"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/firehose"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -169,5 +175,40 @@ var sdkBindings = map[string]sdkBinding{
 		ClientType: reflect.TypeOf(cloudformation.Client{}),
 		ImportPath: "github.com/aws/aws-sdk-go-v2/service/cloudformation",
 		CLIName:    "CloudFormation",
+	},
+	"ec2": {
+		ClientType: reflect.TypeOf(ec2.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/ec2",
+		CLIName:    "EC2",
+	},
+	"ecr": {
+		ClientType: reflect.TypeOf(ecr.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/ecr",
+		CLIName:    "ECR",
+	},
+	"ecs": {
+		ClientType: reflect.TypeOf(ecs.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/ecs",
+		CLIName:    "ECS",
+	},
+	// The kumo service package is internal/service/cloudwatch, but its
+	// Service.Name() returns "monitoring" (the AWS service ID); the AWS
+	// CLI's own command name is "cloudwatch" - keyed by
+	// service.Service.Name(), with CommandUse overriding the cobra Use.
+	"monitoring": {
+		ClientType: reflect.TypeOf(cloudwatch.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/cloudwatch",
+		CLIName:    "CloudWatch",
+		CommandUse: "cloudwatch",
+	},
+	"dynamodbstreams": {
+		ClientType: reflect.TypeOf(dynamodbstreams.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/dynamodbstreams",
+		CLIName:    "DynamoDBStreams",
+	},
+	"firehose": {
+		ClientType: reflect.TypeOf(firehose.Client{}),
+		ImportPath: "github.com/aws/aws-sdk-go-v2/service/firehose",
+		CLIName:    "Firehose",
 	},
 }
