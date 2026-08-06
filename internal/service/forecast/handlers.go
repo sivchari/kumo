@@ -57,9 +57,7 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 // CreateDataset handles the CreateDataset action.
 func (s *Service) CreateDataset(w http.ResponseWriter, r *http.Request) {
 	var input CreateDatasetInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -76,9 +74,7 @@ func (s *Service) CreateDataset(w http.ResponseWriter, r *http.Request) {
 // DescribeDataset handles the DescribeDataset action.
 func (s *Service) DescribeDataset(w http.ResponseWriter, r *http.Request) {
 	var input DescribeDatasetInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -106,9 +102,7 @@ func (s *Service) DescribeDataset(w http.ResponseWriter, r *http.Request) {
 // ListDatasets handles the ListDatasets action.
 func (s *Service) ListDatasets(w http.ResponseWriter, r *http.Request) {
 	var input ListDatasetsInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -125,9 +119,7 @@ func (s *Service) ListDatasets(w http.ResponseWriter, r *http.Request) {
 // DeleteDataset handles the DeleteDataset action.
 func (s *Service) DeleteDataset(w http.ResponseWriter, r *http.Request) {
 	var input DeleteDatasetInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -145,9 +137,7 @@ func (s *Service) DeleteDataset(w http.ResponseWriter, r *http.Request) {
 // CreateDatasetGroup handles the CreateDatasetGroup action.
 func (s *Service) CreateDatasetGroup(w http.ResponseWriter, r *http.Request) {
 	var input CreateDatasetGroupInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -164,9 +154,7 @@ func (s *Service) CreateDatasetGroup(w http.ResponseWriter, r *http.Request) {
 // DescribeDatasetGroup handles the DescribeDatasetGroup action.
 func (s *Service) DescribeDatasetGroup(w http.ResponseWriter, r *http.Request) {
 	var input DescribeDatasetGroupInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -191,9 +179,7 @@ func (s *Service) DescribeDatasetGroup(w http.ResponseWriter, r *http.Request) {
 // ListDatasetGroups handles the ListDatasetGroups action.
 func (s *Service) ListDatasetGroups(w http.ResponseWriter, r *http.Request) {
 	var input ListDatasetGroupsInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -210,9 +196,7 @@ func (s *Service) ListDatasetGroups(w http.ResponseWriter, r *http.Request) {
 // DeleteDatasetGroup handles the DeleteDatasetGroup action.
 func (s *Service) DeleteDatasetGroup(w http.ResponseWriter, r *http.Request) {
 	var input DeleteDatasetGroupInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -228,9 +212,7 @@ func (s *Service) DeleteDatasetGroup(w http.ResponseWriter, r *http.Request) {
 // UpdateDatasetGroup handles the UpdateDatasetGroup action.
 func (s *Service) UpdateDatasetGroup(w http.ResponseWriter, r *http.Request) {
 	var input UpdateDatasetGroupInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -248,9 +230,7 @@ func (s *Service) UpdateDatasetGroup(w http.ResponseWriter, r *http.Request) {
 // CreatePredictor handles the CreatePredictor action.
 func (s *Service) CreatePredictor(w http.ResponseWriter, r *http.Request) {
 	var input CreatePredictorInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -267,9 +247,7 @@ func (s *Service) CreatePredictor(w http.ResponseWriter, r *http.Request) {
 // DescribePredictor handles the DescribePredictor action.
 func (s *Service) DescribePredictor(w http.ResponseWriter, r *http.Request) {
 	var input DescribePredictorInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -298,9 +276,7 @@ func (s *Service) DescribePredictor(w http.ResponseWriter, r *http.Request) {
 // ListPredictors handles the ListPredictors action.
 func (s *Service) ListPredictors(w http.ResponseWriter, r *http.Request) {
 	var input ListPredictorsInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -317,9 +293,7 @@ func (s *Service) ListPredictors(w http.ResponseWriter, r *http.Request) {
 // DeletePredictor handles the DeletePredictor action.
 func (s *Service) DeletePredictor(w http.ResponseWriter, r *http.Request) {
 	var input DeletePredictorInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -337,9 +311,7 @@ func (s *Service) DeletePredictor(w http.ResponseWriter, r *http.Request) {
 // CreateForecast handles the CreateForecast action.
 func (s *Service) CreateForecast(w http.ResponseWriter, r *http.Request) {
 	var input CreateForecastInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -356,9 +328,7 @@ func (s *Service) CreateForecast(w http.ResponseWriter, r *http.Request) {
 // DescribeForecast handles the DescribeForecast action.
 func (s *Service) DescribeForecast(w http.ResponseWriter, r *http.Request) {
 	var input DescribeForecastInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -386,9 +356,7 @@ func (s *Service) DescribeForecast(w http.ResponseWriter, r *http.Request) {
 // ListForecasts handles the ListForecasts action.
 func (s *Service) ListForecasts(w http.ResponseWriter, r *http.Request) {
 	var input ListForecastsInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -405,9 +373,7 @@ func (s *Service) ListForecasts(w http.ResponseWriter, r *http.Request) {
 // DeleteForecast handles the DeleteForecast action.
 func (s *Service) DeleteForecast(w http.ResponseWriter, r *http.Request) {
 	var input DeleteForecastInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
-
+	if !decodeForecastRequest(w, r, &input) {
 		return
 	}
 
@@ -443,6 +409,18 @@ func writeError(w http.ResponseWriter, code, message string, statusCode int) {
 	if err := json.NewEncoder(w).Encode(errResp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// decodeForecastRequest decodes the JSON request body into input, writing
+// the standard Forecast decode-failure error and returning false on failure.
+func decodeForecastRequest(w http.ResponseWriter, r *http.Request, input any) bool {
+	if err := json.NewDecoder(r.Body).Decode(input); err != nil {
+		writeError(w, errInvalidInputException, "Invalid request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
 }
 
 func handleError(w http.ResponseWriter, err error) {
