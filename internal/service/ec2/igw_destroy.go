@@ -13,21 +13,15 @@ import (
 // destroy fails with InvalidAction and the IGW leaks in kumo.
 func (s *Service) DetachInternetGateway(w http.ResponseWriter, r *http.Request) {
 	var req AttachInternetGatewayRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.InternetGatewayID == "" {
-		writeError(w, errInvalidParameter, "InternetGatewayId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.InternetGatewayID == "", "InternetGatewayId") {
 		return
 	}
 
-	if req.VpcID == "" {
-		writeError(w, errInvalidParameter, "VpcId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.VpcID == "", "VpcId") {
 		return
 	}
 
@@ -47,15 +41,11 @@ func (s *Service) DetachInternetGateway(w http.ResponseWriter, r *http.Request) 
 // DeleteInternetGateway handles the DeleteInternetGateway action.
 func (s *Service) DeleteInternetGateway(w http.ResponseWriter, r *http.Request) {
 	var req DeleteInternetGatewayRequest
-	if err := readEC2JSONRequest(r, &req); err != nil {
-		writeError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeEC2Request(w, r, &req) {
 		return
 	}
 
-	if req.InternetGatewayID == "" {
-		writeError(w, errInvalidParameter, "InternetGatewayId is required", http.StatusBadRequest)
-
+	if !requireEC2Parameter(w, req.InternetGatewayID == "", "InternetGatewayId") {
 		return
 	}
 

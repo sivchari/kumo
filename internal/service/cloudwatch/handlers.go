@@ -25,21 +25,15 @@ const (
 // PutMetricData handles the PutMetricData action.
 func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricDataRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if req.Namespace == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter Namespace is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if len(req.MetricData) == 0 {
-		writeCloudWatchError(w, errMissingParameter, "The parameter MetricData is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, len(req.MetricData) != 0, "MetricData") {
 		return
 	}
 
@@ -55,15 +49,11 @@ func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 // GetMetricData handles the GetMetricData action.
 func (s *Service) GetMetricData(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricDataRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.MetricDataQueries) == 0 {
-		writeCloudWatchError(w, errMissingParameter, "The parameter MetricDataQueries is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, len(req.MetricDataQueries) != 0, "MetricDataQueries") {
 		return
 	}
 
@@ -83,21 +73,15 @@ func (s *Service) GetMetricData(w http.ResponseWriter, r *http.Request) {
 // GetMetricStatistics handles the GetMetricStatistics action.
 func (s *Service) GetMetricStatistics(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricStatisticsRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if req.Namespace == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter Namespace is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if req.MetricName == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter MetricName is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.MetricName != "", "MetricName") {
 		return
 	}
 
@@ -117,9 +101,7 @@ func (s *Service) GetMetricStatistics(w http.ResponseWriter, r *http.Request) {
 // ListMetrics handles the ListMetrics action.
 func (s *Service) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	var req ListMetricsRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
@@ -140,33 +122,23 @@ func (s *Service) ListMetrics(w http.ResponseWriter, r *http.Request) {
 // PutMetricAlarm handles the PutMetricAlarm action.
 func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricAlarmRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if req.AlarmName == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter AlarmName is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.AlarmName != "", "AlarmName") {
 		return
 	}
 
-	if req.MetricName == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter MetricName is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.MetricName != "", "MetricName") {
 		return
 	}
 
-	if req.Namespace == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter Namespace is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if req.ComparisonOperator == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter ComparisonOperator is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.ComparisonOperator != "", "ComparisonOperator") {
 		return
 	}
 
@@ -187,15 +159,11 @@ func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 // DeleteAlarms handles the DeleteAlarms action.
 func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAlarmsRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.AlarmNames) == 0 {
-		writeCloudWatchError(w, errMissingParameter, "The parameter AlarmNames is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, len(req.AlarmNames) != 0, "AlarmNames") {
 		return
 	}
 
@@ -216,9 +184,7 @@ func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 // DescribeAlarms handles the DescribeAlarms action.
 func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 	var req DescribeAlarmsRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
@@ -243,15 +209,11 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 // SetAlarmState handles the SetAlarmState action via JSON protocol.
 func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 	var req SetAlarmStateRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if req.AlarmName == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter AlarmName is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.AlarmName != "", "AlarmName") {
 		return
 	}
 
@@ -267,15 +229,11 @@ func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 // ListTagsForResource returns the tags attached to a CloudWatch resource.
 func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsForResourceRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
@@ -303,15 +261,11 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 // TagResource attaches tags to a CloudWatch resource.
 func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
@@ -330,15 +284,11 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 // UntagResource removes tags from a CloudWatch resource.
 func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := service.ReadJSONRequest(r, &req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		writeCloudWatchError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
-
+	if !requireCloudWatchParameter(w, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
@@ -414,26 +364,44 @@ func writeCloudWatchError(w http.ResponseWriter, code, message string, status in
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
+// decodeCloudWatchRequest decodes the JSON request body into req, writing the
+// standard CloudWatch decode-failure error and returning false on failure.
+func decodeCloudWatchRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := service.ReadJSONRequest(r, req); err != nil {
+		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
+// requireCloudWatchParameter writes the standard CloudWatch MissingParameter
+// error and returns false if present is false.
+func requireCloudWatchParameter(w http.ResponseWriter, present bool, name string) bool {
+	if !present {
+		writeCloudWatchError(w, errMissingParameter, "The parameter "+name+" is required", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
 // CBOR Protocol Handlers for RPC v2 CBOR
 
 // PutMetricDataCBOR handles the PutMetricData action with CBOR protocol.
 func (s *Service) PutMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricDataRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if req.Namespace == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter Namespace is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if len(req.MetricData) == 0 {
-		server.WriteCBORError(w, errMissingParameter, "The parameter MetricData is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, len(req.MetricData) != 0, "MetricData") {
 		return
 	}
 
@@ -450,15 +418,11 @@ func (s *Service) PutMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 // GetMetricDataCBOR handles the GetMetricData action with CBOR protocol.
 func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricDataCBORRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.MetricDataQueries) == 0 {
-		server.WriteCBORError(w, errMissingParameter, "The parameter MetricDataQueries is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, len(req.MetricDataQueries) != 0, "MetricDataQueries") {
 		return
 	}
 
@@ -506,21 +470,15 @@ func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 // GetMetricStatisticsCBOR handles the GetMetricStatistics action with CBOR protocol.
 func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request) {
 	var req GetMetricStatisticsCBORRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if req.Namespace == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter Namespace is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if req.MetricName == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter MetricName is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.MetricName != "", "MetricName") {
 		return
 	}
 
@@ -567,9 +525,7 @@ func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request
 // ListMetricsCBOR handles the ListMetrics action with CBOR protocol.
 func (s *Service) ListMetricsCBOR(w http.ResponseWriter, r *http.Request) {
 	var req ListMetricsRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
@@ -590,33 +546,23 @@ func (s *Service) ListMetricsCBOR(w http.ResponseWriter, r *http.Request) {
 // PutMetricAlarmCBOR handles the PutMetricAlarm action with CBOR protocol.
 func (s *Service) PutMetricAlarmCBOR(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricAlarmRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if req.AlarmName == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter AlarmName is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.AlarmName != "", "AlarmName") {
 		return
 	}
 
-	if req.MetricName == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter MetricName is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.MetricName != "", "MetricName") {
 		return
 	}
 
-	if req.Namespace == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter Namespace is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if req.ComparisonOperator == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter ComparisonOperator is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.ComparisonOperator != "", "ComparisonOperator") {
 		return
 	}
 
@@ -632,15 +578,11 @@ func (s *Service) PutMetricAlarmCBOR(w http.ResponseWriter, r *http.Request) {
 // DeleteAlarmsCBOR handles the DeleteAlarms action with CBOR protocol.
 func (s *Service) DeleteAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 	var req DeleteAlarmsRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if len(req.AlarmNames) == 0 {
-		server.WriteCBORError(w, errMissingParameter, "The parameter AlarmNames is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, len(req.AlarmNames) != 0, "AlarmNames") {
 		return
 	}
 
@@ -656,9 +598,7 @@ func (s *Service) DeleteAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 // DescribeAlarmsCBOR handles the DescribeAlarms action with CBOR protocol.
 func (s *Service) DescribeAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 	var req DescribeAlarmsRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
@@ -706,9 +646,7 @@ func (s *Service) DescribeAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 // SetAlarmStateCBOR handles the SetAlarmState action via CBOR protocol.
 func (s *Service) SetAlarmStateCBOR(w http.ResponseWriter, r *http.Request) {
 	var req SetAlarmStateCBORRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
@@ -730,15 +668,11 @@ func (s *Service) SetAlarmStateCBOR(w http.ResponseWriter, r *http.Request) {
 // ListTagsForResourceCBOR handles the ListTagsForResource action with CBOR protocol.
 func (s *Service) ListTagsForResourceCBOR(w http.ResponseWriter, r *http.Request) {
 	var req ListTagsForResourceRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
@@ -757,15 +691,11 @@ func (s *Service) ListTagsForResourceCBOR(w http.ResponseWriter, r *http.Request
 // TagResourceCBOR handles the TagResource action with CBOR protocol.
 func (s *Service) TagResourceCBOR(w http.ResponseWriter, r *http.Request) {
 	var req TagResourceRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
@@ -781,15 +711,11 @@ func (s *Service) TagResourceCBOR(w http.ResponseWriter, r *http.Request) {
 // UntagResourceCBOR handles the UntagResource action with CBOR protocol.
 func (s *Service) UntagResourceCBOR(w http.ResponseWriter, r *http.Request) {
 	var req UntagResourceRequest
-	if err := server.DecodeCBORRequest(r, &req); err != nil {
-		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
-
+	if !decodeCloudWatchCBORRequest(w, r, &req) {
 		return
 	}
 
-	if req.ResourceARN == "" {
-		server.WriteCBORError(w, errMissingParameter, "The parameter ResourceARN is required", http.StatusBadRequest)
-
+	if !requireCloudWatchCBORParameter(w, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
@@ -817,6 +743,30 @@ func handleCloudWatchCBORError(w http.ResponseWriter, err error) {
 	}
 
 	server.WriteCBORError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+}
+
+// decodeCloudWatchCBORRequest decodes the CBOR request body into req, writing
+// the standard CloudWatch decode-failure error and returning false on failure.
+func decodeCloudWatchCBORRequest(w http.ResponseWriter, r *http.Request, req any) bool {
+	if err := server.DecodeCBORRequest(r, req); err != nil {
+		server.WriteCBORError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
+}
+
+// requireCloudWatchCBORParameter writes the standard CloudWatch
+// MissingParameter error and returns false if present is false.
+func requireCloudWatchCBORParameter(w http.ResponseWriter, present bool, name string) bool {
+	if !present {
+		server.WriteCBORError(w, errMissingParameter, "The parameter "+name+" is required", http.StatusBadRequest)
+
+		return false
+	}
+
+	return true
 }
 
 // parseTimestamp parses a timestamp string in various formats.
