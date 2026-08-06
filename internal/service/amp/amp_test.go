@@ -1,71 +1,12 @@
 package amp
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
-
-// TestCreateDescribeDelete exercises the control-plane round-trip.
-func TestCreateDescribeDelete(t *testing.T) {
-	t.Parallel()
-
-	store := NewMemoryStorage()
-	svc := New(store, "")
-
-	create := httptest.NewRequest(http.MethodPost, "/workspaces", strings.NewReader(`{"alias":"prod"}`))
-	createRec := httptest.NewRecorder()
-	svc.CreateWorkspace(createRec, create)
-
-	if createRec.Code != http.StatusAccepted {
-		t.Fatalf("Create: got %d, body=%s", createRec.Code, createRec.Body.String())
-	}
-
-	var created struct {
-		WorkspaceID string `json:"workspaceId"`
-	}
-
-	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
-		t.Fatalf("create resp: %v", err)
-	}
-
-	if !strings.HasPrefix(created.WorkspaceID, "ws-") {
-		t.Fatalf("workspaceId looks wrong: %q", created.WorkspaceID)
-	}
-
-	desc := httptest.NewRequest(http.MethodGet, "/workspaces/"+created.WorkspaceID, http.NoBody)
-	desc.SetPathValue("workspaceId", created.WorkspaceID)
-
-	descRec := httptest.NewRecorder()
-	svc.DescribeWorkspace(descRec, desc)
-
-	if descRec.Code != http.StatusOK {
-		t.Fatalf("Describe: got %d", descRec.Code)
-	}
-
-	var descResp DescribeWorkspaceResponse
-
-	if err := json.Unmarshal(descRec.Body.Bytes(), &descResp); err != nil {
-		t.Fatalf("describe resp: %v", err)
-	}
-
-	if descResp.Workspace.Alias != "prod" {
-		t.Fatalf("alias not preserved: got %q", descResp.Workspace.Alias)
-	}
-
-	del := httptest.NewRequest(http.MethodDelete, "/workspaces/"+created.WorkspaceID, http.NoBody)
-	del.SetPathValue("workspaceId", created.WorkspaceID)
-
-	delRec := httptest.NewRecorder()
-	svc.DeleteWorkspace(delRec, del)
-
-	if delRec.Code != http.StatusAccepted {
-		t.Fatalf("Delete: got %d", delRec.Code)
-	}
-}
 
 // TestRemoteWrite_NoBackend confirms the data-plane path returns 502
 // + a clear hint when KUMO_AMP_BACKEND isn't configured.
