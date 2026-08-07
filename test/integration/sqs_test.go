@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/aws/smithy-go"
 	"github.com/sivchari/golden"
 )
 
@@ -1018,5 +1020,130 @@ func TestSQS_VisibilityTimeoutDLQRedrive(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSQS_AddAndRemovePermission(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-add-remove-permission"
+
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	// AddPermission grants SendMessage to one account and ReceiveMessage to
+	// another, per the AWS API reference example.
+	_, err = client.AddPermission(ctx, &sqs.AddPermissionInput{
+		QueueUrl:      createOutput.QueueUrl,
+		Label:         aws.String("TestSharedAccess"),
+		AWSAccountIds: []string{"177715257436", "111111111111"},
+		Actions:       []string{"SendMessage", "ReceiveMessage"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GetQueueAttributes should reflect the generated Policy.
+	afterAdd, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       createOutput.QueueUrl,
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNamePolicy},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_add", afterAdd)
+
+	// RemovePermission removes the statement by Label.
+	_, err = client.RemovePermission(ctx, &sqs.RemovePermissionInput{
+		QueueUrl: createOutput.QueueUrl,
+		Label:    aws.String("TestSharedAccess"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The Policy attribute should be gone now that the only statement was removed.
+	afterRemove, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       createOutput.QueueUrl,
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNamePolicy},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_after_remove", afterRemove)
+}
+
+func TestSQS_AddPermissionErrors(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-add-permission-errors"
+
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	// Too many actions in a single statement (limit is 7).
+	_, err = client.AddPermission(ctx, &sqs.AddPermissionInput{
+		QueueUrl:      createOutput.QueueUrl,
+		Label:         aws.String("TooManyActions"),
+		AWSAccountIds: []string{"111111111111"},
+		Actions: []string{
+			"SendMessage", "ReceiveMessage", "DeleteMessage", "GetQueueAttributes",
+			"GetQueueUrl", "PurgeQueue", "ChangeMessageVisibility", "ListDeadLetterSourceQueues",
+		},
+	})
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "OverLimit" {
+		t.Fatalf("expected OverLimit error, got %v", err)
+	}
+
+	// Duplicate label.
+	_, err = client.AddPermission(ctx, &sqs.AddPermissionInput{
+		QueueUrl:      createOutput.QueueUrl,
+		Label:         aws.String("DupLabel"),
+		AWSAccountIds: []string{"111111111111"},
+		Actions:       []string{"SendMessage"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.AddPermission(ctx, &sqs.AddPermissionInput{
+		QueueUrl:      createOutput.QueueUrl,
+		Label:         aws.String("DupLabel"),
+		AWSAccountIds: []string{"222222222222"},
+		Actions:       []string{"ReceiveMessage"},
+	})
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "InvalidParameterValue" {
+		t.Fatalf("expected InvalidParameterValue error for duplicate label, got %v", err)
+	}
+
+	// RemovePermission with an unknown label.
+	_, err = client.RemovePermission(ctx, &sqs.RemovePermissionInput{
+		QueueUrl: createOutput.QueueUrl,
+		Label:    aws.String("NoSuchLabel"),
+	})
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "InvalidParameterValue" {
+		t.Fatalf("expected InvalidParameterValue error for unknown label, got %v", err)
 	}
 }

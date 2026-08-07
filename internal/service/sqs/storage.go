@@ -43,6 +43,8 @@ type Storage interface {
 	PurgeQueue(ctx context.Context, queueURL string) error
 	GetQueueAttributes(ctx context.Context, queueURL string, attributeNames []string) (map[string]string, error)
 	SetQueueAttributes(ctx context.Context, queueURL string, attributes map[string]string) error
+	AddPermission(ctx context.Context, queueURL, label string, awsAccountIDs, actions []string) error
+	RemovePermission(ctx context.Context, queueURL, label string) error
 }
 
 // QueueError represents an SQS queue error.
@@ -57,6 +59,16 @@ func (e *QueueError) Error() string {
 
 // Attribute value for boolean true.
 const attrValueTrue = "true"
+
+// Common error codes shared across QueueError instances.
+const (
+	errCodeInvalidParameterValue = "InvalidParameterValue"
+	errCodeMissingParameter      = "MissingParameter"
+)
+
+// attrPolicy is the GetQueueAttributes/SetQueueAttributes attribute name for
+// a queue's access policy document.
+const attrPolicy = "Policy"
 
 // Common error codes.
 var (
@@ -230,7 +242,7 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 
 	if !isValidQueueName(name) {
 		return nil, &QueueError{
-			Code:    "InvalidParameterValue",
+			Code:    errCodeInvalidParameterValue,
 			Message: "Queue name contains invalid characters",
 		}
 	}
@@ -244,7 +256,7 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 	isFifo := strings.HasSuffix(name, ".fifo")
 	if attributes["FifoQueue"] == attrValueTrue && !isFifo {
 		return nil, &QueueError{
-			Code:    "InvalidParameterValue",
+			Code:    errCodeInvalidParameterValue,
 			Message: "The queue name must end with .fifo for FIFO queues",
 		}
 	}
@@ -418,7 +430,7 @@ type FifoResult struct {
 func (qd *QueueData) validateFIFO(body, messageGroupID, messageDeduplicationID string, now time.Time) (*FifoResult, error) {
 	if messageGroupID == "" {
 		return nil, &QueueError{
-			Code:    "MissingParameter",
+			Code:    errCodeMissingParameter,
 			Message: "The request must contain the parameter MessageGroupId",
 		}
 	}
@@ -430,7 +442,7 @@ func (qd *QueueData) validateFIFO(body, messageGroupID, messageDeduplicationID s
 			dedupID = hex.EncodeToString(hash[:])
 		} else {
 			return nil, &QueueError{
-				Code:    "InvalidParameterValue",
+				Code:    errCodeInvalidParameterValue,
 				Message: "The queue should either have ContentBasedDeduplication enabled or MessageDeduplicationId provided explicitly",
 			}
 		}
@@ -767,7 +779,7 @@ func (s *MemoryStorage) GetQueueAttributes(_ context.Context, queueURL string, a
 	}
 
 	if q.Policy != "" {
-		allAttrs["Policy"] = q.Policy
+		allAttrs[attrPolicy] = q.Policy
 	}
 
 	if q.RedrivePolicy != "" {
@@ -807,6 +819,107 @@ func (s *MemoryStorage) SetQueueAttributes(_ context.Context, queueURL string, a
 	return nil
 }
 
+// AddPermission adds a cross-account permission statement to a queue's
+// access policy.
+func (s *MemoryStorage) AddPermission(_ context.Context, queueURL, label string, awsAccountIDs, actions []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, qd, err := s.resolveQueueData(queueURL)
+	if err != nil {
+		return err
+	}
+
+	if len(actions) == 0 {
+		return &QueueError{Code: errCodeMissingParameter, Message: "The request must contain the parameter Actions."}
+	}
+
+	if len(actions) > policyMaxActionsPerStatement {
+		return &QueueError{
+			Code:    "OverLimit",
+			Message: fmt.Sprintf("%d Actions were found, maximum allowed is %d.", len(actions), policyMaxActionsPerStatement),
+		}
+	}
+
+	if len(awsAccountIDs) == 0 {
+		return &QueueError{
+			Code:    errCodeInvalidParameterValue,
+			Message: "Value [] for parameter PrincipalId is invalid. Reason: Unable to verify.",
+		}
+	}
+
+	for _, action := range actions {
+		if _, ok := permissionActions[action]; !ok {
+			return &QueueError{
+				Code:    errCodeInvalidParameterValue,
+				Message: fmt.Sprintf("Value SQS:%s for parameter ActionName is invalid. Reason: Only the queue owner is allowed to invoke this action.", action),
+			}
+		}
+	}
+
+	doc, err := parsePolicy(qd.Queue.Policy, qd.Queue.ARN)
+	if err != nil {
+		return err
+	}
+
+	if doc.hasStatement(label) {
+		return &QueueError{
+			Code:    errCodeInvalidParameterValue,
+			Message: fmt.Sprintf("Value %s for parameter Label is invalid. Reason: Already exists.", label),
+		}
+	}
+
+	doc.Statement = append(doc.Statement, buildPermissionStatement(label, qd.Queue.ARN, awsAccountIDs, actions))
+
+	policy, err := doc.marshal()
+	if err != nil {
+		return err
+	}
+
+	qd.Queue.Policy = policy
+	qd.Queue.LastModifiedTimestamp = time.Now()
+
+	s.saveLocked()
+
+	return nil
+}
+
+// RemovePermission removes the permission statement identified by label from
+// a queue's access policy.
+func (s *MemoryStorage) RemovePermission(_ context.Context, queueURL, label string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, qd, err := s.resolveQueueData(queueURL)
+	if err != nil {
+		return err
+	}
+
+	doc, err := parsePolicy(qd.Queue.Policy, qd.Queue.ARN)
+	if err != nil {
+		return err
+	}
+
+	if !doc.removeStatement(label) {
+		return &QueueError{
+			Code:    errCodeInvalidParameterValue,
+			Message: fmt.Sprintf("Value %s for parameter Label is invalid. Reason: can't find label on existing policy.", label),
+		}
+	}
+
+	policy, err := doc.marshal()
+	if err != nil {
+		return err
+	}
+
+	qd.Queue.Policy = policy
+	qd.Queue.LastModifiedTimestamp = time.Now()
+
+	s.saveLocked()
+
+	return nil
+}
+
 func applyQueueAttributes(q *Queue, attrs map[string]string) {
 	for key, val := range attrs {
 		switch key {
@@ -822,7 +935,7 @@ func applyQueueAttributes(q *Queue, attrs map[string]string) {
 			_, _ = fmt.Sscanf(val, "%d", &q.ReceiveWaitTimeSeconds)
 		case "ContentBasedDeduplication":
 			q.ContentBasedDeduplication = val == "true"
-		case "Policy":
+		case attrPolicy:
 			q.Policy = val
 		case "RedrivePolicy":
 			q.RedrivePolicy = val

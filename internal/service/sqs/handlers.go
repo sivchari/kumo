@@ -283,7 +283,7 @@ func (s *Service) processBatchEntries(ctx context.Context, queueURL string, entr
 			resp.Failed = append(resp.Failed, BatchResultErrorEntry{
 				ID:          entry.ID,
 				SenderFault: true,
-				Code:        "MissingParameter",
+				Code:        errCodeMissingParameter,
 				Message:     "The request must contain the parameter MessageBody",
 			})
 
@@ -465,7 +465,7 @@ func (s *Service) processDeleteBatchEntries(ctx context.Context, queueURL string
 			resp.Failed = append(resp.Failed, BatchResultErrorEntry{
 				ID:          entry.ID,
 				SenderFault: true,
-				Code:        "MissingParameter",
+				Code:        errCodeMissingParameter,
 				Message:     "The request must contain the parameter ReceiptHandle",
 			})
 
@@ -635,6 +635,68 @@ func (s *Service) SetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, struct{}{})
 }
 
+// AddPermission handles the AddPermission action.
+func (s *Service) AddPermission(w http.ResponseWriter, r *http.Request) {
+	var req AddPermissionRequest
+	if !decodeSQSRequest(w, r, &req) {
+		return
+	}
+
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
+		return
+	}
+
+	if !requireSQSParameter(w, req.Label, "Label") {
+		return
+	}
+
+	if err := s.storage.AddPermission(r.Context(), req.QueueURL, req.Label, req.AWSAccountIDs, req.Actions); err != nil {
+		var qErr *QueueError
+		if errors.As(err, &qErr) {
+			writeSQSError(w, qErr.Code, qErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeSQSError(w, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// RemovePermission handles the RemovePermission action.
+func (s *Service) RemovePermission(w http.ResponseWriter, r *http.Request) {
+	var req RemovePermissionRequest
+	if !decodeSQSRequest(w, r, &req) {
+		return
+	}
+
+	if !requireSQSParameter(w, req.QueueURL, "QueueUrl") {
+		return
+	}
+
+	if !requireSQSParameter(w, req.Label, "Label") {
+		return
+	}
+
+	if err := s.storage.RemovePermission(r.Context(), req.QueueURL, req.Label); err != nil {
+		var qErr *QueueError
+		if errors.As(err, &qErr) {
+			writeSQSError(w, qErr.Code, qErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeSQSError(w, "InternalError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, struct{}{})
+}
+
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
 	service.WriteJSONResponse(w, service.ContentTypeAmzJSON10, v)
@@ -649,7 +711,7 @@ func writeSQSError(w http.ResponseWriter, code, message string, status int) {
 // standard SQS decode-failure error and returning false on failure.
 func decodeSQSRequest(w http.ResponseWriter, r *http.Request, req any) bool {
 	if err := service.ReadJSONRequest(r, req); err != nil {
-		writeSQSError(w, "InvalidParameterValue", "Failed to parse request body", http.StatusBadRequest)
+		writeSQSError(w, errCodeInvalidParameterValue, "Failed to parse request body", http.StatusBadRequest)
 
 		return false
 	}
@@ -661,7 +723,7 @@ func decodeSQSRequest(w http.ResponseWriter, r *http.Request, req any) bool {
 // returns false if value is empty.
 func requireSQSParameter(w http.ResponseWriter, value, name string) bool {
 	if value == "" {
-		writeSQSError(w, "MissingParameter", name+" is required", http.StatusBadRequest)
+		writeSQSError(w, errCodeMissingParameter, name+" is required", http.StatusBadRequest)
 
 		return false
 	}
@@ -671,22 +733,24 @@ func requireSQSParameter(w http.ResponseWriter, value, name string) bool {
 
 // sqsActions maps an X-Amz-Target action name to its handler method.
 var sqsActions = map[string]func(*Service, http.ResponseWriter, *http.Request){
+	"AddPermission":                (*Service).AddPermission,
+	"RemovePermission":             (*Service).RemovePermission,
 	"CreateQueue":                  (*Service).CreateQueue,
 	"ListQueueTags":                (*Service).ListQueueTags,
 	"TagQueue":                     (*Service).TagQueue,
 	"UntagQueue":                   (*Service).UntagQueue,
 	"DeleteQueue":                  (*Service).DeleteQueue,
 	"ListQueues":                   (*Service).ListQueues,
-	"GetQueueUrl":                  (*Service).GetQueueURL,
-	"SendMessage":                  (*Service).SendMessage,
+	actionGetQueueURL:              (*Service).GetQueueURL,
+	actionSendMessage:              (*Service).SendMessage,
 	"SendMessageBatch":             (*Service).SendMessageBatch,
-	"ReceiveMessage":               (*Service).ReceiveMessage,
-	"DeleteMessage":                (*Service).DeleteMessage,
+	actionReceiveMessage:           (*Service).ReceiveMessage,
+	actionDeleteMessage:            (*Service).DeleteMessage,
 	"DeleteMessageBatch":           (*Service).DeleteMessageBatch,
-	"PurgeQueue":                   (*Service).PurgeQueue,
-	"GetQueueAttributes":           (*Service).GetQueueAttributes,
+	actionPurgeQueue:               (*Service).PurgeQueue,
+	actionGetQueueAttributes:       (*Service).GetQueueAttributes,
 	"SetQueueAttributes":           (*Service).SetQueueAttributes,
-	"ChangeMessageVisibility":      (*Service).ChangeMessageVisibility,
+	actionChangeMessageVisibility:  (*Service).ChangeMessageVisibility,
 	"ChangeMessageVisibilityBatch": (*Service).ChangeMessageVisibilityBatch,
 }
 

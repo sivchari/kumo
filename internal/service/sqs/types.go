@@ -288,3 +288,28 @@ type ErrorResponse struct {
 	Type    string `json:"__type"`
 	Message string `json:"message"`
 }
+
+// AddPermissionRequest is the request for AddPermission.
+type AddPermissionRequest struct {
+	QueueURL      string   `json:"QueueUrl"`
+	Label         string   `json:"Label"`
+	AWSAccountIDs []string `json:"AWSAccountIds"`
+	Actions       []string `json:"Actions"`
+}
+
+// RemovePermissionRequest is the request for RemovePermission.
+type RemovePermissionRequest struct {
+	QueueURL string `json:"QueueUrl"`
+	Label    string `json:"Label"`
+}
+
+// policyDocument is a minimal representation of an SQS access policy.
+// Statement entries are kept as generic maps so that fields kumo doesn't
+// model (e.g. Condition, NotPrincipal) written via a raw SetQueueAttributes
+// Policy value are preserved verbatim across AddPermission/RemovePermission
+// calls.
+type policyDocument struct {
+	Version   string           `json:"Version"`
+	ID        string           `json:"Id,omitempty"`
+	Statement []map[string]any `json:"Statement"`
+}
