@@ -32,7 +32,7 @@ test-fuzz:
 	@grep -rl '^func Fuzz' internal/ | xargs -I{} dirname {} | sort -u | while read pkg; do \
 		grep -oh 'func \(Fuzz[A-Za-z]*\)' "$$pkg"/*_test.go | sed 's/func //' | while read fn; do \
 			echo "=== fuzzing $$fn in $$pkg ==="; \
-			go test -fuzz="$$fn" -fuzztime=60s "./$$pkg/..." || exit 1; \
+			go test -fuzz="$$fn" -fuzztime=60s -parallel=2 "./$$pkg/..." || exit 1; \
 		done; \
 	done
 
