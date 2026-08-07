@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.28.1](https://github.com/sivchari/kumo/compare/v0.28.0...v0.28.1) - 2026-08-07
+- fix(ci): reduce fuzz test worker parallelism to avoid CI flake by @sivchari in https://github.com/sivchari/kumo/pull/912
+- fix(cli): restore v0.27.0 CLI compatibility broken by cli-gen migration by @sivchari in https://github.com/sivchari/kumo/pull/914
+- release v0.28.1 by @sivchari in https://github.com/sivchari/kumo/pull/916
+
 ## [v0.28.0](https://github.com/sivchari/kumo/compare/v0.27.0...v0.28.0) - 2026-08-07
 - feat(sfn): support Parallel and Map states with Retry and Catch by @sivchari in https://github.com/sivchari/kumo/pull/869
 - feat(sfn): task and execution timeouts plus structural definition validation by @sivchari in https://github.com/sivchari/kumo/pull/872
