@@ -11,7 +11,7 @@
       "BillingMode": "PAY_PER_REQUEST",
       "LastUpdateToPayPerRequestDateTime": null
     },
-    "CreationDateTime": "2026-03-23T07:45:25Z",
+    "CreationDateTime": "2026-08-07T03:56:47Z",
     "DeletionProtectionEnabled": false,
     "GlobalSecondaryIndexes": null,
     "GlobalTableSettingsReplicationMode": "",
@@ -35,8 +35,11 @@
     "SSEDescription": null,
     "StreamSpecification": null,
     "TableArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-table-create-delete",
-    "TableClassSummary": null,
-    "TableId": "67576723-e3a5-4cd0-8f81-ab9cd0687a2b",
+    "TableClassSummary": {
+      "LastUpdateDateTime": "2026-08-07T03:56:47Z",
+      "TableClass": "STANDARD"
+    },
+    "TableId": "aaa6a656-623e-4712-9893-ce0f1006c654",
     "TableName": "test-table-create-delete",
     "TableSizeBytes": 0,
     "TableStatus": "ACTIVE",

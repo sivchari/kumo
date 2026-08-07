@@ -439,6 +439,13 @@ func tableToDescription(table *Table) TableDescription {
 		}
 	}
 
+	if table.TableClass != "" {
+		desc.TableClassSummary = &TableClassSummary{
+			TableClass:         table.TableClass,
+			LastUpdateDateTime: float64(table.TableClassUpdatedAt.Unix()),
+		}
+	}
+
 	for i := range table.GlobalSecondaryIndexes {
 		desc.GlobalSecondaryIndexes = append(desc.GlobalSecondaryIndexes, gsiToDescription(table, &table.GlobalSecondaryIndexes[i]))
 	}
@@ -866,11 +873,13 @@ func convertAttributeUpdates(req *UpdateItemRequest) {
 	req.UpdateExpression = strings.Join(parts, " ")
 }
 
-// UpdateTable is a no-op that returns the current table description.
+// UpdateTable applies the requested changes (currently: TableClass) and
+// returns the updated table description.
 //
-// terraform-provider-aws calls UpdateTable during terraform destroy to
-// remove GSIs before deleting the table. Without this handler, kumo returns
-// UnknownOperationException and destroy fails.
+// terraform-provider-aws also calls UpdateTable during terraform destroy to
+// remove GSIs before deleting the table; fields it doesn't recognize (e.g.
+// GlobalSecondaryIndexUpdates) are accepted but not applied, matching the
+// previous no-op behavior for that case.
 func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
 	var req UpdateTableRequest
 	if err := service.ReadJSONRequest(r, &req); err != nil || req.TableName == "" {
@@ -879,15 +888,22 @@ func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	table, err := s.storage.DescribeTable(r.Context(), req.TableName)
+	table, err := s.storage.UpdateTable(r.Context(), &req)
 	if err != nil {
-		writeDynamoDBError(w, "ResourceNotFoundException", "Table not found: "+req.TableName, http.StatusBadRequest)
+		var tErr *TableError
+		if errors.As(err, &tErr) {
+			writeDynamoDBError(w, tErr.Code, tErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
 
 		return
 	}
 
-	writeJSONResponse(w, DescribeTableResponse{
-		Table: tableToDescription(table),
+	writeJSONResponse(w, UpdateTableResponse{
+		TableDescription: tableToDescription(table),
 	})
 }
 

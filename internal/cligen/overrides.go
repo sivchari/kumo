@@ -123,3 +123,27 @@ func isIgnoredBackCompatFlag(serviceName, action, fieldName string) bool {
 
 	return false
 }
+
+// flagNameOverrides overrides the derived kebab-case flag name for specific
+// fields, keyed by kumo service name, then SDK action name, then Go field
+// name. It exists for cases where the auto-derived name collides with a
+// root-level persistent flag (e.g. sfn's SendTaskSuccess.Output field would
+// otherwise become --output, colliding with the global --output format
+// flag); the AWS CLI's own name for that flag, --task-output, is used
+// instead (see
+// https://docs.aws.amazon.com/cli/latest/reference/stepfunctions/send-task-success.html).
+var flagNameOverrides = map[string]map[string]map[string]string{
+	"states": {
+		"SendTaskSuccess": {"Output": "task-output"},
+	},
+}
+
+// overriddenFlagName returns the overridden flag name for serviceName's
+// action/fieldName, or defaultName when no override exists.
+func overriddenFlagName(serviceName, action, fieldName, defaultName string) string {
+	if name, ok := flagNameOverrides[serviceName][action][fieldName]; ok {
+		return name
+	}
+
+	return defaultName
+}

@@ -33,6 +33,7 @@ type Storage interface {
 	DeleteTable(ctx context.Context, tableName string) (*Table, error)
 	ListTables(ctx context.Context, exclusiveStartTableName string, limit int) ([]string, string, error)
 	DescribeTable(ctx context.Context, tableName string) (*Table, error)
+	UpdateTable(ctx context.Context, req *UpdateTableRequest) (*Table, error)
 	PutItem(ctx context.Context, tableName string, item Item, returnOld bool, cond ConditionInput) (Item, error)
 	GetItem(ctx context.Context, tableName string, key Item) (Item, error)
 	DeleteItem(ctx context.Context, tableName string, key Item, returnOld bool, cond ConditionInput) (Item, error)
@@ -245,6 +246,13 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		billingMode = "PROVISIONED"
 	}
 
+	tableClass := req.TableClass
+	if tableClass == "" {
+		tableClass = "STANDARD"
+	}
+
+	now := time.Now()
+
 	table := &Table{
 		Name:                   req.TableName,
 		KeySchema:              req.KeySchema,
@@ -252,13 +260,15 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		ProvisionedThroughput:  req.ProvisionedThroughput,
 		GlobalSecondaryIndexes: req.GlobalSecondaryIndexes,
 		LocalSecondaryIndexes:  req.LocalSecondaryIndexes,
-		CreationDateTime:       time.Now(),
+		CreationDateTime:       now,
 		TableStatus:            "ACTIVE",
 		ItemCount:              0,
 		TableSizeBytes:         0,
 		TableARN:               fmt.Sprintf("arn:aws:dynamodb:%s:%s:table/%s", m.region, defaultAccountID, req.TableName),
 		BillingMode:            billingMode,
 		DeletionProtection:     req.DeletionProtectionEnabled,
+		TableClass:             tableClass,
+		TableClassUpdatedAt:    now,
 	}
 
 	m.setupTableStream(table, req)
@@ -387,6 +397,31 @@ func (m *MemoryStorage) DescribeTable(_ context.Context, tableName string) (*Tab
 	}
 
 	td.Table.ItemCount = int64(len(td.Items))
+
+	return td.Table, nil
+}
+
+// UpdateTable applies UpdateTable request changes to a table.
+func (m *MemoryStorage) UpdateTable(_ context.Context, req *UpdateTableRequest) (*Table, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	td, exists := m.Tables[req.TableName]
+	if !exists {
+		return nil, &TableError{
+			Code:    "ResourceNotFoundException",
+			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", req.TableName),
+		}
+	}
+
+	if req.TableClass != "" && req.TableClass != td.Table.TableClass {
+		td.Table.TableClass = req.TableClass
+		td.Table.TableClassUpdatedAt = time.Now()
+	}
+
+	td.Table.ItemCount = int64(len(td.Items))
+
+	m.saveLocked()
 
 	return td.Table, nil
 }

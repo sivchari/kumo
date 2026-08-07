@@ -1121,7 +1121,7 @@ func newSFNSendTaskSuccessCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&output, "output", "", "Output")
+	cmd.Flags().StringVar(&output, "task-output", "", "Output")
 
 	cmd.Flags().StringVar(&taskToken, "task-token", "", "Task token")
 

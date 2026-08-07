@@ -215,6 +215,8 @@ type Table struct {
 	StreamEnabled          bool
 	StreamViewType         string
 	LatestStreamArn        string
+	TableClass             string
+	TableClassUpdatedAt    time.Time
 }
 
 // StreamSpecification represents DynamoDB stream settings.
@@ -241,6 +243,13 @@ type TableDescription struct {
 	StreamSpecification       *StreamSpecification              `json:"StreamSpecification,omitempty"`
 	LatestStreamArn           string                            `json:"LatestStreamArn,omitempty"`
 	DeletionProtectionEnabled bool                              `json:"DeletionProtectionEnabled"`
+	TableClassSummary         *TableClassSummary                `json:"TableClassSummary,omitempty"`
+}
+
+// TableClassSummary represents the table class in responses.
+type TableClassSummary struct {
+	TableClass         string  `json:"TableClass"`
+	LastUpdateDateTime float64 `json:"LastUpdateDateTime,omitempty"`
 }
 
 // BillingModeSummary represents billing mode summary.
@@ -266,6 +275,7 @@ type CreateTableRequest struct {
 	DeletionProtectionEnabled bool                   `json:"DeletionProtectionEnabled,omitempty"`
 	StreamSpecification       *StreamSpecification   `json:"StreamSpecification,omitempty"`
 	Tags                      []Tag                  `json:"Tags,omitempty"`
+	TableClass                string                 `json:"TableClass,omitempty"`
 }
 
 // CreateTableResponse is the response for CreateTable.
@@ -622,7 +632,13 @@ type Tag struct {
 
 // UpdateTableRequest is the request for UpdateTable.
 type UpdateTableRequest struct {
-	TableName string `json:"TableName"`
+	TableName  string `json:"TableName"`
+	TableClass string `json:"TableClass,omitempty"`
+}
+
+// UpdateTableResponse is the response for UpdateTable.
+type UpdateTableResponse struct {
+	TableDescription TableDescription `json:"TableDescription"`
 }
 
 // ListTagsOfResourceRequest is the request for ListTagsOfResource.
