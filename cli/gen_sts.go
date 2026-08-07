@@ -3,14 +3,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go-v2/service/sts/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -126,8 +124,8 @@ func newSTSAssumeRoleCmd() *cobra.Command {
 				return fmt.Errorf("assume-role failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -219,8 +217,8 @@ func newSTSAssumeRoleWithSAMLCmd() *cobra.Command {
 				return fmt.Errorf("assume-role-with-s-a-m-l failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -305,8 +303,8 @@ func newSTSAssumeRoleWithWebIdentityCmd() *cobra.Command {
 				return fmt.Errorf("assume-role-with-web-identity failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -354,8 +352,8 @@ func newSTSGetCallerIdentityCmd() *cobra.Command {
 				return fmt.Errorf("get-caller-identity failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -422,8 +420,8 @@ func newSTSGetFederationTokenCmd() *cobra.Command {
 				return fmt.Errorf("get-federation-token failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -482,8 +480,8 @@ func newSTSGetSessionTokenCmd() *cobra.Command {
 				return fmt.Errorf("get-session-token failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -113,8 +112,8 @@ func newECSCreateClusterCmd() *cobra.Command {
 				return fmt.Errorf("create-cluster failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -337,8 +336,8 @@ func newECSCreateServiceCmd() *cobra.Command {
 				return fmt.Errorf("create-service failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -431,8 +430,8 @@ func newECSDeleteClusterCmd() *cobra.Command {
 				return fmt.Errorf("delete-cluster failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -483,8 +482,8 @@ func newECSDeleteServiceCmd() *cobra.Command {
 				return fmt.Errorf("delete-service failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -529,8 +528,8 @@ func newECSDeregisterTaskDefinitionCmd() *cobra.Command {
 				return fmt.Errorf("deregister-task-definition failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -576,8 +575,8 @@ func newECSDescribeClustersCmd() *cobra.Command {
 				return fmt.Errorf("describe-clusters failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -630,8 +629,8 @@ func newECSDescribeTasksCmd() *cobra.Command {
 				return fmt.Errorf("describe-tasks failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -681,8 +680,8 @@ func newECSListClustersCmd() *cobra.Command {
 				return fmt.Errorf("list-clusters failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -836,8 +835,8 @@ func newECSRegisterTaskDefinitionCmd() *cobra.Command {
 				return fmt.Errorf("register-task-definition failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1024,8 +1023,8 @@ func newECSRunTaskCmd() *cobra.Command {
 				return fmt.Errorf("run-task failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1112,8 +1111,8 @@ func newECSStopTaskCmd() *cobra.Command {
 				return fmt.Errorf("stop-task failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1304,8 +1303,8 @@ func newECSUpdateServiceCmd() *cobra.Command {
 				return fmt.Errorf("update-service failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

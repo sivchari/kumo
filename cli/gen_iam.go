@@ -3,14 +3,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -227,8 +225,8 @@ func newIAMCreateAccessKeyCmd() *cobra.Command {
 				return fmt.Errorf("create-access-key failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -283,8 +281,8 @@ func newIAMCreateInstanceProfileCmd() *cobra.Command {
 				return fmt.Errorf("create-instance-profile failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -348,8 +346,8 @@ func newIAMCreateOpenIDConnectProviderCmd() *cobra.Command {
 				return fmt.Errorf("create-open-id-connect-provider failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -420,8 +418,8 @@ func newIAMCreatePolicyCmd() *cobra.Command {
 				return fmt.Errorf("create-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -504,8 +502,8 @@ func newIAMCreateRoleCmd() *cobra.Command {
 				return fmt.Errorf("create-role failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -577,8 +575,8 @@ func newIAMCreateUserCmd() *cobra.Command {
 				return fmt.Errorf("create-user failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -995,8 +993,8 @@ func newIAMGetInstanceProfileCmd() *cobra.Command {
 				return fmt.Errorf("get-instance-profile failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1037,8 +1035,8 @@ func newIAMGetOpenIDConnectProviderCmd() *cobra.Command {
 				return fmt.Errorf("get-open-id-connect-provider failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1079,8 +1077,8 @@ func newIAMGetPolicyCmd() *cobra.Command {
 				return fmt.Errorf("get-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1121,8 +1119,8 @@ func newIAMGetRoleCmd() *cobra.Command {
 				return fmt.Errorf("get-role failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1168,8 +1166,8 @@ func newIAMGetRolePolicyCmd() *cobra.Command {
 				return fmt.Errorf("get-role-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1212,8 +1210,8 @@ func newIAMGetUserCmd() *cobra.Command {
 				return fmt.Errorf("get-user failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1264,8 +1262,8 @@ func newIAMListAccessKeysCmd() *cobra.Command {
 				return fmt.Errorf("list-access-keys failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1325,8 +1323,8 @@ func newIAMListAttachedRolePoliciesCmd() *cobra.Command {
 				return fmt.Errorf("list-attached-role-policies failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1383,8 +1381,8 @@ func newIAMListInstanceProfilesCmd() *cobra.Command {
 				return fmt.Errorf("list-instance-profiles failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1439,8 +1437,8 @@ func newIAMListInstanceProfilesForRoleCmd() *cobra.Command {
 				return fmt.Errorf("list-instance-profiles-for-role failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1480,8 +1478,8 @@ func newIAMListOpenIDConnectProvidersCmd() *cobra.Command {
 				return fmt.Errorf("list-open-id-connect-providers failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1545,8 +1543,8 @@ func newIAMListPoliciesCmd() *cobra.Command {
 				return fmt.Errorf("list-policies failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1607,8 +1605,8 @@ func newIAMListRolePoliciesCmd() *cobra.Command {
 				return fmt.Errorf("list-role-policies failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1663,8 +1661,8 @@ func newIAMListRolesCmd() *cobra.Command {
 				return fmt.Errorf("list-roles failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1719,8 +1717,8 @@ func newIAMListUsersCmd() *cobra.Command {
 				return fmt.Errorf("list-users failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

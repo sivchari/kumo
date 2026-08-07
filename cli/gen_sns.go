@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -89,8 +88,8 @@ func newSNSCreateTopicCmd() *cobra.Command {
 				return fmt.Errorf("create-topic failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -175,8 +174,8 @@ func newSNSGetSubscriptionAttributesCmd() *cobra.Command {
 				return fmt.Errorf("get-subscription-attributes failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -217,8 +216,8 @@ func newSNSGetTopicAttributesCmd() *cobra.Command {
 				return fmt.Errorf("get-topic-attributes failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -259,8 +258,8 @@ func newSNSListSubscriptionsCmd() *cobra.Command {
 				return fmt.Errorf("list-subscriptions failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -306,8 +305,8 @@ func newSNSListSubscriptionsByTopicCmd() *cobra.Command {
 				return fmt.Errorf("list-subscriptions-by-topic failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -350,8 +349,8 @@ func newSNSListTagsForResourceCmd() *cobra.Command {
 				return fmt.Errorf("list-tags-for-resource failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -392,8 +391,8 @@ func newSNSListTopicsCmd() *cobra.Command {
 				return fmt.Errorf("list-topics failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -476,8 +475,8 @@ func newSNSPublishCmd() *cobra.Command {
 				return fmt.Errorf("publish failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -660,8 +659,8 @@ func newSNSSubscribeCmd() *cobra.Command {
 				return fmt.Errorf("subscribe failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

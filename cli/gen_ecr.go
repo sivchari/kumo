@@ -3,14 +3,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -78,8 +76,8 @@ func newECRBatchDeleteImageCmd() *cobra.Command {
 				return fmt.Errorf("batch-delete-image failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -143,8 +141,8 @@ func newECRBatchGetImageCmd() *cobra.Command {
 				return fmt.Errorf("batch-get-image failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -237,8 +235,8 @@ func newECRCreateRepositoryCmd() *cobra.Command {
 				return fmt.Errorf("create-repository failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -296,8 +294,8 @@ func newECRDeleteLifecyclePolicyCmd() *cobra.Command {
 				return fmt.Errorf("delete-lifecycle-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -350,8 +348,8 @@ func newECRDeleteRepositoryCmd() *cobra.Command {
 				return fmt.Errorf("delete-repository failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -411,8 +409,8 @@ func newECRDescribeRepositoriesCmd() *cobra.Command {
 				return fmt.Errorf("describe-repositories failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -459,8 +457,8 @@ func newECRGetAuthorizationTokenCmd() *cobra.Command {
 				return fmt.Errorf("get-authorization-token failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -506,8 +504,8 @@ func newECRGetLifecyclePolicyCmd() *cobra.Command {
 				return fmt.Errorf("get-lifecycle-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -574,8 +572,8 @@ func newECRListImagesCmd() *cobra.Command {
 				return fmt.Errorf("list-images failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -649,8 +647,8 @@ func newECRPutImageCmd() *cobra.Command {
 				return fmt.Errorf("put-image failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -711,8 +709,8 @@ func newECRPutLifecyclePolicyCmd() *cobra.Command {
 				return fmt.Errorf("put-lifecycle-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

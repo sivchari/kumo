@@ -233,6 +233,28 @@ func TestSetFieldsFromKV_UnknownField(t *testing.T) {
 	}
 }
 
+// TestSetFieldsFromKV_PascalCaseKeys proves the AWS CLI's standard shorthand
+// casing (SDK member names, e.g. "ReadCapacityUnits=5") is accepted
+// alongside the kebab-case flag names cli-gen otherwise derives, since real
+// AWS CLI users and scripts routinely pass PascalCase keys.
+func TestSetFieldsFromKV_PascalCaseKeys(t *testing.T) {
+	t.Parallel()
+
+	var pt dynamodbtypes.ProvisionedThroughput
+
+	if err := SetFieldsFromKV(reflect.ValueOf(&pt).Elem(), "ReadCapacityUnits=5,WriteCapacityUnits=10"); err != nil {
+		t.Fatalf("SetFieldsFromKV: %v", err)
+	}
+
+	if pt.ReadCapacityUnits == nil || *pt.ReadCapacityUnits != 5 {
+		t.Errorf("ReadCapacityUnits = %v, want 5", pt.ReadCapacityUnits)
+	}
+
+	if pt.WriteCapacityUnits == nil || *pt.WriteCapacityUnits != 10 {
+		t.Errorf("WriteCapacityUnits = %v, want 10", pt.WriteCapacityUnits)
+	}
+}
+
 // TestJSONUnmarshalIntoSDKStruct proves the assumption FlagJSONBlob relies
 // on: aws-sdk-go-v2 generated types carry no json struct tags, but
 // encoding/json matches field names case-insensitively by default, so a raw

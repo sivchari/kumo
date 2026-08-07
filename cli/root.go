@@ -12,8 +12,10 @@ import (
 )
 
 var (
-	endpointURL string
-	region      string
+	endpointURL  string
+	region       string
+	queryFlag    string
+	outputFormat string
 )
 
 // NewRootCmd creates the root kumo CLI command.
@@ -25,6 +27,8 @@ func NewRootCmd() *cobra.Command {
 
 	cmd.PersistentFlags().StringVar(&endpointURL, "endpoint-url", "http://localhost:4566", "kumo endpoint URL")
 	cmd.PersistentFlags().StringVar(&region, "region", "ap-northeast-1", "AWS region")
+	cmd.PersistentFlags().StringVar(&queryFlag, "query", "", "JMESPath query (limited support)")
+	cmd.PersistentFlags().StringVar(&outputFormat, "output", "", "Output format (json|text)")
 
 	cmd.AddCommand(
 		newAmplifyCmd(),

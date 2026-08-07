@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -112,8 +111,8 @@ func newEC2AssociateRouteTableCmd() *cobra.Command {
 				return fmt.Errorf("associate-route-table failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -263,8 +262,8 @@ func newEC2AuthorizeSecurityGroupEgressCmd() *cobra.Command {
 				return fmt.Errorf("authorize-security-group-egress failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -377,8 +376,8 @@ func newEC2AuthorizeSecurityGroupIngressCmd() *cobra.Command {
 				return fmt.Errorf("authorize-security-group-ingress failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -446,8 +445,8 @@ func newEC2CreateInternetGatewayCmd() *cobra.Command {
 				return fmt.Errorf("create-internet-gateway failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -512,8 +511,8 @@ func newEC2CreateKeyPairCmd() *cobra.Command {
 				return fmt.Errorf("create-key-pair failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -626,8 +625,8 @@ func newEC2CreateNatGatewayCmd() *cobra.Command {
 				return fmt.Errorf("create-nat-gateway failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -772,8 +771,8 @@ func newEC2CreateRouteCmd() *cobra.Command {
 				return fmt.Errorf("create-route failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -863,8 +862,8 @@ func newEC2CreateRouteTableCmd() *cobra.Command {
 				return fmt.Errorf("create-route-table failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -933,8 +932,8 @@ func newEC2CreateSecurityGroupCmd() *cobra.Command {
 				return fmt.Errorf("create-security-group failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1045,8 +1044,8 @@ func newEC2CreateSubnetCmd() *cobra.Command {
 				return fmt.Errorf("create-subnet failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1233,8 +1232,8 @@ func newEC2CreateVpcCmd() *cobra.Command {
 				return fmt.Errorf("create-vpc failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1354,8 +1353,8 @@ func newEC2DeleteKeyPairCmd() *cobra.Command {
 				return fmt.Errorf("delete-key-pair failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1410,8 +1409,8 @@ func newEC2DeleteSecurityGroupCmd() *cobra.Command {
 				return fmt.Errorf("delete-security-group failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1629,8 +1628,8 @@ func newEC2DescribeInstancesCmd() *cobra.Command {
 				return fmt.Errorf("describe-instances failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1703,8 +1702,8 @@ func newEC2DescribeInternetGatewaysCmd() *cobra.Command {
 				return fmt.Errorf("describe-internet-gateways failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1775,8 +1774,8 @@ func newEC2DescribeKeyPairsCmd() *cobra.Command {
 				return fmt.Errorf("describe-key-pairs failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1847,8 +1846,8 @@ func newEC2DescribeNatGatewaysCmd() *cobra.Command {
 				return fmt.Errorf("describe-nat-gateways failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1924,8 +1923,8 @@ func newEC2DescribeNetworkInterfacesCmd() *cobra.Command {
 				return fmt.Errorf("describe-network-interfaces failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1998,8 +1997,8 @@ func newEC2DescribeRouteTablesCmd() *cobra.Command {
 				return fmt.Errorf("describe-route-tables failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -2075,8 +2074,8 @@ func newEC2DescribeSecurityGroupsCmd() *cobra.Command {
 				return fmt.Errorf("describe-security-groups failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -2149,8 +2148,8 @@ func newEC2DescribeSubnetsCmd() *cobra.Command {
 				return fmt.Errorf("describe-subnets failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -2216,8 +2215,8 @@ func newEC2DescribeTagsCmd() *cobra.Command {
 				return fmt.Errorf("describe-tags failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -2274,8 +2273,8 @@ func newEC2DescribeVpcAttributeCmd() *cobra.Command {
 				return fmt.Errorf("describe-vpc-attribute failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -2342,8 +2341,8 @@ func newEC2DescribeVpcsCmd() *cobra.Command {
 				return fmt.Errorf("describe-vpcs failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -2698,8 +2697,8 @@ func newEC2RevokeSecurityGroupEgressCmd() *cobra.Command {
 				return fmt.Errorf("revoke-security-group-egress failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -2810,8 +2809,8 @@ func newEC2RevokeSecurityGroupIngressCmd() *cobra.Command {
 				return fmt.Errorf("revoke-security-group-ingress failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -3167,8 +3166,8 @@ func newEC2RunInstancesCmd() *cobra.Command {
 				return fmt.Errorf("run-instances failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -3305,8 +3304,8 @@ func newEC2StartInstancesCmd() *cobra.Command {
 				return fmt.Errorf("start-instances failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -3371,8 +3370,8 @@ func newEC2StopInstancesCmd() *cobra.Command {
 				return fmt.Errorf("stop-instances failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -3436,8 +3435,8 @@ func newEC2TerminateInstancesCmd() *cobra.Command {
 				return fmt.Errorf("terminate-instances failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

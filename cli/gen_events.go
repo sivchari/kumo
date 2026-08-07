@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -99,8 +98,8 @@ func newEventsCreateApiDestinationCmd() *cobra.Command {
 				return fmt.Errorf("create-api-destination failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -180,8 +179,8 @@ func newEventsCreateConnectionCmd() *cobra.Command {
 				return fmt.Errorf("create-connection failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -274,8 +273,8 @@ func newEventsCreateEventBusCmd() *cobra.Command {
 				return fmt.Errorf("create-event-bus failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -366,8 +365,8 @@ func newEventsDeleteConnectionCmd() *cobra.Command {
 				return fmt.Errorf("delete-connection failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -498,8 +497,8 @@ func newEventsDescribeApiDestinationCmd() *cobra.Command {
 				return fmt.Errorf("describe-api-destination failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -540,8 +539,8 @@ func newEventsDescribeConnectionCmd() *cobra.Command {
 				return fmt.Errorf("describe-connection failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -582,8 +581,8 @@ func newEventsDescribeEventBusCmd() *cobra.Command {
 				return fmt.Errorf("describe-event-bus failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -629,8 +628,8 @@ func newEventsDescribeRuleCmd() *cobra.Command {
 				return fmt.Errorf("describe-rule failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -683,8 +682,8 @@ func newEventsListEventBusesCmd() *cobra.Command {
 				return fmt.Errorf("list-event-buses failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -744,8 +743,8 @@ func newEventsListRulesCmd() *cobra.Command {
 				return fmt.Errorf("list-rules failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -792,8 +791,8 @@ func newEventsListTagsForResourceCmd() *cobra.Command {
 				return fmt.Errorf("list-tags-for-resource failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -849,8 +848,8 @@ func newEventsListTargetsByRuleCmd() *cobra.Command {
 				return fmt.Errorf("list-targets-by-rule failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -904,8 +903,8 @@ func newEventsPutEventsCmd() *cobra.Command {
 				return fmt.Errorf("put-events failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -987,8 +986,8 @@ func newEventsPutRuleCmd() *cobra.Command {
 				return fmt.Errorf("put-rule failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1055,8 +1054,8 @@ func newEventsPutTargetsCmd() *cobra.Command {
 				return fmt.Errorf("put-targets failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1116,8 +1115,8 @@ func newEventsRemoveTargetsCmd() *cobra.Command {
 				return fmt.Errorf("remove-targets failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

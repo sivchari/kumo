@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -170,8 +169,8 @@ func newCloudFormationCreateStackCmd() *cobra.Command {
 				return fmt.Errorf("create-stack failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -337,8 +336,8 @@ func newCloudFormationDescribeStackResourcesCmd() *cobra.Command {
 				return fmt.Errorf("describe-stack-resources failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -388,8 +387,8 @@ func newCloudFormationDescribeStacksCmd() *cobra.Command {
 				return fmt.Errorf("describe-stacks failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -442,8 +441,8 @@ func newCloudFormationGetTemplateCmd() *cobra.Command {
 				return fmt.Errorf("get-template failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -493,8 +492,8 @@ func newCloudFormationListStacksCmd() *cobra.Command {
 				return fmt.Errorf("list-stacks failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -646,8 +645,8 @@ func newCloudFormationUpdateStackCmd() *cobra.Command {
 				return fmt.Errorf("update-stack failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -731,8 +730,8 @@ func newCloudFormationValidateTemplateCmd() *cobra.Command {
 				return fmt.Errorf("validate-template failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

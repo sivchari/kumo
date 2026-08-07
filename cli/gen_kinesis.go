@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 	"time"
 )
@@ -223,8 +222,8 @@ func newKinesisDescribeStreamCmd() *cobra.Command {
 				return fmt.Errorf("describe-stream failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -283,8 +282,8 @@ func newKinesisDescribeStreamSummaryCmd() *cobra.Command {
 				return fmt.Errorf("describe-stream-summary failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -344,8 +343,8 @@ func newKinesisGetRecordsCmd() *cobra.Command {
 				return fmt.Errorf("get-records failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -426,8 +425,8 @@ func newKinesisGetShardIteratorCmd() *cobra.Command {
 				return fmt.Errorf("get-shard-iterator failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -521,8 +520,8 @@ func newKinesisListShardsCmd() *cobra.Command {
 				return fmt.Errorf("list-shards failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -587,8 +586,8 @@ func newKinesisListStreamsCmd() *cobra.Command {
 				return fmt.Errorf("list-streams failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -667,8 +666,8 @@ func newKinesisPutRecordCmd() *cobra.Command {
 				return fmt.Errorf("put-record failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -740,8 +739,8 @@ func newKinesisPutRecordsCmd() *cobra.Command {
 				return fmt.Errorf("put-records failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

@@ -216,10 +216,6 @@ func buildActionView(binding sdkBinding, action *Action, fields []FieldFlag, imp
 		HasOutput:      hasOutputContent(action.OutputType) && !isOutputPrintSuppressed(action.ServiceName, action.SDKMethod),
 	}
 
-	if av.HasOutput {
-		imports.needJSONEncode()
-	}
-
 	for _, f := range fields {
 		fv, err := buildFlagView(&f, use, imports)
 		if err != nil {

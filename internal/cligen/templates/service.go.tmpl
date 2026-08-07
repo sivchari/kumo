@@ -60,8 +60,8 @@ func {{.FuncName}}() *cobra.Command {
 			}
 {{- if .HasOutput}}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 {{- end}}
 

@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 	"time"
 )
@@ -142,8 +141,8 @@ func newCloudWatchDescribeAlarmsCmd() *cobra.Command {
 				return fmt.Errorf("describe-alarms failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -244,8 +243,8 @@ func newCloudWatchGetMetricDataCmd() *cobra.Command {
 				return fmt.Errorf("get-metric-data failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -350,8 +349,8 @@ func newCloudWatchGetMetricStatisticsCmd() *cobra.Command {
 				return fmt.Errorf("get-metric-statistics failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -442,8 +441,8 @@ func newCloudWatchListMetricsCmd() *cobra.Command {
 				return fmt.Errorf("list-metrics failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -496,8 +495,8 @@ func newCloudWatchListTagsForResourceCmd() *cobra.Command {
 				return fmt.Errorf("list-tags-for-resource failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
