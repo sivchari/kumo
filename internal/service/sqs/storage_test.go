@@ -21,7 +21,7 @@ func TestMemoryStorage_CreateQueueRejectsDelimiterNames(t *testing.T) {
 			s := NewMemoryStorage("http://localhost:4566")
 
 			_, err := s.CreateQueue(t.Context(), name, nil, nil)
-			expectQueueErrorCode(t, err, "InvalidParameterValue")
+			expectQueueErrorCode(t, err, errCodeInvalidParameterValue)
 		})
 	}
 }
@@ -185,6 +185,151 @@ func TestMemoryStorage_TagsLifecycle(t *testing.T) {
 	if len(tags) != 1 || tags["key2"] != tagValue2 {
 		t.Fatalf("unexpected tags after untag: %#v", tags)
 	}
+}
+
+func TestMemoryStorage_PermissionLifecycle(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage("http://localhost:4566")
+	ctx := t.Context()
+
+	_, err := s.CreateQueue(ctx, "permission-queue", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queueURL := "http://localhost:4566/000000000000/permission-queue"
+
+	attrsBefore, err := s.GetQueueAttributes(ctx, queueURL, []string{attrPolicy})
+	if err != nil {
+		t.Fatalf("GetQueueAttributes() error = %v", err)
+	}
+
+	if _, ok := attrsBefore[attrPolicy]; ok {
+		t.Fatalf("Policy attribute present before AddPermission: %v", attrsBefore)
+	}
+
+	if err := s.AddPermission(ctx, queueURL, "AliceSendMessage", []string{"111111111111"}, []string{actionSendMessage}); err != nil {
+		t.Fatalf("AddPermission() error = %v", err)
+	}
+
+	attrsAfter, err := s.GetQueueAttributes(ctx, queueURL, []string{attrPolicy})
+	if err != nil {
+		t.Fatalf("GetQueueAttributes() error = %v", err)
+	}
+
+	if attrsAfter[attrPolicy] == "" {
+		t.Fatal("Policy attribute missing after AddPermission")
+	}
+
+	if err := s.RemovePermission(ctx, queueURL, "AliceSendMessage"); err != nil {
+		t.Fatalf("RemovePermission() error = %v", err)
+	}
+
+	attrsFinal, err := s.GetQueueAttributes(ctx, queueURL, []string{attrPolicy})
+	if err != nil {
+		t.Fatalf("GetQueueAttributes() error = %v", err)
+	}
+
+	if _, ok := attrsFinal[attrPolicy]; ok {
+		t.Fatalf("Policy attribute still present after removing the only statement: %v", attrsFinal)
+	}
+}
+
+func TestMemoryStorage_AddPermissionErrors(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage("http://localhost:4566")
+	ctx := t.Context()
+
+	_, err := s.CreateQueue(ctx, "permission-errors-queue", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queueURL := "http://localhost:4566/000000000000/permission-errors-queue"
+
+	tests := []struct {
+		name          string
+		label         string
+		awsAccountIDs []string
+		actions       []string
+		wantCode      string
+	}{
+		{
+			name:     "empty actions",
+			label:    "Label1",
+			actions:  nil,
+			wantCode: errCodeMissingParameter,
+		},
+		{
+			name:     "too many actions",
+			label:    "Label2",
+			actions:  []string{actionSendMessage, actionReceiveMessage, actionDeleteMessage, actionGetQueueAttributes, actionGetQueueURL, actionPurgeQueue, "ListDeadLetterSourceQueues", actionChangeMessageVisibility},
+			wantCode: "OverLimit",
+		},
+		{
+			name:          "no account ids",
+			label:         "Label3",
+			awsAccountIDs: nil,
+			actions:       []string{actionSendMessage},
+			wantCode:      errCodeInvalidParameterValue,
+		},
+		{
+			name:          "invalid action",
+			label:         "Label4",
+			awsAccountIDs: []string{"111111111111"},
+			actions:       []string{"CreateQueue"},
+			wantCode:      errCodeInvalidParameterValue,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := s.AddPermission(ctx, queueURL, tt.label, tt.awsAccountIDs, tt.actions)
+			expectQueueErrorCode(t, err, tt.wantCode)
+		})
+	}
+}
+
+func TestMemoryStorage_AddPermissionDuplicateLabel(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage("http://localhost:4566")
+	ctx := t.Context()
+
+	_, err := s.CreateQueue(ctx, "permission-dup-queue", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queueURL := "http://localhost:4566/000000000000/permission-dup-queue"
+
+	if err := s.AddPermission(ctx, queueURL, "DupLabel", []string{"111111111111"}, []string{actionSendMessage}); err != nil {
+		t.Fatalf("AddPermission() error = %v", err)
+	}
+
+	err = s.AddPermission(ctx, queueURL, "DupLabel", []string{"222222222222"}, []string{actionReceiveMessage})
+	expectQueueErrorCode(t, err, errCodeInvalidParameterValue)
+}
+
+func TestMemoryStorage_RemovePermissionUnknownLabel(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage("http://localhost:4566")
+	ctx := t.Context()
+
+	_, err := s.CreateQueue(ctx, "permission-remove-queue", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queueURL := "http://localhost:4566/000000000000/permission-remove-queue"
+
+	err = s.RemovePermission(ctx, queueURL, "NoSuchLabel")
+	expectQueueErrorCode(t, err, errCodeInvalidParameterValue)
 }
 
 func expectQueueErrorCode(t *testing.T, err error, code string) {

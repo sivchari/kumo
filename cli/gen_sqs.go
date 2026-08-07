@@ -20,6 +20,7 @@ func newSQSCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
+		newSQSAddPermissionCmd(),
 		newSQSChangeMessageVisibilityCmd(),
 		newSQSChangeMessageVisibilityBatchCmd(),
 		newSQSCreateQueueCmd(),
@@ -32,12 +33,72 @@ func newSQSCmd() *cobra.Command {
 		newSQSListQueuesCmd(),
 		newSQSPurgeQueueCmd(),
 		newSQSReceiveMessageCmd(),
+		newSQSRemovePermissionCmd(),
 		newSQSSendMessageCmd(),
 		newSQSSendMessageBatchCmd(),
 		newSQSSetQueueAttributesCmd(),
 		newSQSTagQueueCmd(),
 		newSQSUntagQueueCmd(),
 	)
+
+	return cmd
+}
+
+func newSQSAddPermissionCmd() *cobra.Command {
+	var aWSAccountIds []string
+	var actions []string
+	var label string
+	var queueUrl string
+
+	cmd := &cobra.Command{
+		Use:   "add-permission",
+		Short: "AddPermission",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := sqs.NewFromConfig(cfg, func(o *sqs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &sqs.AddPermissionInput{}
+
+			if len(aWSAccountIds) > 0 {
+				input.AWSAccountIds = aWSAccountIds
+			}
+
+			if len(actions) > 0 {
+				input.Actions = actions
+			}
+
+			if label != "" {
+				input.Label = aws.String(label)
+			}
+
+			if queueUrl != "" {
+				input.QueueUrl = aws.String(queueUrl)
+			}
+
+			_, err = client.AddPermission(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("add-permission failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&aWSAccountIds, "aws-account-ids", nil, "Aws account ids")
+
+	cmd.Flags().StringArrayVar(&actions, "actions", nil, "Actions")
+
+	cmd.Flags().StringVar(&label, "label", "", "Label")
+
+	cmd.Flags().StringVar(&queueUrl, "queue-url", "", "Queue url")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
 
 	return cmd
 }
@@ -662,6 +723,51 @@ func newSQSReceiveMessageCmd() *cobra.Command {
 	cmd.Flags().Int32Var(&visibilityTimeout, "visibility-timeout", 0, "Visibility timeout")
 
 	cmd.Flags().Int32Var(&waitTimeSeconds, "wait-time-seconds", 0, "Wait time seconds")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newSQSRemovePermissionCmd() *cobra.Command {
+	var label string
+	var queueUrl string
+
+	cmd := &cobra.Command{
+		Use:   "remove-permission",
+		Short: "RemovePermission",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := sqs.NewFromConfig(cfg, func(o *sqs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &sqs.RemovePermissionInput{}
+
+			if label != "" {
+				input.Label = aws.String(label)
+			}
+
+			if queueUrl != "" {
+				input.QueueUrl = aws.String(queueUrl)
+			}
+
+			_, err = client.RemovePermission(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("remove-permission failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&label, "label", "", "Label")
+
+	cmd.Flags().StringVar(&queueUrl, "queue-url", "", "Queue url")
 
 	cmd.Flags().String("region", "", "Region override (ignored)")
 
