@@ -1,5 +1,4 @@
 {
-  "ResultMetadata": {},
   "TableDescription": {
     "ArchivalSummary": null,
     "AttributeDefinitions": [
@@ -12,7 +11,7 @@
       "BillingMode": "PAY_PER_REQUEST",
       "LastUpdateToPayPerRequestDateTime": null
     },
-    "CreationDateTime": "2026-08-07T03:58:42Z",
+    "CreationDateTime": "2026-08-07T03:52:30Z",
     "DeletionProtectionEnabled": false,
     "GlobalSecondaryIndexes": null,
     "GlobalTableSettingsReplicationMode": "",
@@ -35,15 +34,16 @@
     "RestoreSummary": null,
     "SSEDescription": null,
     "StreamSpecification": null,
-    "TableArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-cli-dynamodb-table",
+    "TableArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-table-class",
     "TableClassSummary": {
-      "LastUpdateDateTime": "2026-08-07T03:58:42Z",
+      "LastUpdateDateTime": "2026-08-07T03:52:30Z",
       "TableClass": "STANDARD"
     },
-    "TableId": "3f296e46-1101-4df5-84ff-8615daa5b6cf",
-    "TableName": "test-cli-dynamodb-table",
+    "TableId": "f0a78e1d-1b95-4d56-8569-3f6661358953",
+    "TableName": "test-table-class",
     "TableSizeBytes": 0,
     "TableStatus": "ACTIVE",
     "WarmThroughput": null
-  }
+  },
+  "ResultMetadata": {}
 }

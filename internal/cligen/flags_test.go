@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	ebtypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
@@ -202,6 +203,37 @@ func TestHasOutputContent(t *testing.T) {
 
 	if !hasOutputContent(reflect.TypeOf(sqs.CreateQueueOutput{})) {
 		t.Error("CreateQueueOutput has QueueUrl beyond ResultMetadata, want hasOutputContent = true")
+	}
+}
+
+// TestDeriveFields_FlagNameOverride proves states.SendTaskSuccessInput's
+// Output field is renamed to --task-output (the AWS CLI's own name for that
+// flag), since the auto-derived --output would otherwise collide with the
+// root command's persistent --output format flag.
+func TestDeriveFields_FlagNameOverride(t *testing.T) {
+	t.Parallel()
+
+	result := DeriveFields("states", "SendTaskSuccess", reflect.TypeOf(sfn.SendTaskSuccessInput{}))
+	if result.RequiresOverride {
+		t.Fatalf("SendTaskSuccessInput unexpectedly requires an override: %s", result.OverrideReason)
+	}
+
+	var found bool
+
+	for _, f := range result.Flags {
+		if f.FieldName != "Output" {
+			continue
+		}
+
+		found = true
+
+		if f.FlagName != "task-output" {
+			t.Errorf("Output field FlagName = %q, want %q", f.FlagName, "task-output")
+		}
+	}
+
+	if !found {
+		t.Fatal("no Output field found in derived flags")
 	}
 }
 

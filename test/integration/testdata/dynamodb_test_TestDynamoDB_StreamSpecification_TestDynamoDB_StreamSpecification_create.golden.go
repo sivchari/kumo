@@ -11,7 +11,7 @@
       "BillingMode": "PAY_PER_REQUEST",
       "LastUpdateToPayPerRequestDateTime": null
     },
-    "CreationDateTime": "2026-05-13T07:41:02Z",
+    "CreationDateTime": "2026-08-07T03:56:04Z",
     "DeletionProtectionEnabled": false,
     "GlobalSecondaryIndexes": null,
     "GlobalTableSettingsReplicationMode": "",
@@ -24,7 +24,7 @@
         "KeyType": "HASH"
       }
     ],
-    "LatestStreamArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-stream-spec/stream/2026-05-13T16:41:02.021",
+    "LatestStreamArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-stream-spec/stream/2026-08-07T12:56:04.944",
     "LatestStreamLabel": null,
     "LocalSecondaryIndexes": null,
     "MultiRegionConsistency": "",
@@ -38,8 +38,11 @@
       "StreamViewType": "NEW_AND_OLD_IMAGES"
     },
     "TableArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-stream-spec",
-    "TableClassSummary": null,
-    "TableId": "7a088cd1-f11d-461b-bd4c-c02a23dd8b93",
+    "TableClassSummary": {
+      "LastUpdateDateTime": "2026-08-07T03:56:04Z",
+      "TableClass": "STANDARD"
+    },
+    "TableId": "01caccc3-5e61-4fbe-97d5-84e29e0e64be",
     "TableName": "test-stream-spec",
     "TableSizeBytes": 0,
     "TableStatus": "ACTIVE",

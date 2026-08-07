@@ -169,7 +169,7 @@ func TestCLI_DynamoDB_CreateTableAndListTables(t *testing.T) {
 		"--billing-mode", "PAY_PER_REQUEST",
 	)
 	golden.New(t, golden.WithIgnoreFields(
-		"TableArn", "TableId", "CreationDateTime", "ResultMetadata",
+		"TableArn", "TableId", "CreationDateTime", "ResultMetadata", "LastUpdateDateTime",
 	)).Assert(t.Name()+"_create", createOut)
 
 	client := newDynamoDBClient(t)

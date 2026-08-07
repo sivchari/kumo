@@ -68,7 +68,7 @@ func TestDynamoDB_CreateAndDeleteTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("TableArn", "TableId", "CreationDateTime", "ResultMetadata")).Assert(t.Name()+"_create", createOutput)
+	golden.New(t, golden.WithIgnoreFields("TableArn", "TableId", "CreationDateTime", "ResultMetadata", "LastUpdateDateTime")).Assert(t.Name()+"_create", createOutput)
 
 	// Delete table.
 	_, err = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
@@ -157,7 +157,7 @@ func TestDynamoDB_DescribeTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata")).Assert(t.Name(), descOutput)
+	golden.New(t, golden.WithIgnoreFields("TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata", "LastUpdateDateTime")).Assert(t.Name(), descOutput)
 }
 
 func TestDynamoDB_PutAndGetItem(t *testing.T) {
@@ -1116,7 +1116,7 @@ func TestDynamoDB_GlobalSecondaryIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden.New(t, golden.WithIgnoreFields("TableArn", "TableId", "CreationDateTime", "ResultMetadata", "IndexArn")).Assert(t.Name()+"_create", createOutput)
+	golden.New(t, golden.WithIgnoreFields("TableArn", "TableId", "CreationDateTime", "ResultMetadata", "IndexArn", "LastUpdateDateTime")).Assert(t.Name()+"_create", createOutput)
 
 	t.Cleanup(func() {
 		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
@@ -1418,8 +1418,66 @@ func TestDynamoDB_UpdateTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden.New(t, golden.WithIgnoreFields(
-		"TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata",
+		"TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata", "LastUpdateDateTime",
 	)).Assert(t.Name(), updateOutput)
+}
+
+func TestDynamoDB_TableClass(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-class"
+
+	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName:   aws.String(tableName),
+		BillingMode: types.BillingModePayPerRequest,
+		TableClass:  types.TableClassStandardInfrequentAccess,
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	describeOutput, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(tableName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if describeOutput.Table.TableClassSummary == nil || describeOutput.Table.TableClassSummary.TableClass != types.TableClassStandardInfrequentAccess {
+		t.Fatalf("TableClassSummary = %+v, want TableClass = %s", describeOutput.Table.TableClassSummary, types.TableClassStandardInfrequentAccess)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata", "LastUpdateDateTime",
+	)).Assert(t.Name()+"_describe_infrequent_access", describeOutput)
+
+	updateOutput, err := client.UpdateTable(ctx, &dynamodb.UpdateTableInput{
+		TableName:  aws.String(tableName),
+		TableClass: types.TableClassStandard,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if updateOutput.TableDescription.TableClassSummary == nil || updateOutput.TableDescription.TableClassSummary.TableClass != types.TableClassStandard {
+		t.Fatalf("after UpdateTable, TableClassSummary = %+v, want TableClass = %s", updateOutput.TableDescription.TableClassSummary, types.TableClassStandard)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"TableArn", "TableId", "CreationDateTime", "TableSizeBytes", "ItemCount", "ResultMetadata", "LastUpdateDateTime",
+	)).Assert(t.Name()+"_update_standard", updateOutput)
 }
 
 func TestDynamoDB_StreamSpecification(t *testing.T) {
@@ -1453,7 +1511,7 @@ func TestDynamoDB_StreamSpecification(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields(
 		"TableArn", "TableId", "CreationDateTime", "LatestStreamArn",
-		"TableSizeBytes", "ItemCount", "ResultMetadata",
+		"TableSizeBytes", "ItemCount", "ResultMetadata", "LastUpdateDateTime",
 	)).Assert(t.Name()+"_create", createOutput)
 
 	// DescribeTable should also include stream info.
