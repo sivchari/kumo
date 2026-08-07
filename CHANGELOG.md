@@ -1,5 +1,46 @@
 # Changelog
 
+## [v0.28.0](https://github.com/sivchari/kumo/compare/v0.27.0...v0.28.0) - 2026-08-07
+- feat(sfn): support Parallel and Map states with Retry and Catch by @sivchari in https://github.com/sivchari/kumo/pull/869
+- feat(sfn): task and execution timeouts plus structural definition validation by @sivchari in https://github.com/sivchari/kumo/pull/872
+- feat(sfn): distributed Map with ItemReader, ItemSelector, ItemBatcher, ResultWriter, and tolerated failures by @sivchari in https://github.com/sivchari/kumo/pull/873
+- feat(sfn): complete the ASL input/output processing pipeline by @sivchari in https://github.com/sivchari/kumo/pull/874
+- feat(sfn): callback tasks with task tokens and Activity support by @sivchari in https://github.com/sivchari/kumo/pull/875
+- feat(sfn): nested executions, MapRun tracking, and remaining Map and Choice features by @sivchari in https://github.com/sivchari/kumo/pull/876
+- fix(apigatewayv2): omit the $default stage segment from proxy event paths by @sivchari in https://github.com/sivchari/kumo/pull/877
+- refactor(sfn): unify the duplicate JSONPath resolvers by @sivchari in https://github.com/sivchari/kumo/pull/878
+- refactor(test): drop unit tests duplicated by golden integration tests by @sivchari in https://github.com/sivchari/kumo/pull/879
+- refactor(test): share AWS client setup across integration tests by @sivchari in https://github.com/sivchari/kumo/pull/880
+- refactor: drop comments that restate the code by @sivchari in https://github.com/sivchari/kumo/pull/881
+- refactor(lambda): delegate writeJSONResponse to the shared implementation by @sivchari in https://github.com/sivchari/kumo/pull/882
+- refactor: compress verbose comments in sfn and cloudcontrol by @sivchari in https://github.com/sivchari/kumo/pull/883
+- refactor(service): migrate coded error types to service.CodedError (a-m) by @sivchari in https://github.com/sivchari/kumo/pull/884
+- refactor(test): consolidate duplicated test helpers by @sivchari in https://github.com/sivchari/kumo/pull/885
+- refactor(test): move s3 bucket website/lifecycle/logging/policy coverage to golden tests by @sivchari in https://github.com/sivchari/kumo/pull/886
+- refactor(service): migrate coded error types to service.CodedError (n-z) by @sivchari in https://github.com/sivchari/kumo/pull/888
+- refactor(service): normalize writeError signatures to (w, code, message, status) by @sivchari in https://github.com/sivchari/kumo/pull/889
+- fix(test): wait for terminal state before asserting SFN DescribeExecution golden by @sivchari in https://github.com/sivchari/kumo/pull/890
+- refactor(test): move iam role update and tagging coverage to golden tests by @sivchari in https://github.com/sivchari/kumo/pull/887
+- refactor(test): move remaining s3 object and multipart coverage to golden tests by @sivchari in https://github.com/sivchari/kumo/pull/891
+- refactor(service): add decode and required-field helpers in the densest packages by @sivchari in https://github.com/sivchari/kumo/pull/892
+- refactor(test): move cloudfront public key and key group coverage to golden tests by @sivchari in https://github.com/sivchari/kumo/pull/893
+- fix(s3): decode the xsi:type grantee attribute in PutObjectAcl by @sivchari in https://github.com/sivchari/kumo/pull/894
+- refactor(test): move sesv2 email template and elbv2 tag coverage to golden tests by @sivchari in https://github.com/sivchari/kumo/pull/895
+- refactor(test): cover execute-api event shape with golden tests by @sivchari in https://github.com/sivchari/kumo/pull/896
+- refactor(service): extend decode and required-field helpers to the next tier by @sivchari in https://github.com/sivchari/kumo/pull/897
+- feat(cli-gen): add the CLI command generator core by @sivchari in https://github.com/sivchari/kumo/pull/898
+- feat(cli): replace hand-written service commands with cli-gen output by @sivchari in https://github.com/sivchari/kumo/pull/899
+- feat(cli): generate commands for sts, ssm, secretsmanager, and sns by @sivchari in https://github.com/sivchari/kumo/pull/900
+- feat(cli): generate commands for cloudwatchlogs, sfn, iam, and cloudformation by @sivchari in https://github.com/sivchari/kumo/pull/901
+- test(cli): add an end-to-end golden harness for generated CLI commands by @sivchari in https://github.com/sivchari/kumo/pull/902
+- fix(test): isolate the lambda invoker test from the shared default transport by @sivchari in https://github.com/sivchari/kumo/pull/903
+- feat(cli): support DynamoDB item commands via a DynamoDB-JSON decoder by @sivchari in https://github.com/sivchari/kumo/pull/904
+- feat(cli): generate commands for ec2, ecr, ecs, cloudwatch, dynamodbstreams, and firehose by @sivchari in https://github.com/sivchari/kumo/pull/905
+- feat(cli): add lambda commands by @sivchari in https://github.com/sivchari/kumo/pull/906
+- feat(cli): add sesv2, route53, and cloudfront commands by @sivchari in https://github.com/sivchari/kumo/pull/907
+- feat(cli-gen): add a coverage report and document the generator workflow by @sivchari in https://github.com/sivchari/kumo/pull/908
+- release v0.28.0 by @sivchari in https://github.com/sivchari/kumo/pull/911
+
 ## [v0.27.0](https://github.com/sivchari/kumo/compare/v0.26.0...v0.27.0) - 2026-07-28
 - test(lambda): cover event source mapping UUID path prefixes by @yhay81 in https://github.com/sivchari/kumo/pull/851
 - fix(messaging): validate SNS and SQS names by @mizchi in https://github.com/sivchari/kumo/pull/683
