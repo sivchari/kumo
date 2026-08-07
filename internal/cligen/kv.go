@@ -10,9 +10,11 @@ import (
 
 // SetFieldsFromKV parses a "key=value,key2=value2" string and sets the
 // matching exported fields of target (a struct or pointer-to-struct
-// reflect.Value, addressable and settable). Keys are matched against each
-// field's kebab-case flag name (see toKebabCase), case-insensitively, so
-// "queue-url=..." matches a QueueUrl field.
+// reflect.Value, addressable and settable). Keys are matched
+// case-insensitively against either the field's kebab-case flag name (see
+// toKebabCase) or its raw Go/SDK member name, so both "queue-url=..." and
+// the AWS CLI's standard PascalCase shorthand "QueueUrl=..." match a
+// QueueUrl field.
 //
 // It is the single generic parser used both for flat-struct flags (FlagKV)
 // and for each element of repeated flat-struct flags (FlagKVArray); it is
@@ -62,6 +64,10 @@ func SetFieldsFromKV(target reflect.Value, kv string) error {
 	return nil
 }
 
+// findFieldByFlagKey resolves key against target's exported fields, matching
+// either the kebab-case flag name (e.g. "queue-url") or the raw Go/SDK
+// member name (e.g. "QueueUrl", the AWS CLI's standard shorthand casing),
+// case-insensitively.
 func findFieldByFlagKey(target reflect.Value, key string) (reflect.Value, error) {
 	t := target.Type()
 
@@ -71,7 +77,7 @@ func findFieldByFlagKey(target reflect.Value, key string) (reflect.Value, error)
 			continue
 		}
 
-		if strings.EqualFold(toKebabCase(f.Name), key) {
+		if strings.EqualFold(toKebabCase(f.Name), key) || strings.EqualFold(f.Name, key) {
 			return target.Field(i), nil
 		}
 	}

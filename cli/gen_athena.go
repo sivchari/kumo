@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/athena/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -170,8 +169,8 @@ func newAthenaGetQueryExecutionCmd() *cobra.Command {
 				return fmt.Errorf("get-query-execution failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -227,8 +226,8 @@ func newAthenaGetQueryResultsCmd() *cobra.Command {
 				return fmt.Errorf("get-query-results failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -285,8 +284,8 @@ func newAthenaListQueryExecutionsCmd() *cobra.Command {
 				return fmt.Errorf("list-query-executions failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -376,8 +375,8 @@ func newAthenaStartQueryExecutionCmd() *cobra.Command {
 				return fmt.Errorf("start-query-execution failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

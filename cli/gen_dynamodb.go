@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -81,8 +80,8 @@ func newDynamoDBBatchGetItemCmd() *cobra.Command {
 				return fmt.Errorf("batch-get-item failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -137,8 +136,8 @@ func newDynamoDBBatchWriteItemCmd() *cobra.Command {
 				return fmt.Errorf("batch-write-item failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -171,6 +170,7 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 	var resourcePolicy string
 	var sSESpecification string
 	var streamSpecification string
+	var tableClass string
 	var tags []string
 	var warmThroughput string
 
@@ -273,6 +273,10 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 				input.StreamSpecification = &val
 			}
 
+			if tableClass != "" {
+				input.TableClass = types.TableClass(tableClass)
+			}
+
 			for _, raw := range tags {
 				var val types.Tag
 				if err := cligen.SetFieldsFromKV(reflect.ValueOf(&val).Elem(), raw); err != nil {
@@ -294,8 +298,8 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 				return fmt.Errorf("create-table failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -329,6 +333,8 @@ func newDynamoDBCreateTableCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sSESpecification, "sse-specification", "", "Sse specification (key=value,key2=value2)")
 
 	cmd.Flags().StringVar(&streamSpecification, "stream-specification", "", "Stream specification (key=value,key2=value2)")
+
+	cmd.Flags().StringVar(&tableClass, "table-class", "", "Table class")
 
 	cmd.Flags().StringArrayVar(&tags, "tags", nil, "Tags (key=value,key2=value2, repeatable)")
 
@@ -428,8 +434,8 @@ func newDynamoDBDeleteItemCmd() *cobra.Command {
 				return fmt.Errorf("delete-item failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -490,8 +496,8 @@ func newDynamoDBDeleteTableCmd() *cobra.Command {
 				return fmt.Errorf("delete-table failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -532,8 +538,8 @@ func newDynamoDBDescribeContinuousBackupsCmd() *cobra.Command {
 				return fmt.Errorf("describe-continuous-backups failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -574,8 +580,8 @@ func newDynamoDBDescribeTableCmd() *cobra.Command {
 				return fmt.Errorf("describe-table failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -616,8 +622,8 @@ func newDynamoDBDescribeTimeToLiveCmd() *cobra.Command {
 				return fmt.Errorf("describe-time-to-live failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -694,8 +700,8 @@ func newDynamoDBGetItemCmd() *cobra.Command {
 				return fmt.Errorf("get-item failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -753,8 +759,8 @@ func newDynamoDBListTablesCmd() *cobra.Command {
 				return fmt.Errorf("list-tables failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -802,8 +808,8 @@ func newDynamoDBListTagsOfResourceCmd() *cobra.Command {
 				return fmt.Errorf("list-tags-of-resource failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -908,8 +914,8 @@ func newDynamoDBPutItemCmd() *cobra.Command {
 				return fmt.Errorf("put-item failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1064,8 +1070,8 @@ func newDynamoDBQueryCmd() *cobra.Command {
 				return fmt.Errorf("query failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1225,8 +1231,8 @@ func newDynamoDBScanCmd() *cobra.Command {
 				return fmt.Errorf("scan failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1353,8 +1359,8 @@ func newDynamoDBTransactGetItemsCmd() *cobra.Command {
 				return fmt.Errorf("transact-get-items failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1414,8 +1420,8 @@ func newDynamoDBTransactWriteItemsCmd() *cobra.Command {
 				return fmt.Errorf("transact-write-items failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1581,8 +1587,8 @@ func newDynamoDBUpdateItemCmd() *cobra.Command {
 				return fmt.Errorf("update-item failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1747,8 +1753,8 @@ func newDynamoDBUpdateTableCmd() *cobra.Command {
 				return fmt.Errorf("update-table failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

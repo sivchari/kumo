@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -96,8 +95,8 @@ func newSFNCreateActivityCmd() *cobra.Command {
 				return fmt.Errorf("create-activity failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -201,8 +200,8 @@ func newSFNCreateStateMachineCmd() *cobra.Command {
 				return fmt.Errorf("create-state-machine failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -337,8 +336,8 @@ func newSFNDescribeActivityCmd() *cobra.Command {
 				return fmt.Errorf("describe-activity failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -384,8 +383,8 @@ func newSFNDescribeExecutionCmd() *cobra.Command {
 				return fmt.Errorf("describe-execution failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -428,8 +427,8 @@ func newSFNDescribeMapRunCmd() *cobra.Command {
 				return fmt.Errorf("describe-map-run failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -475,8 +474,8 @@ func newSFNDescribeStateMachineCmd() *cobra.Command {
 				return fmt.Errorf("describe-state-machine failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -524,8 +523,8 @@ func newSFNGetActivityTaskCmd() *cobra.Command {
 				return fmt.Errorf("get-activity-task failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -588,8 +587,8 @@ func newSFNGetExecutionHistoryCmd() *cobra.Command {
 				return fmt.Errorf("get-execution-history failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -643,8 +642,8 @@ func newSFNListActivitiesCmd() *cobra.Command {
 				return fmt.Errorf("list-activities failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -712,8 +711,8 @@ func newSFNListExecutionsCmd() *cobra.Command {
 				return fmt.Errorf("list-executions failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -774,8 +773,8 @@ func newSFNListMapRunsCmd() *cobra.Command {
 				return fmt.Errorf("list-map-runs failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -830,8 +829,8 @@ func newSFNListStateMachineAliasesCmd() *cobra.Command {
 				return fmt.Errorf("list-state-machine-aliases failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -886,8 +885,8 @@ func newSFNListStateMachineVersionsCmd() *cobra.Command {
 				return fmt.Errorf("list-state-machine-versions failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -937,8 +936,8 @@ func newSFNListStateMachinesCmd() *cobra.Command {
 				return fmt.Errorf("list-state-machines failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -981,8 +980,8 @@ func newSFNListTagsForResourceCmd() *cobra.Command {
 				return fmt.Errorf("list-tags-for-resource failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1173,8 +1172,8 @@ func newSFNStartExecutionCmd() *cobra.Command {
 				return fmt.Errorf("start-execution failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1231,8 +1230,8 @@ func newSFNStopExecutionCmd() *cobra.Command {
 				return fmt.Errorf("stop-execution failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1386,8 +1385,8 @@ func newSFNValidateStateMachineDefinitionCmd() *cobra.Command {
 				return fmt.Errorf("validate-state-machine-definition failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

@@ -27,11 +27,6 @@ func newImportSet(sdkImportPath string) *importSet {
 	return s
 }
 
-func (s *importSet) needJSONEncode() {
-	s.std["encoding/json"] = true
-	s.std["os"] = true
-}
-
 func (s *importSet) needJSON() {
 	s.std["encoding/json"] = true
 }

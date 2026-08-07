@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -131,8 +130,8 @@ func newSQSChangeMessageVisibilityBatchCmd() *cobra.Command {
 				return fmt.Errorf("change-message-visibility-batch failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -189,8 +188,8 @@ func newSQSCreateQueueCmd() *cobra.Command {
 				return fmt.Errorf("create-queue failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -289,8 +288,8 @@ func newSQSDeleteMessageBatchCmd() *cobra.Command {
 				return fmt.Errorf("delete-message-batch failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -376,8 +375,8 @@ func newSQSGetQueueAttributesCmd() *cobra.Command {
 				return fmt.Errorf("get-queue-attributes failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -425,8 +424,8 @@ func newSQSGetQueueUrlCmd() *cobra.Command {
 				return fmt.Errorf("get-queue-url failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -469,8 +468,8 @@ func newSQSListQueueTagsCmd() *cobra.Command {
 				return fmt.Errorf("list-queue-tags failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -521,8 +520,8 @@ func newSQSListQueuesCmd() *cobra.Command {
 				return fmt.Errorf("list-queues failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -640,8 +639,8 @@ func newSQSReceiveMessageCmd() *cobra.Command {
 				return fmt.Errorf("receive-message failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -730,8 +729,8 @@ func newSQSSendMessageCmd() *cobra.Command {
 				return fmt.Errorf("send-message failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -791,8 +790,8 @@ func newSQSSendMessageBatchCmd() *cobra.Command {
 				return fmt.Errorf("send-message-batch failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

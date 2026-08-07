@@ -67,11 +67,7 @@ var skipAutoGeneration = map[string][]string{
 // fields the generator intentionally does not expose as flags, to preserve
 // existing hand-written CLI behavior once a service migrates to generated
 // commands.
-var ignoredBackCompatFlags = map[string]map[string][]string{
-	"dynamodb": {
-		"CreateTable": {"TableClass"},
-	},
-}
+var ignoredBackCompatFlags = map[string]map[string][]string{}
 
 // overrideServices lists kumo service names whose generated parent command
 // must also call {CLIName}OverrideCommands() (implemented in a hand-written

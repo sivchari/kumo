@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -122,8 +121,8 @@ func newSecretsManagerCreateSecretCmd() *cobra.Command {
 				return fmt.Errorf("create-secret failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -182,8 +181,8 @@ func newSecretsManagerDeleteResourcePolicyCmd() *cobra.Command {
 				return fmt.Errorf("delete-resource-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -234,8 +233,8 @@ func newSecretsManagerDeleteSecretCmd() *cobra.Command {
 				return fmt.Errorf("delete-secret failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -280,8 +279,8 @@ func newSecretsManagerDescribeSecretCmd() *cobra.Command {
 				return fmt.Errorf("describe-secret failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -357,8 +356,8 @@ func newSecretsManagerGetRandomPasswordCmd() *cobra.Command {
 				return fmt.Errorf("get-random-password failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -413,8 +412,8 @@ func newSecretsManagerGetResourcePolicyCmd() *cobra.Command {
 				return fmt.Errorf("get-resource-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -465,8 +464,8 @@ func newSecretsManagerGetSecretValueCmd() *cobra.Command {
 				return fmt.Errorf("get-secret-value failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -538,8 +537,8 @@ func newSecretsManagerListSecretsCmd() *cobra.Command {
 				return fmt.Errorf("list-secrets failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -600,8 +599,8 @@ func newSecretsManagerPutResourcePolicyCmd() *cobra.Command {
 				return fmt.Errorf("put-resource-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -675,8 +674,8 @@ func newSecretsManagerPutSecretValueCmd() *cobra.Command {
 				return fmt.Errorf("put-secret-value failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -761,8 +760,8 @@ func newSecretsManagerUpdateSecretCmd() *cobra.Command {
 				return fmt.Errorf("update-secret failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil

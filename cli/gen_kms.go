@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"os"
 	"reflect"
 )
 
@@ -175,8 +174,8 @@ func newKMSCreateKeyCmd() *cobra.Command {
 				return fmt.Errorf("create-key failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -282,8 +281,8 @@ func newKMSDecryptCmd() *cobra.Command {
 				return fmt.Errorf("decrypt failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -381,8 +380,8 @@ func newKMSDescribeKeyCmd() *cobra.Command {
 				return fmt.Errorf("describe-key failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -532,8 +531,8 @@ func newKMSEncryptCmd() *cobra.Command {
 				return fmt.Errorf("encrypt failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -620,8 +619,8 @@ func newKMSGenerateDataKeyCmd() *cobra.Command {
 				return fmt.Errorf("generate-data-key failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -679,8 +678,8 @@ func newKMSGetKeyPolicyCmd() *cobra.Command {
 				return fmt.Errorf("get-key-policy failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -723,8 +722,8 @@ func newKMSGetKeyRotationStatusCmd() *cobra.Command {
 				return fmt.Errorf("get-key-rotation-status failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -770,8 +769,8 @@ func newKMSGetPublicKeyCmd() *cobra.Command {
 				return fmt.Errorf("get-public-key failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -824,8 +823,8 @@ func newKMSListAliasesCmd() *cobra.Command {
 				return fmt.Errorf("list-aliases failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -880,8 +879,8 @@ func newKMSListKeyPoliciesCmd() *cobra.Command {
 				return fmt.Errorf("list-key-policies failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -931,8 +930,8 @@ func newKMSListKeysCmd() *cobra.Command {
 				return fmt.Errorf("list-keys failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -985,8 +984,8 @@ func newKMSListResourceTagsCmd() *cobra.Command {
 				return fmt.Errorf("list-resource-tags failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
@@ -1095,8 +1094,8 @@ func newKMSScheduleKeyDeletionCmd() *cobra.Command {
 				return fmt.Errorf("schedule-key-deletion failed: %w", err)
 			}
 
-			if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-				return fmt.Errorf("failed to encode output: %w", err)
+			if err := writeOutput(out); err != nil {
+				return err
 			}
 
 			return nil
