@@ -46,6 +46,9 @@ type Storage interface {
 	DescribeLoadBalancerAttributes(ctx context.Context, lbArn string) (map[string]string, error)
 	ModifyTargetGroupAttributes(ctx context.Context, tgArn string, attrs map[string]string) (map[string]string, error)
 	DescribeTargetGroupAttributes(ctx context.Context, tgArn string) (map[string]string, error)
+	DescribeTags(ctx context.Context, arns []string) (map[string]map[string]string, error)
+	AddTags(ctx context.Context, arns []string, tags map[string]string) error
+	RemoveTags(ctx context.Context, arns, keys []string) error
 
 	DescribeListeners(ctx context.Context, listenerArns []string, lbArn string) ([]*Listener, error)
 	ModifyListener(ctx context.Context, listenerArn string, port int, protocol string, defaultActions []Action) (*Listener, error)
@@ -263,6 +266,7 @@ func (m *MemoryStorage) buildLoadBalancer(req *CreateLoadBalancerRequest, defaul
 		AvailabilityZones:     azs,
 		SecurityGroups:        req.SecurityGroups,
 		IPAddressType:         defaults.ipAddressType,
+		Tags:                  cloneAttributes(req.Tags),
 	}
 }
 
@@ -447,9 +451,19 @@ func (m *MemoryStorage) buildTargetGroup(req *CreateTargetGroupRequest, defaults
 		HealthCheckTimeoutSeconds:  defaults.healthCheckTimeout,
 		HealthyThresholdCount:      defaults.healthyThreshold,
 		UnhealthyThresholdCount:    defaults.unhealthyThreshold,
+		Matcher:                    matcherFromRequest(req),
 		TargetType:                 defaults.targetType,
 		LoadBalancerArns:           []string{},
+		Tags:                       cloneAttributes(req.Tags),
 	}
+}
+
+func matcherFromRequest(req *CreateTargetGroupRequest) string {
+	if req.Matcher == nil {
+		return ""
+	}
+
+	return req.Matcher.HTTPCode
 }
 
 // DeleteTargetGroup deletes a target group.
@@ -612,6 +626,7 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 		Port:            req.Port,
 		Protocol:        req.Protocol,
 		DefaultActions:  req.DefaultActions,
+		Tags:            map[string]string{},
 	}
 
 	m.Listeners[arn] = listener
@@ -937,6 +952,95 @@ func cloneAttributes(in map[string]string) map[string]string {
 	}
 
 	return out
+}
+
+// DescribeTags returns tags for the requested ELBv2 resources.
+func (m *MemoryStorage) DescribeTags(_ context.Context, arns []string) (map[string]map[string]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make(map[string]map[string]string, len(arns))
+
+	for _, arn := range arns {
+		tags, err := m.lookupTagsLocked(arn)
+		if err != nil {
+			return nil, err
+		}
+
+		out[arn] = cloneAttributes(tags)
+	}
+
+	return out, nil
+}
+
+// AddTags adds or updates tags for the requested ELBv2 resources.
+func (m *MemoryStorage) AddTags(_ context.Context, arns []string, tags map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, arn := range arns {
+		current, err := m.lookupTagsLocked(arn)
+		if err != nil {
+			return err
+		}
+
+		for key, value := range tags {
+			current[key] = value
+		}
+	}
+
+	m.saveLocked()
+
+	return nil
+}
+
+// RemoveTags removes tags from the requested ELBv2 resources.
+func (m *MemoryStorage) RemoveTags(_ context.Context, arns, keys []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, arn := range arns {
+		current, err := m.lookupTagsLocked(arn)
+		if err != nil {
+			return err
+		}
+
+		for _, key := range keys {
+			delete(current, key)
+		}
+	}
+
+	m.saveLocked()
+
+	return nil
+}
+
+func (m *MemoryStorage) lookupTagsLocked(arn string) (map[string]string, error) {
+	if lb, ok := m.LoadBalancers[arn]; ok {
+		if lb.Tags == nil {
+			lb.Tags = make(map[string]string)
+		}
+
+		return lb.Tags, nil
+	}
+
+	if tg, ok := m.TargetGroups[arn]; ok {
+		if tg.Tags == nil {
+			tg.Tags = make(map[string]string)
+		}
+
+		return tg.Tags, nil
+	}
+
+	if listener, ok := m.Listeners[arn]; ok {
+		if listener.Tags == nil {
+			listener.Tags = make(map[string]string)
+		}
+
+		return listener.Tags, nil
+	}
+
+	return nil, &Error{Code: "ResourceNotFound", Message: "resource '" + arn + "' not found"}
 }
 
 // DescribeListeners returns listeners by ARN list or by parent load balancer.
