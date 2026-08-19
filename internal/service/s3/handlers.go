@@ -741,19 +741,17 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cond, ok := resolvePutCondition(w, r)
+	if !ok {
+		return
+	}
+
 	metadata := extractObjectMetadata(r.Header)
 	s.resolveEncryptionMetadata(r.Context(), r.Header, bucket, metadata)
 
-	obj, err := s.storage.PutObject(r.Context(), bucket, key, r.Body, metadata)
+	obj, err := s.storage.PutObjectIf(r.Context(), bucket, key, r.Body, metadata, cond)
 	if err != nil {
-		var bucketErr *BucketError
-		if errors.As(err, &bucketErr) {
-			writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
-
-			return
-		}
-
-		writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
+		handlePutObjectError(w, r, err)
 
 		return
 	}
@@ -1157,6 +1155,42 @@ func writeNotModifiedResponse(w http.ResponseWriter, obj *Object) {
 	w.Header().Set("ETag", obj.ETag)
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(timeFormatHTTP))
 	w.WriteHeader(http.StatusNotModified)
+}
+
+// resolvePutCondition parses the If-Match / If-None-Match headers for
+// PutObject/CompleteMultipartUpload. If they're malformed (S3 only
+// supports `If-None-Match: *` on writes), it writes the 501
+// NotImplemented response itself and returns ok=false so the caller
+// returns immediately without touching storage.
+func resolvePutCondition(w http.ResponseWriter, r *http.Request) (PutCondition, bool) {
+	cond, ok := parsePutCondition(r.Header)
+	if !ok {
+		writeS3Error(w, r, "NotImplemented", "A header you provided implies functionality that is not implemented", http.StatusNotImplemented)
+	}
+
+	return cond, ok
+}
+
+// handlePutObjectError maps errors from PutObjectIf to their S3 HTTP
+// response: a failed precondition (*ObjectError, see checkPutCondition)
+// keeps its Code and maps to 412/404 via objectErrorStatus, everything
+// else is the same NoSuchBucket/InternalError handling PutObject always had.
+func handlePutObjectError(w http.ResponseWriter, r *http.Request, err error) {
+	var objErr *ObjectError
+	if errors.As(err, &objErr) {
+		writeS3Error(w, r, objErr.Code, objErr.Message, objectErrorStatus(objErr.Code))
+
+		return
+	}
+
+	var bucketErr *BucketError
+	if errors.As(err, &bucketErr) {
+		writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
+
+		return
+	}
+
+	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 }
 
 // handleGetObjectError handles errors from GetObject/GetObjectVersion.
@@ -2269,7 +2303,12 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	obj, err := s.storage.CompleteMultipartUpload(r.Context(), bucket, key, uploadID, req.Parts)
+	cond, ok := resolvePutCondition(w, r)
+	if !ok {
+		return
+	}
+
+	obj, err := s.storage.CompleteMultipartUploadIf(r.Context(), bucket, key, uploadID, req.Parts, cond)
 	if err != nil {
 		handleMultipartError(w, r, err)
 
@@ -2536,7 +2575,9 @@ func handleMultipartError(w http.ResponseWriter, r *http.Request, err error) {
 
 	var objectErr *ObjectError
 	if errors.As(err, &objectErr) {
-		writeS3Error(w, r, objectErr.Code, objectErr.Message, http.StatusNotFound)
+		// NoSuchKey (existing callers) is 404; PreconditionFailed
+		// (CompleteMultipartUploadIf, see checkPutCondition) is 412.
+		writeS3Error(w, r, objectErr.Code, objectErr.Message, objectErrorStatus(objectErr.Code))
 
 		return
 	}

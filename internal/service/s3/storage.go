@@ -32,6 +32,10 @@ type Storage interface {
 
 	// Object operations
 	PutObject(ctx context.Context, bucket, key string, body io.Reader, metadata map[string]string) (*Object, error)
+	// PutObjectIf is PutObject with S3 conditional-write preconditions
+	// (If-Match / If-None-Match: *) evaluated atomically with the insert,
+	// so two concurrent conditional PUTs can't both pass.
+	PutObjectIf(ctx context.Context, bucket, key string, body io.Reader, metadata map[string]string, cond PutCondition) (*Object, error)
 	GetObject(ctx context.Context, bucket, key string) (*Object, error)
 	GetObjectVersion(ctx context.Context, bucket, key, versionID string) (*Object, error)
 	DeleteObject(ctx context.Context, bucket, key string) (*Object, error)
@@ -48,6 +52,9 @@ type Storage interface {
 	CreateMultipartUpload(ctx context.Context, bucket, key string, metadata map[string]string) (*MultipartUpload, error)
 	UploadPart(ctx context.Context, bucket, key, uploadID string, partNumber int, body io.Reader) (*Part, error)
 	CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []PartRequest) (*Object, error)
+	// CompleteMultipartUploadIf is CompleteMultipartUpload with the same
+	// conditional-write preconditions as PutObjectIf.
+	CompleteMultipartUploadIf(ctx context.Context, bucket, key, uploadID string, parts []PartRequest, cond PutCondition) (*Object, error)
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
 	ListMultipartUploads(ctx context.Context, bucket, prefix string, maxUploads int) ([]*MultipartUpload, error)
 	ListParts(ctx context.Context, bucket, key, uploadID string, maxParts int) ([]*Part, error)
@@ -95,6 +102,19 @@ type Storage interface {
 	DeleteBucketLifecycle(ctx context.Context, bucket string) error
 
 	PutObjectRestore(ctx context.Context, bucket, key string, state *RestoreState) (bool, error)
+}
+
+// PutCondition expresses S3 conditional-write preconditions for
+// PutObjectIf / CompleteMultipartUploadIf. The zero value imposes no
+// condition, matching plain PutObject/CompleteMultipartUpload.
+type PutCondition struct {
+	// IfMatch is the If-Match header value (quoted or unquoted ETag), or
+	// "" if the header was absent.
+	IfMatch string
+	// IfNoneMatchAny is true when the request carried
+	// `If-None-Match: *`, the only If-None-Match form S3 supports on
+	// writes.
+	IfNoneMatchAny bool
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -440,13 +460,25 @@ func (s *MemoryStorage) BucketExists(_ context.Context, name string) (bool, erro
 }
 
 // PutObject stores an object.
-func (s *MemoryStorage) PutObject(_ context.Context, bucket, key string, body io.Reader, metadata map[string]string) (*Object, error) {
+func (s *MemoryStorage) PutObject(ctx context.Context, bucket, key string, body io.Reader, metadata map[string]string) (*Object, error) {
+	return s.PutObjectIf(ctx, bucket, key, body, metadata, PutCondition{})
+}
+
+// PutObjectIf implements Storage.PutObjectIf. The precondition check
+// happens under the same lock as the insert below, so it is atomic with
+// the write: two concurrent conditional PUTs can't both observe "no
+// current object" and both succeed.
+func (s *MemoryStorage) PutObjectIf(_ context.Context, bucket, key string, body io.Reader, metadata map[string]string, cond PutCondition) (*Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
 		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+	}
+
+	if err := checkPutCondition(b, key, cond); err != nil {
+		return nil, err
 	}
 
 	data, err := io.ReadAll(body)
@@ -1159,7 +1191,16 @@ func (s *MemoryStorage) objectForCopySourceLocked(bucket, key, versionID string)
 }
 
 // CompleteMultipartUpload completes a multipart upload by assembling parts.
-func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, uploadID string, parts []PartRequest) (*Object, error) {
+func (s *MemoryStorage) CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []PartRequest) (*Object, error) {
+	return s.CompleteMultipartUploadIf(ctx, bucket, key, uploadID, parts, PutCondition{})
+}
+
+// CompleteMultipartUploadIf implements Storage.CompleteMultipartUploadIf.
+// Like PutObjectIf, the precondition check runs under the same lock as
+// the insert, and on failure the in-progress upload is left untouched
+// (it's deleted only after a successful complete) so the caller can
+// retry.
+func (s *MemoryStorage) CompleteMultipartUploadIf(_ context.Context, bucket, key, uploadID string, parts []PartRequest, cond PutCondition) (*Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1175,6 +1216,10 @@ func (s *MemoryStorage) CompleteMultipartUpload(_ context.Context, bucket, key, 
 
 	if upload.Key != key {
 		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+	}
+
+	if err := checkPutCondition(b, key, cond); err != nil {
+		return nil, err
 	}
 
 	combinedBody, err := assembleMultipartBody(upload, parts, uploadID)

@@ -84,19 +84,87 @@ func evalCopySourcePreconditions(h http.Header, etag string, lastModified time.T
 // exists, which for a successful GetObject lookup is always true).
 //
 // ETag comparison is the *strong* variant per RFC 9110 §8.8.3.2 —
-// kumo doesn't emit `W/"..."` weak ETags, and AWS S3 doesn't either,
-// so quoted-string equality is sufficient.
+// kumo doesn't emit `W/"..."` weak ETags, and AWS S3 doesn't either.
+// Tokens are compared with surrounding quotes stripped so an unquoted
+// If-Match/If-None-Match value (real clients and the AWS CLI send
+// either form) still matches the quoted ETag kumo stores, matching AWS
+// S3's lenient behavior.
 func matchesAnyETag(headerValue, etag string) bool {
 	v := strings.TrimSpace(headerValue)
 	if v == "*" {
 		return true
 	}
 
+	want := strings.Trim(etag, `"`)
+
 	for _, raw := range strings.Split(v, ",") {
-		if strings.TrimSpace(raw) == etag {
+		if strings.Trim(strings.TrimSpace(raw), `"`) == want {
 			return true
 		}
 	}
 
 	return false
+}
+
+// parsePutCondition parses the If-Match / If-None-Match request headers
+// into a PutCondition for PutObject / CompleteMultipartUpload. AWS S3
+// only supports `If-None-Match: *` on writes (any other value returns
+// 501 NotImplemented instead of being evaluated), reported via the
+// second return value being false.
+func parsePutCondition(h http.Header) (PutCondition, bool) {
+	var cond PutCondition
+
+	if v := strings.TrimSpace(h.Get("If-None-Match")); v != "" {
+		if v != "*" {
+			return PutCondition{}, false
+		}
+
+		cond.IfNoneMatchAny = true
+	}
+
+	cond.IfMatch = strings.TrimSpace(h.Get("If-Match"))
+
+	return cond, true
+}
+
+// objectErrorStatus maps an *ObjectError Code produced by
+// checkPutCondition to its S3 HTTP status: PreconditionFailed is 412,
+// NoSuchKey (and anything else) is 404.
+func objectErrorStatus(code string) int {
+	if code == "PreconditionFailed" {
+		return http.StatusPreconditionFailed
+	}
+
+	return http.StatusNotFound
+}
+
+// checkPutCondition evaluates cond against bucket b's current object at
+// key, in RFC 9110 order (If-Match before If-None-Match). The caller
+// must hold s.mu (write lock) across both this check and the insert
+// that follows, so the check is atomic with the write.
+//
+// A key whose current version is a delete marker is treated as
+// non-existent (mirrors GetObject: b.Objects[key] stays populated with
+// the delete marker after a versioned delete, it isn't removed), so
+// `If-None-Match: *` succeeds and `If-Match` reports NoSuchKey just as
+// it would for a truly absent key.
+func checkPutCondition(b *MemoryBucket, key string, cond PutCondition) error {
+	current, ok := b.Objects[key]
+	exists := ok && !current.IsDeleteMarker
+
+	if cond.IfMatch != "" {
+		if !exists {
+			return &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		}
+
+		if !matchesAnyETag(cond.IfMatch, current.ETag) {
+			return &ObjectError{Code: "PreconditionFailed", Message: "At least one of the preconditions you specified did not hold.", Key: key}
+		}
+	}
+
+	if cond.IfNoneMatchAny && exists {
+		return &ObjectError{Code: "PreconditionFailed", Message: "At least one of the preconditions you specified did not hold.", Key: key}
+	}
+
+	return nil
 }

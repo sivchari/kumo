@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -198,4 +199,349 @@ func httpQueryEscape(s string) string {
 	).Replace(s)
 
 	return out
+}
+
+// TestMatchesAnyETag_QuoteNormalization confirms If-Match/If-None-Match
+// tokens compare equal to a stored ETag whether or not either side is
+// quoted, matching AWS S3's lenient comparison.
+func TestMatchesAnyETag_QuoteNormalization(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		headerValue string
+		etag        string
+		want        bool
+	}{
+		{"both quoted, match", `"abc123"`, `"abc123"`, true},
+		{"header unquoted, stored quoted", `abc123`, `"abc123"`, true},
+		{"header quoted, comma list, second matches", `"x", "abc123"`, `"abc123"`, true},
+		{"mismatch", `"xyz"`, `"abc123"`, false},
+		{"wildcard always matches", "*", `"abc123"`, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := matchesAnyETag(tc.headerValue, tc.etag); got != tc.want {
+				t.Fatalf("matchesAnyETag(%q, %q) = %v, want %v", tc.headerValue, tc.etag, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestParsePutCondition covers If-Match / If-None-Match header parsing
+// for PutObject/CompleteMultipartUpload, including S3's restriction
+// that If-None-Match only supports "*" on writes.
+func TestParsePutCondition(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		hdr    http.Header
+		want   PutCondition
+		wantOK bool
+	}{
+		{"no headers", http.Header{}, PutCondition{}, true},
+		{"If-None-Match: *", http.Header{"If-None-Match": []string{"*"}}, PutCondition{IfNoneMatchAny: true}, true},
+		{"If-None-Match with an ETag is not implemented", http.Header{"If-None-Match": []string{`"abc"`}}, PutCondition{}, false},
+		{"If-Match carried through verbatim", http.Header{"If-Match": []string{`"abc123"`}}, PutCondition{IfMatch: `"abc123"`}, true},
+		{"both headers, If-Match kept and If-None-Match:* recognized", http.Header{
+			"If-Match":      []string{`"abc123"`},
+			"If-None-Match": []string{"*"},
+		}, PutCondition{IfMatch: `"abc123"`, IfNoneMatchAny: true}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parsePutCondition(tc.hdr)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+
+			if got != tc.want {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCheckPutCondition exercises checkPutCondition directly against a
+// MemoryBucket, including RFC 9110 evaluation order (If-Match before
+// If-None-Match) and the delete-marker-as-absent case.
+//
+//nolint:funlen // Table of independent t.Run subtests covering every precondition/state combination.
+func TestCheckPutCondition(t *testing.T) {
+	t.Parallel()
+
+	newBucketWithObject := func() *MemoryBucket {
+		return &MemoryBucket{
+			Objects: map[string]*Object{
+				"k": {Key: "k", ETag: testETag},
+			},
+		}
+	}
+
+	t.Run("no condition always passes", func(t *testing.T) {
+		t.Parallel()
+
+		if err := checkPutCondition(newBucketWithObject(), "k", PutCondition{}); err != nil {
+			t.Fatalf("got %v, want nil", err)
+		}
+	})
+
+	t.Run("If-None-Match:* on missing key passes", func(t *testing.T) {
+		t.Parallel()
+
+		b := &MemoryBucket{Objects: map[string]*Object{}}
+		if err := checkPutCondition(b, "k", PutCondition{IfNoneMatchAny: true}); err != nil {
+			t.Fatalf("got %v, want nil", err)
+		}
+	})
+
+	t.Run("If-None-Match:* on existing key fails", func(t *testing.T) {
+		t.Parallel()
+
+		expectObjectErrorCode(t, checkPutCondition(newBucketWithObject(), "k", PutCondition{IfNoneMatchAny: true}), "PreconditionFailed")
+	})
+
+	t.Run("If-Match hit passes", func(t *testing.T) {
+		t.Parallel()
+
+		if err := checkPutCondition(newBucketWithObject(), "k", PutCondition{IfMatch: testETag}); err != nil {
+			t.Fatalf("got %v, want nil", err)
+		}
+	})
+
+	t.Run("If-Match miss fails", func(t *testing.T) {
+		t.Parallel()
+
+		expectObjectErrorCode(t, checkPutCondition(newBucketWithObject(), "k", PutCondition{IfMatch: `"never-matches"`}), "PreconditionFailed")
+	})
+
+	t.Run("If-Match on missing key is NoSuchKey", func(t *testing.T) {
+		t.Parallel()
+
+		b := &MemoryBucket{Objects: map[string]*Object{}}
+		expectObjectErrorCode(t, checkPutCondition(b, "k", PutCondition{IfMatch: testETag}), "NoSuchKey")
+	})
+
+	t.Run("If-Match evaluated before If-None-Match", func(t *testing.T) {
+		t.Parallel()
+
+		// Both conditions target the same existing key: If-Match
+		// mismatches (RFC 9110 order says it's evaluated first), so
+		// that's the failure reported even though If-None-Match:*
+		// would also fail here.
+		err := checkPutCondition(newBucketWithObject(), "k", PutCondition{IfMatch: `"never-matches"`, IfNoneMatchAny: true})
+		expectObjectErrorCode(t, err, "PreconditionFailed")
+	})
+
+	t.Run("delete marker is treated as absent", func(t *testing.T) {
+		t.Parallel()
+
+		b := &MemoryBucket{Objects: map[string]*Object{
+			"k": {Key: "k", IsDeleteMarker: true},
+		}}
+
+		if err := checkPutCondition(b, "k", PutCondition{IfNoneMatchAny: true}); err != nil {
+			t.Fatalf("If-None-Match:* over a delete marker: got %v, want nil", err)
+		}
+
+		expectObjectErrorCode(t, checkPutCondition(b, "k", PutCondition{IfMatch: testETag}), "NoSuchKey")
+	})
+}
+
+// expectObjectErrorCode asserts err is an *ObjectError with the given Code.
+func expectObjectErrorCode(t *testing.T, err error, code string) {
+	t.Helper()
+
+	var objErr *ObjectError
+	if !errors.As(err, &objErr) {
+		t.Fatalf("got err %v (%T), want *ObjectError code %s", err, err, code)
+	}
+
+	if objErr.Code != code {
+		t.Fatalf("got ObjectError code %s, want %s", objErr.Code, code)
+	}
+}
+
+// TestPutObject_ConditionalRequests confirms the HTTP-layer wiring for
+// PutObject's If-Match / If-None-Match preconditions.
+//
+//nolint:funlen // Table-driven test covering every precondition/state combination over HTTP.
+func TestPutObject_ConditionalRequests(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		seed       bool // seed an initial object at "k" before the conditional PUT
+		header     string
+		value      string // "seeded"/"seeded-unquoted" substitute the seeded object's ETag
+		wantStatus int
+	}{
+		{"no headers, no existing object", false, "", "", http.StatusOK},
+		{"no headers, existing object", true, "", "", http.StatusOK},
+		{"If-None-Match:* on missing key succeeds", false, "If-None-Match", "*", http.StatusOK},
+		{"If-None-Match:* on existing key fails", true, "If-None-Match", "*", http.StatusPreconditionFailed},
+		{"If-None-Match non-* is not implemented", false, "If-None-Match", `"abc"`, http.StatusNotImplemented},
+		{"If-Match hit succeeds", true, "If-Match", "seeded", http.StatusOK},
+		{"If-Match hit unquoted succeeds", true, "If-Match", "seeded-unquoted", http.StatusOK},
+		{"If-Match miss fails", true, "If-Match", `"never-matches"`, http.StatusPreconditionFailed},
+		{"If-Match on missing key is NoSuchKey", false, "If-Match", `"whatever"`, http.StatusNotFound},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := NewMemoryStorage()
+			svc := New(store, "")
+			ctx := context.Background()
+
+			_ = store.CreateBucket(ctx, "pb")
+
+			var seededETag string
+
+			if tc.seed {
+				obj, err := store.PutObject(ctx, "pb", "k", strings.NewReader("old"), nil)
+				if err != nil {
+					t.Fatalf("seed PutObject: %v", err)
+				}
+
+				seededETag = obj.ETag
+			}
+
+			req := httptest.NewRequest(http.MethodPut, "/pb/k", strings.NewReader("new"))
+			req.SetPathValue("bucket", "pb")
+			req.SetPathValue("key", "k")
+
+			switch tc.value {
+			case "seeded":
+				req.Header.Set(tc.header, seededETag)
+			case "seeded-unquoted":
+				req.Header.Set(tc.header, strings.Trim(seededETag, `"`))
+			default:
+				if tc.header != "" {
+					req.Header.Set(tc.header, tc.value)
+				}
+			}
+
+			w := httptest.NewRecorder()
+			svc.PutObject(w, req)
+
+			if w.Code != tc.wantStatus {
+				t.Fatalf("status: got %d, want %d (body=%s)", w.Code, tc.wantStatus, w.Body.String())
+			}
+
+			if tc.wantStatus == http.StatusOK && w.Header().Get("ETag") == "" {
+				t.Fatalf("expected an ETag header on success")
+			}
+		})
+	}
+}
+
+// TestPutObject_ConditionalRequests_DeleteMarker confirms a key whose
+// current version is a delete marker (versioning enabled, then deleted)
+// is treated as absent: If-None-Match:* must succeed just as it would
+// for a key that never existed.
+func TestPutObject_ConditionalRequests_DeleteMarker(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store, "")
+	ctx := context.Background()
+
+	_ = store.CreateBucket(ctx, "db")
+	_ = store.PutBucketVersioning(ctx, "db", VersioningEnabled)
+
+	if _, err := store.PutObject(ctx, "db", "k", strings.NewReader("v1"), nil); err != nil {
+		t.Fatalf("seed PutObject: %v", err)
+	}
+
+	if _, err := store.DeleteObject(ctx, "db", "k"); err != nil {
+		t.Fatalf("DeleteObject: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/db/k", strings.NewReader("v2"))
+	req.SetPathValue("bucket", "db")
+	req.SetPathValue("key", "k")
+	req.Header.Set("If-None-Match", "*")
+
+	w := httptest.NewRecorder()
+	svc.PutObject(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("If-None-Match:* after a versioned delete: got %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+}
+
+// TestCompleteMultipartUpload_ConditionalRequest confirms the HTTP-layer
+// wiring for CompleteMultipartUpload's If-Match / If-None-Match
+// preconditions, mirroring PutObject's.
+func TestCompleteMultipartUpload_ConditionalRequest(t *testing.T) {
+	t.Parallel()
+
+	const bucket = "cmu-cond-http"
+
+	store := NewMemoryStorage()
+	svc := New(store, "")
+	ctx := context.Background()
+
+	_ = store.CreateBucket(ctx, bucket)
+
+	if _, err := store.PutObject(ctx, bucket, "k", strings.NewReader("existing"), nil); err != nil {
+		t.Fatalf("seed PutObject: %v", err)
+	}
+
+	upload, err := store.CreateMultipartUpload(ctx, bucket, "k", nil)
+	if err != nil {
+		t.Fatalf("CreateMultipartUpload: %v", err)
+	}
+
+	part, err := store.UploadPart(ctx, bucket, "k", upload.UploadID, 1, strings.NewReader("new body"))
+	if err != nil {
+		t.Fatalf("UploadPart: %v", err)
+	}
+
+	completeBody := `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>` + part.ETag + `</ETag></Part></CompleteMultipartUpload>`
+
+	req := httptest.NewRequest(http.MethodPost, "/"+bucket+"/k?uploadId="+upload.UploadID, strings.NewReader(completeBody))
+	req.SetPathValue("bucket", bucket)
+	req.SetPathValue("key", "k")
+	req.Header.Set("If-None-Match", "*")
+
+	w := httptest.NewRecorder()
+	svc.CompleteMultipartUpload(w, req)
+
+	if w.Code != http.StatusPreconditionFailed {
+		t.Fatalf("status: got %d, want %d (body=%s)", w.Code, http.StatusPreconditionFailed, w.Body.String())
+	}
+
+	if !strings.Contains(w.Body.String(), "<Code>PreconditionFailed</Code>") {
+		t.Fatalf("expected PreconditionFailed error body, got %s", w.Body.String())
+	}
+
+	// The failed conditional complete must leave the in-progress upload
+	// alone so the caller can retry (e.g. after resolving the conflict).
+	if _, stillThere := store.Buckets[bucket].MultipartUploads[upload.UploadID]; !stillThere {
+		t.Fatalf("expected in-progress upload to survive a failed conditional complete")
+	}
+
+	// Retrying unconditionally succeeds and consumes the upload.
+	req2 := httptest.NewRequest(http.MethodPost, "/"+bucket+"/k?uploadId="+upload.UploadID, strings.NewReader(completeBody))
+	req2.SetPathValue("bucket", bucket)
+	req2.SetPathValue("key", "k")
+
+	w2 := httptest.NewRecorder()
+	svc.CompleteMultipartUpload(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("unconditional retry status: got %d, want %d (body=%s)", w2.Code, http.StatusOK, w2.Body.String())
+	}
+
+	if _, stillThere := store.Buckets[bucket].MultipartUploads[upload.UploadID]; stillThere {
+		t.Fatalf("expected upload to be removed after a successful complete")
+	}
 }
