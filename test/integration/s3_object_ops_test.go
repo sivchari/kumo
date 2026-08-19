@@ -344,6 +344,112 @@ func TestS3_RestoreObject(t *testing.T) {
 	assertS3ErrorCode(t, err, "NoSuchKey")
 }
 
+// TestS3_PutObject_ConditionalWrites verifies If-Match / If-None-Match
+// conditional PutObject semantics: If-None-Match:* only succeeds when the
+// key is absent (412 PreconditionFailed otherwise), If-Match only succeeds
+// when it matches the current ETag (412 on mismatch, 404 NoSuchKey when the
+// key doesn't exist yet), and a non-"*" If-None-Match value is rejected
+// with 501 NotImplemented (the only form AWS S3 supports on writes).
+func TestS3_PutObject_ConditionalWrites(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-put-object-conditional"
+	key := "conditional.txt"
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	// If-None-Match:* succeeds when the key is absent.
+	putResp, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		Body:        strings.NewReader("v1"),
+		IfNoneMatch: aws.String("*"),
+	})
+	if err != nil {
+		t.Fatalf("If-None-Match:* on a missing key: %v", err)
+	}
+
+	firstETag := aws.ToString(putResp.ETag)
+	if firstETag == "" {
+		t.Fatal("expected an ETag on a successful conditional PutObject")
+	}
+
+	// If-None-Match:* now fails: the key exists.
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		Body:        strings.NewReader("v2"),
+		IfNoneMatch: aws.String("*"),
+	})
+	if err == nil {
+		t.Fatal("expected If-None-Match:* to fail once the key exists")
+	}
+
+	assertS3ErrorCode(t, err, "PreconditionFailed")
+
+	// If-Match with a stale ETag fails.
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:  aws.String(bucket),
+		Key:     aws.String(key),
+		Body:    strings.NewReader("v3"),
+		IfMatch: aws.String(`"stale-etag"`),
+	})
+	if err == nil {
+		t.Fatal("expected If-Match with a stale ETag to fail")
+	}
+
+	assertS3ErrorCode(t, err, "PreconditionFailed")
+
+	// If-Match with the current ETag succeeds and rotates the ETag.
+	putResp2, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:  aws.String(bucket),
+		Key:     aws.String(key),
+		Body:    strings.NewReader("v3"),
+		IfMatch: aws.String(firstETag),
+	})
+	if err != nil {
+		t.Fatalf("If-Match with the current ETag: %v", err)
+	}
+
+	if aws.ToString(putResp2.ETag) == firstETag {
+		t.Fatal("expected a new ETag after a successful conditional PutObject")
+	}
+
+	// If-Match on a key that doesn't exist yet is NoSuchKey, not
+	// PreconditionFailed.
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:  aws.String(bucket),
+		Key:     aws.String("does-not-exist.txt"),
+		Body:    strings.NewReader("x"),
+		IfMatch: aws.String(`"whatever"`),
+	})
+	if err == nil {
+		t.Fatal("expected If-Match on a missing key to fail")
+	}
+
+	assertS3ErrorCode(t, err, "NoSuchKey")
+
+	// If-None-Match with a value other than "*" is not implemented.
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		Body:        strings.NewReader("x"),
+		IfNoneMatch: aws.String(`"some-etag"`),
+	})
+	if err == nil {
+		t.Fatal("expected a non-* If-None-Match value to fail")
+	}
+
+	assertS3ErrorCode(t, err, "NotImplemented")
+}
+
 // postRestoreRequest issues a raw POST /{bucket}/{key}?restore request.
 func postRestoreRequest(t *testing.T, bucket, key, body string) *http.Response {
 	t.Helper()
