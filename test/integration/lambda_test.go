@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -682,4 +683,105 @@ func TestLambda_TagOperations(t *testing.T) {
 	}
 
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_after_remove", listOutput)
+}
+
+func TestLambda_GetFunctionReturnsTags(t *testing.T) {
+	client := newLambdaClient(t)
+	ctx := t.Context()
+	functionName := "test-function-get-function-tags"
+
+	// The terraform AWS provider reads a function's tags from GetFunction's
+	// top-level Tags field, not from ListTags; if GetFunction omits them,
+	// every refresh after apply reports the tags as removed.
+	_, err := client.CreateFunction(ctx, &lambda.CreateFunctionInput{
+		FunctionName: aws.String(functionName),
+		Runtime:      types.RuntimePython312,
+		Role:         aws.String("arn:aws:iam::000000000000:role/test-role"),
+		Handler:      aws.String("index.handler"),
+		Code: &types.FunctionCode{
+			ZipFile: []byte("fake-zip-content"),
+		},
+		Tags: map[string]string{
+			"Environment": "test",
+			"Project":     "kumo",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	getOutput, err := client.GetFunction(ctx, &lambda.GetFunctionInput{
+		FunctionName: aws.String(functionName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]string{
+		"Environment": "test",
+		"Project":     "kumo",
+	}
+	if !maps.Equal(getOutput.Tags, want) {
+		t.Errorf("GetFunction Tags = %v, want %v", getOutput.Tags, want)
+	}
+}
+
+func TestLambda_LastUpdateStatusSuccessful(t *testing.T) {
+	client := newLambdaClient(t)
+	ctx := t.Context()
+	functionName := "test-function-last-update-status"
+
+	// The terraform AWS provider polls LastUpdateStatus until it reaches
+	// Successful after UpdateFunctionConfiguration/UpdateFunctionCode; AWS
+	// first sets it to Successful when function creation completes. kumo
+	// applies updates synchronously, so it must always report Successful.
+	_, err := client.CreateFunction(ctx, &lambda.CreateFunctionInput{
+		FunctionName: aws.String(functionName),
+		Runtime:      types.RuntimePython312,
+		Role:         aws.String("arn:aws:iam::000000000000:role/test-role"),
+		Handler:      aws.String("index.handler"),
+		Code: &types.FunctionCode{
+			ZipFile: []byte("fake-zip-content"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	getOutput, err := client.GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{
+		FunctionName: aws.String(functionName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if getOutput.LastUpdateStatus != types.LastUpdateStatusSuccessful {
+		t.Errorf("LastUpdateStatus after create = %q, want %q", getOutput.LastUpdateStatus, types.LastUpdateStatusSuccessful)
+	}
+
+	updateOutput, err := client.UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
+		FunctionName: aws.String(functionName),
+		Environment: &types.Environment{
+			Variables: map[string]string{"APP_ENV": "staging"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if updateOutput.LastUpdateStatus != types.LastUpdateStatusSuccessful {
+		t.Errorf("LastUpdateStatus after update = %q, want %q", updateOutput.LastUpdateStatus, types.LastUpdateStatusSuccessful)
+	}
 }
