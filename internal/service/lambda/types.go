@@ -7,28 +7,29 @@ import (
 
 // Function represents a Lambda function.
 type Function struct {
-	FunctionName    string
-	FunctionArn     string
-	Runtime         string
-	Role            string
-	Handler         string
-	Description     string
-	Timeout         int
-	MemorySize      int
-	CodeSize        int64
-	CodeSha256      string
-	Version         string
-	LastModified    time.Time
-	State           string
-	StateReason     string
-	StateReasonCode string
-	PackageType     string
-	Architectures   []string
-	Environment     *Environment
-	Code            *FunctionCode
-	Tags            map[string]string
-	Policy          *ResourcePolicy
-	InvokeEndpoint  string // kumo extension: HTTP endpoint to proxy invocations
+	FunctionName     string
+	FunctionArn      string
+	Runtime          string
+	Role             string
+	Handler          string
+	Description      string
+	Timeout          int
+	MemorySize       int
+	CodeSize         int64
+	CodeSha256       string
+	Version          string
+	LastModified     time.Time
+	State            string
+	StateReason      string
+	StateReasonCode  string
+	LastUpdateStatus string
+	PackageType      string
+	Architectures    []string
+	Environment      *Environment
+	Code             *FunctionCode
+	Tags             map[string]string
+	Policy           *ResourcePolicy
+	InvokeEndpoint   string // kumo extension: HTTP endpoint to proxy invocations
 }
 
 // ResourcePolicy represents a Lambda function resource policy.
@@ -82,24 +83,25 @@ type CreateFunctionRequest struct {
 
 // CreateFunctionResponse is the response for CreateFunction.
 type CreateFunctionResponse struct {
-	FunctionName    string       `json:"FunctionName"`
-	FunctionArn     string       `json:"FunctionArn"`
-	Runtime         string       `json:"Runtime,omitempty"`
-	Role            string       `json:"Role"`
-	Handler         string       `json:"Handler,omitempty"`
-	CodeSize        int64        `json:"CodeSize"`
-	Description     string       `json:"Description,omitempty"`
-	Timeout         int          `json:"Timeout"`
-	MemorySize      int          `json:"MemorySize"`
-	LastModified    string       `json:"LastModified"`
-	CodeSha256      string       `json:"CodeSha256"`
-	Version         string       `json:"Version"`
-	State           string       `json:"State,omitempty"`
-	StateReason     string       `json:"StateReason,omitempty"`
-	StateReasonCode string       `json:"StateReasonCode,omitempty"`
-	PackageType     string       `json:"PackageType,omitempty"`
-	Architectures   []string     `json:"Architectures,omitempty"`
-	Environment     *Environment `json:"Environment,omitempty"`
+	FunctionName     string       `json:"FunctionName"`
+	FunctionArn      string       `json:"FunctionArn"`
+	Runtime          string       `json:"Runtime,omitempty"`
+	Role             string       `json:"Role"`
+	Handler          string       `json:"Handler,omitempty"`
+	CodeSize         int64        `json:"CodeSize"`
+	Description      string       `json:"Description,omitempty"`
+	Timeout          int          `json:"Timeout"`
+	MemorySize       int          `json:"MemorySize"`
+	LastModified     string       `json:"LastModified"`
+	CodeSha256       string       `json:"CodeSha256"`
+	Version          string       `json:"Version"`
+	State            string       `json:"State,omitempty"`
+	StateReason      string       `json:"StateReason,omitempty"`
+	StateReasonCode  string       `json:"StateReasonCode,omitempty"`
+	LastUpdateStatus string       `json:"LastUpdateStatus,omitempty"`
+	PackageType      string       `json:"PackageType,omitempty"`
+	Architectures    []string     `json:"Architectures,omitempty"`
+	Environment      *Environment `json:"Environment,omitempty"`
 }
 
 // GetFunctionResponse is the response for GetFunction.
@@ -111,24 +113,25 @@ type GetFunctionResponse struct {
 
 // FunctionConfiguration contains function configuration details.
 type FunctionConfiguration struct {
-	FunctionName    string       `json:"FunctionName"`
-	FunctionArn     string       `json:"FunctionArn"`
-	Runtime         string       `json:"Runtime,omitempty"`
-	Role            string       `json:"Role"`
-	Handler         string       `json:"Handler,omitempty"`
-	CodeSize        int64        `json:"CodeSize"`
-	Description     string       `json:"Description,omitempty"`
-	Timeout         int          `json:"Timeout"`
-	MemorySize      int          `json:"MemorySize"`
-	LastModified    string       `json:"LastModified"`
-	CodeSha256      string       `json:"CodeSha256"`
-	Version         string       `json:"Version"`
-	State           string       `json:"State,omitempty"`
-	StateReason     string       `json:"StateReason,omitempty"`
-	StateReasonCode string       `json:"StateReasonCode,omitempty"`
-	PackageType     string       `json:"PackageType,omitempty"`
-	Architectures   []string     `json:"Architectures,omitempty"`
-	Environment     *Environment `json:"Environment,omitempty"`
+	FunctionName     string       `json:"FunctionName"`
+	FunctionArn      string       `json:"FunctionArn"`
+	Runtime          string       `json:"Runtime,omitempty"`
+	Role             string       `json:"Role"`
+	Handler          string       `json:"Handler,omitempty"`
+	CodeSize         int64        `json:"CodeSize"`
+	Description      string       `json:"Description,omitempty"`
+	Timeout          int          `json:"Timeout"`
+	MemorySize       int          `json:"MemorySize"`
+	LastModified     string       `json:"LastModified"`
+	CodeSha256       string       `json:"CodeSha256"`
+	Version          string       `json:"Version"`
+	State            string       `json:"State,omitempty"`
+	StateReason      string       `json:"StateReason,omitempty"`
+	StateReasonCode  string       `json:"StateReasonCode,omitempty"`
+	LastUpdateStatus string       `json:"LastUpdateStatus,omitempty"`
+	PackageType      string       `json:"PackageType,omitempty"`
+	Architectures    []string     `json:"Architectures,omitempty"`
+	Environment      *Environment `json:"Environment,omitempty"`
 }
 
 // FunctionCodeLocation contains the location of the function code.

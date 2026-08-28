@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"time"
@@ -134,6 +135,14 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.Functions = make(map[string]*Function)
 	}
 
+	// Snapshots written before LastUpdateStatus existed restore it empty;
+	// updates were applied synchronously then too, so backfill Successful.
+	for _, fn := range s.Functions {
+		if fn.LastUpdateStatus == "" {
+			fn.LastUpdateStatus = "Successful"
+		}
+	}
+
 	if s.EventSourceMappings == nil {
 		s.EventSourceMappings = make(map[string]*EventSourceMapping)
 	}
@@ -209,24 +218,29 @@ func (s *MemoryStorage) buildFunction(req *CreateFunctionRequest) *Function {
 	}
 
 	return &Function{
-		FunctionName:   req.FunctionName,
-		FunctionArn:    fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", s.region, s.accountID, req.FunctionName),
-		Runtime:        req.Runtime,
-		Role:           req.Role,
-		Handler:        req.Handler,
-		Description:    req.Description,
-		Timeout:        timeout,
-		MemorySize:     memorySize,
-		CodeSize:       int64(len(req.Code.ZipFile)),
-		CodeSha256:     codeSha256,
-		Version:        "$LATEST",
-		LastModified:   time.Now().UTC(),
-		State:          "Active",
-		PackageType:    packageType,
-		Architectures:  architectures,
-		Environment:    req.Environment,
-		Tags:           req.Tags,
-		InvokeEndpoint: req.InvokeEndpoint,
+		FunctionName: req.FunctionName,
+		FunctionArn:  fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", s.region, s.accountID, req.FunctionName),
+		Runtime:      req.Runtime,
+		Role:         req.Role,
+		Handler:      req.Handler,
+		Description:  req.Description,
+		Timeout:      timeout,
+		MemorySize:   memorySize,
+		CodeSize:     int64(len(req.Code.ZipFile)),
+		CodeSha256:   codeSha256,
+		Version:      "$LATEST",
+		LastModified: time.Now().UTC(),
+		State:        "Active",
+		// kumo applies configuration/code updates synchronously, so the
+		// last update is always complete; AWS first sets Successful when
+		// creation finishes. The terraform AWS provider polls this until
+		// it reaches Successful after every update.
+		LastUpdateStatus: "Successful",
+		PackageType:      packageType,
+		Architectures:    architectures,
+		Environment:      req.Environment,
+		Tags:             req.Tags,
+		InvokeEndpoint:   req.InvokeEndpoint,
 		Code: &FunctionCode{
 			ZipFile:         req.Code.ZipFile,
 			S3Bucket:        req.Code.S3Bucket,
@@ -526,7 +540,10 @@ func (s *MemoryStorage) ListTags(_ context.Context, arn string) (map[string]stri
 
 	for _, fn := range s.Functions {
 		if fn.FunctionArn == arn {
-			tags := fn.Tags
+			// Clone under the read lock: callers serialize the result
+			// after the lock is released, which must not race with
+			// TagResource/UntagResource mutating the stored map.
+			tags := maps.Clone(fn.Tags)
 			if tags == nil {
 				tags = make(map[string]string)
 			}

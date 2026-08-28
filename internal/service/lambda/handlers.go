@@ -91,12 +91,22 @@ func (s *Service) GetFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Snapshot the tags through storage so serializing the response cannot
+	// race with concurrent TagResource/UntagResource mutations.
+	tags, err := s.storage.ListTags(r.Context(), fn.FunctionArn)
+	if err != nil {
+		writeFunctionError(w, ErrServiceException, "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
 	resp := &GetFunctionResponse{
 		Configuration: functionToConfiguration(fn),
 		Code: &FunctionCodeLocation{
 			RepositoryType: "S3",
 			Location:       s.baseURL + "/lambda-code/" + functionName,
 		},
+		Tags: tags,
 	}
 
 	writeJSONResponse(w, http.StatusOK, resp)
@@ -527,48 +537,50 @@ func extractFunctionNameFromSubresource(path, sub string) string {
 // functionToCreateResponse converts a Function to CreateFunctionResponse.
 func functionToCreateResponse(fn *Function) *CreateFunctionResponse {
 	return &CreateFunctionResponse{
-		FunctionName:    fn.FunctionName,
-		FunctionArn:     fn.FunctionArn,
-		Runtime:         fn.Runtime,
-		Role:            fn.Role,
-		Handler:         fn.Handler,
-		CodeSize:        fn.CodeSize,
-		Description:     fn.Description,
-		Timeout:         fn.Timeout,
-		MemorySize:      fn.MemorySize,
-		LastModified:    fn.LastModified.Format("2006-01-02T15:04:05.000+0000"),
-		CodeSha256:      fn.CodeSha256,
-		Version:         fn.Version,
-		State:           fn.State,
-		StateReason:     fn.StateReason,
-		StateReasonCode: fn.StateReasonCode,
-		PackageType:     fn.PackageType,
-		Architectures:   fn.Architectures,
-		Environment:     fn.Environment,
+		FunctionName:     fn.FunctionName,
+		FunctionArn:      fn.FunctionArn,
+		Runtime:          fn.Runtime,
+		Role:             fn.Role,
+		Handler:          fn.Handler,
+		CodeSize:         fn.CodeSize,
+		Description:      fn.Description,
+		Timeout:          fn.Timeout,
+		MemorySize:       fn.MemorySize,
+		LastModified:     fn.LastModified.Format("2006-01-02T15:04:05.000+0000"),
+		CodeSha256:       fn.CodeSha256,
+		Version:          fn.Version,
+		State:            fn.State,
+		StateReason:      fn.StateReason,
+		StateReasonCode:  fn.StateReasonCode,
+		LastUpdateStatus: fn.LastUpdateStatus,
+		PackageType:      fn.PackageType,
+		Architectures:    fn.Architectures,
+		Environment:      fn.Environment,
 	}
 }
 
 // functionToConfiguration converts a Function to FunctionConfiguration.
 func functionToConfiguration(fn *Function) *FunctionConfiguration {
 	return &FunctionConfiguration{
-		FunctionName:    fn.FunctionName,
-		FunctionArn:     fn.FunctionArn,
-		Runtime:         fn.Runtime,
-		Role:            fn.Role,
-		Handler:         fn.Handler,
-		CodeSize:        fn.CodeSize,
-		Description:     fn.Description,
-		Timeout:         fn.Timeout,
-		MemorySize:      fn.MemorySize,
-		LastModified:    fn.LastModified.Format("2006-01-02T15:04:05.000+0000"),
-		CodeSha256:      fn.CodeSha256,
-		Version:         fn.Version,
-		State:           fn.State,
-		StateReason:     fn.StateReason,
-		StateReasonCode: fn.StateReasonCode,
-		PackageType:     fn.PackageType,
-		Architectures:   fn.Architectures,
-		Environment:     fn.Environment,
+		FunctionName:     fn.FunctionName,
+		FunctionArn:      fn.FunctionArn,
+		Runtime:          fn.Runtime,
+		Role:             fn.Role,
+		Handler:          fn.Handler,
+		CodeSize:         fn.CodeSize,
+		Description:      fn.Description,
+		Timeout:          fn.Timeout,
+		MemorySize:       fn.MemorySize,
+		LastModified:     fn.LastModified.Format("2006-01-02T15:04:05.000+0000"),
+		CodeSha256:       fn.CodeSha256,
+		Version:          fn.Version,
+		State:            fn.State,
+		StateReason:      fn.StateReason,
+		StateReasonCode:  fn.StateReasonCode,
+		LastUpdateStatus: fn.LastUpdateStatus,
+		PackageType:      fn.PackageType,
+		Architectures:    fn.Architectures,
+		Environment:      fn.Environment,
 	}
 }
 
