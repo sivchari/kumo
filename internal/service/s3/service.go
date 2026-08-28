@@ -175,7 +175,7 @@ func (s *Service) emitSQSNotifications(ctx context.Context, bucket, key, eventNa
 	}
 
 	for _, cfg := range configs {
-		if !matchesEventFilter(cfg.Events, eventName) {
+		if !matchesEventFilter(cfg.Events, eventName) || !matchesKeyFilter(cfg.Filter, key) {
 			continue
 		}
 
@@ -210,7 +210,7 @@ func (s *Service) emitLambdaNotifications(ctx context.Context, bucket, key, even
 	}
 
 	for _, cfg := range configs {
-		if !matchesEventFilter(cfg.Events, eventName) {
+		if !matchesEventFilter(cfg.Events, eventName) || !matchesKeyFilter(cfg.Filter, key) {
 			continue
 		}
 
@@ -247,6 +247,45 @@ func matchesEventFilter(filters []string, eventName string) bool {
 	}
 
 	return false
+}
+
+// matchesKeyFilter checks an object key against a configuration's S3Key
+// filter rules. AWS applies every rule: an object must match the prefix
+// rule and the suffix rule when both are present. Rule names are
+// case-insensitive per the S3 notification filtering documentation. A
+// missing filter matches every key.
+func matchesKeyFilter(filter *NotificationFilter, key string) bool {
+	if filter == nil || filter.S3Key == nil {
+		return true
+	}
+
+	for _, rule := range filter.S3Key.FilterRules {
+		switch {
+		case strings.EqualFold(rule.Name, "prefix"):
+			if !strings.HasPrefix(key, decodeFilterValue(rule.Value)) {
+				return false
+			}
+		case strings.EqualFold(rule.Name, "suffix"):
+			if !strings.HasSuffix(key, decodeFilterValue(rule.Value)) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// decodeFilterValue interprets a filter rule value the way AWS documents it:
+// a space is configured as "+" and other special characters are
+// percent-encoded, so the value is URL-decoded before it is compared with
+// the raw object key. A value that does not decode is used verbatim.
+func decodeFilterValue(value string) string {
+	decoded, err := url.QueryUnescape(value)
+	if err != nil {
+		return value
+	}
+
+	return decoded
 }
 
 // emitObjectCreatedEvent sends an S3 Object Created event to EventBridge.
