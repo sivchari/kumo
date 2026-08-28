@@ -453,17 +453,36 @@ type EventBridgeConfig struct{}
 // QueueConfiguration represents an SQS queue destination in the bucket
 // notification configuration.
 type QueueConfiguration struct {
-	ID       string   `xml:"Id,omitempty"       json:"id,omitempty"`
-	QueueArn string   `xml:"Queue"              json:"queue"`
-	Events   []string `xml:"Event"              json:"events"`
+	ID       string              `xml:"Id,omitempty"       json:"id,omitempty"`
+	QueueArn string              `xml:"Queue"              json:"queue"`
+	Events   []string            `xml:"Event"              json:"events"`
+	Filter   *NotificationFilter `xml:"Filter,omitempty"   json:"filter,omitempty"`
 }
 
 // LambdaFunctionConfiguration represents a Lambda destination in the bucket
 // notification configuration.
 type LambdaFunctionConfiguration struct {
-	ID                string   `xml:"Id,omitempty" json:"id,omitempty"`
-	LambdaFunctionArn string   `xml:"CloudFunction" json:"lambdaFunctionArn"`
-	Events            []string `xml:"Event"         json:"events"`
+	ID                string              `xml:"Id,omitempty"     json:"id,omitempty"`
+	LambdaFunctionArn string              `xml:"CloudFunction"    json:"lambdaFunctionArn"`
+	Events            []string            `xml:"Event"            json:"events"`
+	Filter            *NotificationFilter `xml:"Filter,omitempty" json:"filter,omitempty"`
+}
+
+// NotificationFilter restricts a notification configuration to object keys
+// matching its S3Key filter rules.
+type NotificationFilter struct {
+	S3Key *KeyFilter `xml:"S3Key,omitempty" json:"s3Key,omitempty"`
+}
+
+// KeyFilter holds the object key name filter rules.
+type KeyFilter struct {
+	FilterRules []FilterRule `xml:"FilterRule,omitempty" json:"filterRules,omitempty"`
+}
+
+// FilterRule is a single object key name prefix or suffix constraint.
+type FilterRule struct {
+	Name  string `xml:"Name"  json:"name"`
+	Value string `xml:"Value" json:"value"`
 }
 
 // EventNotification is the top-level wrapper sent to SQS when an S3
