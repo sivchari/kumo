@@ -34,7 +34,7 @@ type LoggingEnabledStatus struct {
 // Object represents an S3 object.
 type Object struct {
 	Key                  string
-	Body                 []byte
+	Body                 []byte `json:"-"`
 	ETag                 string
 	Size                 int64
 	LastModified         time.Time
@@ -79,7 +79,6 @@ func (o *Object) MarshalJSON() ([]byte, error) {
 
 	data, err := json.Marshal(&struct {
 		*alias
-		Body    []byte `json:"-"`
 		BodyRef string `json:"bodyRef,omitempty"`
 	}{
 		alias:   (*alias)(o),
@@ -339,6 +338,7 @@ type Part struct {
 	Size         int64
 	LastModified time.Time
 	Body         []byte
+	bodyRef      string
 }
 
 // InitiateMultipartUploadResult is the response for CreateMultipartUpload.
