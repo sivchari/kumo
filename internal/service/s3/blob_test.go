@@ -99,10 +99,11 @@ func TestMemoryStorage_PersistentPutKeepsBodyOnDisk(t *testing.T) {
 		t.Fatalf("stored object retained %d body bytes", len(stored.Body))
 	}
 
-	bodyOnDisk, err := os.ReadFile(blobPath(dir, bodyRefOf(body))) //nolint:gosec // path is under t.TempDir
+	bodyOnDisk, err := os.ReadFile(blobPath(dir, bodyRefOf(body)))
 	if err != nil {
 		t.Fatalf("read blob: %v", err)
 	}
+
 	if !bytes.Equal(bodyOnDisk, body) {
 		t.Fatal("blob body differs from uploaded body")
 	}
@@ -111,9 +112,11 @@ func TestMemoryStorage_PersistentPutKeepsBodyOnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get object: %v", err)
 	}
+
 	if !bytes.Equal(got.Body, body) {
 		t.Fatal("get object body differs from uploaded body")
 	}
+
 	if len(stored.Body) != 0 {
 		t.Fatal("GetObject populated the stored object's body")
 	}
@@ -128,11 +131,13 @@ func TestMemoryStorage_ReloadKeepsBodyOnDiskUntilGet(t *testing.T) {
 	if err := s.CreateBucket(ctx, "b"); err != nil {
 		t.Fatalf("create bucket: %v", err)
 	}
+
 	if _, err := s.PutObject(ctx, "b", "k", bytes.NewReader(body), nil); err != nil {
 		t.Fatalf("put object: %v", err)
 	}
 
 	s2 := saveAndReload(t, s, dir)
+
 	stored := s2.Buckets["b"].Objects["k"]
 	if len(stored.Body) != 0 {
 		t.Fatalf("reload retained %d body bytes", len(stored.Body))
@@ -142,6 +147,7 @@ func TestMemoryStorage_ReloadKeepsBodyOnDiskUntilGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get object: %v", err)
 	}
+
 	if !bytes.Equal(got.Body, body) {
 		t.Fatal("get object body differs from uploaded body")
 	}
@@ -163,11 +169,13 @@ func TestMemoryStorage_PersistentMultipartKeepsPartsAndObjectOnDisk(t *testing.T
 
 	partBodies := [][]byte{[]byte("first part"), []byte("second part")}
 	requests := make([]PartRequest, 0, len(partBodies))
+
 	for i, body := range partBodies {
 		part, err := s.UploadPart(ctx, "b", "k", upload.UploadID, i+1, bytes.NewReader(body))
 		if err != nil {
 			t.Fatalf("upload part %d: %v", i+1, err)
 		}
+
 		if len(part.Body) != 0 {
 			t.Fatalf("part %d retained %d body bytes", i+1, len(part.Body))
 		}
@@ -179,15 +187,18 @@ func TestMemoryStorage_PersistentMultipartKeepsPartsAndObjectOnDisk(t *testing.T
 	if err != nil {
 		t.Fatalf("complete multipart upload: %v", err)
 	}
+
 	if len(obj.Body) != 0 {
 		t.Fatalf("completed object retained %d body bytes", len(obj.Body))
 	}
 
 	want := bytes.Join(partBodies, nil)
+
 	got, err := s.GetObject(ctx, "b", "k")
 	if err != nil {
 		t.Fatalf("get completed object: %v", err)
 	}
+
 	if !bytes.Equal(got.Body, want) {
 		t.Fatalf("completed body = %q, want %q", got.Body, want)
 	}

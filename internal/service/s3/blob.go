@@ -83,6 +83,7 @@ func writeBlobStream(dataDir string, body io.Reader) (_ streamedBlob, retErr err
 	}
 
 	tmpName := tmp.Name()
+
 	defer func() {
 		_ = tmp.Close()
 		if retErr != nil {
@@ -92,6 +93,7 @@ func writeBlobStream(dataDir string, body io.Reader) (_ streamedBlob, retErr err
 
 	md5Hash := md5.New() //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
 	sha256Hash := sha256.New()
+
 	size, err := io.Copy(io.MultiWriter(tmp, md5Hash, sha256Hash), body)
 	if err != nil {
 		return streamedBlob{}, fmt.Errorf("failed to stream body: %w", err)
@@ -102,6 +104,7 @@ func writeBlobStream(dataDir string, body io.Reader) (_ streamedBlob, retErr err
 	}
 
 	ref := hex.EncodeToString(sha256Hash.Sum(nil))
+
 	path := blobPath(dataDir, ref)
 	if _, err := os.Stat(path); err == nil {
 		if err := os.Remove(tmpName); err != nil {
