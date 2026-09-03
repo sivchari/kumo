@@ -1,12 +1,14 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5" //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +16,56 @@ import (
 
 	"github.com/sivchari/kumo/internal/storage"
 )
+
+type blobSequenceReader struct {
+	dataDir string
+	refs    []string
+	index   int
+	current *os.File
+}
+
+func (r *blobSequenceReader) Read(p []byte) (int, error) {
+	for {
+		if r.current == nil {
+			if r.index >= len(r.refs) {
+				return 0, io.EOF
+			}
+
+			file, err := os.Open(blobPath(r.dataDir, r.refs[r.index]))
+			if err != nil {
+				return 0, fmt.Errorf("failed to open multipart blob: %w", err)
+			}
+
+			r.current = file
+			r.index++
+		}
+
+		n, err := r.current.Read(p)
+		if err != io.EOF {
+			return n, err
+		}
+
+		if closeErr := r.current.Close(); closeErr != nil {
+			return n, fmt.Errorf("failed to close multipart blob: %w", closeErr)
+		}
+
+		r.current = nil
+		if n > 0 {
+			return n, nil
+		}
+	}
+}
+
+func (r *blobSequenceReader) Close() error {
+	if r.current == nil {
+		return nil
+	}
+
+	err := r.current.Close()
+	r.current = nil
+
+	return err
+}
 
 // Versioning status constants.
 const (
@@ -292,6 +344,14 @@ func (s *MemoryStorage) persistBodiesLocked() error {
 				}
 			}
 		}
+
+		for _, upload := range b.MultipartUploads {
+			for _, part := range upload.Parts {
+				if part.bodyRef != "" {
+					referenced[part.bodyRef] = struct{}{}
+				}
+			}
+		}
 	}
 
 	gcBlobs(s.dataDir, referenced)
@@ -303,18 +363,21 @@ func (s *MemoryStorage) persistBodiesLocked() error {
 // reference in referenced (the live set used to GC orphans). Empty bodies carry
 // no blob: an empty or delete-marker object round-trips with a nil body.
 func (s *MemoryStorage) persistObjectBody(obj *Object, referenced map[string]struct{}) error {
+	ref := obj.effectiveRef()
+	if ref == "" {
+		return nil
+	}
+
+	referenced[ref] = struct{}{}
 	if len(obj.Body) == 0 {
 		return nil
 	}
 
-	ref := obj.effectiveRef()
-	referenced[ref] = struct{}{}
-
 	return writeBlob(s.dataDir, ref, obj.Body)
 }
 
-// loadBodiesLocked fills each object's body from the blob store. The caller must
-// hold the write lock.
+// loadBodiesLocked prepares objects restored from the metadata snapshot. Blob
+// bodies stay on disk and are loaded only when an operation needs their bytes.
 func (s *MemoryStorage) loadBodiesLocked() error {
 	for _, b := range s.Buckets {
 		for _, obj := range b.Objects {
@@ -335,32 +398,44 @@ func (s *MemoryStorage) loadBodiesLocked() error {
 	return nil
 }
 
-// loadObjectBody populates one object's body from its blob. An object carrying a
-// legacy inline body (bodyRef empty, Body already set by an older snapshot) is
-// left untouched and gets a freshly computed ref so the next save migrates it to
-// a blob. The current-version object is shared by pointer between Objects and
-// Versions, so this may be called twice on it; the second call is a no-op.
+// loadObjectBody records the reference for a legacy inline body. Referenced
+// blobs are intentionally not read here: doing so would make process RSS grow
+// with all data stored on disk at every startup.
 func (s *MemoryStorage) loadObjectBody(obj *Object) error {
 	if obj.bodyRef == "" {
 		if len(obj.Body) > 0 {
-			obj.bodyRef = bodyRefOf(obj.Body)
+			ref := bodyRefOf(obj.Body)
+			if err := writeBlob(s.dataDir, ref, obj.Body); err != nil {
+				return err
+			}
+
+			obj.bodyRef = ref
+			obj.Body = nil
 		}
 
 		return nil
 	}
 
-	if len(obj.Body) > 0 {
-		return nil
-	}
-
-	data, err := readBlob(s.dataDir, obj.bodyRef)
-	if err != nil {
-		return err
-	}
-
-	obj.Body = data
-
 	return nil
+}
+
+// objectWithBody returns a shallow copy whose body is loaded from the blob
+// store. The stored object remains metadata-only so a GET does not permanently
+// increase the resident set.
+func (s *MemoryStorage) objectWithBody(obj *Object) (*Object, error) {
+	if s.dataDir == "" || obj.bodyRef == "" || len(obj.Body) > 0 {
+		return obj, nil
+	}
+
+	body, err := readBlob(s.dataDir, obj.bodyRef)
+	if err != nil {
+		return nil, err
+	}
+
+	clone := *obj
+	clone.Body = body
+
+	return &clone, nil
 }
 
 // saveLocked persists the current state to disk while the caller holds the lock.
@@ -481,19 +556,38 @@ func (s *MemoryStorage) PutObjectIf(_ context.Context, bucket, key string, body 
 		return nil, err
 	}
 
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read body: %w", err)
+	var data []byte
+	var bodyRef, etag string
+	var size int64
+
+	if s.dataDir != "" {
+		blob, err := writeBlobStream(s.dataDir, body)
+		if err != nil {
+			return nil, err
+		}
+
+		bodyRef = blob.ref
+		etag = blob.etag
+		size = blob.size
+	} else {
+		var err error
+		data, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read body: %w", err)
+		}
+
+		hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
+		bodyRef = bodyRefOf(data)
+		etag = hex.EncodeToString(hash[:])
+		size = int64(len(data))
 	}
 
-	hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
-	etag := hex.EncodeToString(hash[:])
 	obj := &Object{
 		Key:          key,
 		Body:         data,
-		bodyRef:      bodyRefOf(data),
+		bodyRef:      bodyRef,
 		ETag:         fmt.Sprintf("%q", etag),
-		Size:         int64(len(data)),
+		Size:         size,
 		LastModified: time.Now(),
 		Metadata:     metadata,
 	}
@@ -573,7 +667,7 @@ func (s *MemoryStorage) GetObject(_ context.Context, bucket, key string) (*Objec
 		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
 	}
 
-	return obj, nil
+	return s.objectWithBody(obj)
 }
 
 // GetObjectVersion retrieves a specific version of an object.
@@ -593,7 +687,7 @@ func (s *MemoryStorage) GetObjectVersion(_ context.Context, bucket, key, version
 				return nil, &ObjectError{Code: "MethodNotAllowed", Message: "The specified method is not allowed against this resource.", Key: key}
 			}
 
-			return obj, nil
+			return s.objectWithBody(obj)
 		}
 	}
 
@@ -1087,20 +1181,39 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
 	}
 
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read body: %w", err)
-	}
+	var data []byte
+	var bodyRef, etag string
+	var size int64
 
-	hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
-	etag := hex.EncodeToString(hash[:])
+	if s.dataDir != "" {
+		blob, err := writeBlobStream(s.dataDir, body)
+		if err != nil {
+			return nil, err
+		}
+
+		bodyRef = blob.ref
+		etag = blob.etag
+		size = blob.size
+	} else {
+		var err error
+		data, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read body: %w", err)
+		}
+
+		hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
+		bodyRef = bodyRefOf(data)
+		etag = hex.EncodeToString(hash[:])
+		size = int64(len(data))
+	}
 
 	part := &Part{
 		PartNumber:   partNumber,
 		ETag:         fmt.Sprintf("%q", etag),
-		Size:         int64(len(data)),
+		Size:         size,
 		LastModified: time.Now(),
 		Body:         data,
+		bodyRef:      bodyRef,
 	}
 
 	upload.Parts[partNumber] = part
@@ -1132,7 +1245,12 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
 	}
 
-	data := srcObj.Body
+	hydratedSrc, err := s.objectWithBody(srcObj)
+	if err != nil {
+		return nil, err
+	}
+
+	data := hydratedSrc.Body
 	if copyRange != nil {
 		size := int64(len(data))
 		if copyRange.Start < 0 || copyRange.End >= size || copyRange.Start > copyRange.End {
@@ -1142,15 +1260,33 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 		data = data[copyRange.Start : copyRange.End+1]
 	}
 
-	hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
-	etag := hex.EncodeToString(hash[:])
+	var partBody []byte
+	var bodyRef, etag string
+	var size int64
+	if s.dataDir != "" {
+		blob, err := writeBlobStream(s.dataDir, bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+
+		bodyRef = blob.ref
+		etag = blob.etag
+		size = blob.size
+	} else {
+		hash := md5.Sum(data) //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
+		partBody = append([]byte(nil), data...)
+		bodyRef = bodyRefOf(partBody)
+		etag = hex.EncodeToString(hash[:])
+		size = int64(len(partBody))
+	}
 
 	part := &Part{
 		PartNumber:   partNumber,
 		ETag:         fmt.Sprintf("%q", etag),
-		Size:         int64(len(data)),
+		Size:         size,
 		LastModified: time.Now(),
-		Body:         append([]byte(nil), data...),
+		Body:         partBody,
+		bodyRef:      bodyRef,
 	}
 
 	upload.Parts[partNumber] = part
@@ -1222,9 +1358,39 @@ func (s *MemoryStorage) CompleteMultipartUploadIf(_ context.Context, bucket, key
 		return nil, err
 	}
 
-	combinedBody, err := assembleMultipartBody(upload, parts, uploadID)
+	selectedParts, err := validateMultipartParts(upload, parts, uploadID)
 	if err != nil {
 		return nil, err
+	}
+
+	var combinedBody []byte
+	var bodyRef string
+	var size int64
+	if s.dataDir != "" {
+		refs := make([]string, 0, len(selectedParts))
+		for _, part := range selectedParts {
+			refs = append(refs, part.bodyRef)
+		}
+
+		reader := &blobSequenceReader{dataDir: s.dataDir, refs: refs}
+		blob, streamErr := writeBlobStream(s.dataDir, reader)
+		closeErr := reader.Close()
+		if streamErr != nil {
+			return nil, streamErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+
+		bodyRef = blob.ref
+		size = blob.size
+	} else {
+		for _, part := range selectedParts {
+			combinedBody = append(combinedBody, part.Body...)
+		}
+
+		bodyRef = bodyRefOf(combinedBody)
+		size = int64(len(combinedBody))
 	}
 
 	etag := calculateMultipartETag(parts, upload.Parts)
@@ -1232,9 +1398,9 @@ func (s *MemoryStorage) CompleteMultipartUploadIf(_ context.Context, bucket, key
 	obj := &Object{
 		Key:          key,
 		Body:         combinedBody,
-		bodyRef:      bodyRefOf(combinedBody),
+		bodyRef:      bodyRef,
 		ETag:         etag,
-		Size:         int64(len(combinedBody)),
+		Size:         size,
 		LastModified: time.Now(),
 		ContentType:  "application/octet-stream",
 	}
@@ -1251,14 +1417,12 @@ func (s *MemoryStorage) CompleteMultipartUploadIf(_ context.Context, bucket, key
 	return obj, nil
 }
 
-// assembleMultipartBody validates the part list (ascending order, no
-// duplicates, ETag match) and concatenates the part bodies in order.
-func assembleMultipartBody(upload *MultipartUpload, parts []PartRequest, uploadID string) ([]byte, error) {
+func validateMultipartParts(upload *MultipartUpload, parts []PartRequest, uploadID string) ([]*Part, error) {
 	if len(parts) == 0 {
 		return nil, &MultipartError{Code: "MalformedXML", Message: "CompleteMultipartUpload requires at least one part", UploadID: uploadID}
 	}
 
-	var combinedBody []byte
+	selectedParts := make([]*Part, 0, len(parts))
 
 	previousPartNumber := 0
 
@@ -1278,10 +1442,10 @@ func assembleMultipartBody(upload *MultipartUpload, parts []PartRequest, uploadI
 			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
 		}
 
-		combinedBody = append(combinedBody, part.Body...)
+		selectedParts = append(selectedParts, part)
 	}
 
-	return combinedBody, nil
+	return selectedParts, nil
 }
 
 // applyMultipartUploadMetadata carries the Content-Type, user metadata, and

@@ -48,6 +48,10 @@ func TestMemoryStorage_BodyBlobRoundTrip(t *testing.T) {
 		t.Errorf("snapshot contains raw body; body was not externalized")
 	}
 
+	if bytes.Contains(snapshot, []byte(`"Body"`)) {
+		t.Errorf("snapshot contains the legacy inline Body field")
+	}
+
 	if !bytes.Contains(snapshot, []byte("bodyRef")) {
 		t.Errorf("snapshot missing bodyRef reference")
 	}
@@ -68,6 +72,124 @@ func TestMemoryStorage_BodyBlobRoundTrip(t *testing.T) {
 
 	if !bytes.Equal(obj.Body, body) {
 		t.Errorf("body after reload = %q, want %q", obj.Body, body)
+	}
+}
+
+func TestMemoryStorage_PersistentPutKeepsBodyOnDisk(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	body := bytes.Repeat([]byte("streamed-body"), 1024)
+
+	s := NewMemoryStorage(WithDataDir(dir))
+	if err := s.CreateBucket(ctx, "b"); err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+
+	obj, err := s.PutObject(ctx, "b", "k", bytes.NewReader(body), nil)
+	if err != nil {
+		t.Fatalf("put object: %v", err)
+	}
+
+	if len(obj.Body) != 0 {
+		t.Fatalf("returned object retained %d body bytes", len(obj.Body))
+	}
+
+	stored := s.Buckets["b"].Objects["k"]
+	if len(stored.Body) != 0 {
+		t.Fatalf("stored object retained %d body bytes", len(stored.Body))
+	}
+
+	bodyOnDisk, err := os.ReadFile(blobPath(dir, bodyRefOf(body))) //nolint:gosec // path is under t.TempDir
+	if err != nil {
+		t.Fatalf("read blob: %v", err)
+	}
+	if !bytes.Equal(bodyOnDisk, body) {
+		t.Fatal("blob body differs from uploaded body")
+	}
+
+	got, err := s.GetObject(ctx, "b", "k")
+	if err != nil {
+		t.Fatalf("get object: %v", err)
+	}
+	if !bytes.Equal(got.Body, body) {
+		t.Fatal("get object body differs from uploaded body")
+	}
+	if len(stored.Body) != 0 {
+		t.Fatal("GetObject populated the stored object's body")
+	}
+}
+
+func TestMemoryStorage_ReloadKeepsBodyOnDiskUntilGet(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	body := bytes.Repeat([]byte("persisted-body"), 1024)
+
+	s := NewMemoryStorage(WithDataDir(dir))
+	if err := s.CreateBucket(ctx, "b"); err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+	if _, err := s.PutObject(ctx, "b", "k", bytes.NewReader(body), nil); err != nil {
+		t.Fatalf("put object: %v", err)
+	}
+
+	s2 := saveAndReload(t, s, dir)
+	stored := s2.Buckets["b"].Objects["k"]
+	if len(stored.Body) != 0 {
+		t.Fatalf("reload retained %d body bytes", len(stored.Body))
+	}
+
+	got, err := s2.GetObject(ctx, "b", "k")
+	if err != nil {
+		t.Fatalf("get object: %v", err)
+	}
+	if !bytes.Equal(got.Body, body) {
+		t.Fatal("get object body differs from uploaded body")
+	}
+}
+
+func TestMemoryStorage_PersistentMultipartKeepsPartsAndObjectOnDisk(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	s := NewMemoryStorage(WithDataDir(dir))
+	if err := s.CreateBucket(ctx, "b"); err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+
+	upload, err := s.CreateMultipartUpload(ctx, "b", "k", nil)
+	if err != nil {
+		t.Fatalf("create multipart upload: %v", err)
+	}
+
+	partBodies := [][]byte{[]byte("first part"), []byte("second part")}
+	requests := make([]PartRequest, 0, len(partBodies))
+	for i, body := range partBodies {
+		part, err := s.UploadPart(ctx, "b", "k", upload.UploadID, i+1, bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("upload part %d: %v", i+1, err)
+		}
+		if len(part.Body) != 0 {
+			t.Fatalf("part %d retained %d body bytes", i+1, len(part.Body))
+		}
+
+		requests = append(requests, PartRequest{PartNumber: i + 1, ETag: part.ETag})
+	}
+
+	obj, err := s.CompleteMultipartUpload(ctx, "b", "k", upload.UploadID, requests)
+	if err != nil {
+		t.Fatalf("complete multipart upload: %v", err)
+	}
+	if len(obj.Body) != 0 {
+		t.Fatalf("completed object retained %d body bytes", len(obj.Body))
+	}
+
+	want := bytes.Join(partBodies, nil)
+	got, err := s.GetObject(ctx, "b", "k")
+	if err != nil {
+		t.Fatalf("get completed object: %v", err)
+	}
+	if !bytes.Equal(got.Body, want) {
+		t.Fatalf("completed body = %q, want %q", got.Body, want)
 	}
 }
 

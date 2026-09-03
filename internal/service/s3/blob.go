@@ -1,9 +1,11 @@
 package s3
 
 import (
+	"crypto/md5" //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -16,6 +18,12 @@ import (
 // process into the OOM killer). Bodies are written as plain bytes, one file per
 // distinct content.
 const objectsDir = "s3-objects"
+
+type streamedBlob struct {
+	ref  string
+	etag string
+	size int64
+}
 
 // bodyRefOf returns the content-address (sha256 hex) used as the blob filename
 // for the given body. Content addressing means identical bodies (object
@@ -58,6 +66,58 @@ func writeBlob(dataDir, ref string, data []byte) error {
 	}
 
 	return nil
+}
+
+// writeBlobStream copies body directly to the blob store while calculating the
+// hashes needed for the content address and S3 ETag. At no point does it buffer
+// the entire object in memory.
+func writeBlobStream(dataDir string, body io.Reader) (_ streamedBlob, retErr error) {
+	dir := filepath.Join(dataDir, objectsDir)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return streamedBlob{}, fmt.Errorf("failed to create objects directory %s: %w", dir, err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".upload-*")
+	if err != nil {
+		return streamedBlob{}, fmt.Errorf("failed to create temporary blob: %w", err)
+	}
+
+	tmpName := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		if retErr != nil {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	md5Hash := md5.New() //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
+	sha256Hash := sha256.New()
+	size, err := io.Copy(io.MultiWriter(tmp, md5Hash, sha256Hash), body)
+	if err != nil {
+		return streamedBlob{}, fmt.Errorf("failed to stream body: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return streamedBlob{}, fmt.Errorf("failed to close temporary blob %s: %w", tmpName, err)
+	}
+
+	ref := hex.EncodeToString(sha256Hash.Sum(nil))
+	path := blobPath(dataDir, ref)
+	if _, err := os.Stat(path); err == nil {
+		if err := os.Remove(tmpName); err != nil {
+			return streamedBlob{}, fmt.Errorf("failed to remove duplicate temporary blob %s: %w", tmpName, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return streamedBlob{}, fmt.Errorf("failed to stat blob %s: %w", path, err)
+	} else if err := os.Rename(tmpName, path); err != nil {
+		return streamedBlob{}, fmt.Errorf("failed to rename blob %s to %s: %w", tmpName, path, err)
+	}
+
+	return streamedBlob{
+		ref:  ref,
+		etag: hex.EncodeToString(md5Hash.Sum(nil)),
+		size: size,
+	}, nil
 }
 
 // readBlob loads the body identified by ref from disk.
