@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.29.0](https://github.com/sivchari/kumo/compare/v0.28.1...v0.29.0) - 2026-09-04
+- feat(sqs): add AddPermission and RemovePermission by @sivchari in https://github.com/sivchari/kumo/pull/915
+- feat(s3): support If-Match / If-None-Match conditional writes on PutObject by @shiv3 in https://github.com/sivchari/kumo/pull/918
+- release v0.29.0 by @sivchari in https://github.com/sivchari/kumo/pull/919
+- fix(lambda): return Tags and LastUpdateStatus so terraform can manage functions by @wakame1367 in https://github.com/sivchari/kumo/pull/921
+- fix(s3): round-trip and apply notification key filters (prefix/suffix) by @wakame1367 in https://github.com/sivchari/kumo/pull/922
+- fix(s3): stream persistent object uploads to disk by @shiv3 in https://github.com/sivchari/kumo/pull/926
+
 ## [v0.28.1](https://github.com/sivchari/kumo/compare/v0.28.0...v0.28.1) - 2026-08-07
 - fix(ci): reduce fuzz test worker parallelism to avoid CI flake by @sivchari in https://github.com/sivchari/kumo/pull/912
 - fix(cli): restore v0.27.0 CLI compatibility broken by cli-gen migration by @sivchari in https://github.com/sivchari/kumo/pull/914
