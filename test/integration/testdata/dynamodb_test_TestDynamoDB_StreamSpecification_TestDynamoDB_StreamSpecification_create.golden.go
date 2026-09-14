@@ -11,7 +11,7 @@
       "BillingMode": "PAY_PER_REQUEST",
       "LastUpdateToPayPerRequestDateTime": null
     },
-    "CreationDateTime": "2026-08-07T03:56:04Z",
+    "CreationDateTime": "2026-09-14T08:59:40Z",
     "DeletionProtectionEnabled": false,
     "GlobalSecondaryIndexes": null,
     "GlobalTableSettingsReplicationMode": "",
@@ -24,7 +24,7 @@
         "KeyType": "HASH"
       }
     ],
-    "LatestStreamArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-stream-spec/stream/2026-08-07T12:56:04.944",
+    "LatestStreamArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-stream-spec/stream/2026-09-14T17:59:40.419",
     "LatestStreamLabel": null,
     "LocalSecondaryIndexes": null,
     "MultiRegionConsistency": "",
@@ -39,14 +39,18 @@
     },
     "TableArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-stream-spec",
     "TableClassSummary": {
-      "LastUpdateDateTime": "2026-08-07T03:56:04Z",
+      "LastUpdateDateTime": "2026-09-14T08:59:40Z",
       "TableClass": "STANDARD"
     },
-    "TableId": "01caccc3-5e61-4fbe-97d5-84e29e0e64be",
+    "TableId": "d72e9a51-961e-4ab3-9a34-3bf280e3fd98",
     "TableName": "test-stream-spec",
     "TableSizeBytes": 0,
     "TableStatus": "ACTIVE",
-    "WarmThroughput": null
+    "WarmThroughput": {
+      "ReadUnitsPerSecond": 12000,
+      "Status": "ACTIVE",
+      "WriteUnitsPerSecond": 4000
+    }
   },
   "ResultMetadata": {}
 }

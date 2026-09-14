@@ -19,7 +19,7 @@
       "BillingMode": "PAY_PER_REQUEST",
       "LastUpdateToPayPerRequestDateTime": null
     },
-    "CreationDateTime": "2026-08-07T03:56:47Z",
+    "CreationDateTime": "2026-09-14T08:59:40Z",
     "DeletionProtectionEnabled": false,
     "GlobalSecondaryIndexes": [
       {
@@ -41,7 +41,11 @@
           "ProjectionType": "ALL"
         },
         "ProvisionedThroughput": null,
-        "WarmThroughput": null
+        "WarmThroughput": {
+          "ReadUnitsPerSecond": 12000,
+          "Status": "ACTIVE",
+          "WriteUnitsPerSecond": 4000
+        }
       }
     ],
     "GlobalTableSettingsReplicationMode": "",
@@ -70,14 +74,18 @@
     "StreamSpecification": null,
     "TableArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-table-gsi",
     "TableClassSummary": {
-      "LastUpdateDateTime": "2026-08-07T03:56:47Z",
+      "LastUpdateDateTime": "2026-09-14T08:59:40Z",
       "TableClass": "STANDARD"
     },
-    "TableId": "07befce0-967d-4ea6-899d-765bb3f3b12a",
+    "TableId": "c916f4c8-74fe-41cd-abf1-9cfa05b6851f",
     "TableName": "test-table-gsi",
     "TableSizeBytes": 0,
     "TableStatus": "ACTIVE",
-    "WarmThroughput": null
+    "WarmThroughput": {
+      "ReadUnitsPerSecond": 12000,
+      "Status": "ACTIVE",
+      "WriteUnitsPerSecond": 4000
+    }
   },
   "ResultMetadata": {}
 }

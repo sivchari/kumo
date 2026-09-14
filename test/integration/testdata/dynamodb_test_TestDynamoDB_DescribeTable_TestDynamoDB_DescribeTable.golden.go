@@ -11,7 +11,7 @@
       "BillingMode": "PAY_PER_REQUEST",
       "LastUpdateToPayPerRequestDateTime": null
     },
-    "CreationDateTime": "2026-08-07T03:56:04Z",
+    "CreationDateTime": "2026-09-14T08:59:40Z",
     "DeletionProtectionEnabled": false,
     "GlobalSecondaryIndexes": null,
     "GlobalTableSettingsReplicationMode": "",
@@ -36,14 +36,18 @@
     "StreamSpecification": null,
     "TableArn": "arn:aws:dynamodb:us-east-1:000000000000:table/test-table-describe",
     "TableClassSummary": {
-      "LastUpdateDateTime": "2026-08-07T03:56:04Z",
+      "LastUpdateDateTime": "2026-09-14T08:59:40Z",
       "TableClass": "STANDARD"
     },
-    "TableId": "88f70a6d-1af6-4503-ae3d-bedec4a98c89",
+    "TableId": "c7173af8-7afb-4515-80e2-bc842142edeb",
     "TableName": "test-table-describe",
     "TableSizeBytes": 0,
     "TableStatus": "ACTIVE",
-    "WarmThroughput": null
+    "WarmThroughput": {
+      "ReadUnitsPerSecond": 12000,
+      "Status": "ACTIVE",
+      "WriteUnitsPerSecond": 4000
+    }
   },
   "ResultMetadata": {}
 }
