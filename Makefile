@@ -6,6 +6,10 @@ BUILD_DIR=bin
 GOLANGCI_LINT=go tool -modfile tools/go.mod golangci-lint
 GOTOOLCHAIN=go1.25.10
 export GOTOOLCHAIN
+# go1.25 fuzzing intermittently reports "context deadline exceeded" as a failure
+# when -fuzztime expires (golang/go#75804, fixed in go1.27). Drop this override
+# once GOTOOLCHAIN moves to go1.27+.
+FUZZ_GOTOOLCHAIN=go1.27.1
 
 # Build
 build:
@@ -32,7 +36,7 @@ test-fuzz:
 	@grep -rl '^func Fuzz' internal/ | xargs -I{} dirname {} | sort -u | while read pkg; do \
 		grep -oh 'func \(Fuzz[A-Za-z]*\)' "$$pkg"/*_test.go | sed 's/func //' | while read fn; do \
 			echo "=== fuzzing $$fn in $$pkg ==="; \
-			go test -fuzz="$$fn" -fuzztime=60s -parallel=2 "./$$pkg/..." || exit 1; \
+			GOTOOLCHAIN=$(FUZZ_GOTOOLCHAIN) go test -fuzz="$$fn" -fuzztime=60s -parallel=2 "./$$pkg/..." || exit 1; \
 		done; \
 	done
 
