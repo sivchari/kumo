@@ -113,6 +113,7 @@ func New(config Config) *Server {
 	wireSNStoSQS(registry)
 	wireS3toSQS(registry)
 	wireS3toLambda(registry)
+	wireS3toSNS(registry)
 	wireCloudWatchToSNS(registry)
 
 	hasJSONServices := len(jsonDispatcher.handlers) > 0

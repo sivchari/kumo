@@ -62,6 +62,13 @@ func assertNoInvocation(t *testing.T, f *fakeLambdaInvoker) {
 
 const testLambdaArn = "arn:aws:lambda:us-east-1:000000000000:function:test-fn"
 
+// testObjectCreatedPutEvent and testNotificationConfigID are shared by the
+// Lambda and SNS notification tests, which both exercise the same
+// s3:ObjectCreated:Put event and "test-config" configuration ID.
+const testObjectCreatedPutEvent = "s3:ObjectCreated:Put"
+
+const testNotificationConfigID = "test-config"
+
 func newLambdaNotificationTestService(t *testing.T, bucket string) (*MemoryStorage, *Service) {
 	t.Helper()
 
@@ -144,8 +151,8 @@ func TestLambdaNotification_PutObjectInvokesLambda(t *testing.T) {
 	}
 
 	rec := notification.Records[0]
-	if rec.EventName != "s3:ObjectCreated:Put" {
-		t.Errorf("EventName = %q, want s3:ObjectCreated:Put", rec.EventName)
+	if rec.EventName != testObjectCreatedPutEvent {
+		t.Errorf("EventName = %q, want %s", rec.EventName, testObjectCreatedPutEvent)
 	}
 
 	if rec.S3.Bucket.Name != bucket {
@@ -156,8 +163,8 @@ func TestLambdaNotification_PutObjectInvokesLambda(t *testing.T) {
 		t.Errorf("Object.Key = %q, want hello.txt", rec.S3.Object.Key)
 	}
 
-	if rec.S3.ConfigurationID != "test-config" {
-		t.Errorf("ConfigurationID = %q, want test-config", rec.S3.ConfigurationID)
+	if rec.S3.ConfigurationID != testNotificationConfigID {
+		t.Errorf("ConfigurationID = %q, want %s", rec.S3.ConfigurationID, testNotificationConfigID)
 	}
 
 	assertNoInvocation(t, invoker)
@@ -171,7 +178,7 @@ func TestLambdaNotification_EventFilterMismatch(t *testing.T) {
 	const bucket = "lambda-notify-filter"
 
 	store, svc := newLambdaNotificationTestService(t, bucket)
-	putLambdaNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:Put"})
+	putLambdaNotificationConfig(t, svc, bucket, []string{testObjectCreatedPutEvent})
 
 	invoker := newFakeLambdaInvoker()
 	svc.SetLambdaInvoker(invoker)
@@ -230,7 +237,7 @@ func TestLambdaNotification_XMLRoundTrip(t *testing.T) {
 	const bucket = "lambda-notify-roundtrip"
 
 	store, svc := newLambdaNotificationTestService(t, bucket)
-	putLambdaNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:Put", "s3:ObjectCreated:Copy"})
+	putLambdaNotificationConfig(t, svc, bucket, []string{testObjectCreatedPutEvent, "s3:ObjectCreated:Copy"})
 
 	configs := store.GetLambdaConfigurations(context.Background(), bucket)
 	if len(configs) != 1 {
@@ -238,16 +245,16 @@ func TestLambdaNotification_XMLRoundTrip(t *testing.T) {
 	}
 
 	cfg := configs[0]
-	if cfg.ID != "test-config" {
-		t.Errorf("ID = %q, want test-config", cfg.ID)
+	if cfg.ID != testNotificationConfigID {
+		t.Errorf("ID = %q, want %s", cfg.ID, testNotificationConfigID)
 	}
 
 	if cfg.LambdaFunctionArn != testLambdaArn {
 		t.Errorf("LambdaFunctionArn = %q, want %q", cfg.LambdaFunctionArn, testLambdaArn)
 	}
 
-	if len(cfg.Events) != 2 || cfg.Events[0] != "s3:ObjectCreated:Put" || cfg.Events[1] != "s3:ObjectCreated:Copy" {
-		t.Errorf("Events = %v, want [s3:ObjectCreated:Put s3:ObjectCreated:Copy]", cfg.Events)
+	if len(cfg.Events) != 2 || cfg.Events[0] != testObjectCreatedPutEvent || cfg.Events[1] != "s3:ObjectCreated:Copy" {
+		t.Errorf("Events = %v, want [%s s3:ObjectCreated:Copy]", cfg.Events, testObjectCreatedPutEvent)
 	}
 }
 

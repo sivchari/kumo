@@ -344,3 +344,52 @@ func (p *cloudWatchToSNSPublisher) Publish(ctx context.Context, topicARN, messag
 
 	return nil
 }
+
+// wireS3toSNS connects the S3 service to the SNS service so that S3
+// bucket notification configurations with TopicConfigurations actually
+// deliver event messages to the target SNS topic.
+//
+// Without this wiring, PutObject/CopyObject/CompleteMultipartUpload
+// silently ignore TopicConfiguration entries because
+// s3.Service.snsPublisher is nil. The pattern mirrors wireCloudWatchToSNS.
+func wireS3toSNS(registry *service.Registry) {
+	s3Svc, ok := registry.Get("s3")
+	if !ok {
+		return
+	}
+
+	snsSvc, ok := registry.Get("sns")
+	if !ok {
+		return
+	}
+
+	s3Typed, ok := s3Svc.(*s3.Service)
+	if !ok {
+		return
+	}
+
+	snsTyped, ok := snsSvc.(*sns.Service)
+	if !ok {
+		return
+	}
+
+	s3Typed.SetSNSPublisher(&s3ToSNSPublisher{
+		snsStorage: snsTyped.Storage(),
+	})
+}
+
+// s3ToSNSPublisher adapts the SNS storage Publish method to the S3
+// SNSPublisher interface.
+type s3ToSNSPublisher struct {
+	snsStorage sns.Storage
+}
+
+// Publish sends an S3 event notification message to an SNS topic.
+func (p *s3ToSNSPublisher) Publish(ctx context.Context, topicARN, message, subject string) error {
+	_, err := p.snsStorage.Publish(ctx, topicARN, message, subject, "", "", nil)
+	if err != nil {
+		return fmt.Errorf("s3 notification publish failed: %w", err)
+	}
+
+	return nil
+}

@@ -136,6 +136,8 @@ type Storage interface {
 	GetQueueConfigurations(ctx context.Context, bucket string) []QueueConfiguration
 	SetLambdaConfigurations(ctx context.Context, bucket string, configs []LambdaFunctionConfiguration)
 	GetLambdaConfigurations(ctx context.Context, bucket string) []LambdaFunctionConfiguration
+	SetTopicConfigurations(ctx context.Context, bucket string, configs []TopicConfiguration)
+	GetTopicConfigurations(ctx context.Context, bucket string) []TopicConfiguration
 	SetCORSConfiguration(ctx context.Context, bucket string, rules []CORSRule)
 	GetCORSRules(ctx context.Context, bucket string) []CORSRule
 
@@ -213,6 +215,7 @@ type MemoryBucket struct {
 	EventBridgeEnabled   bool                          `json:"eventBridgeEnabled"`             // EventBridge notification
 	QueueConfigurations  []QueueConfiguration          `json:"queueConfigurations,omitempty"`  // SQS queue notification destinations
 	LambdaConfigurations []LambdaFunctionConfiguration `json:"lambdaConfigurations,omitempty"` // Lambda notification destinations
+	TopicConfigurations  []TopicConfiguration          `json:"topicConfigurations,omitempty"`  // SNS topic notification destinations
 	CORSRules            []CORSRule                    `json:"corsRules,omitempty"`            // CORS configuration
 	PublicAccessBlock    *PublicAccessBlockConfig      `json:"publicAccessBlock,omitempty"`    // public access block configuration
 	Encryption           *ServerSideEncryptionConfig   `json:"encryption,omitempty"`           // server-side encryption configuration
@@ -1681,6 +1684,30 @@ func (s *MemoryStorage) GetLambdaConfigurations(_ context.Context, bucket string
 
 	if b, exists := s.Buckets[bucket]; exists {
 		return append([]LambdaFunctionConfiguration(nil), b.LambdaConfigurations...)
+	}
+
+	return nil
+}
+
+// SetTopicConfigurations stores the SNS topic notification destinations for a bucket.
+func (s *MemoryStorage) SetTopicConfigurations(_ context.Context, bucket string, configs []TopicConfiguration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		b.TopicConfigurations = configs
+	}
+
+	s.saveLocked()
+}
+
+// GetTopicConfigurations returns the SNS topic notification destinations for a bucket.
+func (s *MemoryStorage) GetTopicConfigurations(_ context.Context, bucket string) []TopicConfiguration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if b, exists := s.Buckets[bucket]; exists {
+		return append([]TopicConfiguration(nil), b.TopicConfigurations...)
 	}
 
 	return nil

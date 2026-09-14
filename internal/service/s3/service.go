@@ -34,7 +34,18 @@ type LambdaInvoker interface {
 	InvokeAsync(ctx context.Context, functionArn string, payload []byte) error
 }
 
+// SNSPublisher is the interface the S3 service uses to deliver event
+// notification messages to SNS topics. The server wiring layer provides
+// a concrete implementation backed by the SNS storage.
+type SNSPublisher interface {
+	Publish(ctx context.Context, topicARN, message, subject string) error
+}
+
 const defaultBaseURL = "http://localhost:4566"
+
+// snsNotificationSubject is the Subject AWS attaches to S3 event
+// notification messages published to SNS.
+const snsNotificationSubject = "Amazon S3 Notification"
 
 // Compile-time check that Service implements io.Closer.
 var _ io.Closer = (*Service)(nil)
@@ -61,6 +72,7 @@ type Service struct {
 	logger        *slog.Logger
 	sqsPublisher  SQSPublisher
 	lambdaInvoker LambdaInvoker
+	snsPublisher  SNSPublisher
 }
 
 // New creates a new S3 service.
@@ -131,6 +143,13 @@ func (s *Service) SetSQSPublisher(p SQSPublisher) {
 // services have been registered.
 func (s *Service) SetLambdaInvoker(inv LambdaInvoker) {
 	s.lambdaInvoker = inv
+}
+
+// SetSNSPublisher installs the adapter that delivers S3 event
+// notification messages to SNS topics. Called by the server wiring
+// layer after all services have been registered.
+func (s *Service) SetSNSPublisher(p SNSPublisher) {
+	s.snsPublisher = p
 }
 
 // buildEventNotification constructs the S3 event notification message
@@ -226,6 +245,40 @@ func (s *Service) emitLambdaNotifications(ctx context.Context, bucket, key, even
 		if err := s.lambdaInvoker.InvokeAsync(ctx, cfg.LambdaFunctionArn, body); err != nil {
 			s.logger.Error("failed to invoke Lambda for S3 notification",
 				"bucket", bucket, "key", key, "functionArn", cfg.LambdaFunctionArn, "error", err)
+		}
+	}
+}
+
+// emitSNSNotifications publishes S3 event notification messages to every
+// SNS topic configured in the bucket's notification configuration whose
+// event filter matches the given eventName.
+func (s *Service) emitSNSNotifications(ctx context.Context, bucket, key, eventName string, size int64, etag string) {
+	if s.snsPublisher == nil {
+		return
+	}
+
+	configs := s.storage.GetTopicConfigurations(ctx, bucket)
+	if len(configs) == 0 {
+		return
+	}
+
+	for _, cfg := range configs {
+		if !matchesEventFilter(cfg.Events, eventName) || !matchesKeyFilter(cfg.Filter, key) {
+			continue
+		}
+
+		record := buildEventNotification(bucket, key, eventName, size, etag, cfg.ID)
+
+		body, err := json.Marshal(record)
+		if err != nil {
+			s.logger.Error("failed to marshal S3 event notification", "error", err)
+
+			continue
+		}
+
+		if err := s.snsPublisher.Publish(ctx, cfg.TopicArn, string(body), snsNotificationSubject); err != nil {
+			s.logger.Error("failed to deliver S3 notification to SNS",
+				"bucket", bucket, "key", key, "topicArn", cfg.TopicArn, "error", err)
 		}
 	}
 }

@@ -1,0 +1,20 @@
+{
+  "BucketKeyEnabled": null,
+  "ChecksumCRC32": null,
+  "ChecksumCRC32C": null,
+  "ChecksumCRC64NVME": null,
+  "ChecksumSHA1": null,
+  "ChecksumSHA256": null,
+  "ChecksumType": "",
+  "ETag": "\"635cd1cdcad2af8c97bd3c05f8b644c3\"",
+  "Expiration": null,
+  "RequestCharged": "",
+  "SSECustomerAlgorithm": null,
+  "SSECustomerKeyMD5": null,
+  "SSEKMSEncryptionContext": null,
+  "SSEKMSKeyId": null,
+  "ServerSideEncryption": "",
+  "Size": null,
+  "VersionId": null,
+  "ResultMetadata": {}
+}

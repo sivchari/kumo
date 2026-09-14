@@ -776,6 +776,8 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 	go s.emitSQSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
 
 	go s.emitLambdaNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
+
+	go s.emitSNSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
 }
 
 // CopyObject handles PUT /{bucket}/{key} with X-Amz-Copy-Source header.
@@ -855,6 +857,7 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	go s.emitObjectCreatedEvent(context.Background(), dstBucket, dstKey, dstObj.Size, dstObj.ETag)
 	go s.emitSQSNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
 	go s.emitLambdaNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
+	go s.emitSNSNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
 }
 
 // getCopySource retrieves the source object for a copy operation,
@@ -2330,10 +2333,9 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 	writeXMLResponse(w, result)
 
 	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
-
 	go s.emitSQSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
-
 	go s.emitLambdaNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
+	go s.emitSNSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
 }
 
 // AbortMultipartUpload handles DELETE /{bucket}/{key}?uploadId={uploadId} - abort a multipart upload.
@@ -2508,6 +2510,7 @@ func (s *Service) GetBucketNotificationConfiguration(w http.ResponseWriter, r *h
 
 	resp.QueueConfigurations = s.storage.GetQueueConfigurations(r.Context(), bucket)
 	resp.LambdaFunctionConfigurations = s.storage.GetLambdaConfigurations(r.Context(), bucket)
+	resp.TopicConfigurations = s.storage.GetTopicConfigurations(r.Context(), bucket)
 
 	writeXMLResponse(w, resp)
 }
@@ -2528,6 +2531,7 @@ func (s *Service) PutBucketNotificationConfiguration(w http.ResponseWriter, r *h
 	s.storage.SetEventBridgeNotification(r.Context(), bucket, enabled)
 	s.storage.SetQueueConfigurations(r.Context(), bucket, config.QueueConfigurations)
 	s.storage.SetLambdaConfigurations(r.Context(), bucket, config.LambdaFunctionConfigurations)
+	s.storage.SetTopicConfigurations(r.Context(), bucket, config.TopicConfigurations)
 
 	w.WriteHeader(http.StatusOK)
 }

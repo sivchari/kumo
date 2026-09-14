@@ -445,6 +445,7 @@ type NotificationConfiguration struct {
 	EventBridgeConfig            *EventBridgeConfig            `xml:"EventBridgeConfiguration,omitempty"`
 	QueueConfigurations          []QueueConfiguration          `xml:"QueueConfiguration,omitempty"`
 	LambdaFunctionConfigurations []LambdaFunctionConfiguration `xml:"CloudFunctionConfiguration,omitempty"`
+	TopicConfigurations          []TopicConfiguration          `xml:"TopicConfiguration,omitempty"`
 }
 
 // EventBridgeConfig represents EventBridge notification configuration.
@@ -466,6 +467,15 @@ type LambdaFunctionConfiguration struct {
 	LambdaFunctionArn string              `xml:"CloudFunction"    json:"lambdaFunctionArn"`
 	Events            []string            `xml:"Event"            json:"events"`
 	Filter            *NotificationFilter `xml:"Filter,omitempty" json:"filter,omitempty"`
+}
+
+// TopicConfiguration represents an SNS topic destination in the bucket
+// notification configuration.
+type TopicConfiguration struct {
+	ID       string              `xml:"Id,omitempty"     json:"id,omitempty"`
+	TopicArn string              `xml:"Topic"            json:"topicArn"`
+	Events   []string            `xml:"Event"            json:"events"`
+	Filter   *NotificationFilter `xml:"Filter,omitempty" json:"filter,omitempty"`
 }
 
 // NotificationFilter restricts a notification configuration to object keys
