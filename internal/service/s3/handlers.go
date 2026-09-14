@@ -2527,6 +2527,12 @@ func (s *Service) PutBucketNotificationConfiguration(w http.ResponseWriter, r *h
 		return
 	}
 
+	if err := validateNotificationConfiguration(&config); err != nil {
+		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	enabled := config.EventBridgeConfig != nil
 	s.storage.SetEventBridgeNotification(r.Context(), bucket, enabled)
 	s.storage.SetQueueConfigurations(r.Context(), bucket, config.QueueConfigurations)
