@@ -20,8 +20,16 @@ jobs:
         include:
           - name: opentofu
             bin: tofu
+            provider_version: "~> 5.0"
           - name: terraform
             bin: terraform
+            provider_version: "~> 5.0"
+          - name: opentofu-aws-v6
+            bin: tofu
+            provider_version: "~> 6.0"
+          - name: terraform-aws-v6
+            bin: terraform
+            provider_version: "~> 6.0"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -32,13 +40,13 @@ jobs:
             go.sum
             test/go.sum
 
-      - if: matrix.name == 'opentofu'
+      - if: matrix.bin == 'tofu'
         uses: opentofu/setup-opentofu@592200bd4b9bbf4772ace78f887668b1aee8f716 # v1.0.5
         with:
           tofu_version: 1.11.6
           tofu_wrapper: false
 
-      - if: matrix.name == 'terraform'
+      - if: matrix.bin == 'terraform'
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "~1.9"
@@ -70,6 +78,7 @@ jobs:
       - name: Run terraform e2e tests
         env:
           KUMO_TF_BIN: ${{ matrix.bin }}
+          KUMO_TF_AWS_PROVIDER_VERSION: ${{ matrix.provider_version }}
         run: make test-terraform
 
       - name: Stop kumo

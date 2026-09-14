@@ -54,3 +54,10 @@ KUMO_TF_BIN=terraform go test -C test -v -race -tags=integration \
 (or an absolute path) to force one over the other. Without it, the runner
 prefers `tofu` on PATH, falling back to `terraform`. If neither is found,
 the suite is skipped.
+
+`KUMO_TF_AWS_PROVIDER_VERSION` overrides the AWS provider version constraint
+written into the generated `provider.tf` (default `~> 5.0`):
+
+```bash
+KUMO_TF_AWS_PROVIDER_VERSION="~> 6.0" make test-terraform
+```

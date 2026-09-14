@@ -8,6 +8,7 @@ package terraform_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,14 +31,23 @@ const fixturesDir = "fixtures"
 // output names to their expected string values.
 const expectedOutputsFile = "expected_outputs.json"
 
-// providerTF is the provider.tf body generated for every fixture. It carries
+// providerVersionEnv names the env var overriding the AWS provider version
+// constraint written into every fixture's provider.tf.
+const providerVersionEnv = "KUMO_TF_AWS_PROVIDER_VERSION"
+
+// defaultAWSProviderVersion is the AWS provider version constraint used when
+// KUMO_TF_AWS_PROVIDER_VERSION is unset.
+const defaultAWSProviderVersion = "~> 5.0"
+
+// providerTFTemplate is the provider.tf body generated for every fixture,
+// with the AWS provider version constraint left to providerTF. It carries
 // no per-service endpoints — see awsEndpointURL.
-const providerTF = `
+const providerTFTemplate = `
 terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = %q
     }
   }
 }
@@ -52,6 +62,17 @@ provider "aws" {
   skip_requesting_account_id  = true
 }
 `
+
+// providerTF renders the provider.tf body, taking the AWS provider version
+// constraint from KUMO_TF_AWS_PROVIDER_VERSION when set.
+func providerTF() string {
+	version := os.Getenv(providerVersionEnv)
+	if version == "" {
+		version = defaultAWSProviderVersion
+	}
+
+	return fmt.Sprintf(providerTFTemplate, version)
+}
 
 // initMu serializes `terraform init`. terraform's plugin cache directory
 // (see terraformEnvWithPluginCache) is documented as unsafe for concurrent
@@ -129,7 +150,7 @@ func warmPluginCache(t *testing.T, bin string) []byte {
 
 	dir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dir, "provider.tf"), []byte(providerTF), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "provider.tf"), []byte(providerTF()), 0o600); err != nil {
 		t.Fatalf("write provider.tf: %v", err)
 	}
 
@@ -164,7 +185,7 @@ func runFixture(t *testing.T, bin, srcDir string, lockFile []byte) {
 
 	copyFixtureFiles(t, srcDir, workDir)
 
-	if err := os.WriteFile(filepath.Join(workDir, "provider.tf"), []byte(providerTF), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(workDir, "provider.tf"), []byte(providerTF()), 0o600); err != nil {
 		t.Fatalf("write provider.tf: %v", err)
 	}
 
