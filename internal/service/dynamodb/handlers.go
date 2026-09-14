@@ -446,6 +446,8 @@ func tableToDescription(table *Table) TableDescription {
 		}
 	}
 
+	desc.WarmThroughput = warmThroughputDescription(table.WarmThroughput)
+
 	for i := range table.GlobalSecondaryIndexes {
 		desc.GlobalSecondaryIndexes = append(desc.GlobalSecondaryIndexes, gsiToDescription(table, &table.GlobalSecondaryIndexes[i]))
 	}
@@ -476,7 +478,45 @@ func gsiToDescription(table *Table, gsi *GlobalSecondaryIndex) GlobalSecondaryIn
 		}
 	}
 
+	desc.WarmThroughput = warmThroughputDescription(nil)
+
 	return desc
+}
+
+// warmThroughputForCreate resolves the warm throughput stored for a new
+// table, falling back to the AWS defaults for unset values.
+func warmThroughputForCreate(req *WarmThroughput) *WarmThroughput {
+	warm := &WarmThroughput{
+		ReadUnitsPerSecond:  defaultWarmThroughputReadUnits,
+		WriteUnitsPerSecond: defaultWarmThroughputWriteUnits,
+	}
+
+	if req != nil {
+		if req.ReadUnitsPerSecond > 0 {
+			warm.ReadUnitsPerSecond = req.ReadUnitsPerSecond
+		}
+
+		if req.WriteUnitsPerSecond > 0 {
+			warm.WriteUnitsPerSecond = req.WriteUnitsPerSecond
+		}
+	}
+
+	return warm
+}
+
+// warmThroughputDescription builds the always-present WarmThroughput block,
+// using the AWS defaults when no value is stored (tables persisted before
+// warm throughput support, and GSIs).
+func warmThroughputDescription(warm *WarmThroughput) *WarmThroughputDescription {
+	if warm == nil {
+		warm = warmThroughputForCreate(nil)
+	}
+
+	return &WarmThroughputDescription{
+		ReadUnitsPerSecond:  warm.ReadUnitsPerSecond,
+		WriteUnitsPerSecond: warm.WriteUnitsPerSecond,
+		Status:              "ACTIVE",
+	}
 }
 
 // lsiToDescription converts a stored LSI to its API description form.

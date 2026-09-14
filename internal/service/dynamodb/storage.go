@@ -269,6 +269,7 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		DeletionProtection:     req.DeletionProtectionEnabled,
 		TableClass:             tableClass,
 		TableClassUpdatedAt:    now,
+		WarmThroughput:         warmThroughputForCreate(req.WarmThroughput),
 	}
 
 	m.setupTableStream(table, req)

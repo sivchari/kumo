@@ -193,6 +193,7 @@ type GlobalSecondaryIndexDescription struct {
 	ItemCount             int64                             `json:"ItemCount"`
 	IndexSizeBytes        int64                             `json:"IndexSizeBytes"`
 	ProvisionedThroughput *ProvisionedThroughputDescription `json:"ProvisionedThroughput,omitempty"`
+	WarmThroughput        *WarmThroughputDescription        `json:"WarmThroughput,omitempty"`
 }
 
 // Table represents a DynamoDB table.
@@ -217,7 +218,29 @@ type Table struct {
 	LatestStreamArn        string
 	TableClass             string
 	TableClassUpdatedAt    time.Time
+	WarmThroughput         *WarmThroughput
 }
+
+// WarmThroughput carries warm throughput settings in CreateTable requests.
+type WarmThroughput struct {
+	ReadUnitsPerSecond  int64 `json:"ReadUnitsPerSecond,omitempty"`
+	WriteUnitsPerSecond int64 `json:"WriteUnitsPerSecond,omitempty"`
+}
+
+// WarmThroughputDescription represents warm throughput in table and GSI
+// descriptions. The AWS provider v6 polls DescribeTable until this field
+// reports an ACTIVE status, so it must always be present.
+type WarmThroughputDescription struct {
+	ReadUnitsPerSecond  int64  `json:"ReadUnitsPerSecond"`
+	WriteUnitsPerSecond int64  `json:"WriteUnitsPerSecond"`
+	Status              string `json:"Status"`
+}
+
+// Warm throughput values AWS reports for new tables.
+const (
+	defaultWarmThroughputReadUnits  = 12000
+	defaultWarmThroughputWriteUnits = 4000
+)
 
 // StreamSpecification represents DynamoDB stream settings.
 type StreamSpecification struct {
@@ -244,6 +267,7 @@ type TableDescription struct {
 	LatestStreamArn           string                            `json:"LatestStreamArn,omitempty"`
 	DeletionProtectionEnabled bool                              `json:"DeletionProtectionEnabled"`
 	TableClassSummary         *TableClassSummary                `json:"TableClassSummary,omitempty"`
+	WarmThroughput            *WarmThroughputDescription        `json:"WarmThroughput,omitempty"`
 }
 
 // TableClassSummary represents the table class in responses.
@@ -276,6 +300,7 @@ type CreateTableRequest struct {
 	StreamSpecification       *StreamSpecification   `json:"StreamSpecification,omitempty"`
 	Tags                      []Tag                  `json:"Tags,omitempty"`
 	TableClass                string                 `json:"TableClass,omitempty"`
+	WarmThroughput            *WarmThroughput        `json:"WarmThroughput,omitempty"`
 }
 
 // CreateTableResponse is the response for CreateTable.
