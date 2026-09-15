@@ -41,13 +41,21 @@ const defaultAWSProviderVersion = "~> 5.0"
 
 // providerTFTemplate is the provider.tf body generated for every fixture,
 // with the AWS provider version constraint left to providerTF. It carries
-// no per-service endpoints — see awsEndpointURL.
+// no per-service endpoints — see awsEndpointURL. Every provider any fixture
+// uses must be listed here: warmPluginCache's dependency lock file only
+// covers providers recorded in this template, and an unlisted provider is
+// re-installed into the shared plugin cache by each fixture's init, which
+// races with other fixtures executing that binary (ETXTBSY).
 const providerTFTemplate = `
 terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
       version = %q
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
     }
   }
 }
