@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.29.1](https://github.com/sivchari/kumo/compare/v0.29.0...v0.29.1) - 2026-09-15
+- fix(ci): run fuzz tests with go1.27.1 to avoid spurious deadline failures by @sivchari in https://github.com/sivchari/kumo/pull/928
+- feat(s3): support SNS TopicConfiguration in bucket notifications by @sivchari in https://github.com/sivchari/kumo/pull/929
+- feat(test): terraform e2e AWS provider version override and v6 matrix by @sivchari in https://github.com/sivchari/kumo/pull/930
+- fix(s3): reject overlapping notification filter rules by @sivchari in https://github.com/sivchari/kumo/pull/931
+- chore(lint): resolve findings surfaced by golangci-lint v2.13 by @sivchari in https://github.com/sivchari/kumo/pull/932
+- chore: bump Go toolchain to go1.26.8 and golangci-lint to v2.13.2 by @sivchari in https://github.com/sivchari/kumo/pull/933
+
 ## [v0.29.0](https://github.com/sivchari/kumo/compare/v0.28.1...v0.29.0) - 2026-09-04
 - feat(sqs): add AddPermission and RemovePermission by @sivchari in https://github.com/sivchari/kumo/pull/915
 - feat(s3): support If-Match / If-None-Match conditional writes on PutObject by @shiv3 in https://github.com/sivchari/kumo/pull/918
