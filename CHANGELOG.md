@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.29.1](https://github.com/sivchari/kumo/compare/v0.29.0...v0.29.1) - 2026-09-15
+## [v0.30.0](https://github.com/sivchari/kumo/compare/v0.29.0...v0.30.0) - 2026-09-15
 - fix(ci): run fuzz tests with go1.27.1 to avoid spurious deadline failures by @sivchari in https://github.com/sivchari/kumo/pull/928
 - feat(s3): support SNS TopicConfiguration in bucket notifications by @sivchari in https://github.com/sivchari/kumo/pull/929
 - feat(test): terraform e2e AWS provider version override and v6 matrix by @sivchari in https://github.com/sivchari/kumo/pull/930
