@@ -4,11 +4,11 @@ BINARY_NAME=kumo
 VERSION?=$(shell grep 'const Version' version.go | cut -d'"' -f2)
 BUILD_DIR=bin
 GOLANGCI_LINT=go tool -modfile tools/go.mod golangci-lint
-GOTOOLCHAIN=go1.25.10
+GOTOOLCHAIN=go1.26.8
 export GOTOOLCHAIN
-# go1.25 fuzzing intermittently reports "context deadline exceeded" as a failure
-# when -fuzztime expires (golang/go#75804, fixed in go1.27). Drop this override
-# once GOTOOLCHAIN moves to go1.27+.
+# Fuzzing before go1.27 intermittently reports "context deadline exceeded" as a
+# failure when -fuzztime expires (golang/go#75804, fixed in go1.27 only). Drop
+# this override once GOTOOLCHAIN moves to go1.27+.
 FUZZ_GOTOOLCHAIN=go1.27.1
 
 # Build
