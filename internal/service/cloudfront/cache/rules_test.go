@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+// Literals shared across this file's ETag-matching and header test cases.
+const (
+	testETagAbc     = `"abc"`
+	testWeakETagAbc = `W/"abc"`
+)
+
 var (
 	now    = time.Date(2026, 5, 9, 12, 0, 0, 0, time.UTC)
 	defCfg = DistributionConfig{
@@ -34,12 +40,12 @@ func TestEffectiveTTL_PrecedenceTable(t *testing.T) {
 		},
 		{
 			name:    "max-age wins over DefaultTTL",
-			headers: http.Header{"Cache-Control": {"max-age=60"}},
+			headers: http.Header{hdrCacheControl: {"max-age=60"}},
 			want:    60 * time.Second,
 		},
 		{
 			name:    "s-maxage wins over max-age",
-			headers: http.Header{"Cache-Control": {"max-age=60, s-maxage=120"}},
+			headers: http.Header{hdrCacheControl: {"max-age=60, s-maxage=120"}},
 			want:    120 * time.Second,
 		},
 		{
@@ -50,19 +56,19 @@ func TestEffectiveTTL_PrecedenceTable(t *testing.T) {
 		{
 			name: "Expires ignored if Cache-Control present",
 			headers: http.Header{
-				"Cache-Control": {"max-age=42"},
+				hdrCacheControl: {"max-age=42"},
 				"Expires":       {now.Add(time.Hour).UTC().Format(http.TimeFormat)},
 			},
 			want: 42 * time.Second,
 		},
 		{
 			name:    "no-store → 0",
-			headers: http.Header{"Cache-Control": {"no-store, max-age=60"}},
+			headers: http.Header{hdrCacheControl: {"no-store, max-age=60"}},
 			want:    0,
 		},
 		{
 			name:    "private → 0 (CloudFront treats as do-not-store)",
-			headers: http.Header{"Cache-Control": {"private, max-age=60"}},
+			headers: http.Header{hdrCacheControl: {"private, max-age=60"}},
 			want:    0,
 		},
 	}
@@ -85,7 +91,7 @@ func TestEffectiveTTL_CDNCacheControlOverride(t *testing.T) {
 	t.Parallel()
 
 	headers := http.Header{}
-	headers.Set("Cache-Control", "max-age=60")
+	headers.Set(hdrCacheControl, "max-age=60")
 	headers.Set("CDN-Cache-Control", "max-age=600")
 
 	got := EffectiveTTL(headers, defCfg, now)
@@ -101,12 +107,12 @@ func TestEffectiveTTL_Clamp(t *testing.T) {
 
 	cfg := DistributionConfig{MinTTL: 10 * time.Second, DefaultTTL: time.Hour, MaxTTL: time.Minute}
 
-	got := EffectiveTTL(http.Header{"Cache-Control": {"max-age=1"}}, cfg, now)
+	got := EffectiveTTL(http.Header{hdrCacheControl: {"max-age=1"}}, cfg, now)
 	if got != 10*time.Second {
 		t.Fatalf("clamp to MinTTL: got %v, want 10s", got)
 	}
 
-	got = EffectiveTTL(http.Header{"Cache-Control": {"max-age=99999"}}, cfg, now)
+	got = EffectiveTTL(http.Header{hdrCacheControl: {"max-age=99999"}}, cfg, now)
 	if got != time.Minute {
 		t.Fatalf("clamp to MaxTTL: got %v, want 1m", got)
 	}
@@ -124,8 +130,8 @@ func TestIsCacheable(t *testing.T) {
 		want    bool
 	}{
 		{"200 with no directives", http.Header{}, 200, true},
-		{"200 + no-store", http.Header{"Cache-Control": {"no-store"}}, 200, false},
-		{"200 + private", http.Header{"Cache-Control": {"private"}}, 200, false},
+		{"200 + no-store", http.Header{hdrCacheControl: {"no-store"}}, 200, false},
+		{"200 + private", http.Header{hdrCacheControl: {"private"}}, 200, false},
 		{"301 redirect cacheable", http.Header{}, 301, true},
 		{"500 not cacheable by default", http.Header{}, 500, false},
 		{"404 cacheable (negative caching)", http.Header{}, 404, true},
@@ -162,7 +168,7 @@ func TestMustRevalidate(t *testing.T) {
 		t.Run(tc.header, func(t *testing.T) {
 			h := http.Header{}
 			if tc.header != "" {
-				h.Set("Cache-Control", tc.header)
+				h.Set(hdrCacheControl, tc.header)
 			}
 
 			if got := MustRevalidate(h); got != tc.want {
@@ -228,10 +234,10 @@ func TestVaryDisablesCache(t *testing.T) {
 func TestKey_VariantSeparation(t *testing.T) {
 	t.Parallel()
 
-	r1 := httptest.NewRequest(http.MethodGet, "/img.png?w=100", http.NoBody)
+	r1 := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/img.png?w=100", http.NoBody)
 	r1.Header.Set("Accept-Language", "en")
 
-	r2 := httptest.NewRequest(http.MethodGet, "/img.png?w=100", http.NoBody)
+	r2 := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/img.png?w=100", http.NoBody)
 	r2.Header.Set("Accept-Language", "ja")
 
 	vary := []string{"accept-language"}
@@ -255,8 +261,8 @@ func TestKey_VariantSeparation(t *testing.T) {
 func TestKey_QueryStringStable(t *testing.T) {
 	t.Parallel()
 
-	a := httptest.NewRequest(http.MethodGet, "/p?foo=1&bar=2", http.NoBody)
-	b := httptest.NewRequest(http.MethodGet, "/p?bar=2&foo=1", http.NoBody)
+	a := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/p?foo=1&bar=2", http.NoBody)
+	b := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/p?bar=2&foo=1", http.NoBody)
 
 	if Key(a, nil) != Key(b, nil) {
 		t.Fatalf("query order should not matter:\n  a=%q\n  b=%q", Key(a, nil), Key(b, nil))
@@ -275,14 +281,14 @@ func TestIfNoneMatchSatisfied(t *testing.T) {
 		respETag  string
 		want      bool
 	}{
-		{"absent header", "", `"abc"`, false},
-		{"absent ETag", `"abc"`, "", false},
-		{"star matches anything", "*", `"abc"`, true},
-		{"exact match", `"abc"`, `"abc"`, true},
-		{"no match", `"xyz"`, `"abc"`, false},
-		{"list with match", `"x", "abc", "y"`, `"abc"`, true},
-		{"weak prefix match", `W/"abc"`, `"abc"`, true},
-		{"both weak match", `W/"abc"`, `W/"abc"`, true},
+		{"absent header", "", testETagAbc, false},
+		{"absent ETag", testETagAbc, "", false},
+		{"star matches anything", "*", testETagAbc, true},
+		{"exact match", testETagAbc, testETagAbc, true},
+		{"no match", `"xyz"`, testETagAbc, false},
+		{"list with match", `"x", "abc", "y"`, testETagAbc, true},
+		{"weak prefix match", testWeakETagAbc, testETagAbc, true},
+		{"both weak match", testWeakETagAbc, testWeakETagAbc, true},
 	}
 
 	for _, tc := range cases {
@@ -350,12 +356,12 @@ func TestConditionalHeaders(t *testing.T) {
 	t.Parallel()
 
 	cached := http.Header{}
-	cached.Set("ETag", `"abc"`)
+	cached.Set("ETag", testETagAbc)
 	cached.Set("Last-Modified", "Sat, 09 May 2026 10:00:00 GMT")
 
 	out := ConditionalHeaders(cached)
 
-	if out.Get("If-None-Match") != `"abc"` {
+	if out.Get("If-None-Match") != testETagAbc {
 		t.Fatalf("If-None-Match: got %q", out.Get("If-None-Match"))
 	}
 

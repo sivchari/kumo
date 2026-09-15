@@ -15,8 +15,8 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 	_, err := s.CreateTable(ctx, &CreateTableRequest{
 		TableName: "test-query-keycond",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "PK", KeyType: "HASH"},
-			{AttributeName: "SK", KeyType: "RANGE"},
+			{AttributeName: "PK", KeyType: keyTypeHash},
+			{AttributeName: "SK", KeyType: keyTypeRange},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "PK", AttributeType: "S"},
@@ -49,8 +49,8 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				":pk": {S: ptr("tenant1")},
-				":sk": {S: ptr("200")},
+				testExprPK: {S: ptr("tenant1")},
+				":sk":      {S: ptr("200")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -70,8 +70,8 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				":pk": {S: ptr("tenant1")},
-				":sk": {S: ptr("200")},
+				testExprPK: {S: ptr("tenant1")},
+				":sk":      {S: ptr("200")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -91,9 +91,9 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				":pk": {S: ptr("tenant1")},
-				":lo": {S: ptr("200")},
-				":hi": {S: ptr("300")},
+				testExprPK: {S: ptr("tenant1")},
+				":lo":      {S: ptr("200")},
+				":hi":      {S: ptr("300")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -113,7 +113,7 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				":pk": {S: ptr("tenant1")},
+				testExprPK: {S: ptr("tenant1")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -136,8 +136,8 @@ func TestDeleteItemReturnValues(t *testing.T) {
 	_, err := s.CreateTable(ctx, &CreateTableRequest{
 		TableName: "test-delete-return",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "PK", KeyType: "HASH"},
-			{AttributeName: "SK", KeyType: "RANGE"},
+			{AttributeName: "PK", KeyType: keyTypeHash},
+			{AttributeName: "SK", KeyType: keyTypeRange},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "PK", AttributeType: "S"},

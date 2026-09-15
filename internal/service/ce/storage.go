@@ -18,6 +18,11 @@ const (
 	defaultAccountID = "123456789012"
 )
 
+const msgTimePeriodRequired = "TimePeriod.Start and TimePeriod.End are required"
+
+// currencyUSD is the only currency unit kumo reports for cost/usage figures.
+const currencyUSD = "USD"
+
 // Storage defines the interface for Cost Explorer storage.
 type Storage interface {
 	// GetCostAndUsage retrieves cost and usage data.
@@ -146,7 +151,7 @@ func (s *MemoryStorage) GetCostAndUsage(_ context.Context, req *GetCostAndUsageR
 	if req.TimePeriod.Start == "" || req.TimePeriod.End == "" {
 		return nil, &ServiceError{
 			Code:    errValidation,
-			Message: "TimePeriod.Start and TimePeriod.End are required",
+			Message: msgTimePeriodRequired,
 		}
 	}
 
@@ -179,7 +184,7 @@ func (s *MemoryStorage) GetDimensionValues(_ context.Context, req *GetDimensionV
 	if req.TimePeriod.Start == "" || req.TimePeriod.End == "" {
 		return nil, &ServiceError{
 			Code:    errValidation,
-			Message: "TimePeriod.Start and TimePeriod.End are required",
+			Message: msgTimePeriodRequired,
 		}
 	}
 
@@ -197,7 +202,7 @@ func (s *MemoryStorage) GetTags(_ context.Context, req *GetTagsRequest) (*GetTag
 	if req.TimePeriod.Start == "" || req.TimePeriod.End == "" {
 		return nil, &ServiceError{
 			Code:    errValidation,
-			Message: "TimePeriod.Start and TimePeriod.End are required",
+			Message: msgTimePeriodRequired,
 		}
 	}
 
@@ -215,7 +220,7 @@ func (s *MemoryStorage) GetCostForecast(_ context.Context, req *GetCostForecastR
 	if req.TimePeriod.Start == "" || req.TimePeriod.End == "" {
 		return nil, &ServiceError{
 			Code:    errValidation,
-			Message: "TimePeriod.Start and TimePeriod.End are required",
+			Message: msgTimePeriodRequired,
 		}
 	}
 
@@ -238,7 +243,7 @@ func (s *MemoryStorage) GetCostForecast(_ context.Context, req *GetCostForecastR
 	return &GetCostForecastResponse{
 		Total: MetricValue{
 			Amount: "1500.00",
-			Unit:   "USD",
+			Unit:   currencyUSD,
 		},
 		ForecastResultsT: forecasts,
 	}, nil
@@ -398,7 +403,7 @@ func generateMockCostData(req *GetCostAndUsageRequest) []ResultByTime {
 				amount := float64(10+i*5) + float64(i)*0.5
 				metricValues[metric] = MetricValue{
 					Amount: strconv.FormatFloat(amount, 'f', 2, 64),
-					Unit:   "USD",
+					Unit:   currencyUSD,
 				}
 			}
 
@@ -415,7 +420,7 @@ func generateMockCostData(req *GetCostAndUsageRequest) []ResultByTime {
 		for _, metric := range metrics {
 			totalMetrics[metric] = MetricValue{
 				Amount: "150.50",
-				Unit:   "USD",
+				Unit:   currencyUSD,
 			}
 		}
 

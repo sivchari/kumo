@@ -10,18 +10,27 @@ import (
 
 const sseAlgorithmAWSKMS = "aws:kms"
 
+const testContentTypeJSON = "application/json"
+
 // testBucketDefaultKMSKeyID is the KMS key ID used across SSE
 // bucket-default-encryption fallback tests.
 const testBucketDefaultKMSKeyID = "bucket-default-key"
+
+// testColorBlue/testColorRed are shared "color" metadata/tag values used
+// across the CopyObject metadata and tagging tests.
+const (
+	testColorBlue = "blue"
+	testColorRed  = "red"
+)
 
 func TestCopyObjectReplacesMetadataWhenDirectiveIsReplace(t *testing.T) {
 	t.Parallel()
 
 	store, svc := setupCopyObjectMetadataFixture(t)
-	w := issueCopyObject(svc, map[string]string{
+	w := issueCopyObject(t, svc, map[string]string{
 		"X-Amz-Metadata-Directive": "REPLACE",
-		"X-Amz-Meta-Color":         "red",
-		"Content-Type":             "application/json",
+		"X-Amz-Meta-Color":         testColorRed,
+		contentTypeHeader:          testContentTypeJSON,
 	})
 
 	if w.Code != http.StatusOK {
@@ -33,11 +42,11 @@ func TestCopyObjectReplacesMetadataWhenDirectiveIsReplace(t *testing.T) {
 		t.Fatalf("GetObject dst: %v", err)
 	}
 
-	if got := dstObj.Metadata["color"]; got != "red" {
+	if got := dstObj.Metadata["color"]; got != testColorRed {
 		t.Fatalf("metadata color: got %q, want red", got)
 	}
 
-	if got := dstObj.Metadata["Content-Type"]; got != "application/json" {
+	if got := dstObj.Metadata[contentTypeHeader]; got != testContentTypeJSON {
 		t.Fatalf("metadata Content-Type: got %q, want application/json", got)
 	}
 }
@@ -46,9 +55,9 @@ func TestCopyObjectCopiesSourceMetadataByDefault(t *testing.T) {
 	t.Parallel()
 
 	store, svc := setupCopyObjectMetadataFixture(t)
-	w := issueCopyObject(svc, map[string]string{
-		"X-Amz-Meta-Color": "red",
-		"Content-Type":     "application/json",
+	w := issueCopyObject(t, svc, map[string]string{
+		"X-Amz-Meta-Color": testColorRed,
+		contentTypeHeader:  testContentTypeJSON,
 	})
 
 	if w.Code != http.StatusOK {
@@ -60,11 +69,11 @@ func TestCopyObjectCopiesSourceMetadataByDefault(t *testing.T) {
 		t.Fatalf("GetObject dst: %v", err)
 	}
 
-	if got := dstObj.Metadata["color"]; got != "blue" {
+	if got := dstObj.Metadata["color"]; got != testColorBlue {
 		t.Fatalf("metadata color: got %q, want blue", got)
 	}
 
-	if got := dstObj.Metadata["Content-Type"]; got != "text/plain" {
+	if got := dstObj.Metadata[contentTypeHeader]; got != "text/plain" {
 		t.Fatalf("metadata Content-Type: got %q, want text/plain", got)
 	}
 }
@@ -73,7 +82,7 @@ func TestCopyObjectRejectsInvalidMetadataDirective(t *testing.T) {
 	t.Parallel()
 
 	store, svc := setupCopyObjectMetadataFixture(t)
-	w := issueCopyObject(svc, map[string]string{
+	w := issueCopyObject(t, svc, map[string]string{
 		"X-Amz-Metadata-Directive": "BROKEN",
 	})
 
@@ -90,7 +99,7 @@ func TestCopyObjectUsesRequestSSEHeadersRegardlessOfSource(t *testing.T) {
 	t.Parallel()
 
 	store, svc := setupCopyObjectMetadataFixture(t)
-	w := issueCopyObject(svc, map[string]string{
+	w := issueCopyObject(t, svc, map[string]string{
 		"X-Amz-Server-Side-Encryption":                sseAlgorithmAWSKMS,
 		"X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id": "request-key",
 	})
@@ -126,7 +135,7 @@ func TestCopyObjectFallsBackToDestinationBucketDefaultEncryption(t *testing.T) {
 		t.Fatalf("PutBucketEncryption: %v", err)
 	}
 
-	w := issueCopyObject(svc, map[string]string{})
+	w := issueCopyObject(t, svc, map[string]string{})
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("CopyObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -169,7 +178,7 @@ func TestCopyObjectDoesNotInheritSourceEncryptionWithNoDefault(t *testing.T) {
 		t.Fatalf("PutObject: %v", err)
 	}
 
-	w := issueCopyObject(svc, map[string]string{})
+	w := issueCopyObject(t, svc, map[string]string{})
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("CopyObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -205,8 +214,8 @@ func setupCopyObjectMetadataFixture(t *testing.T) (*MemoryStorage, *Service) {
 	}
 
 	_, err := store.PutObject(ctx, "src", "source.txt", strings.NewReader("copy me"), map[string]string{
-		"color":        "blue",
-		"Content-Type": "text/plain",
+		"color":           testColorBlue,
+		contentTypeHeader: "text/plain",
 	})
 	if err != nil {
 		t.Fatalf("PutObject: %v", err)
@@ -215,8 +224,10 @@ func setupCopyObjectMetadataFixture(t *testing.T) (*MemoryStorage, *Service) {
 	return store, svc
 }
 
-func issueCopyObject(svc *Service, headers map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPut, "/dst/copied.txt", http.NoBody)
+func issueCopyObject(t *testing.T, svc *Service, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/dst/copied.txt", http.NoBody)
 	req.SetPathValue("bucket", "dst")
 	req.SetPathValue("key", "copied.txt")
 	req.Header.Set("X-Amz-Copy-Source", "/src/source.txt")

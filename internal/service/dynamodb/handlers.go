@@ -557,7 +557,7 @@ func decodeDynamoDBRequest(w http.ResponseWriter, r *http.Request, req any) bool
 // and returns false if missing is true.
 func requireDynamoDBField(w http.ResponseWriter, missing bool, message string) bool {
 	if missing {
-		writeDynamoDBError(w, "ValidationException", message, http.StatusBadRequest)
+		writeDynamoDBError(w, errCodeValidation, message, http.StatusBadRequest)
 
 		return false
 	}
@@ -644,7 +644,7 @@ func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.TransactItems) > 100 {
-		writeDynamoDBError(w, "ValidationException", "Member must have length less than or equal to 100", http.StatusBadRequest)
+		writeDynamoDBError(w, errCodeValidation, "Member must have length less than or equal to 100", http.StatusBadRequest)
 
 		return
 	}
@@ -653,11 +653,11 @@ func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var tErr *TableError
 		if errors.As(err, &tErr) {
-			if tErr.Code == "TransactionCanceledException" && reasons != nil {
+			if tErr.Code == errCodeTransactionCanceled && reasons != nil {
 				w.Header().Set("Content-Type", "application/x-amz-json-1.0")
 				w.WriteHeader(http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(TransactionCanceledResponse{
-					Type:                "TransactionCanceledException",
+					Type:                errCodeTransactionCanceled,
 					Message:             tErr.Message,
 					CancellationReasons: reasons,
 				})
@@ -690,7 +690,7 @@ func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.TransactItems) > 100 {
-		writeDynamoDBError(w, "ValidationException", "Member must have length less than or equal to 100", http.StatusBadRequest)
+		writeDynamoDBError(w, errCodeValidation, "Member must have length less than or equal to 100", http.StatusBadRequest)
 
 		return
 	}
@@ -770,7 +770,7 @@ func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if totalItems > 25 {
-		writeDynamoDBError(w, "ValidationException", "Too many items requested for the BatchWriteItem call", http.StatusBadRequest)
+		writeDynamoDBError(w, errCodeValidation, "Too many items requested for the BatchWriteItem call", http.StatusBadRequest)
 
 		return
 	}
@@ -809,7 +809,7 @@ func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if totalKeys > 100 {
-		writeDynamoDBError(w, "ValidationException", "Too many items requested for the BatchGetItem call", http.StatusBadRequest)
+		writeDynamoDBError(w, errCodeValidation, "Too many items requested for the BatchGetItem call", http.StatusBadRequest)
 
 		return
 	}
@@ -923,7 +923,7 @@ func convertAttributeUpdates(req *UpdateItemRequest) {
 func (s *Service) UpdateTable(w http.ResponseWriter, r *http.Request) {
 	var req UpdateTableRequest
 	if err := service.ReadJSONRequest(r, &req); err != nil || req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
+		writeDynamoDBError(w, errCodeValidation, "TableName is required", http.StatusBadRequest)
 
 		return
 	}
@@ -1002,7 +1002,7 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 func (s *Service) DescribeContinuousBackups(w http.ResponseWriter, r *http.Request) {
 	var req DescribeContinuousBackupsRequest
 	if err := service.ReadJSONRequest(r, &req); err != nil || req.TableName == "" {
-		writeDynamoDBError(w, "ValidationException", "TableName is required", http.StatusBadRequest)
+		writeDynamoDBError(w, errCodeValidation, "TableName is required", http.StatusBadRequest)
 
 		return
 	}

@@ -101,7 +101,7 @@ func (s *Service) PutBucketLifecycleConfiguration(w http.ResponseWriter, r *http
 
 	var cfg LifecycleConfiguration
 	if err := xml.Unmarshal(body, &cfg); err != nil {
-		writeS3Error(w, r, "MalformedXML", fmt.Sprintf("LifecycleConfiguration XML: %v", err), http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, fmt.Sprintf("LifecycleConfiguration XML: %v", err), http.StatusBadRequest)
 
 		return
 	}
@@ -152,7 +152,7 @@ func (s *MemoryStorage) PutBucketLifecycle(_ context.Context, bucket string, cfg
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.Lifecycle = cfg
@@ -168,7 +168,7 @@ func (s *MemoryStorage) GetBucketLifecycle(_ context.Context, bucket string) (*L
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if b.Lifecycle == nil {
@@ -186,7 +186,7 @@ func (s *MemoryStorage) DeleteBucketLifecycle(_ context.Context, bucket string) 
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.Lifecycle = nil

@@ -198,15 +198,15 @@ func (m *MemoryStorage) GetSecretValue(_ context.Context, secretID, versionID, v
 	secret := m.findSecret(secretID)
 	if secret == nil {
 		return nil, nil, &SecretError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("Secrets Manager can't find the specified secret: %s", secretID),
 		}
 	}
 
 	if secret.DeletedDate != nil {
 		return nil, nil, &SecretError{
-			Code:    "InvalidRequestException",
-			Message: "You can't perform this operation on a secret that's scheduled for deletion.",
+			Code:    errInvalidRequest,
+			Message: msgSecretScheduledForDeletion,
 		}
 	}
 
@@ -230,7 +230,7 @@ func (m *MemoryStorage) GetSecretValue(_ context.Context, secretID, versionID, v
 
 	if version == nil {
 		return nil, nil, &SecretError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: "Secrets Manager can't find the specified secret version.",
 		}
 	}
@@ -249,15 +249,15 @@ func (m *MemoryStorage) PutSecretValue(_ context.Context, secretID, clientToken,
 	secret := m.findSecret(secretID)
 	if secret == nil {
 		return nil, nil, &SecretError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("Secrets Manager can't find the specified secret: %s", secretID),
 		}
 	}
 
 	if secret.DeletedDate != nil {
 		return nil, nil, &SecretError{
-			Code:    "InvalidRequestException",
-			Message: "You can't perform this operation on a secret that's scheduled for deletion.",
+			Code:    errInvalidRequest,
+			Message: msgSecretScheduledForDeletion,
 		}
 	}
 
@@ -302,7 +302,7 @@ func (m *MemoryStorage) DeleteSecret(_ context.Context, secretID string, recover
 	secret := m.findSecret(secretID)
 	if secret == nil {
 		return nil, &SecretError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("Secrets Manager can't find the specified secret: %s", secretID),
 		}
 	}
@@ -387,7 +387,7 @@ func (m *MemoryStorage) DescribeSecret(_ context.Context, secretID string) (*Sec
 	secret := m.findSecret(secretID)
 	if secret == nil {
 		return nil, &SecretError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("Secrets Manager can't find the specified secret: %s", secretID),
 		}
 	}
@@ -403,15 +403,15 @@ func (m *MemoryStorage) UpdateSecret(_ context.Context, req *UpdateSecretRequest
 	secret := m.findSecret(req.SecretID)
 	if secret == nil {
 		return nil, nil, &SecretError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("Secrets Manager can't find the specified secret: %s", req.SecretID),
 		}
 	}
 
 	if secret.DeletedDate != nil {
 		return nil, nil, &SecretError{
-			Code:    "InvalidRequestException",
-			Message: "You can't perform this operation on a secret that's scheduled for deletion.",
+			Code:    errInvalidRequest,
+			Message: msgSecretScheduledForDeletion,
 		}
 	}
 

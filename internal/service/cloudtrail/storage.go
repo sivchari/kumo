@@ -16,6 +16,8 @@ const (
 	errTrailNotFound      = "TrailNotFoundException"
 	errTrailAlreadyExists = "TrailAlreadyExistsException"
 	errValidationError    = "ValidationException"
+
+	msgTrailNotFound = "Trail not found"
 )
 
 // Default values.
@@ -206,7 +208,7 @@ func (m *MemoryStorage) DeleteTrail(_ context.Context, name string) error {
 	defer m.mu.Unlock()
 
 	if _, exists := m.Trails[name]; !exists {
-		return &Error{Code: errTrailNotFound, Message: "Trail not found"}
+		return &Error{Code: errTrailNotFound, Message: msgTrailNotFound}
 	}
 
 	delete(m.Trails, name)
@@ -223,7 +225,7 @@ func (m *MemoryStorage) GetTrail(_ context.Context, name string) (*Trail, error)
 
 	trail, exists := m.Trails[name]
 	if !exists {
-		return nil, &Error{Code: errTrailNotFound, Message: "Trail not found"}
+		return nil, &Error{Code: errTrailNotFound, Message: msgTrailNotFound}
 	}
 
 	return trail, nil
@@ -261,7 +263,7 @@ func (m *MemoryStorage) StartLogging(_ context.Context, name string) error {
 
 	trail, exists := m.Trails[name]
 	if !exists {
-		return &Error{Code: errTrailNotFound, Message: "Trail not found"}
+		return &Error{Code: errTrailNotFound, Message: msgTrailNotFound}
 	}
 
 	trail.IsLogging = true
@@ -278,7 +280,7 @@ func (m *MemoryStorage) StopLogging(_ context.Context, name string) error {
 
 	trail, exists := m.Trails[name]
 	if !exists {
-		return &Error{Code: errTrailNotFound, Message: "Trail not found"}
+		return &Error{Code: errTrailNotFound, Message: msgTrailNotFound}
 	}
 
 	trail.IsLogging = false
@@ -301,7 +303,7 @@ func (m *MemoryStorage) GetTrailStatus(_ context.Context, name string) (*Trail, 
 
 	trail, exists := m.Trails[name]
 	if !exists {
-		return nil, &Error{Code: errTrailNotFound, Message: "Trail not found"}
+		return nil, &Error{Code: errTrailNotFound, Message: msgTrailNotFound}
 	}
 
 	return trail, nil

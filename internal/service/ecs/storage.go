@@ -26,6 +26,11 @@ const (
 	statusDraining = "DRAINING"
 	statusPending  = "PENDING"
 	statusPrimary  = "PRIMARY"
+
+	defaultClusterName = "default"
+
+	errClusterNotFound = "ClusterNotFoundException"
+	msgClusterNotFound = "The specified cluster was not found"
 )
 
 // Storage defines the interface for ECS storage operations.
@@ -205,7 +210,7 @@ func (m *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 
 	name := req.ClusterName
 	if name == "" {
-		name = "default"
+		name = defaultClusterName
 	}
 
 	arn := m.clusterArn(name)
@@ -238,8 +243,8 @@ func (m *MemoryStorage) DeleteCluster(_ context.Context, cluster string) (*Clust
 	existing, ok := m.Clusters[arn]
 	if !ok {
 		return nil, &Error{
-			Code:    "ClusterNotFoundException",
-			Message: "The specified cluster was not found",
+			Code:    errClusterNotFound,
+			Message: msgClusterNotFound,
 		}
 	}
 
@@ -411,10 +416,10 @@ func (m *MemoryStorage) getOrCreateCluster(clusterArn, clusterName string) (*Clu
 		return cluster, nil
 	}
 
-	if clusterName == "" || clusterName == "default" {
+	if clusterName == "" || clusterName == defaultClusterName {
 		cluster = &Cluster{
 			ClusterArn:  clusterArn,
-			ClusterName: "default",
+			ClusterName: defaultClusterName,
 			Status:      statusActive,
 		}
 		m.Clusters[clusterArn] = cluster
@@ -423,8 +428,8 @@ func (m *MemoryStorage) getOrCreateCluster(clusterArn, clusterName string) (*Clu
 	}
 
 	return nil, &Error{
-		Code:    "ClusterNotFoundException",
-		Message: "The specified cluster was not found",
+		Code:    errClusterNotFound,
+		Message: msgClusterNotFound,
 	}
 }
 
@@ -584,8 +589,8 @@ func (m *MemoryStorage) CreateService(_ context.Context, req *CreateServiceReque
 	cluster, ok := m.Clusters[clusterArn]
 	if !ok {
 		return nil, &Error{
-			Code:    "ClusterNotFoundException",
-			Message: "The specified cluster was not found",
+			Code:    errClusterNotFound,
+			Message: msgClusterNotFound,
 		}
 	}
 
@@ -727,7 +732,7 @@ func (m *MemoryStorage) UpdateService(_ context.Context, req *UpdateServiceReque
 
 func (m *MemoryStorage) resolveClusterArn(cluster string) string {
 	if cluster == "" {
-		return m.clusterArn("default")
+		return m.clusterArn(defaultClusterName)
 	}
 
 	if strings.HasPrefix(cluster, "arn:") {

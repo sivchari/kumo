@@ -116,7 +116,7 @@ func TestSNSNotification_PutObjectPublishesToSNS(t *testing.T) {
 	svc.SetSNSPublisher(publisher)
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "hello.txt", "hello world"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "hello.txt", "hello world"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -212,7 +212,7 @@ func TestSNSNotification_KeyFilterMismatch(t *testing.T) {
 	svc.SetSNSPublisher(publisher)
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "other/hello.txt", "hello world"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "other/hello.txt", "hello world"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -240,7 +240,7 @@ func TestSNSNotification_KeyFilterMatch(t *testing.T) {
 	svc.SetSNSPublisher(publisher)
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "uploads/photo.jpg", "binary data"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "uploads/photo.jpg", "binary data"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -261,7 +261,7 @@ func TestSNSNotification_NoPublisherInstalled(t *testing.T) {
 	putSNSNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"}, "")
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "hello.txt", "hello world"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "hello.txt", "hello world"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())

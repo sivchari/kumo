@@ -16,6 +16,9 @@ import (
 	"time"
 )
 
+// hdrCacheControl is the canonical "Cache-Control" header name.
+const hdrCacheControl = "Cache-Control"
+
 // DistributionConfig is the subset of CloudFront's CacheBehavior that
 // the rule evaluation needs. Real DefaultCacheBehavior carries more,
 // but TTL clamping only depends on these three values.
@@ -120,7 +123,7 @@ func mergedCacheControl(respHeader http.Header) Control {
 		return parseControl(cdn)
 	}
 
-	return parseControl(respHeader.Get("Cache-Control"))
+	return parseControl(respHeader.Get(hdrCacheControl))
 }
 
 // CDNStaleDirectives is the (stale-while-revalidate, stale-if-error)
@@ -428,7 +431,7 @@ type RequestDirectives struct {
 // request-applicable directives via a separate type so callers don't
 // confuse the two.
 func ParseRequestCacheControl(reqHeader http.Header) RequestDirectives {
-	raw := reqHeader.Get("Cache-Control")
+	raw := reqHeader.Get(hdrCacheControl)
 	if raw == "" {
 		return RequestDirectives{}
 	}

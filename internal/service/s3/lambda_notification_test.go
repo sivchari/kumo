@@ -95,7 +95,7 @@ func putLambdaNotificationConfig(t *testing.T, svc *Service, bucket string, even
 
 	body += `</CloudFunctionConfiguration></NotificationConfiguration>`
 
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
 	req.SetPathValue("bucket", bucket)
 
 	w := httptest.NewRecorder()
@@ -106,8 +106,10 @@ func putLambdaNotificationConfig(t *testing.T, svc *Service, bucket string, even
 	}
 }
 
-func putObjectRequest(bucket, key, body string) *http.Request {
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"/"+key, strings.NewReader(body))
+func putObjectRequest(t *testing.T, bucket, key, body string) *http.Request {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"/"+key, strings.NewReader(body))
 	req.SetPathValue("bucket", bucket)
 	req.SetPathValue("key", key)
 
@@ -123,13 +125,13 @@ func TestLambdaNotification_PutObjectInvokesLambda(t *testing.T) {
 	const bucket = "lambda-notify-put"
 
 	_, svc := newLambdaNotificationTestService(t, bucket)
-	putLambdaNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"})
+	putLambdaNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll})
 
 	invoker := newFakeLambdaInvoker()
 	svc.SetLambdaInvoker(invoker)
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "hello.txt", "hello world"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "hello.txt", "hello world"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -188,7 +190,7 @@ func TestLambdaNotification_EventFilterMismatch(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"/dst.txt", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"/dst.txt", http.NoBody)
 	req.SetPathValue("bucket", bucket)
 	req.SetPathValue("key", "dst.txt")
 	req.Header.Set("X-Amz-Copy-Source", "/"+bucket+"/src.txt")
@@ -211,10 +213,10 @@ func TestLambdaNotification_NoInvokerInstalled(t *testing.T) {
 	const bucket = "lambda-notify-noinvoker"
 
 	_, svc := newLambdaNotificationTestService(t, bucket)
-	putLambdaNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"})
+	putLambdaNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll})
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "hello.txt", "hello world"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "hello.txt", "hello world"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -237,7 +239,7 @@ func TestLambdaNotification_XMLRoundTrip(t *testing.T) {
 	const bucket = "lambda-notify-roundtrip"
 
 	store, svc := newLambdaNotificationTestService(t, bucket)
-	putLambdaNotificationConfig(t, svc, bucket, []string{testObjectCreatedPutEvent, "s3:ObjectCreated:Copy"})
+	putLambdaNotificationConfig(t, svc, bucket, []string{testObjectCreatedPutEvent, eventObjectCreatedCopy})
 
 	configs := store.GetLambdaConfigurations(context.Background(), bucket)
 	if len(configs) != 1 {
@@ -253,8 +255,8 @@ func TestLambdaNotification_XMLRoundTrip(t *testing.T) {
 		t.Errorf("LambdaFunctionArn = %q, want %q", cfg.LambdaFunctionArn, testLambdaArn)
 	}
 
-	if len(cfg.Events) != 2 || cfg.Events[0] != testObjectCreatedPutEvent || cfg.Events[1] != "s3:ObjectCreated:Copy" {
-		t.Errorf("Events = %v, want [%s s3:ObjectCreated:Copy]", cfg.Events, testObjectCreatedPutEvent)
+	if len(cfg.Events) != 2 || cfg.Events[0] != testObjectCreatedPutEvent || cfg.Events[1] != eventObjectCreatedCopy {
+		t.Errorf("Events = %v, want [%s %s]", cfg.Events, testObjectCreatedPutEvent, eventObjectCreatedCopy)
 	}
 }
 
@@ -268,7 +270,7 @@ func TestLambdaNotification_CompleteMultipartUploadFiresAllEmitters(t *testing.T
 	const bucket = "lambda-notify-mpu"
 
 	store, svc := newLambdaNotificationTestService(t, bucket)
-	putLambdaNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"})
+	putLambdaNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll})
 
 	invoker := newFakeLambdaInvoker()
 	svc.SetLambdaInvoker(invoker)
@@ -287,7 +289,7 @@ func TestLambdaNotification_CompleteMultipartUploadFiresAllEmitters(t *testing.T
 
 	completeBody := `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>` + part.ETag + `</ETag></Part></CompleteMultipartUpload>`
 
-	req := httptest.NewRequest(http.MethodPost, "/"+bucket+"/big.bin?uploadId="+upload.UploadID, strings.NewReader(completeBody))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/"+bucket+"/big.bin?uploadId="+upload.UploadID, strings.NewReader(completeBody))
 	req.SetPathValue("bucket", bucket)
 	req.SetPathValue("key", "big.bin")
 

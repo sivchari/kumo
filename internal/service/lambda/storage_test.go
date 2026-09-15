@@ -65,7 +65,7 @@ func TestGetFunctionTagsSafeAgainstConcurrentTagWrites(t *testing.T) {
 	}()
 
 	for range 200 {
-		req := httptest.NewRequest(http.MethodGet, "/2015-03-31/functions/race-fn", http.NoBody)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/2015-03-31/functions/race-fn", http.NoBody)
 
 		w := httptest.NewRecorder()
 		svc.GetFunction(w, req)

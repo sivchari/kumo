@@ -161,7 +161,7 @@ func roleStateJSON(r *iam.Role) ([]byte, error) {
 		"ManagedPolicyArns":        []any{},
 		"PermissionsBoundary":      nil,
 		"Policies":                 []any{},
-		"Tags":                     []any{},
+		resourceTagsField:          []any{},
 	}
 
 	return json.Marshal(state)

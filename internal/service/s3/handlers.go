@@ -36,6 +36,29 @@ const (
 	metadataDirectiveHeader  = "X-Amz-Metadata-Directive"
 	metadataDirectiveCopy    = "COPY"
 	metadataDirectiveReplace = "REPLACE"
+
+	// S3 error codes, shared across handlers.go/storage.go/conditional.go and
+	// the bucket_*.go/object_*.go handlers.
+	errCodeNoSuchBucket          = "NoSuchBucket"
+	errCodeNoSuchKey             = "NoSuchKey"
+	errCodeNoSuchUpload          = "NoSuchUpload"
+	errCodeInvalidPart           = "InvalidPart"
+	errCodeMalformedXML          = "MalformedXML"
+	errCodePreconditionFailed    = "PreconditionFailed"
+	errCodeAuthQueryParamsError  = "AuthorizationQueryParametersError"
+	errCodeInvalidPolicyDocument = "InvalidPolicyDocument"
+	msgBucketNotExist            = "The specified bucket does not exist"
+	msgKeyNotExist               = "The specified key does not exist."
+	xsiNamespaceAttr             = "http://www.w3.org/2001/XMLSchema-instance"
+	ownerDisplayName             = "owner"
+	ownerID                      = "owner-id"
+	storageClassStandard         = "STANDARD"
+	msgUploadNotExist            = "The specified upload does not exist"
+
+	eventObjectCreatedAll  = "s3:ObjectCreated:*"
+	eventObjectCreatedPut  = "s3:ObjectCreated:Put"
+	eventObjectCreatedCopy = "s3:ObjectCreated:Copy"
+	eventObjectCreatedCMU  = "s3:ObjectCreated:CompleteMultipartUpload"
 )
 
 // applyCORSHeaders sets CORS response headers if the bucket has CORS configured and the request Origin matches.
@@ -252,16 +275,16 @@ func defaultBucketACL() any {
 		} `xml:"AccessControlList"`
 	}{
 		Xmlns: s3Namespace,
-		Owner: owner{ID: "owner-id", DisplayName: "owner"},
+		Owner: owner{ID: ownerID, DisplayName: ownerDisplayName},
 		AccessControlList: struct {
 			Grant grant
 		}{
 			Grant: grant{
 				Grantee: grantee{
-					XSI:         "http://www.w3.org/2001/XMLSchema-instance",
+					XSI:         xsiNamespaceAttr,
 					Type:        "CanonicalUser",
-					ID:          "owner-id",
-					DisplayName: "owner",
+					ID:          ownerID,
+					DisplayName: ownerDisplayName,
 				},
 				Permission: "FULL_CONTROL",
 			},
@@ -408,7 +431,7 @@ func (s *Service) ListBuckets(w http.ResponseWriter, r *http.Request) {
 			Bucket: bucketInfos,
 		},
 		Owner: Owner{
-			ID: "owner-id",
+			ID: ownerID,
 		},
 	}
 
@@ -461,7 +484,7 @@ func (s *Service) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
 			switch bucketErr.Code {
-			case "NoSuchBucket":
+			case errCodeNoSuchBucket:
 				writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusNotFound)
 			case "BucketNotEmpty":
 				writeS3Error(w, r, bucketErr.Code, bucketErr.Message, http.StatusConflict)
@@ -568,7 +591,7 @@ func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 			LastModified: objects[i].LastModified.Format(timeFormatISO),
 			ETag:         objects[i].ETag,
 			Size:         objects[i].Size,
-			StorageClass: "STANDARD",
+			StorageClass: storageClassStandard,
 		}
 	}
 
@@ -676,7 +699,7 @@ func buildListBucketResultV1(bucket string, params listObjectsV1Params, objects 
 			LastModified: objects[i].LastModified.Format(timeFormatISO),
 			ETag:         objects[i].ETag,
 			Size:         objects[i].Size,
-			StorageClass: "STANDARD",
+			StorageClass: storageClassStandard,
 		}
 	}
 
@@ -773,11 +796,11 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 
 	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
 
-	go s.emitSQSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
+	go s.emitSQSNotifications(context.Background(), bucket, key, eventObjectCreatedPut, obj.Size, obj.ETag)
 
-	go s.emitLambdaNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
+	go s.emitLambdaNotifications(context.Background(), bucket, key, eventObjectCreatedPut, obj.Size, obj.ETag)
 
-	go s.emitSNSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:Put", obj.Size, obj.ETag)
+	go s.emitSNSNotifications(context.Background(), bucket, key, eventObjectCreatedPut, obj.Size, obj.ETag)
 }
 
 // CopyObject handles PUT /{bucket}/{key} with X-Amz-Copy-Source header.
@@ -802,7 +825,7 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !evalCopySourcePreconditions(r.Header, srcObj.ETag, srcObj.LastModified) {
-		writeS3Error(w, r, "PreconditionFailed", "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
+		writeS3Error(w, r, errCodePreconditionFailed, "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
 
 		return
 	}
@@ -855,9 +878,9 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 	writeXMLResponse(w, result)
 
 	go s.emitObjectCreatedEvent(context.Background(), dstBucket, dstKey, dstObj.Size, dstObj.ETag)
-	go s.emitSQSNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
-	go s.emitLambdaNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
-	go s.emitSNSNotifications(context.Background(), dstBucket, dstKey, "s3:ObjectCreated:Copy", dstObj.Size, dstObj.ETag)
+	go s.emitSQSNotifications(context.Background(), dstBucket, dstKey, eventObjectCreatedCopy, dstObj.Size, dstObj.ETag)
+	go s.emitLambdaNotifications(context.Background(), dstBucket, dstKey, eventObjectCreatedCopy, dstObj.Size, dstObj.ETag)
+	go s.emitSNSNotifications(context.Background(), dstBucket, dstKey, eventObjectCreatedCopy, dstObj.Size, dstObj.ETag)
 }
 
 // getCopySource retrieves the source object for a copy operation,
@@ -1041,7 +1064,7 @@ func (s *Service) GetObject(w http.ResponseWriter, r *http.Request) {
 	case preconditionPass:
 		// fall through to the normal response below
 	case preconditionFailed:
-		writeS3Error(w, r, "PreconditionFailed", "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
+		writeS3Error(w, r, errCodePreconditionFailed, "At least one of the preconditions you specified did not hold.", http.StatusPreconditionFailed)
 
 		return
 	case preconditionNotModified:
@@ -1315,7 +1338,7 @@ func (s *Service) DeleteObjects(w http.ResponseWriter, r *http.Request) {
 
 	var req DeleteRequest
 	if err := xml.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeS3Error(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, "The XML you provided was not well-formed", http.StatusBadRequest)
 
 		return
 	}
@@ -1446,7 +1469,7 @@ func (s *Service) PutBucketVersioning(w http.ResponseWriter, r *http.Request) {
 
 	var config VersioningConfiguration
 	if err := xml.NewDecoder(r.Body).Decode(&config); err != nil {
-		writeS3Error(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, "The XML you provided was not well-formed", http.StatusBadRequest)
 
 		return
 	}
@@ -1589,8 +1612,8 @@ func toObjectVersionInfo(obj *Object, isLatest bool) ObjectVersionInfo {
 		LastModified: obj.LastModified.Format(timeFormatISO),
 		ETag:         obj.ETag,
 		Size:         obj.Size,
-		StorageClass: "STANDARD",
-		Owner:        Owner{ID: "owner-id"},
+		StorageClass: storageClassStandard,
+		Owner:        Owner{ID: ownerID},
 	}
 }
 
@@ -1601,7 +1624,7 @@ func toDeleteMarkerInfo(obj *Object, isLatest bool) DeleteMarkerInfo {
 		VersionID:    obj.VersionID,
 		IsLatest:     isLatest,
 		LastModified: obj.LastModified.Format(timeFormatISO),
-		Owner:        Owner{ID: "owner-id"},
+		Owner:        Owner{ID: ownerID},
 	}
 }
 
@@ -1722,7 +1745,7 @@ func (s *Service) PutPublicAccessBlock(w http.ResponseWriter, r *http.Request) {
 
 	var cfg PublicAccessBlockConfiguration
 	if err := xml.Unmarshal(body, &cfg); err != nil {
-		writeS3Error(w, r, "MalformedXML", "The request body is malformed XML", http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, "The request body is malformed XML", http.StatusBadRequest)
 
 		return
 	}
@@ -1787,7 +1810,7 @@ func (s *Service) PutBucketEncryption(w http.ResponseWriter, r *http.Request) {
 
 	var cfg ServerSideEncryptionConfiguration
 	if err := xml.Unmarshal(body, &cfg); err != nil {
-		writeS3Error(w, r, "MalformedXML", "The request body is malformed XML", http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, "The request body is malformed XML", http.StatusBadRequest)
 
 		return
 	}
@@ -1861,7 +1884,7 @@ func (s *Service) PutBucketLogging(w http.ResponseWriter, r *http.Request) {
 	var status BucketLoggingStatus
 	if len(body) > 0 {
 		if err := xml.Unmarshal(body, &status); err != nil {
-			writeS3Error(w, r, "MalformedXML", "Failed to parse BucketLoggingStatus", http.StatusBadRequest)
+			writeS3Error(w, r, errCodeMalformedXML, "Failed to parse BucketLoggingStatus", http.StatusBadRequest)
 
 			return
 		}
@@ -1983,7 +2006,7 @@ func writeBucketErrorOrInternal(w http.ResponseWriter, r *http.Request, err erro
 		status := http.StatusBadRequest
 
 		switch bucketErr.Code {
-		case "NoSuchBucket", "NoSuchPublicAccessBlockConfiguration", "ServerSideEncryptionConfigurationNotFoundError", "NoSuchBucketPolicy":
+		case errCodeNoSuchBucket, "NoSuchPublicAccessBlockConfiguration", "ServerSideEncryptionConfigurationNotFoundError", "NoSuchBucketPolicy":
 			status = http.StatusNotFound
 		}
 
@@ -2052,28 +2075,28 @@ func checkPresignedURL(w http.ResponseWriter, r *http.Request) bool {
 func validatePresignedURL(r *http.Request) error {
 	amzDate := r.URL.Query().Get("X-Amz-Date")
 	if amzDate == "" {
-		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "X-Amz-Date must be in the ISO8601 Long Format"}
+		return &PresignedURLError{Code: errCodeAuthQueryParamsError, Message: "X-Amz-Date must be in the ISO8601 Long Format"}
 	}
 
 	expiresStr := r.URL.Query().Get("X-Amz-Expires")
 	if expiresStr == "" {
-		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "X-Amz-Expires must be provided"}
+		return &PresignedURLError{Code: errCodeAuthQueryParamsError, Message: "X-Amz-Expires must be provided"}
 	}
 
 	expires, err := strconv.ParseInt(expiresStr, 10, 64)
 	if err != nil {
-		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "X-Amz-Expires must be a number"}
+		return &PresignedURLError{Code: errCodeAuthQueryParamsError, Message: "X-Amz-Expires must be a number"}
 	}
 
 	// AWS allows max 7 days (604800 seconds) for presigned URLs
 	const maxExpires = 604800
 	if expires > maxExpires {
-		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "X-Amz-Expires must be less than 604800 seconds"}
+		return &PresignedURLError{Code: errCodeAuthQueryParamsError, Message: "X-Amz-Expires must be less than 604800 seconds"}
 	}
 
 	signTime, err := time.Parse("20060102T150405Z", amzDate)
 	if err != nil {
-		return &PresignedURLError{Code: "AuthorizationQueryParametersError", Message: "Invalid X-Amz-Date format"}
+		return &PresignedURLError{Code: errCodeAuthQueryParamsError, Message: "Invalid X-Amz-Date format"}
 	}
 
 	expirationTime := signTime.Add(time.Duration(expires) * time.Second)
@@ -2301,7 +2324,7 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 
 	var req CompleteMultipartUploadRequest
 	if err := xml.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeS3Error(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, "The XML you provided was not well-formed", http.StatusBadRequest)
 
 		return
 	}
@@ -2333,9 +2356,9 @@ func (s *Service) CompleteMultipartUpload(w http.ResponseWriter, r *http.Request
 	writeXMLResponse(w, result)
 
 	go s.emitObjectCreatedEvent(context.Background(), bucket, key, obj.Size, obj.ETag)
-	go s.emitSQSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
-	go s.emitLambdaNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
-	go s.emitSNSNotifications(context.Background(), bucket, key, "s3:ObjectCreated:CompleteMultipartUpload", obj.Size, obj.ETag)
+	go s.emitSQSNotifications(context.Background(), bucket, key, eventObjectCreatedCMU, obj.Size, obj.ETag)
+	go s.emitLambdaNotifications(context.Background(), bucket, key, eventObjectCreatedCMU, obj.Size, obj.ETag)
+	go s.emitSNSNotifications(context.Background(), bucket, key, eventObjectCreatedCMU, obj.Size, obj.ETag)
 }
 
 // AbortMultipartUpload handles DELETE /{bucket}/{key}?uploadId={uploadId} - abort a multipart upload.
@@ -2498,7 +2521,7 @@ func (s *Service) GetBucketNotificationConfiguration(w http.ResponseWriter, r *h
 	}
 
 	if !exists {
-		writeS3Error(w, r, "NoSuchBucket", "The specified bucket does not exist", http.StatusNotFound)
+		writeS3Error(w, r, errCodeNoSuchBucket, msgBucketNotExist, http.StatusNotFound)
 
 		return
 	}
@@ -2548,7 +2571,7 @@ func (s *Service) PutBucketCors(w http.ResponseWriter, r *http.Request) {
 
 	var config CORSConfiguration
 	if err := xml.NewDecoder(r.Body).Decode(&config); err != nil {
-		writeS3Error(w, r, "MalformedXML", "The XML you provided was not well-formed", http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, "The XML you provided was not well-formed", http.StatusBadRequest)
 
 		return
 	}
@@ -2597,7 +2620,7 @@ func handleMultipartError(w http.ResponseWriter, r *http.Request, err error) {
 		status := http.StatusNotFound
 
 		switch multipartErr.Code {
-		case "InvalidPart", "InvalidPartOrder", "InvalidArgument", "MalformedXML":
+		case errCodeInvalidPart, "InvalidPartOrder", "InvalidArgument", errCodeMalformedXML:
 			status = http.StatusBadRequest
 		}
 
@@ -2648,7 +2671,7 @@ func (s *Service) PutObjectTagging(w http.ResponseWriter, r *http.Request) {
 
 	var tagging Tagging
 	if err := xml.Unmarshal(body, &tagging); err != nil {
-		writeS3Error(w, r, "MalformedXML", "Invalid XML in request body", http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, "Invalid XML in request body", http.StatusBadRequest)
 
 		return
 	}

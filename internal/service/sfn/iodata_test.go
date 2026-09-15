@@ -5,6 +5,13 @@ import (
 	"testing"
 )
 
+// JSON body fixtures shared across the IO-processing tests in this package.
+const (
+	testJSONA1        = `{"a":1}`
+	testJSONSum7      = `{"sum":7}`
+	testMalformedJSON = `{not json`
+)
+
 func TestParsePathField(t *testing.T) {
 	t.Parallel()
 
@@ -19,7 +26,7 @@ func TestParsePathField(t *testing.T) {
 		{name: "explicit null", raw: json.RawMessage(`null`), wantIsNull: true},
 		{name: "string path", raw: json.RawMessage(`"$.a.b"`), wantPath: "$.a.b"},
 		{name: "non-string value errors", raw: json.RawMessage(`42`), wantErr: true},
-		{name: "malformed JSON errors", raw: json.RawMessage(`{not json`), wantErr: true},
+		{name: "malformed JSON errors", raw: json.RawMessage(testMalformedJSON), wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -60,14 +67,14 @@ func TestApplyInputPath(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "absent leaves input unchanged", raw: nil, input: `{"a":1}`, want: `{"a":1}`},
-		{name: "explicit $ leaves input unchanged", raw: json.RawMessage(`"$"`), input: `{"a":1}`, want: `{"a":1}`},
-		{name: "explicit null discards input", raw: json.RawMessage(`null`), input: `{"a":1}`, want: `{}`},
+		{name: "absent leaves input unchanged", raw: nil, input: testJSONA1, want: testJSONA1},
+		{name: "explicit $ leaves input unchanged", raw: json.RawMessage(`"$"`), input: testJSONA1, want: testJSONA1},
+		{name: "explicit null discards input", raw: json.RawMessage(`null`), input: testJSONA1, want: `{}`},
 		{name: "single-level field", raw: json.RawMessage(`"$.a"`), input: `{"a":{"b":1}}`, want: `{"b":1}`},
 		{name: "arbitrary depth field", raw: json.RawMessage(`"$.a.b.c"`), input: `{"a":{"b":{"c":42}}}`, want: `42`},
-		{name: "missing field errors", raw: json.RawMessage(`"$.missing"`), input: `{"a":1}`, wantErr: true},
+		{name: "missing field errors", raw: json.RawMessage(`"$.missing"`), input: testJSONA1, wantErr: true},
 		{name: "field access on non-object errors", raw: json.RawMessage(`"$.a.b"`), input: `{"a":"not-an-object"}`, wantErr: true},
-		{name: "malformed input passes through unchanged when path is absent", raw: nil, input: `{not json`, want: `{not json`},
+		{name: "malformed input passes through unchanged when path is absent", raw: nil, input: testMalformedJSON, want: testMalformedJSON},
 	}
 
 	for _, tt := range tests {
@@ -100,7 +107,7 @@ func TestApplyInputPathMalformedInputWithPathErrors(t *testing.T) {
 	// Unlike the "$"-default case (which returns malformed input verbatim,
 	// since nothing needs to be parsed), a non-"$" path requires parsing the
 	// input and must fail cleanly on malformed JSON.
-	_, err := applyInputPath(json.RawMessage(`"$.a"`), `{not json`)
+	_, err := applyInputPath(json.RawMessage(`"$.a"`), testMalformedJSON)
 	if err == nil {
 		t.Fatal("applyInputPath: want error for malformed input, got nil")
 	}
@@ -116,10 +123,10 @@ func TestApplyOutputPath(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "absent leaves output unchanged", raw: nil, output: `{"a":1}`, want: `{"a":1}`},
-		{name: "explicit null discards output", raw: json.RawMessage(`null`), output: `{"a":1}`, want: `{}`},
+		{name: "absent leaves output unchanged", raw: nil, output: testJSONA1, want: testJSONA1},
+		{name: "explicit null discards output", raw: json.RawMessage(`null`), output: testJSONA1, want: `{}`},
 		{name: "narrows to a field", raw: json.RawMessage(`"$.a"`), output: `{"a":{"b":2}}`, want: `{"b":2}`},
-		{name: "path matching nothing errors", raw: json.RawMessage(`"$.missing"`), output: `{"a":1}`, wantErr: true},
+		{name: "path matching nothing errors", raw: json.RawMessage(`"$.missing"`), output: testJSONA1, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -163,7 +170,7 @@ func TestApplyResultSelector(t *testing.T) {
 	// state's input.
 	selector := map[string]any{
 		"status.$": "$.status",
-		"fixed":    "value",
+		testFixed:  fieldValue,
 	}
 
 	got, err = applyResultSelector(selector, `{"status":"ok","ignored":true}`)
@@ -176,7 +183,7 @@ func TestApplyResultSelector(t *testing.T) {
 		t.Fatalf("unmarshal applyResultSelector output %q: %v", got, err)
 	}
 
-	if decoded["status"] != "ok" || decoded["fixed"] != "value" {
+	if decoded["status"] != "ok" || decoded[testFixed] != fieldValue {
 		t.Fatalf("applyResultSelector output: got %v, want status=ok fixed=value", decoded)
 	}
 
@@ -198,17 +205,17 @@ var applyResultPathTests = []struct {
 }{
 	{
 		name: "absent defaults to $ replaces input entirely",
-		raw:  nil, effectiveInput: `{"a":1}`, result: `{"sum":7}`,
-		want: `{"sum":7}`,
+		raw:  nil, effectiveInput: testJSONA1, result: testJSONSum7,
+		want: testJSONSum7,
 	},
 	{
 		name: "explicit null discards result, keeps effective input",
-		raw:  json.RawMessage(`null`), effectiveInput: `{"a":1}`, result: `{"sum":7}`,
-		want: `{"a":1}`,
+		raw:  json.RawMessage(`null`), effectiveInput: testJSONA1, result: testJSONSum7,
+		want: testJSONA1,
 	},
 	{
 		name: "single-level path merges into input",
-		raw:  json.RawMessage(`"$.sum"`), effectiveInput: `{"a":1}`, result: `7`,
+		raw:  json.RawMessage(`"$.sum"`), effectiveInput: testJSONA1, result: `7`,
 		want: `{"a":1,"sum":7}`,
 	},
 	{
@@ -265,12 +272,12 @@ func TestResolveEffectiveInput(t *testing.T) {
 
 	// With neither InputPath nor Parameters set, the effective input is the
 	// raw input unchanged.
-	got, err := resolveEffectiveInput(nil, nil, `{"a":1}`)
+	got, err := resolveEffectiveInput(nil, nil, testJSONA1)
 	if err != nil {
 		t.Fatalf("resolveEffectiveInput: %v", err)
 	}
 
-	if got != `{"a":1}` {
+	if got != testJSONA1 {
 		t.Fatalf("resolveEffectiveInput with neither field: got %q, want unchanged input", got)
 	}
 

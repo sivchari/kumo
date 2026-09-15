@@ -38,9 +38,9 @@ const (
 // "End": true, per their own spec rules: Choice always branches via
 // Choices/Default, and Succeed/Fail are always terminal.
 var terminalStateTypes = map[string]bool{
-	"Choice":  true,
-	"Succeed": true,
-	"Fail":    true,
+	stateTypeChoice:  true,
+	stateTypeSucceed: true,
+	"Fail":           true,
 }
 
 // pathFieldTypes, resultFieldTypes, resultSelectorTypes, and
@@ -51,12 +51,12 @@ var terminalStateTypes = map[string]bool{
 // Task/Parallel/Map; Retry/Catch on Task/Parallel/Map.
 var (
 	pathFieldTypes = map[string]bool{
-		"Task": true, "Parallel": true, "Map": true, "Pass": true,
-		"Wait": true, "Choice": true, "Succeed": true,
+		stateTypeTask: true, stateTypeParallel: true, stateTypeMap: true, stateTypePass: true,
+		stateTypeWait: true, stateTypeChoice: true, stateTypeSucceed: true,
 	}
-	resultFieldTypes      = map[string]bool{"Task": true, "Parallel": true, "Map": true, "Pass": true}
-	resultSelectorTypes   = map[string]bool{"Task": true, "Parallel": true, "Map": true}
-	retryCatchFieldTypes  = map[string]bool{"Task": true, "Parallel": true, "Map": true}
+	resultFieldTypes      = map[string]bool{stateTypeTask: true, stateTypeParallel: true, stateTypeMap: true, stateTypePass: true}
+	resultSelectorTypes   = map[string]bool{stateTypeTask: true, stateTypeParallel: true, stateTypeMap: true}
+	retryCatchFieldTypes  = map[string]bool{stateTypeTask: true, stateTypeParallel: true, stateTypeMap: true}
 	stateDataFlowFieldSet = []stateFieldRule{
 		{"InputPath", func(s *stateDefinition) bool { return len(s.InputPath) > 0 }, pathFieldTypes},
 		{"OutputPath", func(s *stateDefinition) bool { return len(s.OutputPath) > 0 }, pathFieldTypes},
@@ -203,15 +203,15 @@ func (v *definitionValidator) validateState(name string, state *stateDefinition,
 	v.validateStateFields(name, state, location)
 
 	switch state.Type {
-	case "Task":
+	case stateTypeTask:
 		v.validateTaskState(name, state, location)
-	case "Choice":
+	case stateTypeChoice:
 		v.validateChoiceState(name, state, states, location)
-	case "Parallel":
+	case stateTypeParallel:
 		v.validateParallelState(name, state, location)
-	case "Map":
+	case stateTypeMap:
 		v.validateMapState(name, state, location)
-	case "Wait":
+	case stateTypeWait:
 		v.validateWaitState(name, state, location)
 	}
 }

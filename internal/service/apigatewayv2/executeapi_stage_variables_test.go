@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+const testStageDev = "dev"
+
 func TestResolveStage_ReturnsStageVariables(t *testing.T) {
 	t.Parallel()
 
@@ -18,10 +20,10 @@ func TestResolveStage_ReturnsStageVariables(t *testing.T) {
 	}{
 		{
 			name:       "named stage carries its variables",
-			stageName:  "dev",
+			stageName:  testStageDev,
 			invokePath: "/dev/items",
-			wantStage:  "dev",
-			wantVars:   map[string]string{"env": "dev"},
+			wantStage:  testStageDev,
+			wantVars:   map[string]string{"env": testStageDev},
 		},
 		{
 			name:       "$default fallback carries its variables",
@@ -46,7 +48,7 @@ func checkResolveStageReturnsVariables(t *testing.T, stageName, invokePath, want
 	storage := NewMemoryStorage()
 	svc := New(storage)
 
-	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "test-api", ProtocolType: "HTTP"})
+	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "test-api", ProtocolType: protocolTypeHTTP})
 	if err != nil {
 		t.Fatalf("CreateAPI() error = %v", err)
 	}
@@ -86,7 +88,7 @@ func TestResolveStage_UnknownStage(t *testing.T) {
 	storage := NewMemoryStorage()
 	svc := New(storage)
 
-	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "test-api", ProtocolType: "HTTP"})
+	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "test-api", ProtocolType: protocolTypeHTTP})
 	if err != nil {
 		t.Fatalf("CreateAPI() error = %v", err)
 	}

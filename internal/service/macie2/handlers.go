@@ -14,7 +14,7 @@ func (s *Service) EnableMacie(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -48,7 +48,7 @@ func (s *Service) UpdateMacieSession(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -82,7 +82,7 @@ func (s *Service) CreateAllowList(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -91,7 +91,7 @@ func (s *Service) CreateAllowList(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Name is required",
+			Message: msgNameRequired,
 		})
 
 		return
@@ -113,7 +113,7 @@ func (s *Service) GetAllowList(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -135,7 +135,7 @@ func (s *Service) UpdateAllowList(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -145,7 +145,7 @@ func (s *Service) UpdateAllowList(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -167,7 +167,7 @@ func (s *Service) DeleteAllowList(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -200,7 +200,7 @@ func (s *Service) CreateClassificationJob(w http.ResponseWriter, r *http.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -209,7 +209,7 @@ func (s *Service) CreateClassificationJob(w http.ResponseWriter, r *http.Request
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Name is required",
+			Message: msgNameRequired,
 		})
 
 		return
@@ -262,7 +262,7 @@ func (s *Service) ListClassificationJobs(w http.ResponseWriter, r *http.Request)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -294,7 +294,7 @@ func (s *Service) UpdateClassificationJob(w http.ResponseWriter, r *http.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -316,7 +316,7 @@ func (s *Service) CreateCustomDataIdentifier(w http.ResponseWriter, r *http.Requ
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -325,7 +325,7 @@ func (s *Service) CreateCustomDataIdentifier(w http.ResponseWriter, r *http.Requ
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Name is required",
+			Message: msgNameRequired,
 		})
 
 		return
@@ -356,7 +356,7 @@ func (s *Service) GetCustomDataIdentifier(w http.ResponseWriter, r *http.Request
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -378,7 +378,7 @@ func (s *Service) DeleteCustomDataIdentifier(w http.ResponseWriter, r *http.Requ
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -399,7 +399,7 @@ func (s *Service) ListCustomDataIdentifiers(w http.ResponseWriter, r *http.Reque
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -421,7 +421,7 @@ func (s *Service) CreateFindingsFilter(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -430,7 +430,7 @@ func (s *Service) CreateFindingsFilter(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Name is required",
+			Message: msgNameRequired,
 		})
 
 		return
@@ -461,7 +461,7 @@ func (s *Service) GetFindingsFilter(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -483,7 +483,7 @@ func (s *Service) UpdateFindingsFilter(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -493,7 +493,7 @@ func (s *Service) UpdateFindingsFilter(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -515,7 +515,7 @@ func (s *Service) DeleteFindingsFilter(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Id is required",
+			Message: msgIDRequired,
 		})
 
 		return
@@ -548,7 +548,7 @@ func (s *Service) GetFindings(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -570,7 +570,7 @@ func (s *Service) ListFindings(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return

@@ -19,6 +19,15 @@ const (
 	errBadRequest = "BadRequestException"
 )
 
+// Not-found messages, one per resource kind.
+const (
+	msgInvalidAPIID         = "Invalid API identifier specified"
+	msgInvalidRouteID       = "Invalid route identifier specified"
+	msgInvalidAuthorizerID  = "Invalid authorizer identifier specified"
+	msgInvalidIntegrationID = "Invalid integration identifier specified"
+	msgInvalidStageID       = "Invalid stage identifier specified"
+)
+
 // defaultRegion is used to build AWS-shaped endpoints when AWS_DEFAULT_REGION
 // is not set.
 const defaultRegion = "us-east-1"
@@ -243,7 +252,7 @@ func (s *MemoryStorage) GetAPI(_ context.Context, apiID string) (*API, error) {
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	return data.API, nil
@@ -269,7 +278,7 @@ func (s *MemoryStorage) UpdateAPI(_ context.Context, apiID string, req *UpdateAP
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	api := data.API
@@ -321,7 +330,7 @@ func (s *MemoryStorage) DeleteAPI(_ context.Context, apiID string) error {
 	defer s.mu.Unlock()
 
 	if _, exists := s.APIs[apiID]; !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	delete(s.APIs, apiID)
@@ -338,7 +347,7 @@ func (s *MemoryStorage) CreateRoute(_ context.Context, apiID string, req *Create
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	id := generateID()
@@ -372,12 +381,12 @@ func (s *MemoryStorage) GetRoute(_ context.Context, apiID, routeID string) (*Rou
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	route, exists := data.Routes[routeID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid route identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidRouteID}
 	}
 
 	return route, nil
@@ -390,7 +399,7 @@ func (s *MemoryStorage) GetRoutes(_ context.Context, apiID string) ([]*Route, er
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	routes := make([]*Route, 0, len(data.Routes))
@@ -408,12 +417,12 @@ func (s *MemoryStorage) UpdateRoute(_ context.Context, apiID, routeID string, re
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	route, exists := data.Routes[routeID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid route identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidRouteID}
 	}
 
 	if req.RouteKey != "" {
@@ -462,11 +471,11 @@ func (s *MemoryStorage) DeleteRoute(_ context.Context, apiID, routeID string) er
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	if _, exists := data.Routes[routeID]; !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid route identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidRouteID}
 	}
 
 	delete(data.Routes, routeID)
@@ -483,7 +492,7 @@ func (s *MemoryStorage) CreateAuthorizer(_ context.Context, apiID string, req *C
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	id := generateID()
@@ -521,12 +530,12 @@ func (s *MemoryStorage) GetAuthorizer(_ context.Context, apiID, authorizerID str
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	authorizer, exists := data.Authorizers[authorizerID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid authorizer identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAuthorizerID}
 	}
 
 	return authorizer, nil
@@ -539,7 +548,7 @@ func (s *MemoryStorage) GetAuthorizers(_ context.Context, apiID string) ([]*Auth
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	authorizers := make([]*Authorizer, 0, len(data.Authorizers))
@@ -557,12 +566,12 @@ func (s *MemoryStorage) UpdateAuthorizer(_ context.Context, apiID, authorizerID 
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	authorizer, exists := data.Authorizers[authorizerID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid authorizer identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAuthorizerID}
 	}
 
 	mergeStr(&authorizer.Name, req.Name)
@@ -598,11 +607,11 @@ func (s *MemoryStorage) DeleteAuthorizer(_ context.Context, apiID, authorizerID 
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	if _, exists := data.Authorizers[authorizerID]; !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid authorizer identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidAuthorizerID}
 	}
 
 	delete(data.Authorizers, authorizerID)
@@ -619,7 +628,7 @@ func (s *MemoryStorage) CreateIntegration(_ context.Context, apiID string, req *
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	id := generateID()
@@ -659,12 +668,12 @@ func (s *MemoryStorage) GetIntegration(_ context.Context, apiID, integrationID s
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	integration, exists := data.Integrations[integrationID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid integration identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidIntegrationID}
 	}
 
 	return integration, nil
@@ -677,7 +686,7 @@ func (s *MemoryStorage) GetIntegrations(_ context.Context, apiID string) ([]*Int
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	integrations := make([]*Integration, 0, len(data.Integrations))
@@ -695,12 +704,12 @@ func (s *MemoryStorage) UpdateIntegration(_ context.Context, apiID, integrationI
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	integration, exists := data.Integrations[integrationID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid integration identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidIntegrationID}
 	}
 
 	mergeStr(&integration.Description, req.Description)
@@ -752,11 +761,11 @@ func (s *MemoryStorage) DeleteIntegration(_ context.Context, apiID, integrationI
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	if _, exists := data.Integrations[integrationID]; !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid integration identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidIntegrationID}
 	}
 
 	delete(data.Integrations, integrationID)
@@ -773,7 +782,7 @@ func (s *MemoryStorage) CreateStage(_ context.Context, apiID string, req *Create
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	if _, exists := data.Stages[req.StageName]; exists {
@@ -811,12 +820,12 @@ func (s *MemoryStorage) GetStage(_ context.Context, apiID, stageName string) (*S
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	stage, exists := data.Stages[stageName]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid stage identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidStageID}
 	}
 
 	return stage, nil
@@ -829,7 +838,7 @@ func (s *MemoryStorage) GetStages(_ context.Context, apiID string) ([]*Stage, er
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	stages := make([]*Stage, 0, len(data.Stages))
@@ -847,12 +856,12 @@ func (s *MemoryStorage) UpdateStage(_ context.Context, apiID, stageName string, 
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	stage, exists := data.Stages[stageName]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid stage identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidStageID}
 	}
 
 	if req.Description != "" {
@@ -894,11 +903,11 @@ func (s *MemoryStorage) DeleteStage(_ context.Context, apiID, stageName string) 
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	if _, exists := data.Stages[stageName]; !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid stage identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidStageID}
 	}
 
 	delete(data.Stages, stageName)
@@ -915,7 +924,7 @@ func (s *MemoryStorage) CreateDeployment(_ context.Context, apiID string, req *C
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	id := generateID()
@@ -949,7 +958,7 @@ func (s *MemoryStorage) GetDeployment(_ context.Context, apiID, deploymentID str
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	deployment, exists := data.Deployments[deploymentID]
@@ -967,7 +976,7 @@ func (s *MemoryStorage) GetDeployments(_ context.Context, apiID string) ([]*Depl
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	deployments := make([]*Deployment, 0, len(data.Deployments))
@@ -985,7 +994,7 @@ func (s *MemoryStorage) DeleteDeployment(_ context.Context, apiID, deploymentID 
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	if _, exists := data.Deployments[deploymentID]; !exists {
@@ -1067,13 +1076,13 @@ func (s *MemoryStorage) resolveTagTargetLocked(arn string, create bool) (map[str
 
 	data, exists := s.APIs[apiID]
 	if !exists {
-		return nil, &ServiceError{Code: errNotFound, Message: "Invalid API identifier specified"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgInvalidAPIID}
 	}
 
 	if stageName != "" {
 		stage, ok := data.Stages[stageName]
 		if !ok {
-			return nil, &ServiceError{Code: errNotFound, Message: "Invalid stage identifier specified"}
+			return nil, &ServiceError{Code: errNotFound, Message: msgInvalidStageID}
 		}
 
 		if stage.Tags == nil && create {

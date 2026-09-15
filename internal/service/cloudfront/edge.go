@@ -17,6 +17,10 @@ import (
 
 const maxEdgeCacheEntries = 1024
 
+// originPolicyHTTP is the CustomOriginConfig.OriginProtocolPolicy value that
+// forces plain HTTP to the origin, regardless of the viewer's own scheme.
+const originPolicyHTTP = "http-only"
+
 // cacheEntry is one cached response variant for a distribution.
 type cacheEntry struct {
 	StatusCode           int
@@ -685,7 +689,7 @@ func customOriginURL(o *Origin, path string) string {
 
 	if o.CustomOriginConfig != nil {
 		switch o.CustomOriginConfig.OriginProtocolPolicy {
-		case "http-only":
+		case originPolicyHTTP:
 			scheme = schemeHTTP
 
 			if o.CustomOriginConfig.HTTPPort > 0 && o.CustomOriginConfig.HTTPPort != 80 {

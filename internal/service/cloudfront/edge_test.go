@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+// Literals shared across this file's test cases.
+const (
+	hdrAcceptLanguage = "Accept-Language"
+	testBucketName    = "mybucket"
+	testOriginIDS3    = "s3-origin"
+	testOriginIDRight = "right"
+)
+
 // TestEdge_HitMissPattern stands up a tiny origin and walks through
 // the canonical Miss → Hit pattern. The origin counter pins how many
 // times the upstream was actually contacted, which is the operational
@@ -88,22 +96,22 @@ func TestEdge_VarySplit(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		w.Header().Set("Cache-Control", "public, max-age=60")
-		w.Header().Set("Vary", "Accept-Language")
-		_, _ = w.Write([]byte("lang=" + r.Header.Get("Accept-Language")))
+		w.Header().Set("Vary", hdrAcceptLanguage)
+		_, _ = w.Write([]byte("lang=" + r.Header.Get(hdrAcceptLanguage)))
 	}))
 	defer origin.Close()
 
 	svc := setupEdge(t, origin.URL)
 
-	en := callEdge(t, svc, "GET", "/translated", http.Header{"Accept-Language": {"en"}})
-	ja := callEdge(t, svc, "GET", "/translated", http.Header{"Accept-Language": {"ja"}})
+	en := callEdge(t, svc, "GET", "/translated", http.Header{hdrAcceptLanguage: {"en"}})
+	ja := callEdge(t, svc, "GET", "/translated", http.Header{hdrAcceptLanguage: {"ja"}})
 
 	if hits.Load() != 2 {
 		t.Fatalf("Vary should split cache; origin hits = %d, want 2", hits.Load())
 	}
 
 	// Re-hit en should be cached.
-	enAgain := callEdge(t, svc, "GET", "/translated", http.Header{"Accept-Language": {"en"}})
+	enAgain := callEdge(t, svc, "GET", "/translated", http.Header{hdrAcceptLanguage: {"en"}})
 
 	if hits.Load() != 2 {
 		t.Fatalf("repeat en should hit cache; origin hits = %d, want 2", hits.Load())
@@ -131,7 +139,7 @@ func TestEdgeCache_StoreKeepsDifferentVaryHeaderNames(t *testing.T) {
 		VaryValues: map[string]string{"accept-encoding": ""},
 	})
 	c.store("dist", "/asset", &cacheEntry{
-		Header:     http.Header{"Vary": {"Accept-Language"}},
+		Header:     http.Header{"Vary": {hdrAcceptLanguage}},
 		StoredAt:   time.Now(),
 		TTL:        time.Minute,
 		Vary:       []string{"accept-language"},
@@ -162,11 +170,11 @@ func TestEdgeCache_StoreEvictsOldestEntriesAtCap(t *testing.T) {
 		t.Fatalf("edge cache entry count = %d, want <= 1024", got)
 	}
 
-	if _, ok := c.lookup("dist", "/asset-0000", httptest.NewRequest(http.MethodGet, "/asset-0000", http.NoBody)); ok {
+	if _, ok := c.lookup("dist", "/asset-0000", httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/asset-0000", http.NoBody)); ok {
 		t.Fatalf("oldest entry should have been evicted")
 	}
 
-	if _, ok := c.lookup("dist", "/asset-1099", httptest.NewRequest(http.MethodGet, "/asset-1099", http.NoBody)); !ok {
+	if _, ok := c.lookup("dist", "/asset-1099", httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/asset-1099", http.NoBody)); !ok {
 		t.Fatalf("newest entry should remain cached")
 	}
 }
@@ -301,10 +309,10 @@ func TestS3BucketFromDomain(t *testing.T) {
 		domain string
 		want   string
 	}{
-		{"mybucket.s3.amazonaws.com", "mybucket"},
-		{"mybucket.s3.us-east-1.amazonaws.com", "mybucket"},
-		{"mybucket.s3-us-west-2.amazonaws.com", "mybucket"},
-		{"mybucket.s3.dualstack.us-east-1.amazonaws.com", "mybucket"},
+		{"mybucket.s3.amazonaws.com", testBucketName},
+		{"mybucket.s3.us-east-1.amazonaws.com", testBucketName},
+		{"mybucket.s3-us-west-2.amazonaws.com", testBucketName},
+		{"mybucket.s3.dualstack.us-east-1.amazonaws.com", testBucketName},
 		{"example.com", ""},
 		{"", ""},
 	}
@@ -341,20 +349,20 @@ func TestEdge_S3Origin(t *testing.T) {
 	svc := New(NewMemoryStorage())
 
 	_, err := svc.storage.CreateDistribution(t.Context(), &CreateDistributionRequest{
-		CallerReference: "s3-origin",
+		CallerReference: testOriginIDS3,
 		Enabled:         true,
 		Origins: &OriginsXML{
 			Quantity: 1,
 			Items: &OriginList{
 				Origin: []OriginXML{{
-					ID:             "s3-origin",
+					ID:             testOriginIDS3,
 					DomainName:     "mybucket.s3.us-east-1.amazonaws.com",
 					S3OriginConfig: &S3OriginConfigXML{OriginAccessIdentity: ""},
 				}},
 			},
 		},
 		DefaultCacheBehavior: &DefaultCacheBehaviorXML{
-			TargetOriginID: "s3-origin",
+			TargetOriginID: testOriginIDS3,
 			MinTTL:         0,
 			DefaultTTL:     86400,
 			MaxTTL:         31536000,
@@ -392,7 +400,7 @@ func TestEdge_TargetOriginIDSelection(t *testing.T) {
 
 	right := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=60")
-		_, _ = w.Write([]byte("right"))
+		_, _ = w.Write([]byte(testOriginIDRight))
 	}))
 	defer right.Close()
 
@@ -411,18 +419,18 @@ func TestEdge_TargetOriginIDSelection(t *testing.T) {
 					{
 						ID:                 "wrong",
 						DomainName:         wrongHost,
-						CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: wrongPort, OriginProtocolPolicy: "http-only"},
+						CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: wrongPort, OriginProtocolPolicy: originPolicyHTTP},
 					},
 					{
-						ID:                 "right",
+						ID:                 testOriginIDRight,
 						DomainName:         rightHost,
-						CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: rightPort, OriginProtocolPolicy: "http-only"},
+						CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: rightPort, OriginProtocolPolicy: originPolicyHTTP},
 					},
 				},
 			},
 		},
 		DefaultCacheBehavior: &DefaultCacheBehaviorXML{
-			TargetOriginID: "right",
+			TargetOriginID: testOriginIDRight,
 			MinTTL:         0,
 			DefaultTTL:     86400,
 			MaxTTL:         31536000,
@@ -437,7 +445,7 @@ func TestEdge_TargetOriginIDSelection(t *testing.T) {
 		t.Fatalf("got %d, body=%s", w.Code, w.Body.String())
 	}
 
-	if w.Body.String() != "right" {
+	if w.Body.String() != testOriginIDRight {
 		t.Fatalf("served from wrong origin: %q", w.Body.String())
 	}
 }
@@ -449,7 +457,7 @@ func TestEdge_404FromKumoOnUnknownDistribution(t *testing.T) {
 
 	svc := New(NewMemoryStorage())
 
-	req := httptest.NewRequest(http.MethodGet, "/kumo/cdn/dist-bogus/anything", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kumo/cdn/dist-bogus/anything", http.NoBody)
 	req.SetPathValue("distributionId", "dist-bogus")
 	req.SetPathValue("path", "anything")
 
@@ -486,7 +494,7 @@ func setupEdge(t *testing.T, originURL string) *Service {
 					DomainName: hostOnly,
 					CustomOriginConfig: &CustomOriginConfigXML{
 						HTTPPort:             port,
-						OriginProtocolPolicy: "http-only",
+						OriginProtocolPolicy: originPolicyHTTP,
 					},
 				}},
 			},
@@ -548,7 +556,7 @@ func callEdge(t *testing.T, svc *Service, _, path string, hdr http.Header) *http
 		distID = id
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/kumo/cdn/"+distID+strings.TrimPrefix(path, "/"), http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kumo/cdn/"+distID+strings.TrimPrefix(path, "/"), http.NoBody)
 	req.SetPathValue("distributionId", distID)
 	req.SetPathValue("path", strings.TrimPrefix(path, "/"))
 

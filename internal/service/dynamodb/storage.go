@@ -25,6 +25,15 @@ const (
 	updateActionDel  = "DELETE"
 	updateActionRem  = "REMOVE"
 	updateActionSet  = "SET"
+
+	keyTypeHash  = "HASH"
+	keyTypeRange = "RANGE"
+
+	errCodeResourceNotFound    = "ResourceNotFoundException"
+	errCodeValidation          = "ValidationException"
+	errCodeTransactionCanceled = "TransactionCanceledException"
+
+	msgConditionalRequestFailed = "The conditional request failed"
 )
 
 // Storage defines the interface for DynamoDB storage operations.
@@ -326,7 +335,7 @@ func (m *MemoryStorage) DeleteTable(_ context.Context, tableName string) (*Table
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -392,7 +401,7 @@ func (m *MemoryStorage) DescribeTable(_ context.Context, tableName string) (*Tab
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -410,7 +419,7 @@ func (m *MemoryStorage) UpdateTable(_ context.Context, req *UpdateTableRequest) 
 	td, exists := m.Tables[req.TableName]
 	if !exists {
 		return nil, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", req.TableName),
 		}
 	}
@@ -435,7 +444,7 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -453,13 +462,13 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 
 	if ok, err := evaluateCondition(existingItem, cond); err != nil {
 		return nil, &TableError{
-			Code:    "ValidationException",
+			Code:    errCodeValidation,
 			Message: fmt.Sprintf("Invalid ConditionExpression: %s", err),
 		}
 	} else if !ok {
 		return nil, &TableError{
 			Code:    ErrCodeConditionalCheckFailed,
-			Message: "The conditional request failed",
+			Message: msgConditionalRequestFailed,
 		}
 	}
 
@@ -493,7 +502,7 @@ func (m *MemoryStorage) GetItem(_ context.Context, tableName string, key Item) (
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -519,7 +528,7 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -537,13 +546,13 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 
 	if ok, err := evaluateCondition(existingItem, cond); err != nil {
 		return nil, &TableError{
-			Code:    "ValidationException",
+			Code:    errCodeValidation,
 			Message: fmt.Sprintf("Invalid ConditionExpression: %s", err),
 		}
 	} else if !ok {
 		return nil, &TableError{
 			Code:    ErrCodeConditionalCheckFailed,
-			Message: "The conditional request failed",
+			Message: msgConditionalRequestFailed,
 		}
 	}
 
@@ -574,7 +583,7 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -635,7 +644,7 @@ func checkWriteCondition(condItem Item, cond ConditionInput) error {
 	ok, err := evaluateCondition(condItem, cond)
 	if err != nil {
 		return &TableError{
-			Code:    "ValidationException",
+			Code:    errCodeValidation,
 			Message: fmt.Sprintf("Invalid ConditionExpression: %s", err),
 		}
 	}
@@ -643,7 +652,7 @@ func checkWriteCondition(condItem Item, cond ConditionInput) error {
 	if !ok {
 		return &TableError{
 			Code:    ErrCodeConditionalCheckFailed,
-			Message: "The conditional request failed",
+			Message: msgConditionalRequestFailed,
 		}
 	}
 
@@ -684,7 +693,7 @@ func resolveKeySchema(table *Table, indexName string) ([]KeySchemaElement, error
 	}
 
 	return nil, &TableError{
-		Code:    "ValidationException",
+		Code:    errCodeValidation,
 		Message: fmt.Sprintf("The table does not have the specified index: %s", indexName),
 	}
 }
@@ -697,7 +706,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, nil, 0, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -707,7 +716,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		return nil, nil, 0, err
 	}
 
-	partitionKeyName := keyAttrName(keySchema, "HASH")
+	partitionKeyName := keyAttrName(keySchema, keyTypeHash)
 	partitionKeyValue := m.extractPartitionKeyValue(keyCondExpr, partitionKeyName, exprNames, exprValues)
 
 	resolvedKeyCondExpr := keyCondExpr
@@ -732,7 +741,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		return nil, nil, 0, err
 	}
 
-	m.orderQueryCandidates(candidates, keyAttrName(keySchema, "RANGE"), scanForward)
+	m.orderQueryCandidates(candidates, keyAttrName(keySchema, keyTypeRange), scanForward)
 
 	startIdx := m.startIndexAfterKey(td.Table, candidates, exclusiveStartKey)
 
@@ -745,7 +754,7 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 }
 
 // keyAttrName returns the attribute name of the key schema element with the
-// given key type ("HASH" or "RANGE"), or "" if absent.
+// given key type (keyTypeHash or keyTypeRange), or "" if absent.
 func keyAttrName(keySchema []KeySchemaElement, keyType string) string {
 	for _, ks := range keySchema {
 		if ks.KeyType == keyType {
@@ -887,7 +896,7 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 	td, exists := m.Tables[tableName]
 	if !exists {
 		return nil, nil, 0, &TableError{
-			Code:    "ResourceNotFoundException",
+			Code:    errCodeResourceNotFound,
 			Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 		}
 	}
@@ -982,21 +991,21 @@ func validateScanSegment(segment, totalSegments *int) error {
 
 	if segment == nil || totalSegments == nil {
 		return &TableError{
-			Code:    "ValidationException",
+			Code:    errCodeValidation,
 			Message: "Segment and TotalSegments must be specified together",
 		}
 	}
 
 	if *totalSegments <= 0 {
 		return &TableError{
-			Code:    "ValidationException",
+			Code:    errCodeValidation,
 			Message: "TotalSegments must be greater than zero",
 		}
 	}
 
 	if *segment < 0 || *segment >= *totalSegments {
 		return &TableError{
-			Code:    "ValidationException",
+			Code:    errCodeValidation,
 			Message: "Segment must be greater than or equal to zero and less than TotalSegments",
 		}
 	}
@@ -1109,7 +1118,7 @@ func newKeySchemaValidationException() *TableError {
 }
 
 func newValidationException(message string) *TableError {
-	return &TableError{Code: "ValidationException", Message: message}
+	return &TableError{Code: errCodeValidation, Message: message}
 }
 
 // copyItem creates a deep copy of an item.
@@ -1280,7 +1289,7 @@ func (m *MemoryStorage) validateFilterExpression(filterExpr string, exprNames ma
 // unparseable KeyConditionExpression.
 func invalidKeyConditionExpression(err error) *TableError {
 	return &TableError{
-		Code:    "ValidationException",
+		Code:    errCodeValidation,
 		Message: fmt.Sprintf("Invalid KeyConditionExpression: %s", err),
 	}
 }
@@ -1296,7 +1305,7 @@ func (m *MemoryStorage) evaluateFilterExpression(item Item, filterExpr string, e
 	})
 	if err != nil {
 		return false, &TableError{
-			Code:    "ValidationException",
+			Code:    errCodeValidation,
 			Message: fmt.Sprintf("Invalid FilterExpression: %s", err),
 		}
 	}
@@ -1373,7 +1382,7 @@ func validateUpdateExpressionDoesNotTouchKeys(updateExpr string, exprNames map[s
 			attrName := topLevelAttribute(path)
 			if _, ok := keyNames[attrName]; ok {
 				return &TableError{
-					Code:    "ValidationException",
+					Code:    errCodeValidation,
 					Message: "One or more parameter values were invalid: Cannot update key attribute " + attrName,
 				}
 			}
@@ -1885,7 +1894,7 @@ func (m *MemoryStorage) TransactWriteItems(_ context.Context, items []TransactWr
 
 	if hasFailure {
 		return reasons, &TableError{
-			Code:    "TransactionCanceledException",
+			Code:    errCodeTransactionCanceled,
 			Message: "Transaction cancelled, please refer cancellation reasons for specific reasons [CancellationReason]",
 		}
 	}
@@ -1945,7 +1954,7 @@ func (m *MemoryStorage) validateTransactWriteItem(twi TransactWriteItem) (*Cance
 func (m *MemoryStorage) validateTransactPut(put *TransactPut) (*CancellationReason, error) {
 	td, exists := m.Tables[put.TableName]
 	if !exists {
-		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", put.TableName)}
+		return nil, &TableError{Code: errCodeResourceNotFound, Message: fmt.Sprintf("Table: %s not found", put.TableName)}
 	}
 
 	if err := validateItemKey(td.Table, put.Item); err != nil {
@@ -1961,7 +1970,7 @@ func (m *MemoryStorage) validateTransactPut(put *TransactPut) (*CancellationReas
 func (m *MemoryStorage) validateTransactDelete(del *TransactDelete) (*CancellationReason, error) {
 	td, exists := m.Tables[del.TableName]
 	if !exists {
-		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", del.TableName)}
+		return nil, &TableError{Code: errCodeResourceNotFound, Message: fmt.Sprintf("Table: %s not found", del.TableName)}
 	}
 
 	if err := validateKey(td.Table, del.Key); err != nil {
@@ -1977,7 +1986,7 @@ func (m *MemoryStorage) validateTransactDelete(del *TransactDelete) (*Cancellati
 func (m *MemoryStorage) validateTransactUpdate(upd *TransactUpdate) (*CancellationReason, error) {
 	td, exists := m.Tables[upd.TableName]
 	if !exists {
-		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", upd.TableName)}
+		return nil, &TableError{Code: errCodeResourceNotFound, Message: fmt.Sprintf("Table: %s not found", upd.TableName)}
 	}
 
 	if err := validateKey(td.Table, upd.Key); err != nil {
@@ -1997,7 +2006,7 @@ func (m *MemoryStorage) validateTransactUpdate(upd *TransactUpdate) (*Cancellati
 func (m *MemoryStorage) validateTransactConditionCheck(cc *TransactConditionCheck) (*CancellationReason, error) {
 	td, exists := m.Tables[cc.TableName]
 	if !exists {
-		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", cc.TableName)}
+		return nil, &TableError{Code: errCodeResourceNotFound, Message: fmt.Sprintf("Table: %s not found", cc.TableName)}
 	}
 
 	if err := validateKey(td.Table, cc.Key); err != nil {
@@ -2014,7 +2023,7 @@ func (m *MemoryStorage) validateTransactConditionCheck(cc *TransactConditionChec
 func (m *MemoryStorage) checkTransactCondition(tableName string, keyOrItem Item, cond ConditionInput) (*CancellationReason, error) {
 	td, exists := m.Tables[tableName]
 	if !exists {
-		return nil, &TableError{Code: "ResourceNotFoundException", Message: fmt.Sprintf("Table: %s not found", tableName)}
+		return nil, &TableError{Code: errCodeResourceNotFound, Message: fmt.Sprintf("Table: %s not found", tableName)}
 	}
 
 	key := m.serializeKey(td.Table, keyOrItem)
@@ -2082,7 +2091,7 @@ func (m *MemoryStorage) TransactGetItems(_ context.Context, items []TransactGetI
 		td, exists := m.Tables[tgi.Get.TableName]
 		if !exists {
 			return nil, &TableError{
-				Code:    "ResourceNotFoundException",
+				Code:    errCodeResourceNotFound,
 				Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tgi.Get.TableName),
 			}
 		}
@@ -2109,7 +2118,7 @@ func (m *MemoryStorage) BatchWriteItem(_ context.Context, requestItems map[strin
 		td, exists := m.Tables[tableName]
 		if !exists {
 			return nil, &TableError{
-				Code:    "ResourceNotFoundException",
+				Code:    errCodeResourceNotFound,
 				Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 			}
 		}
@@ -2168,7 +2177,7 @@ func (m *MemoryStorage) BatchGetItem(_ context.Context, requestItems map[string]
 		td, exists := m.Tables[tableName]
 		if !exists {
 			return nil, &TableError{
-				Code:    "ResourceNotFoundException",
+				Code:    errCodeResourceNotFound,
 				Message: fmt.Sprintf("Requested resource not found: Table: %s not found", tableName),
 			}
 		}
@@ -2201,7 +2210,7 @@ func (m *MemoryStorage) UpdateTimeToLive(_ context.Context, tableName, attribute
 
 	td, exists := m.Tables[tableName]
 	if !exists {
-		return &TableError{Code: "ResourceNotFoundException", Message: "Requested resource not found"}
+		return &TableError{Code: errCodeResourceNotFound, Message: "Requested resource not found"}
 	}
 
 	td.Table.TTLAttributeName = attributeName
@@ -2219,7 +2228,7 @@ func (m *MemoryStorage) DescribeTimeToLive(_ context.Context, tableName string) 
 
 	td, exists := m.Tables[tableName]
 	if !exists {
-		return "", false, &TableError{Code: "ResourceNotFoundException", Message: "Requested resource not found"}
+		return "", false, &TableError{Code: errCodeResourceNotFound, Message: "Requested resource not found"}
 	}
 
 	return td.Table.TTLAttributeName, td.Table.TTLEnabled, nil

@@ -13,6 +13,11 @@ import (
 const (
 	testJWTIssuer   = "https://issuer.example.com"
 	testJWTAudience = "test-audience"
+
+	protocolTypeHTTP = "HTTP"
+	testAudience1    = "aud1"
+	testAudience2    = "aud2"
+	testScopeRead    = "read"
 )
 
 // newJWTTestAPI wires up an API with a $default stage, an AWS_PROXY
@@ -26,7 +31,7 @@ func newJWTTestAPI(t *testing.T, lambdaURL string) (*Service, string) {
 	svc := New(storage)
 	svc.baseURL = lambdaURL
 
-	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "jwt-api", ProtocolType: "HTTP"})
+	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "jwt-api", ProtocolType: protocolTypeHTTP})
 	if err != nil {
 		t.Fatalf("CreateAPI() error = %v", err)
 	}
@@ -94,25 +99,25 @@ func TestHandleExecuteAPI_JWTAuthorizer_Unauthorized(t *testing.T) {
 		{
 			name: "expired token",
 			header: "Bearer " + buildTestJWT(t, map[string]any{
-				"iss": testJWTIssuer,
-				"aud": testJWTAudience,
-				"exp": past,
+				claimIss: testJWTIssuer,
+				claimAud: testJWTAudience,
+				claimExp: past,
 			}),
 		},
 		{
 			name: "wrong issuer",
 			header: "Bearer " + buildTestJWT(t, map[string]any{
-				"iss": "https://wrong-issuer.example.com",
-				"aud": testJWTAudience,
-				"exp": future,
+				claimIss: "https://wrong-issuer.example.com",
+				claimAud: testJWTAudience,
+				claimExp: future,
 			}),
 		},
 		{
 			name: "wrong audience",
 			header: "Bearer " + buildTestJWT(t, map[string]any{
-				"iss": testJWTIssuer,
-				"aud": "wrong-audience",
-				"exp": future,
+				claimIss: testJWTIssuer,
+				claimAud: "wrong-audience",
+				claimExp: future,
 			}),
 		},
 	}
@@ -208,11 +213,11 @@ func TestHandleExecuteAPI_JWTAuthorizer_Valid(t *testing.T) {
 	svc, apiID := newJWTTestAPI(t, lambda.URL)
 
 	token := buildTestJWT(t, map[string]any{
-		"sub":   "user-1",
-		"iss":   testJWTIssuer,
-		"aud":   testJWTAudience,
-		"exp":   future,
-		"scope": "read write",
+		"sub":      "user-1",
+		claimIss:   testJWTIssuer,
+		claimAud:   testJWTAudience,
+		claimExp:   future,
+		claimScope: "read write",
 	})
 
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/items", nil)
@@ -233,16 +238,16 @@ func TestHandleExecuteAPI_JWTAuthorizer_Valid(t *testing.T) {
 		t.Errorf("claims[sub] = %q, want %q", claims["sub"], "user-1")
 	}
 
-	if claims["iss"] != testJWTIssuer {
-		t.Errorf("claims[iss] = %q, want %q", claims["iss"], testJWTIssuer)
+	if claims[claimIss] != testJWTIssuer {
+		t.Errorf("claims[iss] = %q, want %q", claims[claimIss], testJWTIssuer)
 	}
 
 	wantExp := strconv.FormatInt(future, 10)
-	if claims["exp"] != wantExp {
-		t.Errorf("claims[exp] = %q, want %q (stringified number)", claims["exp"], wantExp)
+	if claims[claimExp] != wantExp {
+		t.Errorf("claims[exp] = %q, want %q (stringified number)", claims[claimExp], wantExp)
 	}
 
-	wantScopes := []string{"read", "write"}
+	wantScopes := []string{testScopeRead, "write"}
 	if gotScopes := captured.RequestContext.Authorizer.JWT.Scopes; !slices.Equal(gotScopes, wantScopes) {
 		t.Errorf("scopes = %v, want %v", gotScopes, wantScopes)
 	}
@@ -268,7 +273,7 @@ func TestHandleExecuteAPI_NoAuthorizer(t *testing.T) {
 	svc := New(storage)
 	svc.baseURL = lambda.URL
 
-	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "no-auth-api", ProtocolType: "HTTP"})
+	api, err := storage.CreateAPI(t.Context(), &CreateAPIRequest{Name: "no-auth-api", ProtocolType: protocolTypeHTTP})
 	if err != nil {
 		t.Fatalf("CreateAPI() error = %v", err)
 	}

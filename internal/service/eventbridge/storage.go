@@ -31,6 +31,9 @@ const (
 	errEventBusAlreadyExists = "ResourceAlreadyExistsException"
 	errRuleNotFound          = "ResourceNotFoundException"
 	errInvalidParameter      = "ValidationException"
+
+	msgEventBusNotFound = "Event bus not found"
+	msgRuleNotFound     = "Rule not found"
 )
 
 // Storage defines the EventBridge storage interface.
@@ -278,7 +281,7 @@ func (s *MemoryStorage) DeleteEventBus(_ context.Context, name string) error {
 	}
 
 	if _, exists := s.EventBuses[name]; !exists {
-		return &ServiceError{Code: errEventBusNotFound, Message: "Event bus not found"}
+		return &ServiceError{Code: errEventBusNotFound, Message: msgEventBusNotFound}
 	}
 
 	delete(s.EventBuses, name)
@@ -306,7 +309,7 @@ func (s *MemoryStorage) DescribeEventBus(_ context.Context, name string) (*Event
 
 	eventBus, exists := s.EventBuses[name]
 	if !exists {
-		return nil, &ServiceError{Code: errEventBusNotFound, Message: "Event bus not found"}
+		return nil, &ServiceError{Code: errEventBusNotFound, Message: msgEventBusNotFound}
 	}
 
 	return eventBus, nil
@@ -347,7 +350,7 @@ func (s *MemoryStorage) PutRule(_ context.Context, req *PutRuleRequest) (*Rule, 
 	}
 
 	if _, exists := s.EventBuses[eventBusName]; !exists {
-		return nil, &ServiceError{Code: errEventBusNotFound, Message: "Event bus not found"}
+		return nil, &ServiceError{Code: errEventBusNotFound, Message: msgEventBusNotFound}
 	}
 
 	now := time.Now()
@@ -396,11 +399,11 @@ func (s *MemoryStorage) DeleteRule(_ context.Context, eventBusName, ruleName str
 
 	rules, exists := s.Rules[eventBusName]
 	if !exists {
-		return &ServiceError{Code: errRuleNotFound, Message: "Rule not found"}
+		return &ServiceError{Code: errRuleNotFound, Message: msgRuleNotFound}
 	}
 
 	if _, exists := rules[ruleName]; !exists {
-		return &ServiceError{Code: errRuleNotFound, Message: "Rule not found"}
+		return &ServiceError{Code: errRuleNotFound, Message: msgRuleNotFound}
 	}
 
 	delete(rules, ruleName)
@@ -424,12 +427,12 @@ func (s *MemoryStorage) DescribeRule(_ context.Context, eventBusName, ruleName s
 
 	rules, exists := s.Rules[eventBusName]
 	if !exists {
-		return nil, &ServiceError{Code: errRuleNotFound, Message: "Rule not found"}
+		return nil, &ServiceError{Code: errRuleNotFound, Message: msgRuleNotFound}
 	}
 
 	rule, exists := rules[ruleName]
 	if !exists {
-		return nil, &ServiceError{Code: errRuleNotFound, Message: "Rule not found"}
+		return nil, &ServiceError{Code: errRuleNotFound, Message: msgRuleNotFound}
 	}
 
 	return rule, nil
@@ -500,11 +503,11 @@ func (s *MemoryStorage) PutTargets(_ context.Context, eventBusName, ruleName str
 
 	rules, exists := s.Rules[eventBusName]
 	if !exists {
-		return nil, &ServiceError{Code: errRuleNotFound, Message: "Rule not found"}
+		return nil, &ServiceError{Code: errRuleNotFound, Message: msgRuleNotFound}
 	}
 
 	if _, exists := rules[ruleName]; !exists {
-		return nil, &ServiceError{Code: errRuleNotFound, Message: "Rule not found"}
+		return nil, &ServiceError{Code: errRuleNotFound, Message: msgRuleNotFound}
 	}
 
 	targetKey := eventBusName + ":" + ruleName

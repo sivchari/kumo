@@ -58,7 +58,7 @@ func TestScanLimitAppliedBeforeFilter(t *testing.T) {
 
 	_, err := s.CreateTable(ctx, &CreateTableRequest{
 		TableName:            "scan-limit-before-filter",
-		KeySchema:            []KeySchemaElement{{AttributeName: "pk", KeyType: "HASH"}},
+		KeySchema:            []KeySchemaElement{{AttributeName: "pk", KeyType: keyTypeHash}},
 		AttributeDefinitions: []AttributeDefinition{{AttributeName: "pk", AttributeType: "S"}},
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func TestScanLimitAppliedBeforeFilter(t *testing.T) {
 	for _, pk := range []string{"a", "b"} {
 		if _, err := s.PutItem(ctx, "scan-limit-before-filter", Item{
 			"pk":       {S: ptr(pk)},
-			"category": {S: ptr("other")},
+			"category": {S: ptr(testAttrOther)},
 		}, false, ConditionInput{}); err != nil {
 			t.Fatal(err)
 		}
@@ -113,8 +113,8 @@ func TestQueryLimitAppliedBeforeFilter(t *testing.T) {
 	_, err := s.CreateTable(ctx, &CreateTableRequest{
 		TableName: "query-limit-before-filter",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "PK", KeyType: "HASH"},
-			{AttributeName: "SK", KeyType: "RANGE"},
+			{AttributeName: "PK", KeyType: keyTypeHash},
+			{AttributeName: "SK", KeyType: keyTypeRange},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "PK", AttributeType: "S"},
@@ -125,7 +125,7 @@ func TestQueryLimitAppliedBeforeFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	categories := map[string]string{"1": "other", "2": "other", "3": "target", "4": "target"}
+	categories := map[string]string{"1": testAttrOther, "2": testAttrOther, "3": "target", "4": "target"}
 	for _, sk := range []string{"1", "2", "3", "4"} {
 		if _, err := s.PutItem(ctx, "query-limit-before-filter", Item{
 			"PK":       {S: ptr("tenant1")},
@@ -139,8 +139,8 @@ func TestQueryLimitAppliedBeforeFilter(t *testing.T) {
 	keyCondExpr := "PK = :pk"
 	filterExpr := "category = :want"
 	exprValues := map[string]AttributeValue{
-		":pk":   {S: ptr("tenant1")},
-		":want": {S: ptr("target")},
+		testExprPK: {S: ptr("tenant1")},
+		":want":    {S: ptr("target")},
 	}
 
 	items, lastKey, scanned, err := s.Query(ctx, "query-limit-before-filter", "", keyCondExpr, filterExpr,

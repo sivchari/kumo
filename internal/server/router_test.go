@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+// resultBucketPut marks that the S3-style wildcard bucket route handled the
+// request, used by the boundary-matching test cases below.
+const resultBucketPut = "bucket-put"
+
 // TestRouter_PrefixMatchRespectsBoundary regression-tests a bug where
 // `extractRoutePrefix` and `Router.ServeHTTP` matched prefixes by raw
 // string-prefix, so a path like `/kumo-audit-bad-bucket` was routed to
@@ -24,7 +28,7 @@ func TestRouter_PrefixMatchRespectsBoundary(t *testing.T) {
 	called := ""
 
 	// `/kumo` is a registered prefix (used by /_kumo/health etc.).
-	r.Handle("GET", "/kumo/health", func(w http.ResponseWriter, _ *http.Request) {
+	r.Handle(http.MethodGet, "/kumo/health", func(w http.ResponseWriter, _ *http.Request) {
 		called = "kumo-health"
 
 		w.WriteHeader(http.StatusOK)
@@ -33,8 +37,8 @@ func TestRouter_PrefixMatchRespectsBoundary(t *testing.T) {
 	// `/{bucket}` is the S3-style wildcard route. With the bug, a
 	// PUT to `/kumo-audit-bad-bucket` would be sent to the /kumo
 	// prefix router (no matching pattern) → 404.
-	r.Handle("PUT", "/{bucket}", func(w http.ResponseWriter, _ *http.Request) {
-		called = "bucket-put"
+	r.Handle(http.MethodPut, "/{bucket}", func(w http.ResponseWriter, _ *http.Request) {
+		called = resultBucketPut
 
 		w.WriteHeader(http.StatusOK)
 	})
@@ -49,16 +53,16 @@ func TestRouter_PrefixMatchRespectsBoundary(t *testing.T) {
 		path   string
 		want   string
 	}{
-		{"prefix exact", "GET", "/kumo/health", "kumo-health"},
-		{"bucket name shares prefix substring", "PUT", "/kumo-audit-bad-bucket", "bucket-put"},
-		{"bucket name with longer admin prefix substring", "PUT", "/lambda-deploy-bucket", "bucket-put"},
+		{"prefix exact", http.MethodGet, "/kumo/health", "kumo-health"},
+		{"bucket name shares prefix substring", http.MethodPut, "/kumo-audit-bad-bucket", resultBucketPut},
+		{"bucket name with longer admin prefix substring", http.MethodPut, "/lambda-deploy-bucket", resultBucketPut},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			called = ""
 
-			req := httptest.NewRequest(tc.method, tc.path, http.NoBody)
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, http.NoBody)
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 

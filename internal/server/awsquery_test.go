@@ -76,7 +76,7 @@ func TestQueryDispatcher_RoutesViaUserAgent(t *testing.T) {
 	})
 
 	body := strings.NewReader("Action=DescribeInstances&Version=2016-11-15")
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "aws-sdk-go-v2/1.36.3 api/ec2#1.0.0 os/linux")
@@ -114,7 +114,7 @@ func TestQueryDispatcher_DisambiguatesOverlappingActions(t *testing.T) {
 	})
 
 	body := strings.NewReader("Action=CreateDBCluster&Version=2014-10-31")
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "aws-sdk-go-v2/1.36.3 api/neptune#1.48.11 os/linux")
@@ -150,7 +150,7 @@ func TestQueryDispatcher_MissingUserAgent_UniqueAction(t *testing.T) {
 	})
 
 	body := strings.NewReader("Action=CreateDBCluster&Version=2014-10-31")
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -182,7 +182,7 @@ func TestQueryDispatcher_MissingUserAgent_AmbiguousAction(t *testing.T) {
 	})
 
 	body := strings.NewReader("Action=CreateDBCluster&Version=2014-10-31")
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -209,7 +209,7 @@ func TestQueryDispatcher_UnknownService(t *testing.T) {
 	})
 
 	body := strings.NewReader("Action=CreateDBCluster&Version=2014-10-31")
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "aws-sdk-go-v2/1.36.3 api/unknown#1.0.0 os/linux")
@@ -237,7 +237,7 @@ func TestQueryDispatcher_UnknownAction(t *testing.T) {
 	})
 
 	body := strings.NewReader("Action=NonExistentAction&Version=2016-11-15")
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "aws-sdk-go-v2/1.36.3 api/ec2#1.0.0 os/linux")

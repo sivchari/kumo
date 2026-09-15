@@ -8,6 +8,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// Error response field names, shared by the JSON, Query, and CBOR protocol
+// error writers (awsjson.go/awsquery.go/cbor_dispatcher.go).
+const (
+	errFieldType    = "__type"
+	errFieldMessage = "message"
+)
+
 // JSONServiceHandler handles JSON protocol requests for a specific service.
 type JSONServiceHandler func(w http.ResponseWriter, r *http.Request)
 
@@ -69,7 +76,7 @@ func writeJSONError(w http.ResponseWriter, code, message string, status int) {
 	w.Header().Set("x-amzn-RequestId", uuid.New().String())
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"__type":  code,
-		"message": message,
+		errFieldType:    code,
+		errFieldMessage: message,
 	})
 }

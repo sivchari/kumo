@@ -28,7 +28,7 @@ func createPublicKeyForTest(t *testing.T, svc *Service, callerRef, name string) 
 	}
 	raw, _ := xml.Marshal(body)
 
-	req := httptest.NewRequest(http.MethodPost, "/2020-05-31/public-key", strings.NewReader(string(raw)))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/2020-05-31/public-key", strings.NewReader(string(raw)))
 	w := httptest.NewRecorder()
 	svc.CreatePublicKey(w, req)
 
@@ -54,7 +54,7 @@ func TestPublicKey_DuplicateCallerReferenceConflicts(t *testing.T) {
 	raw, _ := xml.Marshal(body)
 
 	w := httptest.NewRecorder()
-	svc.CreatePublicKey(w, httptest.NewRequest(http.MethodPost, "/2020-05-31/public-key", strings.NewReader(string(raw))))
+	svc.CreatePublicKey(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/2020-05-31/public-key", strings.NewReader(string(raw))))
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status: got %d, want 409 (duplicate caller ref)", w.Code)
@@ -70,7 +70,7 @@ func TestKeyGroup_CreateRejectsUnknownPublicKey(t *testing.T) {
 	raw, _ := xml.Marshal(body)
 
 	w := httptest.NewRecorder()
-	svc.CreateKeyGroup(w, httptest.NewRequest(http.MethodPost, "/2020-05-31/key-group", strings.NewReader(string(raw))))
+	svc.CreateKeyGroup(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/2020-05-31/key-group", strings.NewReader(string(raw))))
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status: got %d, want 404 (NoSuchPublicKey)", w.Code)
@@ -104,7 +104,7 @@ func TestKeyGroup_DeleteWhileReferencedByDistributionFails(t *testing.T) {
 		},
 	}
 
-	delReq := httptest.NewRequest(http.MethodDelete, "/2020-05-31/key-group/"+group.ID, http.NoBody)
+	delReq := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/2020-05-31/key-group/"+group.ID, http.NoBody)
 	delReq.SetPathValue("id", group.ID)
 
 	delW := httptest.NewRecorder()

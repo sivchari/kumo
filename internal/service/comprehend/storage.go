@@ -9,7 +9,10 @@ import (
 const (
 	errInvalidRequest        = "InvalidRequestException"
 	errTextSizeLimitExceeded = "TextSizeLimitExceededException"
+	errInternalServer        = "InternalServerException"
 )
+
+const msgInvalidRequestBody = "Invalid request body"
 
 // Analyzer provides NLP analysis capabilities.
 type Analyzer struct{}

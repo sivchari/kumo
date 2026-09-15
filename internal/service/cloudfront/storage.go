@@ -13,6 +13,11 @@ import (
 	"github.com/sivchari/kumo/internal/storage"
 )
 
+// distributionStatusInProgress is the Distribution/Invalidation Status kumo
+// reports immediately after a mutating call, since real CloudFront's
+// propagation delay isn't modeled.
+const distributionStatusInProgress = "InProgress"
+
 // Storage defines the CloudFront storage interface.
 type Storage interface {
 	CreateDistribution(ctx context.Context, config *CreateDistributionRequest) (*Distribution, error)
@@ -169,7 +174,7 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 	dist := &Distribution{
 		ID:               id,
 		ARN:              fmt.Sprintf("arn:aws:cloudfront::000000000000:distribution/%s", id),
-		Status:           "InProgress",
+		Status:           distributionStatusInProgress,
 		LastModifiedTime: now,
 		DomainName:       fmt.Sprintf("%s.cloudfront.net", id),
 		ETag:             etag,
@@ -276,7 +281,7 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 	newETag := generateETag()
 	dist.ETag = newETag
 	dist.LastModifiedTime = time.Now()
-	dist.Status = "InProgress"
+	dist.Status = distributionStatusInProgress
 	dist.DistributionConfig = &DistributionConfig{
 		CallerReference:      config.CallerReference,
 		Comment:              config.Comment,
@@ -341,7 +346,7 @@ func (s *MemoryStorage) CreateInvalidation(_ context.Context, distributionID str
 
 	inv := &Invalidation{
 		ID:         id,
-		Status:     "InProgress",
+		Status:     distributionStatusInProgress,
 		CreateTime: now,
 		InvalidationBatch: &InvalidationBatch{
 			CallerReference: batch.CallerReference,

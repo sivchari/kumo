@@ -21,7 +21,7 @@ func TestDispatchAction_JSONBody(t *testing.T) {
 	svc := New(NewMemoryStorage())
 
 	body := strings.NewReader(`{"RoleName":"json-role","AssumeRolePolicyDocument":"{\"Version\":\"2012-10-17\"}","Description":"from json"}`)
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	req.Header.Set("X-Amz-Target", "iam.CreateRole")
 
@@ -96,7 +96,7 @@ func TestGetJSONValue_BodyRestoration(t *testing.T) {
 	t.Parallel()
 
 	body := io.NopCloser(strings.NewReader(`{"a":"first","b":"second"}`))
-	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
 
 	if got := getFormValue(req, "a"); got != "first" {

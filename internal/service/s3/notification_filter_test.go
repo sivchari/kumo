@@ -28,7 +28,7 @@ const filteredLambdaNotificationXML = `<NotificationConfiguration>` +
 func putNotificationConfigXML(t *testing.T, svc *Service, bucket, body string) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
 	req.SetPathValue("bucket", bucket)
 
 	w := httptest.NewRecorder()
@@ -52,7 +52,7 @@ func TestNotificationFilter_RoundTrip(t *testing.T) {
 	_, svc := newLambdaNotificationTestService(t, bucket)
 	putNotificationConfigXML(t, svc, bucket, filteredLambdaNotificationXML)
 
-	req := httptest.NewRequest(http.MethodGet, "/"+bucket+"?notification", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/"+bucket+"?notification", http.NoBody)
 	req.SetPathValue("bucket", bucket)
 
 	w := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestNotificationFilter_LambdaDelivery(t *testing.T) {
 
 	for _, key := range []string{"other/cat.jpg", "uploads/cat.png"} {
 		w := httptest.NewRecorder()
-		svc.PutObject(w, putObjectRequest(bucket, key, "data"))
+		svc.PutObject(w, putObjectRequest(t, bucket, key, "data"))
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("PutObject(%s) status: got %d, want %d", key, w.Code, http.StatusOK)
@@ -115,7 +115,7 @@ func TestNotificationFilter_LambdaDelivery(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "uploads/cat.jpg", "data"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "uploads/cat.jpg", "data"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d", w.Code, http.StatusOK)
@@ -155,7 +155,7 @@ func TestNotificationFilter_URLEncodedValues(t *testing.T) {
 	// "+" decodes to a space and "%2B" to a literal "+", so the raw
 	// configured string must not match itself as a key.
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "photos+2026/a%2Bb/x.jpg", "data"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "photos+2026/a%2Bb/x.jpg", "data"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d", w.Code, http.StatusOK)
@@ -165,7 +165,7 @@ func TestNotificationFilter_URLEncodedValues(t *testing.T) {
 
 	const matchingKey = "photos 2026/a+b/x.jpg"
 
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"/"+url.PathEscape(matchingKey), strings.NewReader("data"))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"/"+url.PathEscape(matchingKey), strings.NewReader("data"))
 	req.SetPathValue("bucket", bucket)
 	req.SetPathValue("key", matchingKey)
 
@@ -218,7 +218,7 @@ func TestNotificationFilter_SQSDelivery(t *testing.T) {
 	svc.SetSQSPublisher(publisher)
 
 	w := httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "other/cat.jpg", "data"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "other/cat.jpg", "data"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d", w.Code, http.StatusOK)
@@ -231,7 +231,7 @@ func TestNotificationFilter_SQSDelivery(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	svc.PutObject(w, putObjectRequest(bucket, "uploads/cat.jpg", "data"))
+	svc.PutObject(w, putObjectRequest(t, bucket, "uploads/cat.jpg", "data"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PutObject status: got %d, want %d", w.Code, http.StatusOK)

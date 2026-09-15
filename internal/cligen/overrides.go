@@ -26,31 +26,42 @@ type FlagOverride struct {
 // directly into it the way FlagJSONBlob does for plain structs.
 const decodeDynamoDBJSON = "decodeDynamoDBJSON"
 
+// serviceKMS is the kumo service name for KMS, referenced from several maps
+// below and from sdkbinding.go's service registry.
+const serviceKMS = "kms"
+
+// fieldExpressionAttributeValues/fieldKey are the DynamoDB Input struct field
+// names repeated across fieldOverrides below.
+const (
+	fieldExpressionAttributeValues = "ExpressionAttributeValues"
+	fieldKey                       = "Key"
+)
+
 // fieldOverrides overrides flag derivation for specific fields, keyed by the
 // SDK Input struct's reflect.Type and then by Go field name.
 var fieldOverrides = map[reflect.Type]map[string]FlagOverride{
 	reflect.TypeOf(dynamodb.PutItemInput{}): {
-		"Item":                      {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
-		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"Item":                         {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldExpressionAttributeValues: {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
 	},
 	reflect.TypeOf(dynamodb.GetItemInput{}): {
-		"Key": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldKey: {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
 	},
 	reflect.TypeOf(dynamodb.DeleteItemInput{}): {
-		"Key":                       {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
-		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldKey:                       {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldExpressionAttributeValues: {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
 	},
 	reflect.TypeOf(dynamodb.UpdateItemInput{}): {
-		"Key":                       {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
-		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldKey:                       {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldExpressionAttributeValues: {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
 	},
 	reflect.TypeOf(dynamodb.QueryInput{}): {
-		"ExclusiveStartKey":         {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
-		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"ExclusiveStartKey":            {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldExpressionAttributeValues: {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
 	},
 	reflect.TypeOf(dynamodb.ScanInput{}): {
-		"ExclusiveStartKey":         {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
-		"ExpressionAttributeValues": {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		"ExclusiveStartKey":            {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
+		fieldExpressionAttributeValues: {Kind: FlagCustomFunc, CustomFunc: decodeDynamoDBJSON},
 	},
 }
 
@@ -60,7 +71,7 @@ var fieldOverrides = map[reflect.Type]map[string]FlagOverride{
 var skipAutoGeneration = map[string][]string{
 	// kms Sign/Verify operate on raw message bytes and need bespoke
 	// base64/raw-bytes handling that the generic field-kind rules don't cover.
-	"kms": {"Sign", "Verify"},
+	serviceKMS: {"Sign", "Verify"},
 }
 
 // ignoredBackCompatFlags lists, per kumo service and SDK action name, Input
@@ -73,9 +84,9 @@ var ignoredBackCompatFlags = map[string]map[string][]string{}
 // must also call {CLIName}OverrideCommands() (implemented in a hand-written
 // cli/{service}_overrides.go) to add commands the generator cannot produce.
 var overrideServices = map[string]bool{
-	"s3":    true,
-	"s3api": true,
-	"kms":   true,
+	"s3":       true,
+	"s3api":    true,
+	serviceKMS: true,
 }
 
 // suppressOutputPrint lists, per kumo service and SDK action name, actions

@@ -146,7 +146,7 @@ func vpcStateJSON(v *ec2.Vpc) ([]byte, error) {
 		"DefaultNetworkAcl":     "",
 		"DefaultSecurityGroup":  "",
 		"Ipv6CidrBlocks":        []any{},
-		"Tags":                  []any{},
+		resourceTagsField:       []any{},
 	}
 
 	return json.Marshal(state)

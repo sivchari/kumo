@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+const cidrTenSlash16 = "10.0.0.0/16"
+
 // TestRevokeSecurityGroupIngress_RemovesMatchingCIDR exercises the
 // per-CIDR revoke semantics AWS implements: revoking
 // `{tcp, 22, 22, [0.0.0.0/0]}` from a rule that authorized
@@ -18,7 +20,7 @@ func TestRevokeSecurityGroupIngress_RemovesMatchingCIDR(t *testing.T) {
 	ctx := t.Context()
 	store := NewMemoryStorage()
 
-	vpc, err := store.CreateVpc(ctx, &CreateVpcRequest{CidrBlock: "10.0.0.0/16"})
+	vpc, err := store.CreateVpc(ctx, &CreateVpcRequest{CidrBlock: cidrTenSlash16})
 	if err != nil {
 		t.Fatalf("CreateVpc: %v", err)
 	}
@@ -33,22 +35,22 @@ func TestRevokeSecurityGroupIngress_RemovesMatchingCIDR(t *testing.T) {
 	}
 
 	if err := store.AuthorizeSecurityGroupIngress(ctx, sg.GroupID, "", []IPPermission{{
-		IPProtocol: "tcp",
+		IPProtocol: protocolTCP,
 		FromPort:   22,
 		ToPort:     22,
 		IPRanges: []IPRange{
-			{CidrIP: "0.0.0.0/0"},
-			{CidrIP: "10.0.0.0/8"},
+			{CidrIP: cidrAllIPv4},
+			{CidrIP: cidrTenSlash8},
 		},
 	}}); err != nil {
 		t.Fatalf("AuthorizeSecurityGroupIngress: %v", err)
 	}
 
 	if err := store.RevokeSecurityGroupIngress(ctx, sg.GroupID, "", []IPPermission{{
-		IPProtocol: "tcp",
+		IPProtocol: protocolTCP,
 		FromPort:   22,
 		ToPort:     22,
-		IPRanges:   []IPRange{{CidrIP: "0.0.0.0/0"}},
+		IPRanges:   []IPRange{{CidrIP: cidrAllIPv4}},
 	}}); err != nil {
 		t.Fatalf("RevokeSecurityGroupIngress: %v", err)
 	}
@@ -62,7 +64,7 @@ func TestRevokeSecurityGroupIngress_RemovesMatchingCIDR(t *testing.T) {
 		t.Fatalf("expected 1 surviving rule, got %d: %+v", len(got[0].IngressRules), got[0].IngressRules)
 	}
 
-	if len(got[0].IngressRules[0].IPRanges) != 1 || got[0].IngressRules[0].IPRanges[0].CidrIP != "10.0.0.0/8" {
+	if len(got[0].IngressRules[0].IPRanges) != 1 || got[0].IngressRules[0].IPRanges[0].CidrIP != cidrTenSlash8 {
 		t.Fatalf("expected only 10.0.0.0/8 to survive, got %+v", got[0].IngressRules[0].IPRanges)
 	}
 }
@@ -77,7 +79,7 @@ func TestRevokeSecurityGroupIngress_DropsRuleWhenAllCIDRsRemoved(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStorage()
 
-	vpc, _ := store.CreateVpc(ctx, &CreateVpcRequest{CidrBlock: "10.0.0.0/16"})
+	vpc, _ := store.CreateVpc(ctx, &CreateVpcRequest{CidrBlock: cidrTenSlash16})
 	sg, _ := store.CreateSecurityGroup(ctx, &CreateSecurityGroupRequest{
 		GroupName:        "drop-test",
 		GroupDescription: "drop-test",
@@ -85,13 +87,13 @@ func TestRevokeSecurityGroupIngress_DropsRuleWhenAllCIDRsRemoved(t *testing.T) {
 	})
 
 	_ = store.AuthorizeSecurityGroupIngress(ctx, sg.GroupID, "", []IPPermission{{
-		IPProtocol: "tcp", FromPort: 22, ToPort: 22,
-		IPRanges: []IPRange{{CidrIP: "0.0.0.0/0"}},
+		IPProtocol: protocolTCP, FromPort: 22, ToPort: 22,
+		IPRanges: []IPRange{{CidrIP: cidrAllIPv4}},
 	}})
 
 	if err := store.RevokeSecurityGroupIngress(ctx, sg.GroupID, "", []IPPermission{{
-		IPProtocol: "tcp", FromPort: 22, ToPort: 22,
-		IPRanges: []IPRange{{CidrIP: "0.0.0.0/0"}},
+		IPProtocol: protocolTCP, FromPort: 22, ToPort: 22,
+		IPRanges: []IPRange{{CidrIP: cidrAllIPv4}},
 	}}); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
@@ -110,7 +112,7 @@ func TestRevokeSecurityGroupEgress(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStorage()
 
-	vpc, _ := store.CreateVpc(ctx, &CreateVpcRequest{CidrBlock: "10.0.0.0/16"})
+	vpc, _ := store.CreateVpc(ctx, &CreateVpcRequest{CidrBlock: cidrTenSlash16})
 	sg, _ := store.CreateSecurityGroup(ctx, &CreateSecurityGroupRequest{
 		GroupName:        "egress-test",
 		GroupDescription: "egress-test",
@@ -119,12 +121,12 @@ func TestRevokeSecurityGroupEgress(t *testing.T) {
 
 	_ = store.AuthorizeSecurityGroupEgress(ctx, sg.GroupID, []IPPermission{{
 		IPProtocol: "-1", FromPort: 0, ToPort: 0,
-		IPRanges: []IPRange{{CidrIP: "0.0.0.0/0"}},
+		IPRanges: []IPRange{{CidrIP: cidrAllIPv4}},
 	}})
 
 	if err := store.RevokeSecurityGroupEgress(ctx, sg.GroupID, []IPPermission{{
 		IPProtocol: "-1", FromPort: 0, ToPort: 0,
-		IPRanges: []IPRange{{CidrIP: "0.0.0.0/0"}},
+		IPRanges: []IPRange{{CidrIP: cidrAllIPv4}},
 	}}); err != nil {
 		t.Fatalf("revoke egress: %v", err)
 	}
@@ -151,7 +153,7 @@ func TestRevokeSecurityGroup_NotFound(t *testing.T) {
 	}
 
 	var ec2Err *Error
-	if !errors.As(err, &ec2Err) || ec2Err.Code != "InvalidGroup.NotFound" {
+	if !errors.As(err, &ec2Err) || ec2Err.Code != errCodeInvalidGroupNotFound {
 		t.Fatalf("expected InvalidGroup.NotFound, got %v", err)
 	}
 }

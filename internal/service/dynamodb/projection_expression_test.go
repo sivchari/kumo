@@ -18,8 +18,8 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 	if _, err := store.CreateTable(t.Context(), &CreateTableRequest{
 		TableName: "projection-test",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "pk", KeyType: "HASH"},
-			{AttributeName: "sk", KeyType: "RANGE"},
+			{AttributeName: "pk", KeyType: keyTypeHash},
+			{AttributeName: "sk", KeyType: keyTypeRange},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "pk", AttributeType: "S"},
@@ -31,18 +31,18 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 
 	for _, item := range []Item{
 		{
-			"pk":     {S: ptr("tenant-a")},
-			"sk":     {S: ptr("001")},
-			"name":   {S: ptr("first")},
-			"status": {S: ptr("active")},
-			"secret": {S: ptr("hidden")},
+			"pk":           {S: ptr("tenant-a")},
+			"sk":           {S: ptr("001")},
+			testAttrName:   {S: ptr("first")},
+			testAttrStatus: {S: ptr("active")},
+			"secret":       {S: ptr("hidden")},
 		},
 		{
-			"pk":     {S: ptr("tenant-a")},
-			"sk":     {S: ptr("002")},
-			"name":   {S: ptr("second")},
-			"status": {S: ptr("active")},
-			"secret": {S: ptr("hidden")},
+			"pk":           {S: ptr("tenant-a")},
+			"sk":           {S: ptr("002")},
+			testAttrName:   {S: ptr("second")},
+			testAttrStatus: {S: ptr("active")},
+			"secret":       {S: ptr("hidden")},
 		},
 	} {
 		if _, err := store.PutItem(t.Context(), "projection-test", item, false, ConditionInput{}); err != nil {
@@ -64,7 +64,7 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 
 		dispatchDynamoDBForProjectionTest(t, svc, "GetItem", req, &resp)
 
-		assertProjectedItem(t, resp.Item, "name", "status")
+		assertProjectedItem(t, resp.Item, testAttrName, testAttrStatus)
 	})
 
 	t.Run("Query", func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 		}
 
 		for _, item := range resp.Items {
-			assertProjectedItem(t, item, "name", "status")
+			assertProjectedItem(t, item, testAttrName, testAttrStatus)
 		}
 	})
 
@@ -109,7 +109,7 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 		}
 
 		for _, item := range resp.Items {
-			assertProjectedItem(t, item, "name", "status")
+			assertProjectedItem(t, item, testAttrName, testAttrStatus)
 		}
 	})
 
@@ -135,7 +135,7 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 			t.Fatalf("Items length: got %d, want %d", got, want)
 		}
 
-		assertProjectedItem(t, items[0], "name", "status")
+		assertProjectedItem(t, items[0], testAttrName, testAttrStatus)
 	})
 
 	t.Run("TransactGetItems", func(t *testing.T) {
@@ -160,14 +160,14 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 			t.Fatalf("Responses length: got %d, want %d", got, want)
 		}
 
-		assertProjectedItem(t, resp.Responses[0].Item, "name", "status")
+		assertProjectedItem(t, resp.Responses[0].Item, testAttrName, testAttrStatus)
 	})
 }
 
 func dispatchDynamoDBForProjectionTest(t *testing.T, svc *Service, action, body string, out any) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("X-Amz-Target", "DynamoDB_20120810."+action)
 
 	w := httptest.NewRecorder()

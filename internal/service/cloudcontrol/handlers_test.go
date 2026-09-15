@@ -14,7 +14,7 @@ import (
 func post(t *testing.T, svc *Service, target, body string) (int, string) {
 	t.Helper()
 
-	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), "POST", "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	req.Header.Set("X-Amz-Target", target)
 

@@ -30,8 +30,8 @@ func FuzzConditionExpressionNoPanic(f *testing.F) {
 		_, _ = evaluateCondition(item, ConditionInput{
 			Expression: expression,
 			ExprNames: map[string]string{
-				"#items": "items",
-				"#name":  "name",
+				"#items": testAttrItems,
+				"#name":  testAttrName,
 			},
 			ExprValues: values,
 		})

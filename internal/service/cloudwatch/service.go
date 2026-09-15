@@ -76,17 +76,17 @@ func (s *Service) ServiceIdentifier() string {
 // Actions returns the Query-protocol actions that DispatchAction handles.
 func (s *Service) Actions() []string {
 	return []string{
-		"PutMetricData",
-		"GetMetricData",
-		"GetMetricStatistics",
-		"ListMetrics",
-		"PutMetricAlarm",
-		"DeleteAlarms",
-		"DescribeAlarms",
-		"SetAlarmState",
-		"ListTagsForResource",
-		"TagResource",
-		"UntagResource",
+		actionPutMetricData,
+		actionGetMetricData,
+		actionGetMetricStatistics,
+		actionListMetrics,
+		actionPutMetricAlarm,
+		actionDeleteAlarms,
+		actionDescribeAlarms,
+		actionSetAlarmState,
+		actionListTagsForResource,
+		actionTagResource,
+		actionUntagResource,
 	}
 }
 
@@ -97,27 +97,27 @@ func (s *Service) QueryProtocol() {}
 // DispatchCBORAction handles RPC v2 CBOR protocol requests.
 func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, operation string) {
 	switch operation {
-	case "PutMetricData":
+	case actionPutMetricData:
 		s.PutMetricDataCBOR(w, r)
-	case "GetMetricData":
+	case actionGetMetricData:
 		s.GetMetricDataCBOR(w, r)
-	case "GetMetricStatistics":
+	case actionGetMetricStatistics:
 		s.GetMetricStatisticsCBOR(w, r)
-	case "ListMetrics":
+	case actionListMetrics:
 		s.ListMetricsCBOR(w, r)
-	case "PutMetricAlarm":
+	case actionPutMetricAlarm:
 		s.PutMetricAlarmCBOR(w, r)
-	case "DeleteAlarms":
+	case actionDeleteAlarms:
 		s.DeleteAlarmsCBOR(w, r)
-	case "DescribeAlarms":
+	case actionDescribeAlarms:
 		s.DescribeAlarmsCBOR(w, r)
-	case "SetAlarmState":
+	case actionSetAlarmState:
 		s.SetAlarmStateCBOR(w, r)
-	case "ListTagsForResource":
+	case actionListTagsForResource:
 		s.ListTagsForResourceCBOR(w, r)
-	case "TagResource":
+	case actionTagResource:
 		s.TagResourceCBOR(w, r)
-	case "UntagResource":
+	case actionUntagResource:
 		s.UntagResourceCBOR(w, r)
 	default:
 		server.WriteCBORError(w, "InvalidAction", "The action "+operation+" is not valid", http.StatusBadRequest)

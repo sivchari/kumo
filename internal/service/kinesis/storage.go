@@ -24,6 +24,8 @@ const (
 	errInvalidArgument  = "InvalidArgumentException"
 	errExpiredIterator  = "ExpiredIteratorException"
 	errValidation       = "ValidationException"
+
+	msgStreamNotFound = "Stream not found"
 )
 
 // Default values.
@@ -305,7 +307,7 @@ func (s *MemoryStorage) DeleteStream(_ context.Context, streamName string) error
 	defer s.mu.Unlock()
 
 	if _, exists := s.Streams[streamName]; !exists {
-		return &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
+		return &ServiceError{Code: errResourceNotFound, Message: msgStreamNotFound}
 	}
 
 	delete(s.Streams, streamName)
@@ -322,7 +324,7 @@ func (s *MemoryStorage) DescribeStream(_ context.Context, streamName string, lim
 
 	sd, exists := s.Streams[streamName]
 	if !exists {
-		return nil, nil, false, &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
+		return nil, nil, false, &ServiceError{Code: errResourceNotFound, Message: msgStreamNotFound}
 	}
 
 	shards := make([]*Shard, 0, len(sd.Shards))
@@ -414,7 +416,7 @@ func (s *MemoryStorage) ListShards(_ context.Context, streamName, _ string, maxR
 
 	sd, exists := s.Streams[streamName]
 	if !exists {
-		return nil, "", &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
+		return nil, "", &ServiceError{Code: errResourceNotFound, Message: msgStreamNotFound}
 	}
 
 	if maxResults <= 0 {
@@ -444,7 +446,7 @@ func (s *MemoryStorage) PutRecord(_ context.Context, streamName string, data []b
 
 	sd, exists := s.Streams[streamName]
 	if !exists {
-		return "", "", &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
+		return "", "", &ServiceError{Code: errResourceNotFound, Message: msgStreamNotFound}
 	}
 
 	if !isValidPartitionKey(partitionKey) {
@@ -485,7 +487,7 @@ func (s *MemoryStorage) PutRecords(_ context.Context, streamName string, records
 
 	sd, exists := s.Streams[streamName]
 	if !exists {
-		return nil, 0, &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
+		return nil, 0, &ServiceError{Code: errResourceNotFound, Message: msgStreamNotFound}
 	}
 
 	results := make([]PutRecordsResultEntry, len(records))
@@ -551,7 +553,7 @@ func (s *MemoryStorage) GetShardIterator(_ context.Context, streamName, shardID,
 
 	sd, exists := s.Streams[streamName]
 	if !exists {
-		return "", &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
+		return "", &ServiceError{Code: errResourceNotFound, Message: msgStreamNotFound}
 	}
 
 	shardData, exists := sd.Shards[shardID]
@@ -607,7 +609,7 @@ func (s *MemoryStorage) GetRecords(_ context.Context, shardIterator string, limi
 
 	sd, exists := s.Streams[iterData.streamName]
 	if !exists {
-		return nil, "", 0, &ServiceError{Code: errResourceNotFound, Message: "Stream not found"}
+		return nil, "", 0, &ServiceError{Code: errResourceNotFound, Message: msgStreamNotFound}
 	}
 
 	shardData, exists := sd.Shards[iterData.shardID]

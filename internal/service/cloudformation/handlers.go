@@ -17,7 +17,10 @@ const (
 	errInvalidParameter = "ValidationError"
 	errInternalError    = "InternalServiceError"
 	errInvalidAction    = "InvalidAction"
+	errStackNotFound    = "StackNotFoundException"
 )
+
+const msgStackNotFound = "Stack not found"
 
 // CreateStack handles the CreateStack action.
 func (s *Service) CreateStack(w http.ResponseWriter, r *http.Request) {

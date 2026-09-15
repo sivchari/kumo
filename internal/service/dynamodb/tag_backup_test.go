@@ -12,7 +12,7 @@ func TestDescribeContinuousBackups_TableNotFound(t *testing.T) {
 
 	svc := New(NewMemoryStorage("http://localhost:4566"))
 
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"TableName":"missing"}`))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(`{"TableName":"missing"}`))
 	req.Header.Set("X-Amz-Target", "DynamoDB_20120810.DescribeContinuousBackups")
 
 	w := httptest.NewRecorder()

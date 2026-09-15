@@ -52,7 +52,7 @@ func mapItemContext(index int, item json.RawMessage) (map[string]any, error) {
 	}
 
 	return map[string]any{
-		"Map": map[string]any{
+		stateTypeMap: map[string]any{
 			"Item": map[string]any{
 				"Index": index,
 				"Value": value,

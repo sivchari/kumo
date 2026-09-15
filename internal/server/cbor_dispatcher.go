@@ -151,8 +151,8 @@ func WriteCBORError(w http.ResponseWriter, code, message string, status int) {
 	w.WriteHeader(status)
 
 	errorResponse := map[string]string{
-		"__type":  code,
-		"message": message,
+		errFieldType:    code,
+		errFieldMessage: message,
 	}
 
 	encoded, err := cbor.Marshal(errorResponse)

@@ -15,7 +15,7 @@ func TestSetArithmetic(t *testing.T) {
 	_, err := s.CreateTable(ctx, &CreateTableRequest{
 		TableName: "test-arithmetic",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "pk", KeyType: "HASH"},
+			{AttributeName: "pk", KeyType: keyTypeHash},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "pk", AttributeType: "S"},
@@ -32,8 +32,8 @@ func TestSetArithmetic(t *testing.T) {
 
 		// Insert initial item with Counter=5.
 		_, err := s.PutItem(ctx, "test-arithmetic", Item{
-			"pk":      {S: ptr("arith-add")},
-			"Counter": {N: ptr("5")},
+			"pk":            {S: ptr("arith-add")},
+			testAttrCounter: {N: ptr("5")},
 		}, false, ConditionInput{})
 		if err != nil {
 			t.Fatal(err)
@@ -43,7 +43,7 @@ func TestSetArithmetic(t *testing.T) {
 		result, err := s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET Counter = Counter + :incr",
 			nil,
-			map[string]AttributeValue{":incr": {N: ptr("3")}},
+			map[string]AttributeValue{testExprIncr: {N: ptr("3")}},
 			ReturnValuesAllNew,
 			ConditionInput{},
 		)
@@ -51,8 +51,8 @@ func TestSetArithmetic(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if result["Counter"].N == nil || *result["Counter"].N != "8" {
-			t.Errorf("Counter = %v, want 8", result["Counter"])
+		if result[testAttrCounter].N == nil || *result[testAttrCounter].N != "8" {
+			t.Errorf("Counter = %v, want 8", result[testAttrCounter])
 		}
 	})
 
@@ -62,8 +62,8 @@ func TestSetArithmetic(t *testing.T) {
 		key := Item{"pk": {S: ptr("arith-sub")}}
 
 		_, err := s.PutItem(ctx, "test-arithmetic", Item{
-			"pk":      {S: ptr("arith-sub")},
-			"Counter": {N: ptr("10")},
+			"pk":            {S: ptr("arith-sub")},
+			testAttrCounter: {N: ptr("10")},
 		}, false, ConditionInput{})
 		if err != nil {
 			t.Fatal(err)
@@ -80,8 +80,8 @@ func TestSetArithmetic(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if result["Counter"].N == nil || *result["Counter"].N != "6" {
-			t.Errorf("Counter = %v, want 6", result["Counter"])
+		if result[testAttrCounter].N == nil || *result[testAttrCounter].N != "6" {
+			t.Errorf("Counter = %v, want 6", result[testAttrCounter])
 		}
 	})
 
@@ -92,10 +92,10 @@ func TestSetArithmetic(t *testing.T) {
 
 		result, err := s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET #count = if_not_exists(#count, :zero) + :incr",
-			map[string]string{"#count": "Counter"},
+			map[string]string{testExprHashCount: testAttrCounter},
 			map[string]AttributeValue{
-				":zero": {N: ptr("0")},
-				":incr": {N: ptr("1")},
+				testExprZero: {N: ptr("0")},
+				testExprIncr: {N: ptr("1")},
 			},
 			ReturnValuesAllNew,
 			ConditionInput{},
@@ -104,17 +104,17 @@ func TestSetArithmetic(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if result["Counter"].N == nil || *result["Counter"].N != "1" {
-			t.Errorf("Counter = %v, want 1", result["Counter"])
+		if result[testAttrCounter].N == nil || *result[testAttrCounter].N != "1" {
+			t.Errorf("Counter = %v, want 1", result[testAttrCounter])
 		}
 
 		// Second call should increment to 2.
 		result, err = s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET #count = if_not_exists(#count, :zero) + :incr",
-			map[string]string{"#count": "Counter"},
+			map[string]string{testExprHashCount: testAttrCounter},
 			map[string]AttributeValue{
-				":zero": {N: ptr("0")},
-				":incr": {N: ptr("1")},
+				testExprZero: {N: ptr("0")},
+				testExprIncr: {N: ptr("1")},
 			},
 			ReturnValuesAllNew,
 			ConditionInput{},
@@ -123,8 +123,8 @@ func TestSetArithmetic(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if result["Counter"].N == nil || *result["Counter"].N != "2" {
-			t.Errorf("Counter = %v, want 2", result["Counter"])
+		if result[testAttrCounter].N == nil || *result[testAttrCounter].N != "2" {
+			t.Errorf("Counter = %v, want 2", result[testAttrCounter])
 		}
 	})
 
@@ -135,11 +135,11 @@ func TestSetArithmetic(t *testing.T) {
 
 		result, err := s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET #count = if_not_exists(#count, :zero) + :incr, ExpiresAt = :exp",
-			map[string]string{"#count": "Counter"},
+			map[string]string{testExprHashCount: testAttrCounter},
 			map[string]AttributeValue{
-				":zero": {N: ptr("0")},
-				":incr": {N: ptr("1")},
-				":exp":  {N: ptr("9999")},
+				testExprZero: {N: ptr("0")},
+				testExprIncr: {N: ptr("1")},
+				":exp":       {N: ptr("9999")},
 			},
 			ReturnValuesAllNew,
 			ConditionInput{},
@@ -148,8 +148,8 @@ func TestSetArithmetic(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if result["Counter"].N == nil || *result["Counter"].N != "1" {
-			t.Errorf("Counter = %v, want 1", result["Counter"])
+		if result[testAttrCounter].N == nil || *result[testAttrCounter].N != "1" {
+			t.Errorf("Counter = %v, want 1", result[testAttrCounter])
 		}
 
 		if result["ExpiresAt"].N == nil || *result["ExpiresAt"].N != "9999" {

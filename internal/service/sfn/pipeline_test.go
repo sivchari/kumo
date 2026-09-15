@@ -82,10 +82,10 @@ func TestPassStatePipelineDefaultsToPassThrough(t *testing.T) {
 	store := NewMemoryStorage()
 	sm := createExecutionTestStateMachine(t, store, "pass-passthrough", definition)
 
-	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, `{"a":1}`)
+	exec := startAndAwaitSuccess(t, store, sm.StateMachineArn, testJSONA1)
 
-	if exec.Output != `{"a":1}` {
-		t.Fatalf("execution output: got %q, want %q", exec.Output, `{"a":1}`)
+	if exec.Output != testJSONA1 {
+		t.Fatalf("execution output: got %q, want %q", exec.Output, testJSONA1)
 	}
 }
 

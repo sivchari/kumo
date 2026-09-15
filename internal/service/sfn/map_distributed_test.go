@@ -183,8 +183,8 @@ func assertEndToEndBatches(t *testing.T, results []endToEndBatchResult) {
 	}
 
 	wantBatches := [][]any{
-		{map[string]any{"value": float64(1)}, map[string]any{"value": float64(2)}},
-		{map[string]any{"value": float64(3)}, map[string]any{"value": float64(4)}},
+		{map[string]any{fieldValue: float64(1)}, map[string]any{fieldValue: float64(2)}},
+		{map[string]any{fieldValue: float64(3)}, map[string]any{fieldValue: float64(4)}},
 	}
 
 	for i, want := range wantBatches {

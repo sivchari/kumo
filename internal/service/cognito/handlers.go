@@ -12,6 +12,10 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+// attributeDataTypeString is the Cognito schema AttributeDataType value for
+// a string-typed standard attribute (sub, name, email, ...).
+const attributeDataTypeString = "String"
+
 // handlerFunc is a type alias for handler functions.
 type handlerFunc func(http.ResponseWriter, *http.Request)
 
@@ -531,11 +535,11 @@ func defaultUserPoolPolicies() *UserPoolPoliciesOutput {
 // built-in Cognito attributes that exist on every pool).
 func defaultSchemaAttributes() []SchemaAttributeOutput {
 	return []SchemaAttributeOutput{
-		{Name: "sub", AttributeDataType: "String", Mutable: false, Required: true,
+		{Name: "sub", AttributeDataType: attributeDataTypeString, Mutable: false, Required: true,
 			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "1", MaxLength: "2048"}},
-		{Name: "name", AttributeDataType: "String", Mutable: true, Required: false,
+		{Name: "name", AttributeDataType: attributeDataTypeString, Mutable: true, Required: false,
 			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "0", MaxLength: "2048"}},
-		{Name: "email", AttributeDataType: "String", Mutable: true, Required: false,
+		{Name: "email", AttributeDataType: attributeDataTypeString, Mutable: true, Required: false,
 			StringAttributeConstraints: &StringAttributeConstraintsOutput{MinLength: "0", MaxLength: "2048"}},
 	}
 }

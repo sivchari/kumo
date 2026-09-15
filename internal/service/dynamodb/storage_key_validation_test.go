@@ -11,13 +11,13 @@ func TestPutItemRejectsMissingHashKey(t *testing.T) {
 
 	s := NewMemoryStorage("http://localhost:4566")
 	createKeyValidationTable(t, s, "test-missing-hash-key", []KeySchemaElement{
-		{AttributeName: "pk", KeyType: "HASH"},
+		{AttributeName: "pk", KeyType: keyTypeHash},
 	})
 
 	ctx := context.Background()
 
 	_, err := s.PutItem(ctx, "test-missing-hash-key", Item{
-		"name": {S: ptr("missing key")},
+		testAttrName: {S: ptr("missing key")},
 	}, false, ConditionInput{})
 	expectValidationException(t, err)
 }
@@ -27,7 +27,7 @@ func TestPutItemRejectsWrongHashKeyType(t *testing.T) {
 
 	s := NewMemoryStorage("http://localhost:4566")
 	createKeyValidationTable(t, s, "test-wrong-hash-key-type", []KeySchemaElement{
-		{AttributeName: "pk", KeyType: "HASH"},
+		{AttributeName: "pk", KeyType: keyTypeHash},
 	})
 
 	ctx := context.Background()
@@ -43,8 +43,8 @@ func TestGetItemRejectsIncompleteCompositeKey(t *testing.T) {
 
 	s := NewMemoryStorage("http://localhost:4566")
 	createKeyValidationTable(t, s, "test-incomplete-composite-key", []KeySchemaElement{
-		{AttributeName: "pk", KeyType: "HASH"},
-		{AttributeName: "sk", KeyType: "RANGE"},
+		{AttributeName: "pk", KeyType: keyTypeHash},
+		{AttributeName: "sk", KeyType: keyTypeRange},
 	})
 
 	ctx := context.Background()
@@ -60,7 +60,7 @@ func TestTransactWriteItemsRejectsEmptyAction(t *testing.T) {
 
 	s := NewMemoryStorage("http://localhost:4566")
 	createKeyValidationTable(t, s, "test-transact-empty-action", []KeySchemaElement{
-		{AttributeName: "pk", KeyType: "HASH"},
+		{AttributeName: "pk", KeyType: keyTypeHash},
 	})
 
 	ctx := context.Background()
@@ -74,7 +74,7 @@ func TestBatchWriteItemRejectsEmptyWriteRequest(t *testing.T) {
 
 	s := NewMemoryStorage("http://localhost:4566")
 	createKeyValidationTable(t, s, "test-batch-empty-write", []KeySchemaElement{
-		{AttributeName: "pk", KeyType: "HASH"},
+		{AttributeName: "pk", KeyType: keyTypeHash},
 	})
 
 	ctx := context.Background()
@@ -90,8 +90,8 @@ func TestBatchGetItemRejectsIncompleteKey(t *testing.T) {
 
 	s := NewMemoryStorage("http://localhost:4566")
 	createKeyValidationTable(t, s, "test-batch-incomplete-key", []KeySchemaElement{
-		{AttributeName: "pk", KeyType: "HASH"},
-		{AttributeName: "sk", KeyType: "RANGE"},
+		{AttributeName: "pk", KeyType: keyTypeHash},
+		{AttributeName: "sk", KeyType: keyTypeRange},
 	})
 
 	ctx := context.Background()
@@ -130,7 +130,7 @@ func expectValidationException(t *testing.T, err error) {
 		t.Fatalf("got err %v, want ValidationException", err)
 	}
 
-	if tableErr.Code != "ValidationException" {
+	if tableErr.Code != errCodeValidation {
 		t.Fatalf("got TableError code %s, want ValidationException", tableErr.Code)
 	}
 }

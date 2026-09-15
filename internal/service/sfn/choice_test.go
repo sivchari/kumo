@@ -23,6 +23,15 @@ const (
 	fieldMode    = "mode"
 	fieldOther   = "other"
 	fieldTSOther = "tsOther"
+
+	pathEnabled  = "$.enabled"
+	fieldEnabled = "enabled"
+
+	testNameAlice = "alice"
+	testFixed     = "fixed"
+
+	testTimestampJan2020 = "2020-01-01T00:00:00Z"
+	testTimestampJun2020 = "2020-06-01T00:00:00Z"
 )
 
 func float64Ptr(v float64) *float64 { return &v }
@@ -55,7 +64,7 @@ var choiceRuleTests = []struct {
 	{
 		name:  "StringLessThan",
 		rule:  choiceRule{Variable: pathName, StringLessThan: strPtr("m")},
-		input: map[string]any{fieldName: "alice"},
+		input: map[string]any{fieldName: testNameAlice},
 		want:  true,
 	},
 	{
@@ -66,14 +75,14 @@ var choiceRuleTests = []struct {
 	},
 	{
 		name:  "StringLessThanEquals equal",
-		rule:  choiceRule{Variable: pathName, StringLessThanEquals: strPtr("mode")},
-		input: map[string]any{fieldName: "mode"},
+		rule:  choiceRule{Variable: pathName, StringLessThanEquals: strPtr(fieldMode)},
+		input: map[string]any{fieldName: fieldMode},
 		want:  true,
 	},
 	{
 		name:  "StringGreaterThanEquals equal",
-		rule:  choiceRule{Variable: pathName, StringGreaterThanEquals: strPtr("mode")},
-		input: map[string]any{fieldName: "mode"},
+		rule:  choiceRule{Variable: pathName, StringGreaterThanEquals: strPtr(fieldMode)},
+		input: map[string]any{fieldName: fieldMode},
 		want:  true,
 	},
 	{
@@ -114,50 +123,50 @@ var choiceRuleTests = []struct {
 	},
 	{
 		name:  "BooleanEquals match",
-		rule:  choiceRule{Variable: "$.enabled", BooleanEquals: boolPtr(true)},
-		input: map[string]any{"enabled": true},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEquals: boolPtr(true)},
+		input: map[string]any{fieldEnabled: true},
 		want:  true,
 	},
 	{
 		name:  "BooleanEquals no match",
-		rule:  choiceRule{Variable: "$.enabled", BooleanEquals: boolPtr(true)},
-		input: map[string]any{"enabled": false},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEquals: boolPtr(true)},
+		input: map[string]any{fieldEnabled: false},
 		want:  false,
 	},
 	{
 		name:  "TimestampEquals match",
-		rule:  choiceRule{Variable: pathTS, TimestampEquals: strPtr("2020-01-01T00:00:00Z")},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z"},
+		rule:  choiceRule{Variable: pathTS, TimestampEquals: strPtr(testTimestampJan2020)},
+		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampLessThan match",
-		rule:  choiceRule{Variable: pathTS, TimestampLessThan: strPtr("2020-06-01T00:00:00Z")},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z"},
+		rule:  choiceRule{Variable: pathTS, TimestampLessThan: strPtr(testTimestampJun2020)},
+		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThan match",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: strPtr("2020-01-01T00:00:00Z")},
-		input: map[string]any{"ts": "2020-06-01T00:00:00Z"},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: strPtr(testTimestampJan2020)},
+		input: map[string]any{"ts": testTimestampJun2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThan malformed value does not match",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: strPtr("2020-01-01T00:00:00Z")},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: strPtr(testTimestampJan2020)},
 		input: map[string]any{"ts": "not-a-timestamp"},
 		want:  false,
 	},
 	{
 		name:  "TimestampLessThanEquals equal",
-		rule:  choiceRule{Variable: pathTS, TimestampLessThanEquals: strPtr("2020-01-01T00:00:00Z")},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z"},
+		rule:  choiceRule{Variable: pathTS, TimestampLessThanEquals: strPtr(testTimestampJan2020)},
+		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThanEquals equal",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEquals: strPtr("2020-01-01T00:00:00Z")},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z"},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEquals: strPtr(testTimestampJan2020)},
+		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
@@ -175,7 +184,7 @@ var choiceRuleTests = []struct {
 	{
 		name:  "StringLessThanPath match",
 		rule:  choiceRule{Variable: pathName, StringLessThanPath: strPtr(pathOther)},
-		input: map[string]any{fieldName: "alice", fieldOther: "m"},
+		input: map[string]any{fieldName: testNameAlice, fieldOther: "m"},
 		want:  true,
 	},
 	{
@@ -187,13 +196,13 @@ var choiceRuleTests = []struct {
 	{
 		name:  "StringLessThanEqualsPath equal",
 		rule:  choiceRule{Variable: pathName, StringLessThanEqualsPath: strPtr(pathOther)},
-		input: map[string]any{fieldName: "mode", fieldOther: "mode"},
+		input: map[string]any{fieldName: fieldMode, fieldOther: fieldMode},
 		want:  true,
 	},
 	{
 		name:  "StringGreaterThanEqualsPath equal",
 		rule:  choiceRule{Variable: pathName, StringGreaterThanEqualsPath: strPtr(pathOther)},
-		input: map[string]any{fieldName: "mode", fieldOther: "mode"},
+		input: map[string]any{fieldName: fieldMode, fieldOther: fieldMode},
 		want:  true,
 	},
 	{
@@ -230,44 +239,44 @@ var choiceRuleTests = []struct {
 	},
 	{
 		name:  "BooleanEqualsPath match",
-		rule:  choiceRule{Variable: "$.enabled", BooleanEqualsPath: strPtr(pathOther)},
-		input: map[string]any{"enabled": true, fieldOther: true},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldEnabled: true, fieldOther: true},
 		want:  true,
 	},
 	{
 		name:  "BooleanEqualsPath type mismatch does not match",
-		rule:  choiceRule{Variable: "$.enabled", BooleanEqualsPath: strPtr(pathOther)},
-		input: map[string]any{"enabled": true, fieldOther: "not-a-bool"},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEqualsPath: strPtr(pathOther)},
+		input: map[string]any{fieldEnabled: true, fieldOther: "not-a-bool"},
 		want:  false,
 	},
 	{
 		name:  "TimestampEqualsPath match",
 		rule:  choiceRule{Variable: pathTS, TimestampEqualsPath: strPtr(pathTSOther)},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampLessThanPath match",
 		rule:  choiceRule{Variable: pathTS, TimestampLessThanPath: strPtr(pathTSOther)},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-06-01T00:00:00Z"},
+		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJun2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThanPath match",
 		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanPath: strPtr(pathTSOther)},
-		input: map[string]any{"ts": "2020-06-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		input: map[string]any{"ts": testTimestampJun2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampLessThanEqualsPath equal",
 		rule:  choiceRule{Variable: pathTS, TimestampLessThanEqualsPath: strPtr(pathTSOther)},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThanEqualsPath equal",
 		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEqualsPath: strPtr(pathTSOther)},
-		input: map[string]any{"ts": "2020-01-01T00:00:00Z", fieldTSOther: "2020-01-01T00:00:00Z"},
+		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
@@ -345,7 +354,7 @@ var choiceRuleTests = []struct {
 	{
 		name:  "IsTimestamp true for RFC3339 string field",
 		rule:  choiceRule{Variable: pathValue, IsTimestamp: boolPtr(true)},
-		input: map[string]any{fieldValue: "2020-01-01T00:00:00Z"},
+		input: map[string]any{fieldValue: testTimestampJan2020},
 		want:  true,
 	},
 	{
@@ -356,8 +365,8 @@ var choiceRuleTests = []struct {
 	},
 	{
 		name:  "StringMatches exact match with no wildcard",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("alice")},
-		input: map[string]any{fieldName: "alice"},
+		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(testNameAlice)},
+		input: map[string]any{fieldName: testNameAlice},
 		want:  true,
 	},
 	{

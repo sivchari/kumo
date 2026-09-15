@@ -6,13 +6,15 @@ import (
 	"testing"
 )
 
+const testStreamName = "test-stream"
+
 func TestPutRecordRejectsInvalidExplicitHashKey(t *testing.T) {
 	t.Parallel()
 
 	store := NewMemoryStorage()
 	createKinesisTestStream(t, store)
 
-	_, _, err := store.PutRecord(t.Context(), "test-stream", []byte("data"), "pk", "not-a-number")
+	_, _, err := store.PutRecord(t.Context(), testStreamName, []byte("data"), "pk", "not-a-number")
 	expectKinesisErrorCode(t, err, errInvalidArgument)
 }
 
@@ -22,7 +24,7 @@ func TestPutRecordRejectsEmptyPartitionKey(t *testing.T) {
 	store := NewMemoryStorage()
 	createKinesisTestStream(t, store)
 
-	_, _, err := store.PutRecord(t.Context(), "test-stream", []byte("data"), "", "")
+	_, _, err := store.PutRecord(t.Context(), testStreamName, []byte("data"), "", "")
 	expectKinesisErrorCode(t, err, errInvalidArgument)
 }
 
@@ -32,7 +34,7 @@ func TestPutRecordsRejectsInvalidExplicitHashKeyEntry(t *testing.T) {
 	store := NewMemoryStorage()
 	createKinesisTestStream(t, store)
 
-	results, failed, err := store.PutRecords(t.Context(), "test-stream", []PutRecordsRequestEntry{
+	results, failed, err := store.PutRecords(t.Context(), testStreamName, []PutRecordsRequestEntry{
 		{Data: []byte("bad"), PartitionKey: "pk", ExplicitHashKey: "not-a-number"},
 		{Data: []byte("good"), PartitionKey: "pk"},
 	})
@@ -59,7 +61,7 @@ func TestPutRecordsRejectsEmptyPartitionKeyEntry(t *testing.T) {
 	store := NewMemoryStorage()
 	createKinesisTestStream(t, store)
 
-	results, failed, err := store.PutRecords(t.Context(), "test-stream", []PutRecordsRequestEntry{
+	results, failed, err := store.PutRecords(t.Context(), testStreamName, []PutRecordsRequestEntry{
 		{Data: []byte("bad"), PartitionKey: ""},
 		{Data: []byte("good"), PartitionKey: "pk"},
 	})
@@ -121,12 +123,12 @@ func TestCreateStreamRejectsInvalidShardCount(t *testing.T) {
 	shards := int32(0)
 
 	err := store.CreateStream(t.Context(), &CreateStreamRequest{
-		StreamName: "test-stream",
+		StreamName: testStreamName,
 		ShardCount: &shards,
 	})
 	expectKinesisErrorCode(t, err, errValidation)
 
-	if _, exists := store.Streams["test-stream"]; exists {
+	if _, exists := store.Streams[testStreamName]; exists {
 		t.Fatal("stream with invalid shard count was stored")
 	}
 }
@@ -138,13 +140,13 @@ func TestCreateStreamRejectsInvalidStreamMode(t *testing.T) {
 	shards := int32(1)
 
 	err := store.CreateStream(t.Context(), &CreateStreamRequest{
-		StreamName:        "test-stream",
+		StreamName:        testStreamName,
 		ShardCount:        &shards,
 		StreamModeDetails: &StreamModeDetails{StreamMode: "BROKEN"},
 	})
 	expectKinesisErrorCode(t, err, errValidation)
 
-	if _, exists := store.Streams["test-stream"]; exists {
+	if _, exists := store.Streams[testStreamName]; exists {
 		t.Fatal("stream with invalid stream mode was stored")
 	}
 }
@@ -169,7 +171,7 @@ func createKinesisTestStream(t *testing.T, store *MemoryStorage) {
 
 	shardCount := int32(2)
 	if err := store.CreateStream(t.Context(), &CreateStreamRequest{
-		StreamName: "test-stream",
+		StreamName: testStreamName,
 		ShardCount: &shardCount,
 	}); err != nil {
 		t.Fatalf("CreateStream: %v", err)

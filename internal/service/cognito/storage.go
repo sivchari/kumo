@@ -23,6 +23,11 @@ const (
 	errUsernameExists         = "UsernameExistsException"
 	errNotAuthorized          = "NotAuthorizedException"
 	errInvalidParameter       = "InvalidParameterException"
+
+	msgUserPoolNotFound       = "User pool not found"
+	msgUserPoolClientNotFound = "User pool client not found"
+	msgUserNotFound           = "User not found"
+	msgInvalidClientID        = "Invalid client ID"
 )
 
 // Default values.
@@ -248,7 +253,7 @@ func (s *MemoryStorage) GetUserPool(_ context.Context, userPoolID string) (*User
 
 	pool, ok := s.UserPools[userPoolID]
 	if !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	return pool, nil
@@ -282,7 +287,7 @@ func (s *MemoryStorage) DeleteUserPool(_ context.Context, userPoolID string) err
 	defer s.mu.Unlock()
 
 	if _, ok := s.UserPools[userPoolID]; !ok {
-		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	for clientID, client := range s.UserPoolClients {
@@ -305,7 +310,7 @@ func (s *MemoryStorage) CreateUserPoolClient(_ context.Context, req *CreateUserP
 	defer s.mu.Unlock()
 
 	if _, ok := s.UserPools[req.UserPoolID]; !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	clientID := uuid.New().String()[:26]
@@ -359,7 +364,7 @@ func (s *MemoryStorage) GetUserPoolClient(_ context.Context, userPoolID, clientI
 
 	client, ok := s.UserPoolClients[clientID]
 	if !ok || client.UserPoolID != userPoolID {
-		return nil, &ServiceError{Code: errUserPoolClientNotFound, Message: "User pool client not found"}
+		return nil, &ServiceError{Code: errUserPoolClientNotFound, Message: msgUserPoolClientNotFound}
 	}
 
 	return client, nil
@@ -396,7 +401,7 @@ func (s *MemoryStorage) DeleteUserPoolClient(_ context.Context, userPoolID, clie
 
 	client, ok := s.UserPoolClients[clientID]
 	if !ok || client.UserPoolID != userPoolID {
-		return &ServiceError{Code: errUserPoolClientNotFound, Message: "User pool client not found"}
+		return &ServiceError{Code: errUserPoolClientNotFound, Message: msgUserPoolClientNotFound}
 	}
 
 	delete(s.UserPoolClients, clientID)
@@ -412,7 +417,7 @@ func (s *MemoryStorage) AdminCreateUser(_ context.Context, req *AdminCreateUserR
 	defer s.mu.Unlock()
 
 	if _, ok := s.UserPools[req.UserPoolID]; !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	if _, ok := s.Users[req.UserPoolID][req.Username]; ok {
@@ -452,12 +457,12 @@ func (s *MemoryStorage) AdminGetUser(_ context.Context, userPoolID, username str
 
 	users, ok := s.Users[userPoolID]
 	if !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	user, ok := users[username]
 	if !ok {
-		return nil, &ServiceError{Code: errUserNotFound, Message: "User not found"}
+		return nil, &ServiceError{Code: errUserNotFound, Message: msgUserNotFound}
 	}
 
 	return user, nil
@@ -470,11 +475,11 @@ func (s *MemoryStorage) AdminDeleteUser(_ context.Context, userPoolID, username 
 
 	users, ok := s.Users[userPoolID]
 	if !ok {
-		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	if _, ok := users[username]; !ok {
-		return &ServiceError{Code: errUserNotFound, Message: "User not found"}
+		return &ServiceError{Code: errUserNotFound, Message: msgUserNotFound}
 	}
 
 	delete(users, username)
@@ -495,7 +500,7 @@ func (s *MemoryStorage) ListUsers(_ context.Context, userPoolID string, limit in
 
 	users, ok := s.Users[userPoolID]
 	if !ok {
-		return nil, "", &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, "", &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	result := make([]*User, 0, len(users))
@@ -527,7 +532,7 @@ func (s *MemoryStorage) SignUp(_ context.Context, req *SignUpRequest) (*User, er
 	}
 
 	if userPoolID == "" {
-		return nil, &ServiceError{Code: errInvalidParameter, Message: "Invalid client ID"}
+		return nil, &ServiceError{Code: errInvalidParameter, Message: msgInvalidClientID}
 	}
 
 	if _, ok := s.Users[userPoolID][req.Username]; ok {
@@ -578,12 +583,12 @@ func (s *MemoryStorage) ConfirmSignUp(_ context.Context, clientID, username, cod
 	}
 
 	if userPoolID == "" {
-		return &ServiceError{Code: errInvalidParameter, Message: "Invalid client ID"}
+		return &ServiceError{Code: errInvalidParameter, Message: msgInvalidClientID}
 	}
 
 	user, ok := s.Users[userPoolID][username]
 	if !ok {
-		return &ServiceError{Code: errUserNotFound, Message: "User not found"}
+		return &ServiceError{Code: errUserNotFound, Message: msgUserNotFound}
 	}
 
 	// In a real implementation, we would verify the code.
@@ -619,7 +624,7 @@ func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest
 	}
 
 	if userPoolID == "" {
-		return nil, &ServiceError{Code: errInvalidParameter, Message: "Invalid client ID"}
+		return nil, &ServiceError{Code: errInvalidParameter, Message: msgInvalidClientID}
 	}
 
 	username := req.AuthParameters["USERNAME"]
@@ -627,7 +632,7 @@ func (s *MemoryStorage) InitiateAuth(_ context.Context, req *InitiateAuthRequest
 
 	user, ok := s.Users[userPoolID][username]
 	if !ok {
-		return nil, &ServiceError{Code: errUserNotFound, Message: "User not found"}
+		return nil, &ServiceError{Code: errUserNotFound, Message: msgUserNotFound}
 	}
 
 	if user.Password != password {
@@ -660,12 +665,12 @@ func (s *MemoryStorage) GetUserPoolByClientID(_ context.Context, clientID string
 
 	client, ok := s.UserPoolClients[clientID]
 	if !ok {
-		return nil, &ServiceError{Code: errUserPoolClientNotFound, Message: "User pool client not found"}
+		return nil, &ServiceError{Code: errUserPoolClientNotFound, Message: msgUserPoolClientNotFound}
 	}
 
 	pool, ok := s.UserPools[client.UserPoolID]
 	if !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	return pool, nil
@@ -678,7 +683,7 @@ func (s *MemoryStorage) GetUserPoolClientByID(_ context.Context, clientID string
 
 	client, ok := s.UserPoolClients[clientID]
 	if !ok {
-		return nil, &ServiceError{Code: errUserPoolClientNotFound, Message: "User pool client not found"}
+		return nil, &ServiceError{Code: errUserPoolClientNotFound, Message: msgUserPoolClientNotFound}
 	}
 
 	return client, nil
@@ -706,7 +711,7 @@ func (s *MemoryStorage) GetUserPoolMfaConfig(_ context.Context, userPoolID strin
 	defer s.mu.RUnlock()
 
 	if _, ok := s.UserPools[userPoolID]; !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	cfg, ok := s.MfaConfigs[userPoolID]
@@ -723,7 +728,7 @@ func (s *MemoryStorage) SetUserPoolMfaConfig(_ context.Context, userPoolID strin
 	defer s.mu.Unlock()
 
 	if _, ok := s.UserPools[userPoolID]; !ok {
-		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	s.MfaConfigs[userPoolID] = config

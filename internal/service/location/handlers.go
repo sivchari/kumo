@@ -14,7 +14,7 @@ func (s *Service) CreateMap(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -23,7 +23,7 @@ func (s *Service) CreateMap(w http.ResponseWriter, r *http.Request) {
 	if req.MapName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "MapName is required",
+			Message: msgMapNameRequired,
 		})
 
 		return
@@ -45,7 +45,7 @@ func (s *Service) DescribeMap(w http.ResponseWriter, r *http.Request) {
 	if mapName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "MapName is required",
+			Message: msgMapNameRequired,
 		})
 
 		return
@@ -67,7 +67,7 @@ func (s *Service) UpdateMap(w http.ResponseWriter, r *http.Request) {
 	if mapName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "MapName is required",
+			Message: msgMapNameRequired,
 		})
 
 		return
@@ -77,7 +77,7 @@ func (s *Service) UpdateMap(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -99,7 +99,7 @@ func (s *Service) DeleteMap(w http.ResponseWriter, r *http.Request) {
 	if mapName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "MapName is required",
+			Message: msgMapNameRequired,
 		})
 
 		return
@@ -120,7 +120,7 @@ func (s *Service) ListMaps(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -142,7 +142,7 @@ func (s *Service) CreatePlaceIndex(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -151,7 +151,7 @@ func (s *Service) CreatePlaceIndex(w http.ResponseWriter, r *http.Request) {
 	if req.IndexName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "IndexName is required",
+			Message: msgIndexNameRequired,
 		})
 
 		return
@@ -173,7 +173,7 @@ func (s *Service) DescribePlaceIndex(w http.ResponseWriter, r *http.Request) {
 	if indexName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "IndexName is required",
+			Message: msgIndexNameRequired,
 		})
 
 		return
@@ -195,7 +195,7 @@ func (s *Service) UpdatePlaceIndex(w http.ResponseWriter, r *http.Request) {
 	if indexName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "IndexName is required",
+			Message: msgIndexNameRequired,
 		})
 
 		return
@@ -205,7 +205,7 @@ func (s *Service) UpdatePlaceIndex(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -227,7 +227,7 @@ func (s *Service) DeletePlaceIndex(w http.ResponseWriter, r *http.Request) {
 	if indexName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "IndexName is required",
+			Message: msgIndexNameRequired,
 		})
 
 		return
@@ -248,7 +248,7 @@ func (s *Service) ListPlaceIndexes(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -270,7 +270,7 @@ func (s *Service) CreateRouteCalculator(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -279,7 +279,7 @@ func (s *Service) CreateRouteCalculator(w http.ResponseWriter, r *http.Request) 
 	if req.CalculatorName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CalculatorName is required",
+			Message: msgCalculatorNameRequired,
 		})
 
 		return
@@ -301,7 +301,7 @@ func (s *Service) DescribeRouteCalculator(w http.ResponseWriter, r *http.Request
 	if calcName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CalculatorName is required",
+			Message: msgCalculatorNameRequired,
 		})
 
 		return
@@ -323,7 +323,7 @@ func (s *Service) UpdateRouteCalculator(w http.ResponseWriter, r *http.Request) 
 	if calcName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CalculatorName is required",
+			Message: msgCalculatorNameRequired,
 		})
 
 		return
@@ -333,7 +333,7 @@ func (s *Service) UpdateRouteCalculator(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -355,7 +355,7 @@ func (s *Service) DeleteRouteCalculator(w http.ResponseWriter, r *http.Request) 
 	if calcName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CalculatorName is required",
+			Message: msgCalculatorNameRequired,
 		})
 
 		return
@@ -376,7 +376,7 @@ func (s *Service) ListRouteCalculators(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -398,7 +398,7 @@ func (s *Service) CreateGeofenceCollection(w http.ResponseWriter, r *http.Reques
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -407,7 +407,7 @@ func (s *Service) CreateGeofenceCollection(w http.ResponseWriter, r *http.Reques
 	if req.CollectionName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CollectionName is required",
+			Message: msgCollectionNameRequired,
 		})
 
 		return
@@ -429,7 +429,7 @@ func (s *Service) DescribeGeofenceCollection(w http.ResponseWriter, r *http.Requ
 	if collName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CollectionName is required",
+			Message: msgCollectionNameRequired,
 		})
 
 		return
@@ -451,7 +451,7 @@ func (s *Service) UpdateGeofenceCollection(w http.ResponseWriter, r *http.Reques
 	if collName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CollectionName is required",
+			Message: msgCollectionNameRequired,
 		})
 
 		return
@@ -461,7 +461,7 @@ func (s *Service) UpdateGeofenceCollection(w http.ResponseWriter, r *http.Reques
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -483,7 +483,7 @@ func (s *Service) DeleteGeofenceCollection(w http.ResponseWriter, r *http.Reques
 	if collName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "CollectionName is required",
+			Message: msgCollectionNameRequired,
 		})
 
 		return
@@ -504,7 +504,7 @@ func (s *Service) ListGeofenceCollections(w http.ResponseWriter, r *http.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -526,7 +526,7 @@ func (s *Service) CreateTracker(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -535,7 +535,7 @@ func (s *Service) CreateTracker(w http.ResponseWriter, r *http.Request) {
 	if req.TrackerName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "TrackerName is required",
+			Message: msgTrackerNameRequired,
 		})
 
 		return
@@ -557,7 +557,7 @@ func (s *Service) DescribeTracker(w http.ResponseWriter, r *http.Request) {
 	if trackerName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "TrackerName is required",
+			Message: msgTrackerNameRequired,
 		})
 
 		return
@@ -579,7 +579,7 @@ func (s *Service) UpdateTracker(w http.ResponseWriter, r *http.Request) {
 	if trackerName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "TrackerName is required",
+			Message: msgTrackerNameRequired,
 		})
 
 		return
@@ -589,7 +589,7 @@ func (s *Service) UpdateTracker(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -611,7 +611,7 @@ func (s *Service) DeleteTracker(w http.ResponseWriter, r *http.Request) {
 	if trackerName == "" {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "TrackerName is required",
+			Message: msgTrackerNameRequired,
 		})
 
 		return
@@ -632,7 +632,7 @@ func (s *Service) ListTrackers(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, &Error{
 			Code:    errValidationException,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return

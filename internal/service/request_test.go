@@ -8,6 +8,8 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+const testNameAlice = "alice"
+
 func TestReadJSONRequest(t *testing.T) {
 	t.Parallel()
 
@@ -21,7 +23,7 @@ func TestReadJSONRequest(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "valid JSON decodes into v", body: `{"name":"alice"}`, want: "alice"},
+		{name: "valid JSON decodes into v", body: `{"name":"alice"}`, want: testNameAlice},
 		{name: "empty body is a no-op", body: "", want: ""},
 		{name: "invalid JSON returns an error", body: `{not json`, wantErr: true},
 	}

@@ -23,6 +23,8 @@ const (
 	errRepositoryAlreadyExists = "RepositoryAlreadyExistsException"
 	errImageNotFound           = "ImageNotFoundException"
 	errInvalidParameter        = "InvalidParameterException"
+
+	msgRepositoryNotExist = "Repository does not exist"
 )
 
 // Storage defines the ECR storage interface.
@@ -198,7 +200,7 @@ func (s *MemoryStorage) DeleteRepository(_ context.Context, repositoryName strin
 
 	rd, exists := s.Repositories[repositoryName]
 	if !exists {
-		return nil, &ServiceError{Code: errRepositoryNotFound, Message: "Repository does not exist"}
+		return nil, &ServiceError{Code: errRepositoryNotFound, Message: msgRepositoryNotExist}
 	}
 
 	if !force && len(rd.Images) > 0 {
@@ -253,7 +255,7 @@ func (s *MemoryStorage) ListImages(_ context.Context, repositoryName string, max
 
 	rd, exists := s.Repositories[repositoryName]
 	if !exists {
-		return nil, "", &ServiceError{Code: errRepositoryNotFound, Message: "Repository does not exist"}
+		return nil, "", &ServiceError{Code: errRepositoryNotFound, Message: msgRepositoryNotExist}
 	}
 
 	if maxResults <= 0 {
@@ -310,7 +312,7 @@ func (s *MemoryStorage) PutImage(_ context.Context, repositoryName, imageManifes
 
 	rd, exists := s.Repositories[repositoryName]
 	if !exists {
-		return nil, &ServiceError{Code: errRepositoryNotFound, Message: "Repository does not exist"}
+		return nil, &ServiceError{Code: errRepositoryNotFound, Message: msgRepositoryNotExist}
 	}
 
 	digest := calculateDigest(imageManifest)
@@ -341,7 +343,7 @@ func (s *MemoryStorage) BatchGetImage(_ context.Context, repositoryName string, 
 
 	rd, exists := s.Repositories[repositoryName]
 	if !exists {
-		return nil, nil, &ServiceError{Code: errRepositoryNotFound, Message: "Repository does not exist"}
+		return nil, nil, &ServiceError{Code: errRepositoryNotFound, Message: msgRepositoryNotExist}
 	}
 
 	var images []*Image
@@ -380,7 +382,7 @@ func (s *MemoryStorage) BatchDeleteImage(_ context.Context, repositoryName strin
 
 	rd, exists := s.Repositories[repositoryName]
 	if !exists {
-		return nil, nil, &ServiceError{Code: errRepositoryNotFound, Message: "Repository does not exist"}
+		return nil, nil, &ServiceError{Code: errRepositoryNotFound, Message: msgRepositoryNotExist}
 	}
 
 	var deleted []ImageIdentifier
@@ -455,7 +457,7 @@ func (s *MemoryStorage) PutLifecyclePolicy(_ context.Context, repositoryName, po
 	repo, ok := s.Repositories[repositoryName]
 	if !ok {
 		return "", &ServiceError{
-			Code:    "RepositoryNotFoundException",
+			Code:    errRepositoryNotFound,
 			Message: fmt.Sprintf("The repository with name '%s' does not exist in the registry with id '%s'", repositoryName, s.accountID),
 		}
 	}
@@ -478,7 +480,7 @@ func (s *MemoryStorage) GetLifecyclePolicy(_ context.Context, repositoryName str
 	repo, ok := s.Repositories[repositoryName]
 	if !ok {
 		return "", time.Time{}, &ServiceError{
-			Code:    "RepositoryNotFoundException",
+			Code:    errRepositoryNotFound,
 			Message: fmt.Sprintf("The repository with name '%s' does not exist in the registry with id '%s'", repositoryName, s.accountID),
 		}
 	}
@@ -501,7 +503,7 @@ func (s *MemoryStorage) DeleteLifecyclePolicy(_ context.Context, repositoryName 
 	repo, ok := s.Repositories[repositoryName]
 	if !ok {
 		return "", time.Time{}, &ServiceError{
-			Code:    "RepositoryNotFoundException",
+			Code:    errRepositoryNotFound,
 			Message: fmt.Sprintf("The repository with name '%s' does not exist in the registry with id '%s'", repositoryName, s.accountID),
 		}
 	}

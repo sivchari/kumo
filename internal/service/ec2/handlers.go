@@ -927,7 +927,7 @@ func (s *Service) DescribeVpcAttribute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(vpcs) == 0 {
-		writeError(w, "InvalidVpcID.NotFound", "The vpc ID '"+vpcID+"' does not exist", http.StatusBadRequest)
+		writeError(w, errCodeInvalidVpcIDNotFound, "The vpc ID '"+vpcID+"' does not exist", http.StatusBadRequest)
 
 		return
 	}

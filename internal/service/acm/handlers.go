@@ -163,7 +163,7 @@ func (s *Service) ListCertificates(w http.ResponseWriter, r *http.Request) {
 			NotBefore:               ToAWSTimestampPtr(cert.NotBefore),
 			NotAfter:                ToAWSTimestampPtr(cert.NotAfter),
 			RenewalEligibility:      cert.RenewalEligibility,
-			Exported:                cert.Type == "IMPORTED",
+			Exported:                cert.Type == certificateTypeImported,
 			InUse:                   len(cert.InUseBy) > 0,
 			KeyUsages:               keyUsages,
 			ExtendedKeyUsages:       extendedKeyUsages,

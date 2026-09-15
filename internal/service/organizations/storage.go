@@ -25,6 +25,10 @@ const (
 	errPolicyNotAttachedException           = "PolicyNotAttachedException"
 	errDuplicatePolicyAttachmentException   = "DuplicatePolicyAttachmentException"
 	errInvalidInputException                = "InvalidInputException"
+
+	msgNotInOrganization = "Your account is not a member of an organization"
+
+	defaultSCPID = "p-FullAWSAccess"
 )
 
 // Default values.
@@ -227,7 +231,6 @@ func (m *MemoryStorage) Close() error {
 }
 
 func (m *MemoryStorage) initializeDefaultPolicy() {
-	defaultSCPID := "p-FullAWSAccess"
 	m.Policies[defaultSCPID] = &Policy{
 		Content: `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}`,
 		PolicySummary: &PolicySummary{
@@ -296,7 +299,7 @@ func (m *MemoryStorage) CreateOrganization(_ context.Context, featureSet string)
 	}
 
 	m.PolicyAttachments[rootID] = map[string]bool{
-		"p-FullAWSAccess": true,
+		defaultSCPID: true,
 	}
 
 	m.saveLocked()
@@ -310,7 +313,7 @@ func (m *MemoryStorage) DeleteOrganization(_ context.Context) error {
 	defer m.mu.Unlock()
 
 	if m.Organization == nil {
-		return &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	// Check if there are any member accounts (besides the management account).
@@ -338,7 +341,7 @@ func (m *MemoryStorage) DescribeOrganization(_ context.Context) (*Organization, 
 	defer m.mu.RUnlock()
 
 	if m.Organization == nil {
-		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	return m.Organization, nil
@@ -350,7 +353,7 @@ func (m *MemoryStorage) CreateAccount(_ context.Context, req *CreateAccountInput
 	defer m.mu.Unlock()
 
 	if m.Organization == nil {
-		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	if req.AccountName == "" || req.Email == "" {
@@ -375,7 +378,7 @@ func (m *MemoryStorage) CreateAccount(_ context.Context, req *CreateAccountInput
 	m.Accounts[accountID] = account
 
 	m.PolicyAttachments[accountID] = map[string]bool{
-		"p-FullAWSAccess": true,
+		defaultSCPID: true,
 	}
 
 	m.saveLocked()
@@ -398,7 +401,7 @@ func (m *MemoryStorage) DescribeAccount(_ context.Context, accountID string) (*A
 	defer m.mu.RUnlock()
 
 	if m.Organization == nil {
-		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	account, exists := m.Accounts[accountID]
@@ -415,7 +418,7 @@ func (m *MemoryStorage) ListAccounts(_ context.Context, maxResults int32, _ stri
 	defer m.mu.RUnlock()
 
 	if m.Organization == nil {
-		return nil, "", &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return nil, "", &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	result := make([]*Account, 0, len(m.Accounts))
@@ -438,7 +441,7 @@ func (m *MemoryStorage) CreateOrganizationalUnit(_ context.Context, name, parent
 	defer m.mu.Unlock()
 
 	if m.Organization == nil {
-		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return nil, &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	if !m.isValidParentID(parentID) {
@@ -463,7 +466,7 @@ func (m *MemoryStorage) CreateOrganizationalUnit(_ context.Context, name, parent
 	m.OuParents[ouID] = parentID
 
 	m.PolicyAttachments[ouID] = map[string]bool{
-		"p-FullAWSAccess": true,
+		defaultSCPID: true,
 	}
 
 	m.saveLocked()
@@ -477,7 +480,7 @@ func (m *MemoryStorage) ListOrganizationalUnitsForParent(_ context.Context, pare
 	defer m.mu.RUnlock()
 
 	if m.Organization == nil {
-		return nil, "", &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return nil, "", &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	if !m.isValidParentID(parentID) {
@@ -506,7 +509,7 @@ func (m *MemoryStorage) AttachPolicy(_ context.Context, policyID, targetID strin
 	defer m.mu.Unlock()
 
 	if m.Organization == nil {
-		return &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	if _, exists := m.Policies[policyID]; !exists {
@@ -540,7 +543,7 @@ func (m *MemoryStorage) DetachPolicy(_ context.Context, policyID, targetID strin
 	defer m.mu.Unlock()
 
 	if m.Organization == nil {
-		return &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	if _, exists := m.Policies[policyID]; !exists {
@@ -569,7 +572,7 @@ func (m *MemoryStorage) ListRoots(_ context.Context, _ int32, _ string) ([]*Root
 	defer m.mu.RUnlock()
 
 	if m.Organization == nil {
-		return nil, "", &Error{Code: errAWSOrganizationsNotInUseException, Message: "Your account is not a member of an organization"}
+		return nil, "", &Error{Code: errAWSOrganizationsNotInUseException, Message: msgNotInOrganization}
 	}
 
 	if m.Root == nil {

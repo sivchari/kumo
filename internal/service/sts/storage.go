@@ -199,12 +199,20 @@ func (m *MemoryStorage) GetFederationToken(_ context.Context, input *GetFederati
 
 // Helper functions.
 
+// fallbackPartition/fallbackRoleName are the values roleArnParts falls back
+// to when the input ARN can't be parsed, keeping AssumeRole permissive.
+const (
+	fallbackPartition = "aws"
+	fallbackRoleName  = "emulated-role"
+)
+
 // roleArnParts extracts the partition, account ID, and role name from an IAM
 // role ARN (arn:<partition>:iam::<account>:role/<path...>/<name>). Fallbacks
-// keep AssumeRole permissive: unparseable input yields "aws" / defaultAccountID
-// / "emulated-role", and an empty partition segment also defaults to "aws".
+// keep AssumeRole permissive: unparseable input yields fallbackPartition /
+// defaultAccountID / fallbackRoleName, and an empty partition segment also
+// defaults to fallbackPartition.
 func roleArnParts(roleArn string) (string, string, string) {
-	partition, accountID, roleName := "aws", defaultAccountID, "emulated-role"
+	partition, accountID, roleName := fallbackPartition, defaultAccountID, fallbackRoleName
 
 	parts := strings.SplitN(roleArn, ":", 6)
 	if len(parts) != 6 || parts[2] != "iam" {

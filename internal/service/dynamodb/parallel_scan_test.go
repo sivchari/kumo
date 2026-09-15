@@ -18,7 +18,7 @@ func TestScanPartitionsItemsAcrossSegments(t *testing.T) {
 	if _, err := store.CreateTable(t.Context(), &CreateTableRequest{
 		TableName: "parallel-scan-test",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "pk", KeyType: "HASH"},
+			{AttributeName: "pk", KeyType: keyTypeHash},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "pk", AttributeType: "S"},
@@ -71,7 +71,7 @@ func TestScanPartitionsItemsAcrossSegments(t *testing.T) {
 func dispatchDynamoDBForParallelScanTest(t *testing.T, svc *Service, body string, out any) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("X-Amz-Target", "DynamoDB_20120810.Scan")
 
 	w := httptest.NewRecorder()

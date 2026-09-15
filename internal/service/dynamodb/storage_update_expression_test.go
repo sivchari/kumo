@@ -14,7 +14,7 @@ func TestUpdateItemInvalidUTF8ExpressionDoesNotPanic(t *testing.T) {
 	_, err := store.CreateTable(ctx, &CreateTableRequest{
 		TableName: "invalid-utf8-update-test",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "pk", KeyType: "HASH"},
+			{AttributeName: "pk", KeyType: keyTypeHash},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "pk", AttributeType: "S"},

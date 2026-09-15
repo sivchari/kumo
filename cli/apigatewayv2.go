@@ -11,6 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// cmdUseCreateRoute is the cobra Use string for the "create-route"
+// subcommand, shared verbatim with App Mesh's own unrelated create-route
+// command (cli/appmesh.go).
+const cmdUseCreateRoute = "create-route"
+
 func newAPIGatewayV2Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apigatewayv2",

@@ -39,6 +39,23 @@ var (
 
 const defaultAccountID = "000000000000"
 
+// Error codes.
+const (
+	errCodeInvalidInstanceIDNotFound        = "InvalidInstanceID.NotFound"
+	errCodeInvalidGroupNotFound             = "InvalidGroup.NotFound"
+	errCodeInvalidKeyPairNotFound           = "InvalidKeyPair.NotFound"
+	errCodeInvalidVpcIDNotFound             = "InvalidVpcID.NotFound"
+	errCodeDependencyViolation              = "DependencyViolation"
+	errCodeInvalidSubnetIDNotFound          = "InvalidSubnetID.NotFound"
+	errCodeInvalidInternetGatewayIDNotFound = "InvalidInternetGatewayID.NotFound"
+	errCodeInvalidRouteTableIDNotFound      = "InvalidRouteTableID.NotFound"
+)
+
+// stateAvailable is the resource State value most EC2 resources (VPCs,
+// subnets, internet gateways, route tables) report once created, since
+// kumo executes every mutation synchronously.
+const stateAvailable = "available"
+
 // Instance state codes.
 const (
 	InstanceStatePending      = 0
@@ -310,7 +327,7 @@ func (m *MemoryStorage) TerminateInstances(_ context.Context, instanceIDs []stri
 		instance, exists := m.Instances[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidInstanceID.NotFound",
+				Code:    errCodeInvalidInstanceIDNotFound,
 				Message: fmt.Sprintf("The instance ID '%s' does not exist", id),
 			}
 		}
@@ -350,7 +367,7 @@ func (m *MemoryStorage) DescribeInstances(_ context.Context, instanceIDs []strin
 		instance, exists := m.Instances[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidInstanceID.NotFound",
+				Code:    errCodeInvalidInstanceIDNotFound,
 				Message: fmt.Sprintf("The instance ID '%s' does not exist", id),
 			}
 		}
@@ -391,7 +408,7 @@ func (m *MemoryStorage) StartInstances(_ context.Context, instanceIDs []string) 
 		instance, exists := m.Instances[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidInstanceID.NotFound",
+				Code:    errCodeInvalidInstanceIDNotFound,
 				Message: fmt.Sprintf("The instance ID '%s' does not exist", id),
 			}
 		}
@@ -422,7 +439,7 @@ func (m *MemoryStorage) StopInstances(_ context.Context, instanceIDs []string) (
 		instance, exists := m.Instances[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidInstanceID.NotFound",
+				Code:    errCodeInvalidInstanceIDNotFound,
 				Message: fmt.Sprintf("The instance ID '%s' does not exist", id),
 			}
 		}
@@ -480,7 +497,7 @@ func (m *MemoryStorage) DeleteSecurityGroup(_ context.Context, groupID, groupNam
 	if groupID != "" {
 		if _, exists := m.SecurityGroups[groupID]; !exists {
 			return &Error{
-				Code:    "InvalidGroup.NotFound",
+				Code:    errCodeInvalidGroupNotFound,
 				Message: fmt.Sprintf("The security group '%s' does not exist", groupID),
 			}
 		}
@@ -503,7 +520,7 @@ func (m *MemoryStorage) DeleteSecurityGroup(_ context.Context, groupID, groupNam
 	}
 
 	return &Error{
-		Code:    "InvalidGroup.NotFound",
+		Code:    errCodeInvalidGroupNotFound,
 		Message: fmt.Sprintf("The security group '%s' does not exist", groupName),
 	}
 }
@@ -516,7 +533,7 @@ func (m *MemoryStorage) AuthorizeSecurityGroupIngress(_ context.Context, groupID
 	sg := m.findSecurityGroup(groupID, groupName)
 	if sg == nil {
 		return &Error{
-			Code:    "InvalidGroup.NotFound",
+			Code:    errCodeInvalidGroupNotFound,
 			Message: "The security group does not exist",
 		}
 	}
@@ -536,7 +553,7 @@ func (m *MemoryStorage) AuthorizeSecurityGroupEgress(_ context.Context, groupID 
 	sg, exists := m.SecurityGroups[groupID]
 	if !exists {
 		return &Error{
-			Code:    "InvalidGroup.NotFound",
+			Code:    errCodeInvalidGroupNotFound,
 			Message: fmt.Sprintf("The security group '%s' does not exist", groupID),
 		}
 	}
@@ -564,7 +581,7 @@ func (m *MemoryStorage) RevokeSecurityGroupIngress(_ context.Context, groupID, g
 	sg := m.findSecurityGroup(groupID, groupName)
 	if sg == nil {
 		return &Error{
-			Code:    "InvalidGroup.NotFound",
+			Code:    errCodeInvalidGroupNotFound,
 			Message: "The security group does not exist",
 		}
 	}
@@ -585,7 +602,7 @@ func (m *MemoryStorage) RevokeSecurityGroupEgress(_ context.Context, groupID str
 	sg, exists := m.SecurityGroups[groupID]
 	if !exists {
 		return &Error{
-			Code:    "InvalidGroup.NotFound",
+			Code:    errCodeInvalidGroupNotFound,
 			Message: fmt.Sprintf("The security group '%s' does not exist", groupID),
 		}
 	}
@@ -750,7 +767,7 @@ func (m *MemoryStorage) DeleteKeyPair(_ context.Context, keyName, keyPairID stri
 	if keyPairID != "" {
 		if _, exists := m.KeyPairs[keyPairID]; !exists {
 			return &Error{
-				Code:    "InvalidKeyPair.NotFound",
+				Code:    errCodeInvalidKeyPairNotFound,
 				Message: fmt.Sprintf("The key pair '%s' does not exist", keyPairID),
 			}
 		}
@@ -773,7 +790,7 @@ func (m *MemoryStorage) DeleteKeyPair(_ context.Context, keyName, keyPairID stri
 	}
 
 	return &Error{
-		Code:    "InvalidKeyPair.NotFound",
+		Code:    errCodeInvalidKeyPairNotFound,
 		Message: fmt.Sprintf("The key pair '%s' does not exist", keyName),
 	}
 }
@@ -823,7 +840,7 @@ func (m *MemoryStorage) collectKeyPairs(keyNames, keyPairIDs []string) (map[stri
 		kp, exists := m.KeyPairs[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidKeyPair.NotFound",
+				Code:    errCodeInvalidKeyPairNotFound,
 				Message: fmt.Sprintf("The key pair '%s' does not exist", id),
 			}
 		}
@@ -843,7 +860,7 @@ func (m *MemoryStorage) findKeyPairByName(name string) (*KeyPair, error) {
 	}
 
 	return nil, &Error{
-		Code:    "InvalidKeyPair.NotFound",
+		Code:    errCodeInvalidKeyPairNotFound,
 		Message: fmt.Sprintf("The key pair '%s' does not exist", name),
 	}
 }
@@ -946,7 +963,7 @@ func (m *MemoryStorage) CreateVpc(_ context.Context, req *CreateVpcRequest) (*Vp
 	vpc := &Vpc{
 		VpcID:              "vpc-" + generateID(),
 		CidrBlock:          req.CidrBlock,
-		State:              "available",
+		State:              stateAvailable,
 		IsDefault:          false,
 		InstanceTenancy:    req.InstanceTenancy,
 		EnableDNSSupport:   true, // matches AWS default
@@ -972,7 +989,7 @@ func (m *MemoryStorage) DeleteVpc(_ context.Context, vpcID string) error {
 
 	if _, exists := m.Vpcs[vpcID]; !exists {
 		return &Error{
-			Code:    "InvalidVpcID.NotFound",
+			Code:    errCodeInvalidVpcIDNotFound,
 			Message: fmt.Sprintf("The vpc ID '%s' does not exist", vpcID),
 		}
 	}
@@ -981,7 +998,7 @@ func (m *MemoryStorage) DeleteVpc(_ context.Context, vpcID string) error {
 	for _, subnet := range m.Subnets {
 		if subnet.VpcID == vpcID {
 			return &Error{
-				Code:    "DependencyViolation",
+				Code:    errCodeDependencyViolation,
 				Message: "The vpc has dependencies and cannot be deleted",
 			}
 		}
@@ -991,7 +1008,7 @@ func (m *MemoryStorage) DeleteVpc(_ context.Context, vpcID string) error {
 		for _, attachment := range igw.Attachments {
 			if attachment.VpcID == vpcID {
 				return &Error{
-					Code:    "DependencyViolation",
+					Code:    errCodeDependencyViolation,
 					Message: "The vpc has dependencies and cannot be deleted",
 				}
 			}
@@ -1025,7 +1042,7 @@ func (m *MemoryStorage) DescribeVpcs(_ context.Context, vpcIDs []string) ([]*Vpc
 		vpc, exists := m.Vpcs[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidVpcID.NotFound",
+				Code:    errCodeInvalidVpcIDNotFound,
 				Message: fmt.Sprintf("The vpc ID '%s' does not exist", id),
 			}
 		}
@@ -1043,7 +1060,7 @@ func (m *MemoryStorage) CreateSubnet(_ context.Context, req *CreateSubnetRequest
 
 	if _, exists := m.Vpcs[req.VpcID]; !exists {
 		return nil, &Error{
-			Code:    "InvalidVpcID.NotFound",
+			Code:    errCodeInvalidVpcIDNotFound,
 			Message: fmt.Sprintf("The vpc ID '%s' does not exist", req.VpcID),
 		}
 	}
@@ -1054,7 +1071,7 @@ func (m *MemoryStorage) CreateSubnet(_ context.Context, req *CreateSubnetRequest
 		CidrBlock:               req.CidrBlock,
 		AvailabilityZone:        req.AvailabilityZone,
 		AvailableIPAddressCount: 251, // Default available IPs for /24
-		State:                   "available",
+		State:                   stateAvailable,
 		MapPublicIPOnLaunch:     false,
 		Tags:                    []Tag{},
 	}
@@ -1077,7 +1094,7 @@ func (m *MemoryStorage) DeleteSubnet(_ context.Context, subnetID string) error {
 
 	if _, exists := m.Subnets[subnetID]; !exists {
 		return &Error{
-			Code:    "InvalidSubnetID.NotFound",
+			Code:    errCodeInvalidSubnetIDNotFound,
 			Message: fmt.Sprintf("The subnet ID '%s' does not exist", subnetID),
 		}
 	}
@@ -1110,7 +1127,7 @@ func (m *MemoryStorage) DescribeSubnets(_ context.Context, subnetIDs []string, f
 		subnet, exists := m.Subnets[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidSubnetID.NotFound",
+				Code:    errCodeInvalidSubnetIDNotFound,
 				Message: fmt.Sprintf("The subnet ID '%s' does not exist", id),
 			}
 		}
@@ -1171,14 +1188,14 @@ func (m *MemoryStorage) AttachInternetGateway(_ context.Context, igwID, vpcID st
 	igw, exists := m.InternetGateways[igwID]
 	if !exists {
 		return &Error{
-			Code:    "InvalidInternetGatewayID.NotFound",
+			Code:    errCodeInvalidInternetGatewayIDNotFound,
 			Message: fmt.Sprintf("The internetGateway ID '%s' does not exist", igwID),
 		}
 	}
 
 	if _, exists := m.Vpcs[vpcID]; !exists {
 		return &Error{
-			Code:    "InvalidVpcID.NotFound",
+			Code:    errCodeInvalidVpcIDNotFound,
 			Message: fmt.Sprintf("The vpc ID '%s' does not exist", vpcID),
 		}
 	}
@@ -1194,7 +1211,7 @@ func (m *MemoryStorage) AttachInternetGateway(_ context.Context, igwID, vpcID st
 
 	igw.Attachments = append(igw.Attachments, InternetGatewayAttachment{
 		VpcID: vpcID,
-		State: "available",
+		State: stateAvailable,
 	})
 
 	m.saveLocked()
@@ -1210,7 +1227,7 @@ func (m *MemoryStorage) DetachInternetGateway(_ context.Context, igwID, vpcID st
 	igw, exists := m.InternetGateways[igwID]
 	if !exists {
 		return &Error{
-			Code:    "InvalidInternetGatewayID.NotFound",
+			Code:    errCodeInvalidInternetGatewayIDNotFound,
 			Message: fmt.Sprintf("The internetGateway ID '%s' does not exist", igwID),
 		}
 	}
@@ -1239,14 +1256,14 @@ func (m *MemoryStorage) DeleteInternetGateway(_ context.Context, igwID string) e
 	igw, exists := m.InternetGateways[igwID]
 	if !exists {
 		return &Error{
-			Code:    "InvalidInternetGatewayID.NotFound",
+			Code:    errCodeInvalidInternetGatewayIDNotFound,
 			Message: fmt.Sprintf("The internetGateway ID '%s' does not exist", igwID),
 		}
 	}
 
 	if len(igw.Attachments) > 0 {
 		return &Error{
-			Code:    "DependencyViolation",
+			Code:    errCodeDependencyViolation,
 			Message: fmt.Sprintf("Internet gateway '%s' has attachments and cannot be deleted", igwID),
 		}
 	}
@@ -1278,7 +1295,7 @@ func (m *MemoryStorage) DescribeInternetGateways(_ context.Context, igwIDs []str
 		igw, exists := m.InternetGateways[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidInternetGatewayID.NotFound",
+				Code:    errCodeInvalidInternetGatewayIDNotFound,
 				Message: fmt.Sprintf("The internetGateway ID '%s' does not exist", id),
 			}
 		}
@@ -1296,7 +1313,7 @@ func (m *MemoryStorage) CreateRouteTable(_ context.Context, req *CreateRouteTabl
 
 	if _, exists := m.Vpcs[req.VpcID]; !exists {
 		return nil, &Error{
-			Code:    "InvalidVpcID.NotFound",
+			Code:    errCodeInvalidVpcIDNotFound,
 			Message: fmt.Sprintf("The vpc ID '%s' does not exist", req.VpcID),
 		}
 	}
@@ -1330,7 +1347,7 @@ func (m *MemoryStorage) CreateRoute(_ context.Context, req *CreateRouteRequest) 
 	rt, exists := m.RouteTables[req.RouteTableID]
 	if !exists {
 		return &Error{
-			Code:    "InvalidRouteTableID.NotFound",
+			Code:    errCodeInvalidRouteTableIDNotFound,
 			Message: fmt.Sprintf("The routeTable ID '%s' does not exist", req.RouteTableID),
 		}
 	}
@@ -1366,14 +1383,14 @@ func (m *MemoryStorage) AssociateRouteTable(_ context.Context, req *AssociateRou
 	rt, exists := m.RouteTables[req.RouteTableID]
 	if !exists {
 		return "", &Error{
-			Code:    "InvalidRouteTableID.NotFound",
+			Code:    errCodeInvalidRouteTableIDNotFound,
 			Message: fmt.Sprintf("The routeTable ID '%s' does not exist", req.RouteTableID),
 		}
 	}
 
 	if _, exists := m.Subnets[req.SubnetID]; !exists {
 		return "", &Error{
-			Code:    "InvalidSubnetID.NotFound",
+			Code:    errCodeInvalidSubnetIDNotFound,
 			Message: fmt.Sprintf("The subnet ID '%s' does not exist", req.SubnetID),
 		}
 	}
@@ -1411,7 +1428,7 @@ func (m *MemoryStorage) DescribeRouteTables(_ context.Context, rtbIDs []string) 
 		rt, exists := m.RouteTables[id]
 		if !exists {
 			return nil, &Error{
-				Code:    "InvalidRouteTableID.NotFound",
+				Code:    errCodeInvalidRouteTableIDNotFound,
 				Message: fmt.Sprintf("The routeTable ID '%s' does not exist", id),
 			}
 		}
@@ -1430,7 +1447,7 @@ func (m *MemoryStorage) CreateNatGateway(_ context.Context, req *CreateNatGatewa
 	subnet, exists := m.Subnets[req.SubnetID]
 	if !exists {
 		return nil, &Error{
-			Code:    "InvalidSubnetID.NotFound",
+			Code:    errCodeInvalidSubnetIDNotFound,
 			Message: fmt.Sprintf("The subnet ID '%s' does not exist", req.SubnetID),
 		}
 	}
@@ -1439,7 +1456,7 @@ func (m *MemoryStorage) CreateNatGateway(_ context.Context, req *CreateNatGatewa
 		NatGatewayID: "nat-" + generateID(),
 		SubnetID:     req.SubnetID,
 		VpcID:        subnet.VpcID,
-		State:        "available",
+		State:        stateAvailable,
 		Tags:         []Tag{},
 	}
 
@@ -1531,7 +1548,7 @@ func (m *MemoryStorage) ModifyVpcAttribute(_ context.Context, vpcID string, upda
 	vpc, ok := m.Vpcs[vpcID]
 	if !ok {
 		return &Error{
-			Code:    "InvalidVpcID.NotFound",
+			Code:    errCodeInvalidVpcIDNotFound,
 			Message: fmt.Sprintf("The vpc ID '%s' does not exist", vpcID),
 		}
 	}
@@ -1557,7 +1574,7 @@ func (m *MemoryStorage) ModifySubnetAttribute(_ context.Context, subnetID string
 	subnet, ok := m.Subnets[subnetID]
 	if !ok {
 		return &Error{
-			Code:    "InvalidSubnetID.NotFound",
+			Code:    errCodeInvalidSubnetIDNotFound,
 			Message: fmt.Sprintf("The subnet ID '%s' does not exist", subnetID),
 		}
 	}

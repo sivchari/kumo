@@ -58,7 +58,7 @@ func (s *Service) RestoreObject(w http.ResponseWriter, r *http.Request) {
 	var req RestoreRequest
 	if len(body) > 0 {
 		if err := xml.Unmarshal(body, &req); err != nil {
-			writeS3Error(w, r, "MalformedXML", fmt.Sprintf("RestoreRequest XML: %v", err), http.StatusBadRequest)
+			writeS3Error(w, r, errCodeMalformedXML, fmt.Sprintf("RestoreRequest XML: %v", err), http.StatusBadRequest)
 
 			return
 		}
@@ -113,11 +113,11 @@ func (s *MemoryStorage) PutObjectRestore(_ context.Context, bucket, key string, 
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return false, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return false, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if _, ok := b.Objects[key]; !ok {
-		return false, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		return false, &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 	}
 
 	if b.ObjectRestores == nil {

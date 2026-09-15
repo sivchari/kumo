@@ -21,6 +21,10 @@ const (
 	errInvalidParameter = "ValidationException"
 )
 
+// certificateTypeImported is the CertificateType value for a certificate
+// imported via ImportCertificate, as opposed to one issued by ACM itself.
+const certificateTypeImported = "IMPORTED"
+
 // Storage defines the interface for ACM storage operations.
 type Storage interface {
 	RequestCertificate(ctx context.Context, req *RequestCertificateInput) (*Certificate, error)
@@ -286,7 +290,7 @@ func (s *MemoryStorage) GetCertificate(_ context.Context, arn string) (*Certific
 	}
 
 	// Only issued or imported certificates can be retrieved.
-	if cert.Status != "ISSUED" && cert.Type != "IMPORTED" {
+	if cert.Status != "ISSUED" && cert.Type != certificateTypeImported {
 		return nil, &Error{
 			Code:    errNotFound,
 			Message: "Certificate is not issued yet",
@@ -336,7 +340,7 @@ func (s *MemoryStorage) ImportCertificate(_ context.Context, req *ImportCertific
 		CertificateArn:     arn,
 		DomainName:         domainName,
 		Status:             "ISSUED",
-		Type:               "IMPORTED",
+		Type:               certificateTypeImported,
 		KeyAlgorithm:       "RSA_2048",
 		Serial:             serial,
 		Subject:            fmt.Sprintf("CN=%s", domainName),

@@ -31,6 +31,9 @@ const (
 	quotaStatusPending = "PENDING"
 )
 
+// quotaPeriodNone is the Period value for a quota with no adjustment period.
+const quotaPeriodNone = "None"
+
 // Quota applied at level values.
 const (
 	quotaAppliedAtLevelAccount = "ACCOUNT"
@@ -220,36 +223,36 @@ func (m *MemoryStorage) initializeServices() {
 
 func (m *MemoryStorage) initializeEC2Quotas() {
 	m.addServiceQuotas("ec2", "Amazon Elastic Compute Cloud (Amazon EC2)", []QuotaDefinition{
-		{"L-1216C47A", "Running On-Demand Standard instances", 1920, "None", true, "Max vCPUs for On-Demand Standard instances"},
-		{"L-34B43A08", "All Standard Spot Instance Requests", 1920, "None", true, "Max vCPUs for Standard Spot Requests"},
-		{"L-0E3CBAB9", "EC2-VPC Elastic IPs", 5, "None", true, "Max Elastic IP addresses for EC2-VPC"},
-		{"L-E4BF28E0", "VPCs per Region", 5, "None", true, "Maximum number of VPCs per Region"},
+		{"L-1216C47A", "Running On-Demand Standard instances", 1920, quotaPeriodNone, true, "Max vCPUs for On-Demand Standard instances"},
+		{"L-34B43A08", "All Standard Spot Instance Requests", 1920, quotaPeriodNone, true, "Max vCPUs for Standard Spot Requests"},
+		{"L-0E3CBAB9", "EC2-VPC Elastic IPs", 5, quotaPeriodNone, true, "Max Elastic IP addresses for EC2-VPC"},
+		{"L-E4BF28E0", "VPCs per Region", 5, quotaPeriodNone, true, "Maximum number of VPCs per Region"},
 	})
 }
 
 func (m *MemoryStorage) initializeS3Quotas() {
 	m.addServiceQuotas("s3", "Amazon Simple Storage Service (Amazon S3)", []QuotaDefinition{
-		{"L-DC2B2D3D", "Buckets", 100, "None", true, "Maximum number of buckets per account"},
+		{"L-DC2B2D3D", "Buckets", 100, quotaPeriodNone, true, "Maximum number of buckets per account"},
 	})
 }
 
 func (m *MemoryStorage) initializeLambdaQuotas() {
 	m.addServiceQuotas("lambda", "AWS Lambda", []QuotaDefinition{
-		{"L-B99A9384", "Concurrent executions", 1000, "None", true, "Maximum number of concurrent executions"},
+		{"L-B99A9384", "Concurrent executions", 1000, quotaPeriodNone, true, "Maximum number of concurrent executions"},
 		{"L-2ACBD22F", "Function and layer storage", 75, "Gigabytes", true, "Max total storage for functions and layers"},
 	})
 }
 
 func (m *MemoryStorage) initializeDynamoDBQuotas() {
 	m.addServiceQuotas("dynamodb", "Amazon DynamoDB", []QuotaDefinition{
-		{"L-F98FE922", "Table-level read throughput", 40000, "None", true, "Max read capacity units per table"},
-		{"L-82ACEF56", "Table-level write throughput", 40000, "None", true, "Max write capacity units per table"},
+		{"L-F98FE922", "Table-level read throughput", 40000, quotaPeriodNone, true, "Max read capacity units per table"},
+		{"L-82ACEF56", "Table-level write throughput", 40000, quotaPeriodNone, true, "Max write capacity units per table"},
 	})
 }
 
 func (m *MemoryStorage) initializeSQSQuotas() {
 	m.addServiceQuotas("sqs", "Amazon Simple Queue Service (Amazon SQS)", []QuotaDefinition{
-		{"L-06F64E4A", "Messages per queue (backlog)", 120000, "None", false, "Max inflight messages per queue"},
+		{"L-06F64E4A", "Messages per queue (backlog)", 120000, quotaPeriodNone, false, "Max inflight messages per queue"},
 	})
 }
 

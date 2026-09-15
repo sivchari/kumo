@@ -27,6 +27,10 @@ const (
 	// signing on 2026-04-01; an empty or "SHA1" value means legacy
 	// RSA-SHA1.
 	hashAlgorithmSHA256 = "SHA256"
+
+	cookieCloudFrontPolicy    = "CloudFront-Policy"
+	cookieCloudFrontSignature = "CloudFront-Signature"
+	cookieCloudFrontKeyPairID = "CloudFront-Key-Pair-Id"
 )
 
 // signedCredentials holds the three components needed to verify a
@@ -81,15 +85,15 @@ func extractSignedCredentials(r *http.Request) *signedCredentials {
 }
 
 func extractFromCookies(r *http.Request) *signedCredentials {
-	sig := cookieValue(r, "CloudFront-Signature")
-	kid := cookieValue(r, "CloudFront-Key-Pair-Id")
+	sig := cookieValue(r, cookieCloudFrontSignature)
+	kid := cookieValue(r, cookieCloudFrontKeyPairID)
 
 	if sig == "" || kid == "" {
 		return nil
 	}
 
 	return &signedCredentials{
-		Policy:        cookieValue(r, "CloudFront-Policy"),
+		Policy:        cookieValue(r, cookieCloudFrontPolicy),
 		Signature:     sig,
 		KeyPairID:     kid,
 		HashAlgorithm: cookieValue(r, "CloudFront-Hash-Algorithm"),

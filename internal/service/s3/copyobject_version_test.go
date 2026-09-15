@@ -17,7 +17,7 @@ func TestCopyObjectCopiesSpecifiedSourceVersion(t *testing.T) {
 
 	v1, v2 := setupVersionedSourceObject(t, store)
 
-	req := httptest.NewRequest(http.MethodPut, "/dst/copied.txt", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/dst/copied.txt", http.NoBody)
 	req.SetPathValue("bucket", "dst")
 	req.SetPathValue("key", "copied.txt")
 	req.Header.Set("X-Amz-Copy-Source", "/src/source.txt?versionId="+v1)
@@ -57,7 +57,7 @@ func TestUploadPartCopyCopiesSpecifiedSourceVersion(t *testing.T) {
 		t.Fatalf("CreateMultipartUpload: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/dst/joined.txt?partNumber=1&uploadId="+upload.UploadID, http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/dst/joined.txt?partNumber=1&uploadId="+upload.UploadID, http.NoBody)
 	req.SetPathValue("bucket", "dst")
 	req.SetPathValue("key", "joined.txt")
 	req.Header.Set("X-Amz-Copy-Source", "/src/source.txt?versionId="+v1)

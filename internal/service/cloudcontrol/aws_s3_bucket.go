@@ -138,7 +138,7 @@ func s3BucketStateJSON(name string) []byte {
 		"OwnershipControls":                nil,
 		"PublicAccessBlockConfiguration":   nil,
 		"ReplicationConfiguration":         nil,
-		"Tags":                             []any{},
+		resourceTagsField:                  []any{},
 		"VersioningConfiguration":          nil,
 		"WebsiteConfiguration":             nil,
 	}

@@ -23,7 +23,7 @@ func TestUpdateItemRejectsKeyAttributeUpdates(t *testing.T) {
 			name:       "set range key through expression attribute name",
 			expr:       "SET #sk = :new",
 			exprNames:  map[string]string{"#sk": "sk"},
-			exprValues: map[string]AttributeValue{":new": {S: ptr("changed")}},
+			exprValues: map[string]AttributeValue{testExprNew: {S: ptr("changed")}},
 		},
 	}
 
@@ -101,8 +101,8 @@ func newKeyUpdateTestStorage(t *testing.T) *MemoryStorage {
 	_, err := store.CreateTable(ctx, &CreateTableRequest{
 		TableName: "key-update-test",
 		KeySchema: []KeySchemaElement{
-			{AttributeName: "pk", KeyType: "HASH"},
-			{AttributeName: "sk", KeyType: "RANGE"},
+			{AttributeName: "pk", KeyType: keyTypeHash},
+			{AttributeName: "sk", KeyType: keyTypeRange},
 		},
 		AttributeDefinitions: []AttributeDefinition{
 			{AttributeName: "pk", AttributeType: "S"},
@@ -114,9 +114,9 @@ func newKeyUpdateTestStorage(t *testing.T) *MemoryStorage {
 	}
 
 	_, err = store.PutItem(ctx, "key-update-test", Item{
-		"pk":     {S: ptr("seed")},
-		"sk":     {S: ptr("sort")},
-		"status": {S: ptr("active")},
+		"pk":           {S: ptr("seed")},
+		"sk":           {S: ptr("sort")},
+		testAttrStatus: {S: ptr("active")},
 	}, false, ConditionInput{})
 	if err != nil {
 		t.Fatal(err)

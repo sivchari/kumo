@@ -18,6 +18,13 @@ const (
 	errValidationException       = "ValidationException"
 	errConflictException         = "ConflictException"
 	errInternalServerException   = "InternalServerException"
+
+	msgInvalidRequestBody     = "Invalid request body"
+	msgMapNameRequired        = "MapName is required"
+	msgIndexNameRequired      = "IndexName is required"
+	msgCalculatorNameRequired = "CalculatorName is required"
+	msgCollectionNameRequired = "CollectionName is required"
+	msgTrackerNameRequired    = "TrackerName is required"
 )
 
 // Default values.

@@ -46,8 +46,8 @@ func TestMapStateItemSelectorStaticAndContextAndInputPaths(t *testing.T) {
 	}
 
 	want := []map[string]any{
-		{"static": "fixed", "value": map[string]any{"a": float64(1)}, "index": float64(0), "courier": "UQS"},
-		{"static": "fixed", "value": map[string]any{"a": float64(2)}, "index": float64(1), "courier": "UQS"},
+		{"static": testFixed, fieldValue: map[string]any{"a": float64(1)}, "index": float64(0), "courier": "UQS"},
+		{"static": testFixed, fieldValue: map[string]any{"a": float64(2)}, "index": float64(1), "courier": "UQS"},
 	}
 
 	for i, w := range want {

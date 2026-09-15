@@ -8,6 +8,11 @@ import (
 	"testing"
 )
 
+const (
+	testAttrValueTrue = "true"
+	testTraceValueAbc = "abc"
+)
+
 // capturingPublisher is a fake SQSPublisher that records the arguments of
 // the most recent PublishToSQS call, optionally returning an error.
 type capturingPublisher struct {
@@ -40,7 +45,7 @@ func newTopicWithSQSSubscription(t *testing.T, publisher SQSPublisher, subAttrs 
 		t.Fatalf("CreateTopic() error = %v", err)
 	}
 
-	sub, err := storage.Subscribe(ctx, topic.ARN, "sqs", "arn:aws:sqs:us-east-1:000000000000:test-queue", nil)
+	sub, err := storage.Subscribe(ctx, topic.ARN, protocolSQS, "arn:aws:sqs:us-east-1:000000000000:test-queue", nil)
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
@@ -56,10 +61,10 @@ func TestPublish_RawDeliveryForwardsAttributes(t *testing.T) {
 	t.Parallel()
 
 	publisher := &capturingPublisher{}
-	storage, topicARN := newTopicWithSQSSubscription(t, publisher, map[string]string{"RawMessageDelivery": "true"})
+	storage, topicARN := newTopicWithSQSSubscription(t, publisher, map[string]string{subscriptionAttrRawMessageDelivery: testAttrValueTrue})
 
 	attributes := map[string]MessageAttribute{
-		"traceId": {DataType: "String", StringValue: "abc"},
+		"traceId": {DataType: dataTypeString, StringValue: testTraceValueAbc},
 	}
 
 	messageID, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", attributes)
@@ -72,7 +77,7 @@ func TestPublish_RawDeliveryForwardsAttributes(t *testing.T) {
 		t.Fatalf("expected captured attrs to contain traceId, got %v", publisher.attrs)
 	}
 
-	if traceID.DataType != "String" || traceID.StringValue != "abc" {
+	if traceID.DataType != dataTypeString || traceID.StringValue != testTraceValueAbc {
 		t.Errorf("traceId attribute = %+v, want DataType=String StringValue=abc", traceID)
 	}
 
@@ -90,7 +95,7 @@ func TestPublish_RawDeliveryPreservesTypedAttributes(t *testing.T) {
 	t.Parallel()
 
 	publisher := &capturingPublisher{}
-	storage, topicARN := newTopicWithSQSSubscription(t, publisher, map[string]string{"RawMessageDelivery": "true"})
+	storage, topicARN := newTopicWithSQSSubscription(t, publisher, map[string]string{subscriptionAttrRawMessageDelivery: testAttrValueTrue})
 
 	attributes := map[string]MessageAttribute{
 		"count": {DataType: "Number", StringValue: "42"},
@@ -129,7 +134,7 @@ func TestPublish_EnvelopeDeliveryDoesNotDuplicateAttributes(t *testing.T) {
 	storage, topicARN := newTopicWithSQSSubscription(t, publisher, nil)
 
 	attributes := map[string]MessageAttribute{
-		"traceId": {DataType: "String", StringValue: "abc"},
+		"traceId": {DataType: dataTypeString, StringValue: testTraceValueAbc},
 	}
 
 	_, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", attributes)
@@ -150,7 +155,7 @@ func TestPublish_SubscriberErrorDoesNotFailPublish(t *testing.T) {
 	t.Parallel()
 
 	publisher := &capturingPublisher{err: errors.New("boom")}
-	storage, topicARN := newTopicWithSQSSubscription(t, publisher, map[string]string{"RawMessageDelivery": "true"})
+	storage, topicARN := newTopicWithSQSSubscription(t, publisher, map[string]string{subscriptionAttrRawMessageDelivery: testAttrValueTrue})
 
 	messageID, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", nil)
 	if err != nil {

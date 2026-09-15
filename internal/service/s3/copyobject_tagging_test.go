@@ -12,7 +12,7 @@ func TestCopyObjectCopiesSourceTagsByDefault(t *testing.T) {
 	t.Parallel()
 
 	store, svc := setupCopyObjectTaggingFixture(t)
-	w := issueTaggedCopyObject(svc, nil)
+	w := issueTaggedCopyObject(t, svc, nil)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("CopyObject status: got %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
@@ -23,7 +23,7 @@ func TestCopyObjectCopiesSourceTagsByDefault(t *testing.T) {
 		t.Fatalf("GetObjectTagging dst: %v", err)
 	}
 
-	if got := tags["color"]; got != "blue" {
+	if got := tags["color"]; got != testColorBlue {
 		t.Fatalf("tag color: got %q, want blue", got)
 	}
 }
@@ -32,7 +32,7 @@ func TestCopyObjectReplacesTagsWhenDirectiveIsReplace(t *testing.T) {
 	t.Parallel()
 
 	store, svc := setupCopyObjectTaggingFixture(t)
-	w := issueTaggedCopyObject(svc, map[string]string{
+	w := issueTaggedCopyObject(t, svc, map[string]string{
 		"X-Amz-Tagging-Directive": "REPLACE",
 		"X-Amz-Tagging":           "color=red&env=prod",
 	})
@@ -46,7 +46,7 @@ func TestCopyObjectReplacesTagsWhenDirectiveIsReplace(t *testing.T) {
 		t.Fatalf("GetObjectTagging dst: %v", err)
 	}
 
-	if got := tags["color"]; got != "red" {
+	if got := tags["color"]; got != testColorRed {
 		t.Fatalf("tag color: got %q, want red", got)
 	}
 
@@ -59,7 +59,7 @@ func TestCopyObjectRejectsInvalidTaggingDirective(t *testing.T) {
 	t.Parallel()
 
 	store, svc := setupCopyObjectTaggingFixture(t)
-	w := issueTaggedCopyObject(svc, map[string]string{
+	w := issueTaggedCopyObject(t, svc, map[string]string{
 		"X-Amz-Tagging-Directive": "BROKEN",
 	})
 
@@ -91,15 +91,17 @@ func setupCopyObjectTaggingFixture(t *testing.T) (*MemoryStorage, *Service) {
 		t.Fatalf("PutObject: %v", err)
 	}
 
-	if err := store.PutObjectTagging(ctx, "src", "source.txt", map[string]string{"color": "blue"}); err != nil {
+	if err := store.PutObjectTagging(ctx, "src", "source.txt", map[string]string{"color": testColorBlue}); err != nil {
 		t.Fatalf("PutObjectTagging: %v", err)
 	}
 
 	return store, svc
 }
 
-func issueTaggedCopyObject(svc *Service, headers map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPut, "/dst/copied.txt", http.NoBody)
+func issueTaggedCopyObject(t *testing.T, svc *Service, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/dst/copied.txt", http.NoBody)
 	req.SetPathValue("bucket", "dst")
 	req.SetPathValue("key", "copied.txt")
 	req.Header.Set("X-Amz-Copy-Source", "/src/source.txt")

@@ -21,6 +21,10 @@ const (
 	errAcceleratorEnabled = "AcceleratorNotDisabledException"
 
 	defaultAccountID = "000000000000"
+
+	msgAcceleratorNotFound   = "Accelerator not found"
+	msgListenerNotFound      = "Listener not found"
+	msgEndpointGroupNotFound = "Endpoint group not found"
 )
 
 // Storage defines the Global Accelerator storage interface.
@@ -220,7 +224,7 @@ func (s *MemoryStorage) GetAccelerator(_ context.Context, arn string) (*Accelera
 
 	accelerator, ok := s.Accelerators[arn]
 	if !ok {
-		return nil, &ServiceError{Code: errNotFound, Message: "Accelerator not found"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgAcceleratorNotFound}
 	}
 
 	return accelerator, nil
@@ -276,7 +280,7 @@ func (s *MemoryStorage) UpdateAccelerator(_ context.Context, arn, name, ipAddres
 
 	accelerator, ok := s.Accelerators[arn]
 	if !ok {
-		return nil, &ServiceError{Code: errNotFound, Message: "Accelerator not found"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgAcceleratorNotFound}
 	}
 
 	if name != "" {
@@ -305,7 +309,7 @@ func (s *MemoryStorage) DeleteAccelerator(_ context.Context, arn string) error {
 
 	accelerator, ok := s.Accelerators[arn]
 	if !ok {
-		return &ServiceError{Code: errNotFound, Message: "Accelerator not found"}
+		return &ServiceError{Code: errNotFound, Message: msgAcceleratorNotFound}
 	}
 
 	if accelerator.Enabled {
@@ -337,7 +341,7 @@ func (s *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 	defer s.mu.Unlock()
 
 	if _, ok := s.Accelerators[req.AcceleratorArn]; !ok {
-		return nil, &ServiceError{Code: errNotFound, Message: "Accelerator not found"}
+		return nil, &ServiceError{Code: errNotFound, Message: msgAcceleratorNotFound}
 	}
 
 	listenerID := uuid.New().String()
@@ -375,7 +379,7 @@ func (s *MemoryStorage) GetListener(_ context.Context, arn string) (*Listener, e
 
 	listener, ok := s.Listeners[arn]
 	if !ok {
-		return nil, &ServiceError{Code: errListenerNotFound, Message: "Listener not found"}
+		return nil, &ServiceError{Code: errListenerNotFound, Message: msgListenerNotFound}
 	}
 
 	return listener, nil
@@ -411,7 +415,7 @@ func (s *MemoryStorage) UpdateListener(_ context.Context, req *UpdateListenerReq
 
 	listener, ok := s.Listeners[req.ListenerArn]
 	if !ok {
-		return nil, &ServiceError{Code: errListenerNotFound, Message: "Listener not found"}
+		return nil, &ServiceError{Code: errListenerNotFound, Message: msgListenerNotFound}
 	}
 
 	if len(req.PortRanges) > 0 {
@@ -442,7 +446,7 @@ func (s *MemoryStorage) DeleteListener(_ context.Context, arn string) error {
 	defer s.mu.Unlock()
 
 	if _, ok := s.Listeners[arn]; !ok {
-		return &ServiceError{Code: errListenerNotFound, Message: "Listener not found"}
+		return &ServiceError{Code: errListenerNotFound, Message: msgListenerNotFound}
 	}
 
 	for egArn, eg := range s.EndpointGroups {
@@ -464,7 +468,7 @@ func (s *MemoryStorage) CreateEndpointGroup(_ context.Context, req *CreateEndpoi
 	defer s.mu.Unlock()
 
 	if _, ok := s.Listeners[req.ListenerArn]; !ok {
-		return nil, &ServiceError{Code: errListenerNotFound, Message: "Listener not found"}
+		return nil, &ServiceError{Code: errListenerNotFound, Message: msgListenerNotFound}
 	}
 
 	endpointGroupID := uuid.New().String()
@@ -518,7 +522,7 @@ func (s *MemoryStorage) GetEndpointGroup(_ context.Context, arn string) (*Endpoi
 
 	endpointGroup, ok := s.EndpointGroups[arn]
 	if !ok {
-		return nil, &ServiceError{Code: errEndpointNotFound, Message: "Endpoint group not found"}
+		return nil, &ServiceError{Code: errEndpointNotFound, Message: msgEndpointGroupNotFound}
 	}
 
 	return endpointGroup, nil
@@ -554,7 +558,7 @@ func (s *MemoryStorage) UpdateEndpointGroup(_ context.Context, req *UpdateEndpoi
 
 	eg, ok := s.EndpointGroups[req.EndpointGroupArn]
 	if !ok {
-		return nil, &ServiceError{Code: errEndpointNotFound, Message: "Endpoint group not found"}
+		return nil, &ServiceError{Code: errEndpointNotFound, Message: msgEndpointGroupNotFound}
 	}
 
 	if len(req.EndpointConfigurations) > 0 {
@@ -600,7 +604,7 @@ func (s *MemoryStorage) DeleteEndpointGroup(_ context.Context, arn string) error
 	defer s.mu.Unlock()
 
 	if _, ok := s.EndpointGroups[arn]; !ok {
-		return &ServiceError{Code: errEndpointNotFound, Message: "Endpoint group not found"}
+		return &ServiceError{Code: errEndpointNotFound, Message: msgEndpointGroupNotFound}
 	}
 
 	delete(s.EndpointGroups, arn)

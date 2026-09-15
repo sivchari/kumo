@@ -345,7 +345,7 @@ var validateDiagnosticTests = []diagnosticTest{
 	},
 	{
 		name:         "invalid JSON",
-		definition:   `{not json`,
+		definition:   testMalformedJSON,
 		wantSeverity: diagnosticSeverityError,
 		wantCode:     codeInvalidJSONDescription,
 		wantLocation: "",

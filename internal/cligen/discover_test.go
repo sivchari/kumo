@@ -9,6 +9,10 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+// testServiceKMS is the kumo service name for KMS, repeated across this
+// file's discovery assertions.
+const testServiceKMS = "kms"
+
 // TestDiscover_SQSCasing proves the exact casing trap the plan calls out:
 // sqs's handler method is GetQueueURL (Go), but the SDK's canonical wire name
 // is GetQueueUrl. Discover must resolve the Go name against the SDK method
@@ -70,7 +74,7 @@ func TestDiscover_SeedServicesProduceActions(t *testing.T) {
 
 	result := cligen.Discover(service.Services())
 
-	seeds := []string{"sqs", "dynamodb", "kinesis", "kms", "acm", "athena", "events"}
+	seeds := []string{"sqs", "dynamodb", "kinesis", testServiceKMS, "acm", "athena", "events"}
 
 	counts := make(map[string]int, len(seeds))
 	for _, a := range result.Actions {
@@ -96,12 +100,12 @@ func TestDiscover_KMSSignVerifySkipped(t *testing.T) {
 	result := cligen.Discover(service.Services())
 
 	for _, a := range result.Actions {
-		if a.ServiceName == "kms" && (a.SDKMethod == "Sign" || a.SDKMethod == "Verify") {
+		if a.ServiceName == testServiceKMS && (a.SDKMethod == "Sign" || a.SDKMethod == "Verify") {
 			t.Errorf("kms %s must be skipped (manually overridden), got a discovered action", a.SDKMethod)
 		}
 	}
 
-	if !hasSkipDiagnostic(result.Diagnostics, "kms", "Sign", "overridden") {
+	if !hasSkipDiagnostic(result.Diagnostics, testServiceKMS, "Sign", "overridden") {
 		t.Error("expected a skip diagnostic for kms Sign")
 	}
 }

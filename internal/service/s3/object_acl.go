@@ -182,7 +182,7 @@ func decodeObjectACL(body []byte, cannedHeader string) (*ObjectACL, error) {
 		canned = "private"
 	}
 
-	return &ObjectACL{CannedACL: canned, OwnerID: "owner-id", OwnerName: "owner"}, nil
+	return &ObjectACL{CannedACL: canned, OwnerID: ownerID, OwnerName: ownerDisplayName}, nil
 }
 
 // encodeObjectACL renders an ObjectACL back to AccessControlPolicy
@@ -199,7 +199,7 @@ func encodeObjectACL(acl *ObjectACL) *AccessControlPolicy {
 	if len(acl.Grants) == 0 {
 		p.ACL.Grants = []AccessControlGrant{{
 			Grantee: AccessControlGrantee{
-				XSI:         "http://www.w3.org/2001/XMLSchema-instance",
+				XSI:         xsiNamespaceAttr,
 				Type:        "CanonicalUser",
 				ID:          acl.OwnerID,
 				DisplayName: acl.OwnerName,
@@ -214,7 +214,7 @@ func encodeObjectACL(acl *ObjectACL) *AccessControlPolicy {
 	for i, g := range acl.Grants {
 		p.ACL.Grants[i] = AccessControlGrant{
 			Grantee: AccessControlGrantee{
-				XSI:         "http://www.w3.org/2001/XMLSchema-instance",
+				XSI:         xsiNamespaceAttr,
 				Type:        g.GranteeType,
 				ID:          g.GranteeID,
 				URI:         g.GranteeURI,
@@ -254,11 +254,11 @@ func (s *MemoryStorage) PutObjectACL(_ context.Context, bucket, key string, acl 
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if _, ok := b.Objects[key]; !ok {
-		return &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		return &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 	}
 
 	if b.ObjectACLs == nil {
@@ -278,16 +278,16 @@ func (s *MemoryStorage) GetObjectACL(_ context.Context, bucket, key string) (*Ob
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if _, ok := b.Objects[key]; !ok {
-		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		return nil, &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 	}
 
 	if acl, ok := b.ObjectACLs[key]; ok {
 		return acl, nil
 	}
 
-	return &ObjectACL{CannedACL: "private", OwnerID: "owner-id", OwnerName: "owner"}, nil
+	return &ObjectACL{CannedACL: "private", OwnerID: ownerID, OwnerName: ownerDisplayName}, nil
 }

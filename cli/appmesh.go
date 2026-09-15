@@ -606,7 +606,7 @@ func newAppMeshCreateRouteCmd() *cobra.Command {
 	var meshName, virtualRouterName, routeName, specJSON string
 
 	cmd := &cobra.Command{
-		Use:   "create-route",
+		Use:   cmdUseCreateRoute,
 		Short: "Create a route",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, err := newAppmeshClient(cmd)

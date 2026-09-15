@@ -80,7 +80,7 @@ func (s *Service) PutBucketWebsite(w http.ResponseWriter, r *http.Request) {
 
 	var cfg WebsiteConfiguration
 	if err := xml.Unmarshal(body, &cfg); err != nil {
-		writeS3Error(w, r, "MalformedXML", fmt.Sprintf("WebsiteConfiguration XML: %v", err), http.StatusBadRequest)
+		writeS3Error(w, r, errCodeMalformedXML, fmt.Sprintf("WebsiteConfiguration XML: %v", err), http.StatusBadRequest)
 
 		return
 	}
@@ -131,7 +131,7 @@ func (s *MemoryStorage) PutBucketWebsite(_ context.Context, bucket string, cfg *
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.Website = cfg
@@ -147,7 +147,7 @@ func (s *MemoryStorage) GetBucketWebsite(_ context.Context, bucket string) (*Web
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if b.Website == nil {
@@ -165,7 +165,7 @@ func (s *MemoryStorage) DeleteBucketWebsite(_ context.Context, bucket string) er
 
 	b, ok := s.Buckets[bucket]
 	if !ok {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.Website = nil

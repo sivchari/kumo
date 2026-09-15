@@ -13,7 +13,7 @@ func TestWriteJSONResponse(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 
-	service.WriteJSONResponse(rec, service.ContentTypeAmzJSON11, map[string]string{"name": "alice"})
+	service.WriteJSONResponse(rec, service.ContentTypeAmzJSON11, map[string]string{"name": testNameAlice})
 
 	res := rec.Result()
 	defer func() { _ = res.Body.Close() }()
@@ -35,7 +35,7 @@ func TestWriteJSONResponse(t *testing.T) {
 		t.Fatalf("decode body: %v", err)
 	}
 
-	if body["name"] != "alice" {
+	if body["name"] != testNameAlice {
 		t.Errorf("body name = %q, want alice", body["name"])
 	}
 }

@@ -128,6 +128,24 @@ const (
 	errorStatesExceedToleratedFailureThreshold = "States.ExceedToleratedFailureThreshold"
 )
 
+// Amazon States Language state Type values.
+const (
+	stateTypeTask     = "Task"
+	stateTypeChoice   = "Choice"
+	stateTypeSucceed  = "Succeed"
+	stateTypePass     = "Pass"
+	stateTypeWait     = "Wait"
+	stateTypeParallel = "Parallel"
+	stateTypeMap      = "Map"
+)
+
+// Resource ARNs for the two synchronous Task integrations that support
+// .waitForTaskToken (see callback_task.go).
+const (
+	resourceLambdaInvoke   = "arn:aws:states:::lambda:invoke"
+	resourceSQSSendMessage = "arn:aws:states:::sqs:sendMessage"
+)
+
 // taskFailedError marks a failure of the task invocation itself so the
 // execution reports States.TaskFailed instead of States.Runtime.
 type taskFailedError struct {
@@ -280,7 +298,7 @@ func (e *executionEngine) execute(ctx context.Context, def *stateMachineDefiniti
 		}
 
 		// Succeed states are always terminal, regardless of End/Next.
-		if state.Type == "Succeed" {
+		if state.Type == stateTypeSucceed {
 			return output, nil
 		}
 
@@ -312,27 +330,27 @@ func (e *executionEngine) execute(ctx context.Context, def *stateMachineDefiniti
 // nextOverride is empty when the state uses its own Next/End fields.
 func (e *executionEngine) executeState(ctx context.Context, name string, state *stateDefinition, input string) (string, string, error) {
 	switch state.Type {
-	case "Pass":
+	case stateTypePass:
 		output, err := e.executePassState(name, state, input)
 
 		return output, "", err
-	case "Task":
+	case stateTypeTask:
 		return e.executeTaskStateWithPolicy(ctx, name, state, input)
-	case "Choice":
+	case stateTypeChoice:
 		return e.executeChoiceState(name, state, input)
-	case "Wait":
+	case stateTypeWait:
 		output, err := e.executeWaitState(ctx, state, input)
 
 		return output, "", err
-	case "Succeed":
+	case stateTypeSucceed:
 		output, err := e.executeSucceedState(state, input)
 
 		return output, "", err
 	case "Fail":
 		return "", "", e.executeFailState(state)
-	case "Parallel":
+	case stateTypeParallel:
 		return e.executeParallelStateWithPolicy(ctx, name, state, input)
-	case "Map":
+	case stateTypeMap:
 		return e.executeMapStateWithPolicy(ctx, name, state, input)
 	default:
 		return "", "", fmt.Errorf("unsupported state type %q", state.Type)
@@ -492,9 +510,9 @@ func (e *executionEngine) executeTaskState(ctx context.Context, name string, sta
 	}
 
 	switch {
-	case resource == "arn:aws:states:::sqs:sendMessage":
+	case resource == resourceSQSSendMessage:
 		return wrapTaskResult(e.executeSQSSendMessage(ctx, params))
-	case resource == "arn:aws:states:::lambda:invoke":
+	case resource == resourceLambdaInvoke:
 		return wrapTaskResult(e.executeLambdaInvoke(ctx, params))
 	case strings.HasPrefix(resource, "arn:aws:lambda:"):
 		return wrapTaskResult(e.executeLambdaFunctionTask(ctx, name, resource, params, input))

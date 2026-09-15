@@ -2,10 +2,6 @@ package sfn
 
 import "testing"
 
-// waitStateType is the state machine definition's Type value for a Wait
-// state, factored out to keep the "Wait" literal below goconst's threshold.
-const waitStateType = "Wait"
-
 func TestWaitStateSecondsZeroCompletesAndPassesInputThrough(t *testing.T) {
 	t.Parallel()
 
@@ -51,7 +47,7 @@ func TestWaitStateSecondsOneCompletesAndPassesInputThrough(t *testing.T) {
 func TestWaitDurationRequiresOneField(t *testing.T) {
 	t.Parallel()
 
-	_, err := waitDuration(&stateDefinition{Type: waitStateType}, "{}")
+	_, err := waitDuration(&stateDefinition{Type: stateTypeWait}, "{}")
 	if err == nil {
 		t.Fatal("waitDuration: want error when no wait field is set, got nil")
 	}
@@ -60,7 +56,7 @@ func TestWaitDurationRequiresOneField(t *testing.T) {
 func TestWaitDurationSecondsPath(t *testing.T) {
 	t.Parallel()
 
-	state := &stateDefinition{Type: waitStateType, SecondsPath: "$.waitSeconds"}
+	state := &stateDefinition{Type: stateTypeWait, SecondsPath: "$.waitSeconds"}
 
 	d, err := waitDuration(state, `{"waitSeconds": 0}`)
 	if err != nil {

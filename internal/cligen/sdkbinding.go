@@ -118,7 +118,7 @@ var sdkBindings = map[string]sdkBinding{
 		ImportPath: "github.com/aws/aws-sdk-go-v2/service/kinesis",
 		CLIName:    "Kinesis",
 	},
-	"kms": {
+	serviceKMS: {
 		ClientType: reflect.TypeOf(kms.Client{}),
 		ImportPath: "github.com/aws/aws-sdk-go-v2/service/kms",
 		CLIName:    "KMS",

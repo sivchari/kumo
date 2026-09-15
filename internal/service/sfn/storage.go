@@ -27,6 +27,9 @@ const (
 	// errResourceNotFound is DescribeMapRun's documented error for a
 	// mapRunArn kumo has never recorded.
 	errResourceNotFound = "ResourceNotFound"
+
+	msgStateMachineDoesNotExist = "State machine does not exist"
+	msgExecutionDoesNotExist    = "Execution does not exist"
 )
 
 // Storage defines the Step Functions storage interface.
@@ -275,7 +278,7 @@ func (s *MemoryStorage) DeleteStateMachine(_ context.Context, arn string) error 
 	defer s.mu.Unlock()
 
 	if _, exists := s.StateMachines[arn]; !exists {
-		return &ServiceError{Code: errStateMachineDoesNotExist, Message: "State machine does not exist"}
+		return &ServiceError{Code: errStateMachineDoesNotExist, Message: msgStateMachineDoesNotExist}
 	}
 
 	delete(s.StateMachines, arn)
@@ -293,7 +296,7 @@ func (s *MemoryStorage) DescribeStateMachine(_ context.Context, arn string) (*St
 
 	sm, exists := s.StateMachines[arn]
 	if !exists {
-		return nil, &ServiceError{Code: errStateMachineDoesNotExist, Message: "State machine does not exist"}
+		return nil, &ServiceError{Code: errStateMachineDoesNotExist, Message: msgStateMachineDoesNotExist}
 	}
 
 	return sm, nil
@@ -345,7 +348,7 @@ func (s *MemoryStorage) startExecutionAtDepth(_ context.Context, stateMachineArn
 
 	sm, exists := s.StateMachines[stateMachineArn]
 	if !exists {
-		return nil, &ServiceError{Code: errStateMachineDoesNotExist, Message: "State machine does not exist"}
+		return nil, &ServiceError{Code: errStateMachineDoesNotExist, Message: msgStateMachineDoesNotExist}
 	}
 
 	execName := name
@@ -535,7 +538,7 @@ func (s *MemoryStorage) StopExecution(_ context.Context, executionArn, errorCode
 
 	ed, exists := s.Executions[executionArn]
 	if !exists {
-		return nil, &ServiceError{Code: errExecutionDoesNotExist, Message: "Execution does not exist"}
+		return nil, &ServiceError{Code: errExecutionDoesNotExist, Message: msgExecutionDoesNotExist}
 	}
 
 	if ed.Execution.Status != ExecutionStatusRunning {
@@ -576,7 +579,7 @@ func (s *MemoryStorage) DescribeExecution(_ context.Context, executionArn string
 
 	ed, exists := s.Executions[executionArn]
 	if !exists {
-		return nil, &ServiceError{Code: errExecutionDoesNotExist, Message: "Execution does not exist"}
+		return nil, &ServiceError{Code: errExecutionDoesNotExist, Message: msgExecutionDoesNotExist}
 	}
 
 	return copyExecution(ed.Execution), nil
@@ -636,7 +639,7 @@ func (s *MemoryStorage) ListMapRuns(_ context.Context, executionArn string, maxR
 	defer s.mu.RUnlock()
 
 	if _, exists := s.Executions[executionArn]; !exists {
-		return nil, "", &ServiceError{Code: errExecutionDoesNotExist, Message: "Execution does not exist"}
+		return nil, "", &ServiceError{Code: errExecutionDoesNotExist, Message: msgExecutionDoesNotExist}
 	}
 
 	if maxResults <= 0 {
@@ -671,7 +674,7 @@ func (s *MemoryStorage) GetExecutionHistory(_ context.Context, executionArn stri
 
 	ed, exists := s.Executions[executionArn]
 	if !exists {
-		return nil, "", &ServiceError{Code: errExecutionDoesNotExist, Message: "Execution does not exist"}
+		return nil, "", &ServiceError{Code: errExecutionDoesNotExist, Message: msgExecutionDoesNotExist}
 	}
 
 	if maxResults <= 0 {

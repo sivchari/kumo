@@ -12,7 +12,7 @@ func (s *Service) DetectSentiment(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -28,7 +28,7 @@ func (s *Service) DetectSentiment(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeError(w, &Error{
-			Code:    "InternalServerException",
+			Code:    errInternalServer,
 			Message: err.Error(),
 		})
 
@@ -44,7 +44,7 @@ func (s *Service) DetectDominantLanguage(w http.ResponseWriter, r *http.Request)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -60,7 +60,7 @@ func (s *Service) DetectDominantLanguage(w http.ResponseWriter, r *http.Request)
 		}
 
 		writeError(w, &Error{
-			Code:    "InternalServerException",
+			Code:    errInternalServer,
 			Message: err.Error(),
 		})
 
@@ -76,7 +76,7 @@ func (s *Service) DetectEntities(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -92,7 +92,7 @@ func (s *Service) DetectEntities(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeError(w, &Error{
-			Code:    "InternalServerException",
+			Code:    errInternalServer,
 			Message: err.Error(),
 		})
 
@@ -108,7 +108,7 @@ func (s *Service) DetectKeyPhrases(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -124,7 +124,7 @@ func (s *Service) DetectKeyPhrases(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeError(w, &Error{
-			Code:    "InternalServerException",
+			Code:    errInternalServer,
 			Message: err.Error(),
 		})
 
@@ -140,7 +140,7 @@ func (s *Service) DetectPiiEntities(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -156,7 +156,7 @@ func (s *Service) DetectPiiEntities(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeError(w, &Error{
-			Code:    "InternalServerException",
+			Code:    errInternalServer,
 			Message: err.Error(),
 		})
 
@@ -172,7 +172,7 @@ func (s *Service) DetectSyntax(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -188,7 +188,7 @@ func (s *Service) DetectSyntax(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeError(w, &Error{
-			Code:    "InternalServerException",
+			Code:    errInternalServer,
 			Message: err.Error(),
 		})
 
@@ -204,7 +204,7 @@ func (s *Service) ContainsPiiEntities(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -220,7 +220,7 @@ func (s *Service) ContainsPiiEntities(w http.ResponseWriter, r *http.Request) {
 		}
 
 		writeError(w, &Error{
-			Code:    "InternalServerException",
+			Code:    errInternalServer,
 			Message: err.Error(),
 		})
 
@@ -236,7 +236,7 @@ func (s *Service) BatchDetectSentiment(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -260,7 +260,7 @@ func (s *Service) BatchDetectSentiment(w http.ResponseWriter, r *http.Request) {
 			}
 
 			errorList = append(errorList, BatchItemError{
-				ErrorCode:    "InternalServerException",
+				ErrorCode:    errInternalServer,
 				ErrorMessage: err.Error(),
 				Index:        i,
 			})
@@ -287,7 +287,7 @@ func (s *Service) BatchDetectDominantLanguage(w http.ResponseWriter, r *http.Req
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -311,7 +311,7 @@ func (s *Service) BatchDetectDominantLanguage(w http.ResponseWriter, r *http.Req
 			}
 
 			errorList = append(errorList, BatchItemError{
-				ErrorCode:    "InternalServerException",
+				ErrorCode:    errInternalServer,
 				ErrorMessage: err.Error(),
 				Index:        i,
 			})
@@ -337,7 +337,7 @@ func (s *Service) BatchDetectEntities(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -361,7 +361,7 @@ func (s *Service) BatchDetectEntities(w http.ResponseWriter, r *http.Request) {
 			}
 
 			errorList = append(errorList, BatchItemError{
-				ErrorCode:    "InternalServerException",
+				ErrorCode:    errInternalServer,
 				ErrorMessage: err.Error(),
 				Index:        i,
 			})
@@ -387,7 +387,7 @@ func (s *Service) BatchDetectKeyPhrases(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -411,7 +411,7 @@ func (s *Service) BatchDetectKeyPhrases(w http.ResponseWriter, r *http.Request) 
 			}
 
 			errorList = append(errorList, BatchItemError{
-				ErrorCode:    "InternalServerException",
+				ErrorCode:    errInternalServer,
 				ErrorMessage: err.Error(),
 				Index:        i,
 			})
@@ -437,7 +437,7 @@ func (s *Service) BatchDetectSyntax(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, &Error{
 			Code:    errInvalidRequest,
-			Message: "Invalid request body",
+			Message: msgInvalidRequestBody,
 		})
 
 		return
@@ -461,7 +461,7 @@ func (s *Service) BatchDetectSyntax(w http.ResponseWriter, r *http.Request) {
 			}
 
 			errorList = append(errorList, BatchItemError{
-				ErrorCode:    "InternalServerException",
+				ErrorCode:    errInternalServer,
 				ErrorMessage: err.Error(),
 				Index:        i,
 			})

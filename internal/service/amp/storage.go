@@ -24,6 +24,8 @@ import (
 
 const defaultRegion = "us-east-1"
 
+const errResourceNotFoundException = "ResourceNotFoundException"
+
 // Storage is the in-memory contract.
 type Storage interface {
 	CreateWorkspace(ctx context.Context, alias string, tags map[string]string) (*Workspace, error)
@@ -146,7 +148,7 @@ func (s *MemoryStorage) DescribeWorkspace(_ context.Context, id string) (*Worksp
 
 	ws, ok := s.Workspaces[id]
 	if !ok {
-		return nil, &Error{Code: "ResourceNotFoundException", Message: fmt.Sprintf("workspace %s not found", id)}
+		return nil, &Error{Code: errResourceNotFoundException, Message: fmt.Sprintf("workspace %s not found", id)}
 	}
 
 	return ws, nil
@@ -176,7 +178,7 @@ func (s *MemoryStorage) DeleteWorkspace(_ context.Context, id string) error {
 	defer s.mu.Unlock()
 
 	if _, ok := s.Workspaces[id]; !ok {
-		return &Error{Code: "ResourceNotFoundException", Message: fmt.Sprintf("workspace %s not found", id)}
+		return &Error{Code: errResourceNotFoundException, Message: fmt.Sprintf("workspace %s not found", id)}
 	}
 
 	delete(s.Workspaces, id)

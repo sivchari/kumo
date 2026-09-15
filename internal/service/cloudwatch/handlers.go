@@ -22,6 +22,22 @@ const (
 	errResourceNotFound     = "ResourceNotFound"
 )
 
+// Action names, shared with service.go's action registration and the CBOR
+// dispatcher's switch.
+const (
+	actionPutMetricData       = "PutMetricData"
+	actionGetMetricData       = "GetMetricData"
+	actionGetMetricStatistics = "GetMetricStatistics"
+	actionListMetrics         = "ListMetrics"
+	actionPutMetricAlarm      = "PutMetricAlarm"
+	actionDeleteAlarms        = "DeleteAlarms"
+	actionDescribeAlarms      = "DescribeAlarms"
+	actionSetAlarmState       = "SetAlarmState"
+	actionListTagsForResource = "ListTagsForResource"
+	actionTagResource         = "TagResource"
+	actionUntagResource       = "UntagResource"
+)
+
 // PutMetricData handles the PutMetricData action.
 func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 	var req PutMetricDataRequest
@@ -310,27 +326,27 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(target, "GraniteServiceVersion20100801.")
 
 	switch action {
-	case "PutMetricData":
+	case actionPutMetricData:
 		s.PutMetricData(w, r)
-	case "GetMetricData":
+	case actionGetMetricData:
 		s.GetMetricData(w, r)
-	case "GetMetricStatistics":
+	case actionGetMetricStatistics:
 		s.GetMetricStatistics(w, r)
-	case "ListMetrics":
+	case actionListMetrics:
 		s.ListMetrics(w, r)
-	case "PutMetricAlarm":
+	case actionPutMetricAlarm:
 		s.PutMetricAlarm(w, r)
-	case "DeleteAlarms":
+	case actionDeleteAlarms:
 		s.DeleteAlarms(w, r)
-	case "DescribeAlarms":
+	case actionDescribeAlarms:
 		s.DescribeAlarms(w, r)
-	case "SetAlarmState":
+	case actionSetAlarmState:
 		s.SetAlarmState(w, r)
-	case "ListTagsForResource":
+	case actionListTagsForResource:
 		s.ListTagsForResource(w, r)
-	case "TagResource":
+	case actionTagResource:
 		s.TagResource(w, r)
-	case "UntagResource":
+	case actionUntagResource:
 		s.UntagResource(w, r)
 	default:
 		writeCloudWatchError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)

@@ -17,7 +17,7 @@ func TestRemoteWrite_NoBackend(t *testing.T) {
 	ws, _ := store.CreateWorkspace(t.Context(), "test", nil)
 	svc := New(store, "")
 
-	req := httptest.NewRequest(http.MethodPost,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
 		"/workspaces/"+ws.WorkspaceID+"/api/v1/remote_write", strings.NewReader("ignored"))
 	req.SetPathValue("workspaceId", ws.WorkspaceID)
 
@@ -50,7 +50,7 @@ func TestRemoteWrite_RejectsBackendWithScheme(t *testing.T) {
 	ws, _ := store.CreateWorkspace(t.Context(), "proxy", nil)
 	svc := New(store, "http://127.0.0.1:9090")
 
-	req := httptest.NewRequest(http.MethodPost,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
 		"/workspaces/"+ws.WorkspaceID+"/api/v1/remote_write", strings.NewReader("ignored"))
 	req.SetPathValue("workspaceId", ws.WorkspaceID)
 
@@ -92,7 +92,7 @@ func TestRemoteWrite_ProxiesToBackend(t *testing.T) {
 	ws, _ := store.CreateWorkspace(t.Context(), "proxy", nil)
 	svc := New(store, strings.TrimPrefix(upstream.URL, "http://"))
 
-	req := httptest.NewRequest(http.MethodPost,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
 		"/workspaces/"+ws.WorkspaceID+"/api/v1/remote_write", strings.NewReader(probeBody))
 	req.SetPathValue("workspaceId", ws.WorkspaceID)
 	req.Header.Set("Content-Type", "application/x-protobuf")
@@ -120,7 +120,7 @@ func TestRemoteWrite_UnknownWorkspace(t *testing.T) {
 
 	svc := New(NewMemoryStorage(), "http://anywhere")
 
-	req := httptest.NewRequest(http.MethodPost,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
 		"/workspaces/ws-bogus/api/v1/remote_write", strings.NewReader(""))
 	req.SetPathValue("workspaceId", "ws-bogus")
 

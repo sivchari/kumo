@@ -23,6 +23,8 @@ const (
 	maxLimit         = 10000
 )
 
+const errResourceNotFoundException = "ResourceNotFoundException"
+
 // Storage defines the CloudWatch Logs storage interface.
 type Storage interface {
 	CreateLogGroup(ctx context.Context, req *CreateLogGroupRequest) error
@@ -193,7 +195,7 @@ func (m *MemoryStorage) DeleteLogGroup(_ context.Context, name string) error {
 
 	if _, exists := m.LogGroups[name]; !exists {
 		return &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group does not exist: %s", name),
 		}
 	}
@@ -213,7 +215,7 @@ func (m *MemoryStorage) CreateLogStream(_ context.Context, groupName, streamName
 	groupData, exists := m.LogGroups[groupName]
 	if !exists {
 		return &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group does not exist: %s", groupName),
 		}
 	}
@@ -251,14 +253,14 @@ func (m *MemoryStorage) DeleteLogStream(_ context.Context, groupName, streamName
 	groupData, exists := m.LogGroups[groupName]
 	if !exists {
 		return &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group does not exist: %s", groupName),
 		}
 	}
 
 	if _, exists := groupData.Streams[streamName]; !exists {
 		return &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log stream does not exist: %s", streamName),
 		}
 	}
@@ -278,7 +280,7 @@ func (m *MemoryStorage) PutLogEvents(_ context.Context, groupName, streamName st
 	groupData, exists := m.LogGroups[groupName]
 	if !exists {
 		return nil, &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group does not exist: %s", groupName),
 		}
 	}
@@ -286,7 +288,7 @@ func (m *MemoryStorage) PutLogEvents(_ context.Context, groupName, streamName st
 	streamData, exists := groupData.Streams[streamName]
 	if !exists {
 		return nil, &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log stream does not exist: %s", streamName),
 		}
 	}
@@ -329,7 +331,7 @@ func (m *MemoryStorage) GetLogEvents(_ context.Context, req *GetLogEventsRequest
 	groupData, exists := m.LogGroups[req.LogGroupName]
 	if !exists {
 		return nil, &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group does not exist: %s", req.LogGroupName),
 		}
 	}
@@ -337,7 +339,7 @@ func (m *MemoryStorage) GetLogEvents(_ context.Context, req *GetLogEventsRequest
 	streamData, exists := groupData.Streams[req.LogStreamName]
 	if !exists {
 		return nil, &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log stream does not exist: %s", req.LogStreamName),
 		}
 	}
@@ -395,7 +397,7 @@ func (m *MemoryStorage) FilterLogEvents(_ context.Context, req *FilterLogEventsR
 	groupData, exists := m.LogGroups[groupName]
 	if !exists {
 		return nil, &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group does not exist: %s", groupName),
 		}
 	}
@@ -609,7 +611,7 @@ func (m *MemoryStorage) DescribeLogStreams(_ context.Context, req *DescribeLogSt
 	groupData, exists := m.LogGroups[groupName]
 	if !exists {
 		return nil, &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group does not exist: %s", groupName),
 		}
 	}
@@ -787,7 +789,7 @@ func (m *MemoryStorage) PutRetentionPolicy(_ context.Context, groupName string, 
 	group, ok := m.LogGroups[groupName]
 	if !ok {
 		return &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group %s does not exist.", groupName),
 		}
 	}
@@ -809,7 +811,7 @@ func (m *MemoryStorage) DeleteRetentionPolicy(_ context.Context, groupName strin
 	group, ok := m.LogGroups[groupName]
 	if !ok {
 		return &LogsError{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFoundException,
 			Message: fmt.Sprintf("The specified log group %s does not exist.", groupName),
 		}
 	}

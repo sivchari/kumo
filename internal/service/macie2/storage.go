@@ -22,6 +22,11 @@ const (
 	errConflictException             = "ConflictException"
 	errInternalServerException       = "InternalServerException"
 	errServiceQuotaExceededException = "ServiceQuotaExceededException"
+
+	msgInvalidRequestBody = "Invalid request body"
+	msgNameRequired       = "Name is required"
+	msgIDRequired         = "Id is required"
+	msgMacieNotEnabled    = "Macie is not enabled"
 )
 
 // Default values.
@@ -238,7 +243,7 @@ func (m *MemoryStorage) GetMacieSession(_ context.Context) (*GetMacieSessionResp
 	defer m.mu.RUnlock()
 
 	if m.Session == nil {
-		return nil, &Error{Code: errResourceNotFoundException, Message: "Macie is not enabled"}
+		return nil, &Error{Code: errResourceNotFoundException, Message: msgMacieNotEnabled}
 	}
 
 	return &GetMacieSessionResponse{
@@ -256,7 +261,7 @@ func (m *MemoryStorage) UpdateMacieSession(_ context.Context, req *UpdateMacieSe
 	defer m.mu.Unlock()
 
 	if m.Session == nil {
-		return nil, &Error{Code: errResourceNotFoundException, Message: "Macie is not enabled"}
+		return nil, &Error{Code: errResourceNotFoundException, Message: msgMacieNotEnabled}
 	}
 
 	if req.FindingPublishingFrequency != "" {
@@ -280,7 +285,7 @@ func (m *MemoryStorage) DisableMacie(_ context.Context) (*DisableMacieResponse, 
 	defer m.mu.Unlock()
 
 	if m.Session == nil {
-		return nil, &Error{Code: errResourceNotFoundException, Message: "Macie is not enabled"}
+		return nil, &Error{Code: errResourceNotFoundException, Message: msgMacieNotEnabled}
 	}
 
 	m.Session = nil

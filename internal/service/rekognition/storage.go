@@ -19,6 +19,9 @@ const (
 	defaultLabelModelVersion      = "3.0"
 	defaultTextModelVersion       = "3.0"
 	defaultModerationModelVersion = "6.0"
+
+	msgCollectionIDRequired = "CollectionId is required"
+	labelCategoryPerson     = "Person Description"
 )
 
 // Collection represents a Rekognition collection.
@@ -156,7 +159,7 @@ func (s *MemoryStorage) CreateCollection(_ context.Context, req *CreateCollectio
 	if req.CollectionID == "" {
 		return nil, &ServiceError{
 			Code:    errInvalidParameter,
-			Message: "CollectionId is required",
+			Message: msgCollectionIDRequired,
 		}
 	}
 
@@ -261,7 +264,7 @@ func (s *MemoryStorage) IndexFaces(_ context.Context, req *IndexFacesRequest) (*
 	if req.CollectionID == "" {
 		return nil, &ServiceError{
 			Code:    errInvalidParameter,
-			Message: "CollectionId is required",
+			Message: msgCollectionIDRequired,
 		}
 	}
 
@@ -323,7 +326,7 @@ func (s *MemoryStorage) ListFaces(_ context.Context, req *ListFacesRequest) (*Li
 	if req.CollectionID == "" {
 		return nil, &ServiceError{
 			Code:    errInvalidParameter,
-			Message: "CollectionId is required",
+			Message: msgCollectionIDRequired,
 		}
 	}
 
@@ -355,7 +358,7 @@ func (s *MemoryStorage) SearchFaces(_ context.Context, req *SearchFacesRequest) 
 	if req.CollectionID == "" {
 		return nil, &ServiceError{
 			Code:    errInvalidParameter,
-			Message: "CollectionId is required",
+			Message: msgCollectionIDRequired,
 		}
 	}
 
@@ -407,7 +410,7 @@ func (s *MemoryStorage) DeleteFaces(_ context.Context, req *DeleteFacesRequest) 
 	if req.CollectionID == "" {
 		return nil, &ServiceError{
 			Code:    errInvalidParameter,
-			Message: "CollectionId is required",
+			Message: msgCollectionIDRequired,
 		}
 	}
 
@@ -484,7 +487,7 @@ func (s *MemoryStorage) DetectLabels(_ context.Context, _ *DetectLabelsRequest) 
 				Name:       "Person",
 				Confidence: 99.5,
 				Parents:    []Parent{},
-				Categories: []LabelCategory{{Name: "Person Description"}},
+				Categories: []LabelCategory{{Name: labelCategoryPerson}},
 				Instances: []Instance{
 					{
 						BoundingBox: &BoundingBox{Height: 0.8, Left: 0.1, Top: 0.1, Width: 0.4},
@@ -496,13 +499,13 @@ func (s *MemoryStorage) DetectLabels(_ context.Context, _ *DetectLabelsRequest) 
 				Name:       "Human",
 				Confidence: 99.5,
 				Parents:    []Parent{},
-				Categories: []LabelCategory{{Name: "Person Description"}},
+				Categories: []LabelCategory{{Name: labelCategoryPerson}},
 			},
 			{
 				Name:       "Face",
 				Confidence: 98.8,
 				Parents:    []Parent{{Name: "Person"}, {Name: "Human"}},
-				Categories: []LabelCategory{{Name: "Person Description"}},
+				Categories: []LabelCategory{{Name: labelCategoryPerson}},
 			},
 			{
 				Name:       "Outdoors",

@@ -24,6 +24,8 @@ const (
 	errAlreadyExists    = "AlreadyExistsException"
 	errInvalidParameter = "ValidationException"
 	errBadRequest       = "BadRequestException"
+
+	msgEmailTemplateNotExist = "The email template does not exist"
 )
 
 // Storage defines the interface for SES v2 storage operations.
@@ -407,7 +409,7 @@ func (s *MemoryStorage) GetEmailTemplate(_ context.Context, name string) (*Email
 	if !exists {
 		return nil, &IdentityError{
 			Code:    errNotFound,
-			Message: "The email template does not exist",
+			Message: msgEmailTemplateNotExist,
 		}
 	}
 
@@ -430,7 +432,7 @@ func (s *MemoryStorage) UpdateEmailTemplate(_ context.Context, name string, req 
 	if !exists {
 		return nil, &IdentityError{
 			Code:    errNotFound,
-			Message: "The email template does not exist",
+			Message: msgEmailTemplateNotExist,
 		}
 	}
 
@@ -447,7 +449,7 @@ func (s *MemoryStorage) DeleteEmailTemplate(_ context.Context, name string) erro
 	if _, exists := s.EmailTemplates[name]; !exists {
 		return &IdentityError{
 			Code:    errNotFound,
-			Message: "The email template does not exist",
+			Message: msgEmailTemplateNotExist,
 		}
 	}
 
@@ -611,7 +613,7 @@ func (s *MemoryStorage) validateBulkEmailRequest(req *SendBulkEmailRequest) (*Em
 	if !exists {
 		return nil, nil, &IdentityError{
 			Code:    errNotFound,
-			Message: "The email template does not exist",
+			Message: msgEmailTemplateNotExist,
 		}
 	}
 

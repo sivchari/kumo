@@ -41,6 +41,9 @@ const (
 	errDisabled          = "DisabledException"
 	errInvalidKeyUsage   = "InvalidKeyUsageException"
 	errInvalidSignature  = "KMSInvalidSignatureException"
+
+	msgEncryptionFailed  = "Encryption failed"
+	msgInvalidCiphertext = "Invalid ciphertext"
 )
 
 // determineKeySize returns the key size based on key spec or number of bytes.
@@ -459,17 +462,17 @@ func (s *MemoryStorage) Encrypt(_ context.Context, keyID string, plaintext []byt
 	// Use AES-GCM for encryption.
 	block, err := aes.NewCipher(key.KeyMaterial)
 	if err != nil {
-		return nil, &ServiceError{Code: errDependencyTimeout, Message: "Encryption failed"}
+		return nil, &ServiceError{Code: errDependencyTimeout, Message: msgEncryptionFailed}
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, &ServiceError{Code: errDependencyTimeout, Message: "Encryption failed"}
+		return nil, &ServiceError{Code: errDependencyTimeout, Message: msgEncryptionFailed}
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, &ServiceError{Code: errDependencyTimeout, Message: "Encryption failed"}
+		return nil, &ServiceError{Code: errDependencyTimeout, Message: msgEncryptionFailed}
 	}
 
 	// Prepend key ID (36 bytes UUID) + nonce to ciphertext for decryption lookup.
@@ -489,7 +492,7 @@ func (s *MemoryStorage) Decrypt(_ context.Context, ciphertextBlob []byte, _ map[
 
 	// Extract key ID from ciphertext (first 36 bytes).
 	if len(ciphertextBlob) < 36 {
-		return nil, "", &ServiceError{Code: errInvalidCiphertext, Message: "Invalid ciphertext"}
+		return nil, "", &ServiceError{Code: errInvalidCiphertext, Message: msgInvalidCiphertext}
 	}
 
 	embeddedKeyID := string(ciphertextBlob[:36])
@@ -531,7 +534,7 @@ func (s *MemoryStorage) Decrypt(_ context.Context, ciphertextBlob []byte, _ map[
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertextBlob) < 36+nonceSize {
-		return nil, "", &ServiceError{Code: errInvalidCiphertext, Message: "Invalid ciphertext"}
+		return nil, "", &ServiceError{Code: errInvalidCiphertext, Message: msgInvalidCiphertext}
 	}
 
 	nonce := ciphertextBlob[36 : 36+nonceSize]
@@ -539,7 +542,7 @@ func (s *MemoryStorage) Decrypt(_ context.Context, ciphertextBlob []byte, _ map[
 
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return nil, "", &ServiceError{Code: errInvalidCiphertext, Message: "Invalid ciphertext"}
+		return nil, "", &ServiceError{Code: errInvalidCiphertext, Message: msgInvalidCiphertext}
 	}
 
 	return plaintext, key.KeyID, nil
@@ -579,17 +582,17 @@ func (s *MemoryStorage) GenerateDataKey(_ context.Context, keyID, keySpec string
 	// Encrypt the data key using the KMS key.
 	block, err := aes.NewCipher(key.KeyMaterial)
 	if err != nil {
-		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Encryption failed"}
+		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: msgEncryptionFailed}
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Encryption failed"}
+		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: msgEncryptionFailed}
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: "Encryption failed"}
+		return nil, nil, &ServiceError{Code: errDependencyTimeout, Message: msgEncryptionFailed}
 	}
 
 	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)

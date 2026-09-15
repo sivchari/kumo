@@ -739,7 +739,7 @@ func applyStickinessField(cfg *ForwardActionConfig, field, value string) {
 
 	switch field {
 	case "Enabled":
-		cfg.StickinessConfig.Enabled = value == "true"
+		cfg.StickinessConfig.Enabled = value == attrValueTrue
 	case "DurationSeconds":
 		if v, err := strconv.Atoi(value); err == nil {
 			cfg.StickinessConfig.DurationSeconds = v

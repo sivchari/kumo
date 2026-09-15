@@ -52,7 +52,7 @@ func buildTestJWT(t *testing.T, claims map[string]any) string {
 func TestDecodeJWTPayload(t *testing.T) {
 	t.Parallel()
 
-	token := buildTestJWT(t, map[string]any{"sub": "user1", "exp": 1234567890})
+	token := buildTestJWT(t, map[string]any{"sub": "user1", claimExp: 1234567890})
 
 	claims, err := decodeJWTPayload(token)
 	if err != nil {
@@ -120,12 +120,12 @@ func TestValidateJWTClaims_Expiration(t *testing.T) {
 	runValidateJWTClaimsCases(t, []validateJWTClaimsTestCase{
 		{
 			name:   "valid: no config beyond exp",
-			claims: map[string]any{"exp": json.Number(intToStr(future))},
+			claims: map[string]any{claimExp: json.Number(intToStr(future))},
 			want:   true,
 		},
 		{
 			name:   "expired token rejected",
-			claims: map[string]any{"exp": json.Number(intToStr(past))},
+			claims: map[string]any{claimExp: json.Number(intToStr(past))},
 			want:   false,
 		},
 		{
@@ -145,19 +145,19 @@ func TestValidateJWTClaims_Issuer(t *testing.T) {
 		{
 			name: "issuer mismatch rejected",
 			claims: map[string]any{
-				"exp": json.Number(intToStr(future)),
-				"iss": "https://wrong.example.com",
+				claimExp: json.Number(intToStr(future)),
+				claimIss: "https://wrong.example.com",
 			},
-			cfg:  &JWTConfiguration{Issuer: "https://issuer.example.com"},
+			cfg:  &JWTConfiguration{Issuer: testJWTIssuer},
 			want: false,
 		},
 		{
 			name: "issuer match accepted",
 			claims: map[string]any{
-				"exp": json.Number(intToStr(future)),
-				"iss": "https://issuer.example.com",
+				claimExp: json.Number(intToStr(future)),
+				claimIss: testJWTIssuer,
 			},
-			cfg:  &JWTConfiguration{Issuer: "https://issuer.example.com"},
+			cfg:  &JWTConfiguration{Issuer: testJWTIssuer},
 			want: true,
 		},
 	})
@@ -172,47 +172,47 @@ func TestValidateJWTClaims_Audience(t *testing.T) {
 		{
 			name: "audience string match accepted",
 			claims: map[string]any{
-				"exp": json.Number(intToStr(future)),
-				"aud": "aud1",
+				claimExp: json.Number(intToStr(future)),
+				claimAud: testAudience1,
 			},
-			cfg:  &JWTConfiguration{Audience: []string{"aud1", "aud2"}},
+			cfg:  &JWTConfiguration{Audience: []string{testAudience1, testAudience2}},
 			want: true,
 		},
 		{
 			name: "audience array match accepted",
 			claims: map[string]any{
-				"exp": json.Number(intToStr(future)),
-				"aud": []any{"other", "aud2"},
+				claimExp: json.Number(intToStr(future)),
+				claimAud: []any{"other", testAudience2},
 			},
-			cfg:  &JWTConfiguration{Audience: []string{"aud1", "aud2"}},
+			cfg:  &JWTConfiguration{Audience: []string{testAudience1, testAudience2}},
 			want: true,
 		},
 		{
 			name: "audience mismatch rejected",
 			claims: map[string]any{
-				"exp": json.Number(intToStr(future)),
-				"aud": "unknown",
+				claimExp: json.Number(intToStr(future)),
+				claimAud: "unknown",
 			},
-			cfg:  &JWTConfiguration{Audience: []string{"aud1"}},
+			cfg:  &JWTConfiguration{Audience: []string{testAudience1}},
 			want: false,
 		},
 		{
 			name: "client_id used when aud absent (Cognito access tokens)",
 			claims: map[string]any{
-				"exp":       json.Number(intToStr(future)),
-				"client_id": "aud1",
+				claimExp:    json.Number(intToStr(future)),
+				"client_id": testAudience1,
 			},
-			cfg:  &JWTConfiguration{Audience: []string{"aud1"}},
+			cfg:  &JWTConfiguration{Audience: []string{testAudience1}},
 			want: true,
 		},
 		{
 			name: "aud takes precedence over client_id when both present",
 			claims: map[string]any{
-				"exp":       json.Number(intToStr(future)),
-				"aud":       "unknown",
-				"client_id": "aud1",
+				claimExp:    json.Number(intToStr(future)),
+				claimAud:    "unknown",
+				"client_id": testAudience1,
 			},
-			cfg:  &JWTConfiguration{Audience: []string{"aud1"}},
+			cfg:  &JWTConfiguration{Audience: []string{testAudience1}},
 			want: false,
 		},
 	})
@@ -254,11 +254,11 @@ func TestScopesFromClaims(t *testing.T) {
 		want   []string
 	}{
 		{name: "absent scope", claims: map[string]any{}, want: nil},
-		{name: "single scope", claims: map[string]any{"scope": "read"}, want: []string{"read"}},
+		{name: "single scope", claims: map[string]any{claimScope: testScopeRead}, want: []string{testScopeRead}},
 		{
 			name:   "space-delimited scopes",
-			claims: map[string]any{"scope": "read write admin"},
-			want:   []string{"read", "write", "admin"},
+			claims: map[string]any{claimScope: "read write admin"},
+			want:   []string{testScopeRead, "write", "admin"},
 		},
 	}
 

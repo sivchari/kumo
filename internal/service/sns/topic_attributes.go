@@ -238,7 +238,7 @@ func handleTopicError(w http.ResponseWriter, err error) {
 	var tErr *TopicError
 	if errors.As(err, &tErr) {
 		status := http.StatusBadRequest
-		if tErr.Code == "NotFound" {
+		if tErr.Code == errNotFound {
 			status = http.StatusNotFound
 		}
 

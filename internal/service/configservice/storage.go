@@ -19,6 +19,8 @@ const (
 	errMaxNumberOfConfigurationRecordersExceeded = "MaxNumberOfConfigurationRecordersExceededException"
 	errNoSuchConfigRule                          = "NoSuchConfigRuleException"
 	errInvalidParameterValue                     = "InvalidParameterValueException"
+
+	msgConfigurationRecorderNotFound = "Configuration recorder not found"
 )
 
 // Default values.
@@ -221,7 +223,7 @@ func (m *MemoryStorage) DeleteConfigurationRecorder(_ context.Context, name stri
 	defer m.mu.Unlock()
 
 	if _, exists := m.Recorders[name]; !exists {
-		return &Error{Code: errNoSuchConfigurationRecorder, Message: "Configuration recorder not found"}
+		return &Error{Code: errNoSuchConfigurationRecorder, Message: msgConfigurationRecorderNotFound}
 	}
 
 	delete(m.Recorders, name)
@@ -263,7 +265,7 @@ func (m *MemoryStorage) StartConfigurationRecorder(_ context.Context, name strin
 	defer m.mu.Unlock()
 
 	if _, exists := m.Recorders[name]; !exists {
-		return &Error{Code: errNoSuchConfigurationRecorder, Message: "Configuration recorder not found"}
+		return &Error{Code: errNoSuchConfigurationRecorder, Message: msgConfigurationRecorderNotFound}
 	}
 
 	status := m.RecorderStatuses[name]
@@ -284,7 +286,7 @@ func (m *MemoryStorage) StopConfigurationRecorder(_ context.Context, name string
 	defer m.mu.Unlock()
 
 	if _, exists := m.Recorders[name]; !exists {
-		return &Error{Code: errNoSuchConfigurationRecorder, Message: "Configuration recorder not found"}
+		return &Error{Code: errNoSuchConfigurationRecorder, Message: msgConfigurationRecorderNotFound}
 	}
 
 	status := m.RecorderStatuses[name]

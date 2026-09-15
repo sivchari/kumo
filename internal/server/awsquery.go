@@ -512,7 +512,7 @@ func writeQueryError(w http.ResponseWriter, code, message string) {
 	w.Header().Set("x-amzn-RequestId", uuid.New().String())
 	w.WriteHeader(http.StatusBadRequest)
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"__type":  code,
-		"message": message,
+		errFieldType:    code,
+		errFieldMessage: message,
 	})
 }

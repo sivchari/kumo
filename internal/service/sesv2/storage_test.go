@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+const (
+	testSenderEmail    = "sender@example.com"
+	testTemplateName   = "promo"
+	testRecipientEmail = "a@example.com"
+)
+
 func TestEpochSeconds_MarshalsAsJSONNumber(t *testing.T) {
 	// Pin to a known instant so the assertion is exact.
 	ts := time.Unix(1700000000, 500_000_000) // 1.7e9 + 0.5 sec
@@ -50,7 +56,7 @@ func TestSendEmail_RawEmailWithoutDestination(t *testing.T) {
 		"Test body"
 
 	req := &SendEmailRequest{
-		FromEmailAddress: "sender@example.com",
+		FromEmailAddress: testSenderEmail,
 		// Destination is intentionally nil
 		Content: &EmailContent{
 			Raw: &RawEmail{
@@ -106,7 +112,7 @@ func TestSendEmail_SimpleEmailWithoutDestination_ShouldFail(t *testing.T) {
 	ctx := context.Background()
 
 	req := &SendEmailRequest{
-		FromEmailAddress: "sender@example.com",
+		FromEmailAddress: testSenderEmail,
 		// Destination is nil
 		Content: &EmailContent{
 			Simple: &SimpleEmail{
@@ -143,7 +149,7 @@ func newBulkSendFixture(t *testing.T, storage *MemoryStorage) *SendBulkEmailRequ
 	t.Helper()
 
 	if _, err := storage.CreateEmailTemplate(context.Background(), &CreateEmailTemplateRequest{
-		TemplateName: "promo",
+		TemplateName: testTemplateName,
 		TemplateContent: &EmailTemplateContent{
 			Subject: "Promo",
 			Text:    "Hello {{name}}",
@@ -153,13 +159,13 @@ func newBulkSendFixture(t *testing.T, storage *MemoryStorage) *SendBulkEmailRequ
 	}
 
 	return &SendBulkEmailRequest{
-		FromEmailAddress: "sender@example.com",
+		FromEmailAddress: testSenderEmail,
 		DefaultContent: &BulkEmailContent{
-			Template: &Template{TemplateName: "promo", TemplateData: "{}"},
+			Template: &Template{TemplateName: testTemplateName, TemplateData: "{}"},
 		},
 		BulkEmailEntries: []BulkEmailEntry{
 			{
-				Destination: &Destination{ToAddresses: []string{"a@example.com"}},
+				Destination: &Destination{ToAddresses: []string{testRecipientEmail}},
 				ReplacementEmailContent: &ReplacementEmailContent{
 					ReplacementTemplate: &ReplacementTemplate{ReplacementTemplateData: `{"name":"A"}`},
 				},
@@ -225,7 +231,7 @@ func TestSendBulkEmail_RecordsSentEmails(t *testing.T) {
 		t.Fatalf("expected 2 stored emails, got %d", len(sent))
 	}
 
-	if sent[0].TemplateName != "promo" {
+	if sent[0].TemplateName != testTemplateName {
 		t.Errorf("expected TemplateName=promo, got %q", sent[0].TemplateName)
 	}
 
@@ -239,12 +245,12 @@ func TestSendBulkEmail_UnknownTemplateFails(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := storage.SendBulkEmail(ctx, &SendBulkEmailRequest{
-		FromEmailAddress: "sender@example.com",
+		FromEmailAddress: testSenderEmail,
 		DefaultContent: &BulkEmailContent{
 			Template: &Template{TemplateName: "nope"},
 		},
 		BulkEmailEntries: []BulkEmailEntry{
-			{Destination: &Destination{ToAddresses: []string{"a@example.com"}}},
+			{Destination: &Destination{ToAddresses: []string{testRecipientEmail}}},
 		},
 	})
 	if err == nil {
@@ -269,12 +275,12 @@ func TestSendBulkEmail_EntryWithoutDestinationFailsIndividually(t *testing.T) {
 	}
 
 	resp, err := storage.SendBulkEmail(ctx, &SendBulkEmailRequest{
-		FromEmailAddress: "sender@example.com",
+		FromEmailAddress: testSenderEmail,
 		DefaultContent: &BulkEmailContent{
 			Template: &Template{TemplateName: "tpl"},
 		},
 		BulkEmailEntries: []BulkEmailEntry{
-			{Destination: &Destination{ToAddresses: []string{"a@example.com"}}},
+			{Destination: &Destination{ToAddresses: []string{testRecipientEmail}}},
 			{ /* destination missing */ },
 		},
 	})

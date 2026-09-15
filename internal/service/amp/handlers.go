@@ -159,7 +159,7 @@ func handleStorageError(w http.ResponseWriter, err error) {
 	var ampErr *Error
 	if errors.As(err, &ampErr) {
 		status := http.StatusBadRequest
-		if ampErr.Code == "ResourceNotFoundException" {
+		if ampErr.Code == errResourceNotFoundException {
 			status = http.StatusNotFound
 		}
 

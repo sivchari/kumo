@@ -154,7 +154,7 @@ func (s *MemoryStorage) CreateCluster(_ context.Context, req *CreateClusterReque
 
 	if _, exists := s.Clusters[req.Name]; exists {
 		return nil, &Error{
-			Code:    "ResourceInUseException",
+			Code:    errResourceInUse,
 			Message: fmt.Sprintf("Cluster already exists with name: %s", req.Name),
 		}
 	}
@@ -254,14 +254,14 @@ func (s *MemoryStorage) DeleteCluster(_ context.Context, name string) (*Cluster,
 	cluster, exists := s.Clusters[name]
 	if !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No cluster found for name: %s", name),
 		}
 	}
 
 	if nodegroups, ok := s.Nodegroups[name]; ok && len(nodegroups) > 0 {
 		return nil, &Error{
-			Code:    "ResourceInUseException",
+			Code:    errResourceInUse,
 			Message: "Cluster has nodegroups attached",
 		}
 	}
@@ -284,7 +284,7 @@ func (s *MemoryStorage) DescribeCluster(_ context.Context, name string) (*Cluste
 	cluster, exists := s.Clusters[name]
 	if !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No cluster found for name: %s", name),
 		}
 	}
@@ -313,14 +313,14 @@ func (s *MemoryStorage) CreateNodegroup(_ context.Context, req *CreateNodegroupR
 	cluster, exists := s.Clusters[req.ClusterName]
 	if !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No cluster found for name: %s", req.ClusterName),
 		}
 	}
 
 	if _, exists := s.Nodegroups[req.ClusterName][req.NodegroupName]; exists {
 		return nil, &Error{
-			Code:    "ResourceInUseException",
+			Code:    errResourceInUse,
 			Message: fmt.Sprintf("Nodegroup already exists with name: %s", req.NodegroupName),
 		}
 	}
@@ -400,7 +400,7 @@ func (s *MemoryStorage) DeleteNodegroup(_ context.Context, clusterName, nodegrou
 
 	if _, exists := s.Clusters[clusterName]; !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No cluster found for name: %s", clusterName),
 		}
 	}
@@ -408,7 +408,7 @@ func (s *MemoryStorage) DeleteNodegroup(_ context.Context, clusterName, nodegrou
 	nodegroups, exists := s.Nodegroups[clusterName]
 	if !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No nodegroup found for name: %s", nodegroupName),
 		}
 	}
@@ -416,7 +416,7 @@ func (s *MemoryStorage) DeleteNodegroup(_ context.Context, clusterName, nodegrou
 	nodegroup, exists := nodegroups[nodegroupName]
 	if !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No nodegroup found for name: %s", nodegroupName),
 		}
 	}
@@ -437,7 +437,7 @@ func (s *MemoryStorage) DescribeNodegroup(_ context.Context, clusterName, nodegr
 
 	if _, exists := s.Clusters[clusterName]; !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No cluster found for name: %s", clusterName),
 		}
 	}
@@ -445,7 +445,7 @@ func (s *MemoryStorage) DescribeNodegroup(_ context.Context, clusterName, nodegr
 	nodegroups, exists := s.Nodegroups[clusterName]
 	if !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No nodegroup found for name: %s", nodegroupName),
 		}
 	}
@@ -453,7 +453,7 @@ func (s *MemoryStorage) DescribeNodegroup(_ context.Context, clusterName, nodegr
 	nodegroup, exists := nodegroups[nodegroupName]
 	if !exists {
 		return nil, &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No nodegroup found for name: %s", nodegroupName),
 		}
 	}
@@ -468,7 +468,7 @@ func (s *MemoryStorage) ListNodegroups(_ context.Context, clusterName string, _ 
 
 	if _, exists := s.Clusters[clusterName]; !exists {
 		return nil, "", &Error{
-			Code:    "ResourceNotFoundException",
+			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("No cluster found for name: %s", clusterName),
 		}
 	}

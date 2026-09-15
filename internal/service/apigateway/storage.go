@@ -20,6 +20,11 @@ const (
 	errDeploymentNotFound = "NotFoundException"
 	errStageNotFound      = "NotFoundException"
 	errBadRequest         = "BadRequestException"
+
+	msgInvalidRestAPIID    = "Invalid REST API identifier specified"
+	msgInvalidResourceID   = "Invalid resource identifier specified"
+	msgInvalidMethodID     = "Invalid method identifier specified"
+	msgInvalidDeploymentID = "Invalid deployment identifier specified"
 )
 
 // Storage defines the API Gateway storage interface.
@@ -203,7 +208,7 @@ func (s *MemoryStorage) GetRestAPI(_ context.Context, restAPIID string) (*RestAP
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	return data.API, nil
@@ -237,7 +242,7 @@ func (s *MemoryStorage) DeleteRestAPI(_ context.Context, restAPIID string) error
 	defer s.mu.Unlock()
 
 	if _, exists := s.RestAPIs[restAPIID]; !exists {
-		return &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	delete(s.RestAPIs, restAPIID)
@@ -254,12 +259,12 @@ func (s *MemoryStorage) CreateResource(_ context.Context, restAPIID, parentID, p
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	parent, exists := data.Resources[parentID]
 	if !exists {
-		return nil, &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return nil, &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	id := generateID()
@@ -287,12 +292,12 @@ func (s *MemoryStorage) GetResource(_ context.Context, restAPIID, resourceID str
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	resource, exists := data.Resources[resourceID]
 	if !exists {
-		return nil, &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return nil, &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	return resource, nil
@@ -305,7 +310,7 @@ func (s *MemoryStorage) GetResources(_ context.Context, restAPIID string, limit 
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, "", &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, "", &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	if limit <= 0 {
@@ -332,12 +337,12 @@ func (s *MemoryStorage) DeleteResource(_ context.Context, restAPIID, resourceID 
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	resource, exists := data.Resources[resourceID]
 	if !exists {
-		return &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	if resource.Path == "/" {
@@ -358,12 +363,12 @@ func (s *MemoryStorage) PutMethod(_ context.Context, restAPIID, resourceID, http
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	resource, exists := data.Resources[resourceID]
 	if !exists {
-		return nil, &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return nil, &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	method := Method{
@@ -387,17 +392,17 @@ func (s *MemoryStorage) GetMethod(_ context.Context, restAPIID, resourceID, http
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	resource, exists := data.Resources[resourceID]
 	if !exists {
-		return nil, &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return nil, &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	method, exists := resource.ResourceMethods[httpMethod]
 	if !exists {
-		return nil, &ServiceError{Code: errMethodNotFound, Message: "Invalid method identifier specified"}
+		return nil, &ServiceError{Code: errMethodNotFound, Message: msgInvalidMethodID}
 	}
 
 	return &method, nil
@@ -410,16 +415,16 @@ func (s *MemoryStorage) DeleteMethod(_ context.Context, restAPIID, resourceID, h
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	resource, exists := data.Resources[resourceID]
 	if !exists {
-		return &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	if _, exists := resource.ResourceMethods[httpMethod]; !exists {
-		return &ServiceError{Code: errMethodNotFound, Message: "Invalid method identifier specified"}
+		return &ServiceError{Code: errMethodNotFound, Message: msgInvalidMethodID}
 	}
 
 	delete(resource.ResourceMethods, httpMethod)
@@ -436,17 +441,17 @@ func (s *MemoryStorage) PutIntegration(_ context.Context, restAPIID, resourceID,
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	resource, exists := data.Resources[resourceID]
 	if !exists {
-		return nil, &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return nil, &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	method, exists := resource.ResourceMethods[httpMethod]
 	if !exists {
-		return nil, &ServiceError{Code: errMethodNotFound, Message: "Invalid method identifier specified"}
+		return nil, &ServiceError{Code: errMethodNotFound, Message: msgInvalidMethodID}
 	}
 
 	integration := &Integration{
@@ -479,17 +484,17 @@ func (s *MemoryStorage) GetIntegration(_ context.Context, restAPIID, resourceID,
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	resource, exists := data.Resources[resourceID]
 	if !exists {
-		return nil, &ServiceError{Code: errResourceNotFound, Message: "Invalid resource identifier specified"}
+		return nil, &ServiceError{Code: errResourceNotFound, Message: msgInvalidResourceID}
 	}
 
 	method, exists := resource.ResourceMethods[httpMethod]
 	if !exists {
-		return nil, &ServiceError{Code: errMethodNotFound, Message: "Invalid method identifier specified"}
+		return nil, &ServiceError{Code: errMethodNotFound, Message: msgInvalidMethodID}
 	}
 
 	if method.MethodIntegration == nil {
@@ -506,7 +511,7 @@ func (s *MemoryStorage) CreateDeployment(_ context.Context, restAPIID string, re
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	id := generateID()
@@ -542,12 +547,12 @@ func (s *MemoryStorage) GetDeployment(_ context.Context, restAPIID, deploymentID
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	deployment, exists := data.Deployments[deploymentID]
 	if !exists {
-		return nil, &ServiceError{Code: errDeploymentNotFound, Message: "Invalid deployment identifier specified"}
+		return nil, &ServiceError{Code: errDeploymentNotFound, Message: msgInvalidDeploymentID}
 	}
 
 	return deployment, nil
@@ -560,7 +565,7 @@ func (s *MemoryStorage) GetDeployments(_ context.Context, restAPIID string, limi
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, "", &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, "", &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	if limit <= 0 {
@@ -587,11 +592,11 @@ func (s *MemoryStorage) DeleteDeployment(_ context.Context, restAPIID, deploymen
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	if _, exists := data.Deployments[deploymentID]; !exists {
-		return &ServiceError{Code: errDeploymentNotFound, Message: "Invalid deployment identifier specified"}
+		return &ServiceError{Code: errDeploymentNotFound, Message: msgInvalidDeploymentID}
 	}
 
 	delete(data.Deployments, deploymentID)
@@ -608,11 +613,11 @@ func (s *MemoryStorage) CreateStage(_ context.Context, restAPIID string, req *Cr
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	if _, exists := data.Deployments[req.DeploymentID]; !exists {
-		return nil, &ServiceError{Code: errDeploymentNotFound, Message: "Invalid deployment identifier specified"}
+		return nil, &ServiceError{Code: errDeploymentNotFound, Message: msgInvalidDeploymentID}
 	}
 
 	now := time.Now()
@@ -643,7 +648,7 @@ func (s *MemoryStorage) GetStage(_ context.Context, restAPIID, stageName string)
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	stage, exists := data.Stages[stageName]
@@ -661,7 +666,7 @@ func (s *MemoryStorage) GetStages(_ context.Context, restAPIID string) ([]*Stage
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return nil, &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return nil, &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	var stages []*Stage
@@ -680,7 +685,7 @@ func (s *MemoryStorage) DeleteStage(_ context.Context, restAPIID, stageName stri
 
 	data, exists := s.RestAPIs[restAPIID]
 	if !exists {
-		return &ServiceError{Code: errRestAPINotFound, Message: "Invalid REST API identifier specified"}
+		return &ServiceError{Code: errRestAPINotFound, Message: msgInvalidRestAPIID}
 	}
 
 	if _, exists := data.Stages[stageName]; !exists {

@@ -158,7 +158,7 @@ func subnetStateJSON(s *ec2.Subnet) ([]byte, error) {
 		"NetworkAclAssociationId":       "",
 		"OutpostArn":                    nil,
 		"PrivateDnsNameOptionsOnLaunch": nil,
-		"Tags":                          []any{},
+		resourceTagsField:               []any{},
 	}
 
 	return json.Marshal(state)

@@ -86,7 +86,7 @@ func TestMapStateItemReaderCSVFirstRowHeader(t *testing.T) {
 	}
 
 	want := []map[string]string{
-		{"id": "1", "name": "alice"},
+		{"id": "1", "name": testNameAlice},
 		{"id": "2", "name": "bob"},
 	}
 

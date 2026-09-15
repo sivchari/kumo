@@ -13,6 +13,15 @@ import (
 const (
 	testETag = `"abc123"`
 	testTime = "Mon, 01 Jan 2024 12:00:00 GMT"
+
+	testCaseEmpty = "empty"
+
+	hdrIfMatch           = "If-Match"
+	hdrIfNoneMatch       = "If-None-Match"
+	hdrIfModifiedSince   = "If-Modified-Since"
+	hdrIfUnmodifiedSince = "If-Unmodified-Since"
+
+	etagNeverMatches = `"never-matches"`
 )
 
 func parseTestTime(t *testing.T) time.Time {
@@ -40,23 +49,23 @@ func TestEvalGetObjectPreconditions(t *testing.T) {
 		hdr  http.Header
 		want preconditionResult
 	}{
-		{"empty", http.Header{}, preconditionPass},
-		{"if-match hit", http.Header{"If-Match": []string{testETag}}, preconditionPass},
-		{"if-match miss", http.Header{"If-Match": []string{`"different"`}}, preconditionFailed},
-		{"if-match wildcard", http.Header{"If-Match": []string{"*"}}, preconditionPass},
-		{"if-none-match hit", http.Header{"If-None-Match": []string{testETag}}, preconditionNotModified},
-		{"if-none-match miss", http.Header{"If-None-Match": []string{`"different"`}}, preconditionPass},
-		{"if-modified-since older", http.Header{"If-Modified-Since": []string{earlier}}, preconditionPass},
-		{"if-modified-since same/newer", http.Header{"If-Modified-Since": []string{later}}, preconditionNotModified},
-		{"if-unmodified-since older → fail", http.Header{"If-Unmodified-Since": []string{earlier}}, preconditionFailed},
-		{"if-unmodified-since newer → pass", http.Header{"If-Unmodified-Since": []string{later}}, preconditionPass},
+		{testCaseEmpty, http.Header{}, preconditionPass},
+		{"if-match hit", http.Header{hdrIfMatch: []string{testETag}}, preconditionPass},
+		{"if-match miss", http.Header{hdrIfMatch: []string{`"different"`}}, preconditionFailed},
+		{"if-match wildcard", http.Header{hdrIfMatch: []string{"*"}}, preconditionPass},
+		{"if-none-match hit", http.Header{hdrIfNoneMatch: []string{testETag}}, preconditionNotModified},
+		{"if-none-match miss", http.Header{hdrIfNoneMatch: []string{`"different"`}}, preconditionPass},
+		{"if-modified-since older", http.Header{hdrIfModifiedSince: []string{earlier}}, preconditionPass},
+		{"if-modified-since same/newer", http.Header{hdrIfModifiedSince: []string{later}}, preconditionNotModified},
+		{"if-unmodified-since older → fail", http.Header{hdrIfUnmodifiedSince: []string{earlier}}, preconditionFailed},
+		{"if-unmodified-since newer → pass", http.Header{hdrIfUnmodifiedSince: []string{later}}, preconditionPass},
 		{"if-match wins over if-unmodified-since", http.Header{
-			"If-Match":            []string{testETag},
-			"If-Unmodified-Since": []string{earlier},
+			hdrIfMatch:           []string{testETag},
+			hdrIfUnmodifiedSince: []string{earlier},
 		}, preconditionPass},
 		{"if-none-match wins over if-modified-since", http.Header{
-			"If-None-Match":     []string{testETag},
-			"If-Modified-Since": []string{earlier},
+			hdrIfNoneMatch:     []string{testETag},
+			hdrIfModifiedSince: []string{earlier},
 		}, preconditionNotModified},
 	}
 
@@ -81,7 +90,7 @@ func TestEvalCopySourcePreconditions(t *testing.T) {
 		hdr  http.Header
 		want bool
 	}{
-		{"empty", http.Header{}, true},
+		{testCaseEmpty, http.Header{}, true},
 		{"copy-source-if-match hit", http.Header{"X-Amz-Copy-Source-If-Match": []string{testETag}}, true},
 		{"copy-source-if-match miss", http.Header{"X-Amz-Copy-Source-If-Match": []string{`"x"`}}, false},
 		{"copy-source-if-none-match hit", http.Header{"X-Amz-Copy-Source-If-None-Match": []string{testETag}}, false},
@@ -117,14 +126,14 @@ func TestGetObject_ConditionalRequests(t *testing.T) {
 		wantStatus int
 	}{
 		{"plain GET", "", "", http.StatusOK},
-		{"If-None-Match hit → 304", "If-None-Match", obj.ETag, http.StatusNotModified},
-		{"If-Match miss → 412", "If-Match", `"never-matches"`, http.StatusPreconditionFailed},
-		{"If-Match hit → 200", "If-Match", obj.ETag, http.StatusOK},
+		{"If-None-Match hit → 304", hdrIfNoneMatch, obj.ETag, http.StatusNotModified},
+		{"If-Match miss → 412", hdrIfMatch, etagNeverMatches, http.StatusPreconditionFailed},
+		{"If-Match hit → 200", hdrIfMatch, obj.ETag, http.StatusOK},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/cb/k", http.NoBody)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/cb/k", http.NoBody)
 			req.SetPathValue("bucket", "cb")
 			req.SetPathValue("key", "k")
 
@@ -165,7 +174,7 @@ func TestGetObject_ResponseHeaderOverrides(t *testing.T) {
 		"&response-content-disposition=" + httpQueryEscape(wantCD) +
 		"&response-cache-control=" + wantCC
 
-	req := httptest.NewRequest(http.MethodGet, url, http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, url, http.NoBody)
 	req.SetPathValue("bucket", "rb")
 	req.SetPathValue("key", "k")
 
@@ -213,11 +222,11 @@ func TestMatchesAnyETag_QuoteNormalization(t *testing.T) {
 		etag        string
 		want        bool
 	}{
-		{"both quoted, match", `"abc123"`, `"abc123"`, true},
-		{"header unquoted, stored quoted", `abc123`, `"abc123"`, true},
-		{"header quoted, comma list, second matches", `"x", "abc123"`, `"abc123"`, true},
-		{"mismatch", `"xyz"`, `"abc123"`, false},
-		{"wildcard always matches", "*", `"abc123"`, true},
+		{"both quoted, match", testETag, testETag, true},
+		{"header unquoted, stored quoted", `abc123`, testETag, true},
+		{"header quoted, comma list, second matches", `"x", "abc123"`, testETag, true},
+		{"mismatch", `"xyz"`, testETag, false},
+		{"wildcard always matches", "*", testETag, true},
 	}
 
 	for _, tc := range cases {
@@ -244,13 +253,13 @@ func TestParsePutCondition(t *testing.T) {
 		wantOK bool
 	}{
 		{"no headers", http.Header{}, PutCondition{}, true},
-		{"If-None-Match: *", http.Header{"If-None-Match": []string{"*"}}, PutCondition{IfNoneMatchAny: true}, true},
-		{"If-None-Match with an ETag is not implemented", http.Header{"If-None-Match": []string{`"abc"`}}, PutCondition{}, false},
-		{"If-Match carried through verbatim", http.Header{"If-Match": []string{`"abc123"`}}, PutCondition{IfMatch: `"abc123"`}, true},
+		{"If-None-Match: *", http.Header{hdrIfNoneMatch: []string{"*"}}, PutCondition{IfNoneMatchAny: true}, true},
+		{"If-None-Match with an ETag is not implemented", http.Header{hdrIfNoneMatch: []string{`"abc"`}}, PutCondition{}, false},
+		{"If-Match carried through verbatim", http.Header{hdrIfMatch: []string{testETag}}, PutCondition{IfMatch: testETag}, true},
 		{"both headers, If-Match kept and If-None-Match:* recognized", http.Header{
-			"If-Match":      []string{`"abc123"`},
-			"If-None-Match": []string{"*"},
-		}, PutCondition{IfMatch: `"abc123"`, IfNoneMatchAny: true}, true},
+			hdrIfMatch:     []string{testETag},
+			hdrIfNoneMatch: []string{"*"},
+		}, PutCondition{IfMatch: testETag, IfNoneMatchAny: true}, true},
 	}
 
 	for _, tc := range cases {
@@ -303,7 +312,7 @@ func TestCheckPutCondition(t *testing.T) {
 	t.Run("If-None-Match:* on existing key fails", func(t *testing.T) {
 		t.Parallel()
 
-		expectObjectErrorCode(t, checkPutCondition(newBucketWithObject(), "k", PutCondition{IfNoneMatchAny: true}), "PreconditionFailed")
+		expectObjectErrorCode(t, checkPutCondition(newBucketWithObject(), "k", PutCondition{IfNoneMatchAny: true}), errCodePreconditionFailed)
 	})
 
 	t.Run("If-Match hit passes", func(t *testing.T) {
@@ -317,14 +326,14 @@ func TestCheckPutCondition(t *testing.T) {
 	t.Run("If-Match miss fails", func(t *testing.T) {
 		t.Parallel()
 
-		expectObjectErrorCode(t, checkPutCondition(newBucketWithObject(), "k", PutCondition{IfMatch: `"never-matches"`}), "PreconditionFailed")
+		expectObjectErrorCode(t, checkPutCondition(newBucketWithObject(), "k", PutCondition{IfMatch: etagNeverMatches}), errCodePreconditionFailed)
 	})
 
 	t.Run("If-Match on missing key is NoSuchKey", func(t *testing.T) {
 		t.Parallel()
 
 		b := &MemoryBucket{Objects: map[string]*Object{}}
-		expectObjectErrorCode(t, checkPutCondition(b, "k", PutCondition{IfMatch: testETag}), "NoSuchKey")
+		expectObjectErrorCode(t, checkPutCondition(b, "k", PutCondition{IfMatch: testETag}), errCodeNoSuchKey)
 	})
 
 	t.Run("If-Match evaluated before If-None-Match", func(t *testing.T) {
@@ -334,8 +343,8 @@ func TestCheckPutCondition(t *testing.T) {
 		// mismatches (RFC 9110 order says it's evaluated first), so
 		// that's the failure reported even though If-None-Match:*
 		// would also fail here.
-		err := checkPutCondition(newBucketWithObject(), "k", PutCondition{IfMatch: `"never-matches"`, IfNoneMatchAny: true})
-		expectObjectErrorCode(t, err, "PreconditionFailed")
+		err := checkPutCondition(newBucketWithObject(), "k", PutCondition{IfMatch: etagNeverMatches, IfNoneMatchAny: true})
+		expectObjectErrorCode(t, err, errCodePreconditionFailed)
 	})
 
 	t.Run("delete marker is treated as absent", func(t *testing.T) {
@@ -349,7 +358,7 @@ func TestCheckPutCondition(t *testing.T) {
 			t.Fatalf("If-None-Match:* over a delete marker: got %v, want nil", err)
 		}
 
-		expectObjectErrorCode(t, checkPutCondition(b, "k", PutCondition{IfMatch: testETag}), "NoSuchKey")
+		expectObjectErrorCode(t, checkPutCondition(b, "k", PutCondition{IfMatch: testETag}), errCodeNoSuchKey)
 	})
 }
 
@@ -383,13 +392,13 @@ func TestPutObject_ConditionalRequests(t *testing.T) {
 	}{
 		{"no headers, no existing object", false, "", "", http.StatusOK},
 		{"no headers, existing object", true, "", "", http.StatusOK},
-		{"If-None-Match:* on missing key succeeds", false, "If-None-Match", "*", http.StatusOK},
-		{"If-None-Match:* on existing key fails", true, "If-None-Match", "*", http.StatusPreconditionFailed},
-		{"If-None-Match non-* is not implemented", false, "If-None-Match", `"abc"`, http.StatusNotImplemented},
-		{"If-Match hit succeeds", true, "If-Match", "seeded", http.StatusOK},
-		{"If-Match hit unquoted succeeds", true, "If-Match", "seeded-unquoted", http.StatusOK},
-		{"If-Match miss fails", true, "If-Match", `"never-matches"`, http.StatusPreconditionFailed},
-		{"If-Match on missing key is NoSuchKey", false, "If-Match", `"whatever"`, http.StatusNotFound},
+		{"If-None-Match:* on missing key succeeds", false, hdrIfNoneMatch, "*", http.StatusOK},
+		{"If-None-Match:* on existing key fails", true, hdrIfNoneMatch, "*", http.StatusPreconditionFailed},
+		{"If-None-Match non-* is not implemented", false, hdrIfNoneMatch, `"abc"`, http.StatusNotImplemented},
+		{"If-Match hit succeeds", true, hdrIfMatch, "seeded", http.StatusOK},
+		{"If-Match hit unquoted succeeds", true, hdrIfMatch, "seeded-unquoted", http.StatusOK},
+		{"If-Match miss fails", true, hdrIfMatch, etagNeverMatches, http.StatusPreconditionFailed},
+		{"If-Match on missing key is NoSuchKey", false, hdrIfMatch, `"whatever"`, http.StatusNotFound},
 	}
 
 	for _, tc := range cases {
@@ -413,7 +422,7 @@ func TestPutObject_ConditionalRequests(t *testing.T) {
 				seededETag = obj.ETag
 			}
 
-			req := httptest.NewRequest(http.MethodPut, "/pb/k", strings.NewReader("new"))
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/pb/k", strings.NewReader("new"))
 			req.SetPathValue("bucket", "pb")
 			req.SetPathValue("key", "k")
 
@@ -464,10 +473,10 @@ func TestPutObject_ConditionalRequests_DeleteMarker(t *testing.T) {
 		t.Fatalf("DeleteObject: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPut, "/db/k", strings.NewReader("v2"))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/db/k", strings.NewReader("v2"))
 	req.SetPathValue("bucket", "db")
 	req.SetPathValue("key", "k")
-	req.Header.Set("If-None-Match", "*")
+	req.Header.Set(hdrIfNoneMatch, "*")
 
 	w := httptest.NewRecorder()
 	svc.PutObject(w, req)
@@ -507,10 +516,10 @@ func TestCompleteMultipartUpload_ConditionalRequest(t *testing.T) {
 
 	completeBody := `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>` + part.ETag + `</ETag></Part></CompleteMultipartUpload>`
 
-	req := httptest.NewRequest(http.MethodPost, "/"+bucket+"/k?uploadId="+upload.UploadID, strings.NewReader(completeBody))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/"+bucket+"/k?uploadId="+upload.UploadID, strings.NewReader(completeBody))
 	req.SetPathValue("bucket", bucket)
 	req.SetPathValue("key", "k")
-	req.Header.Set("If-None-Match", "*")
+	req.Header.Set(hdrIfNoneMatch, "*")
 
 	w := httptest.NewRecorder()
 	svc.CompleteMultipartUpload(w, req)
@@ -530,7 +539,7 @@ func TestCompleteMultipartUpload_ConditionalRequest(t *testing.T) {
 	}
 
 	// Retrying unconditionally succeeds and consumes the upload.
-	req2 := httptest.NewRequest(http.MethodPost, "/"+bucket+"/k?uploadId="+upload.UploadID, strings.NewReader(completeBody))
+	req2 := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/"+bucket+"/k?uploadId="+upload.UploadID, strings.NewReader(completeBody))
 	req2.SetPathValue("bucket", bucket)
 	req2.SetPathValue("key", "k")
 

@@ -131,7 +131,7 @@ func parsePutCondition(h http.Header) (PutCondition, bool) {
 // checkPutCondition to its S3 HTTP status: PreconditionFailed is 412,
 // NoSuchKey (and anything else) is 404.
 func objectErrorStatus(code string) int {
-	if code == "PreconditionFailed" {
+	if code == errCodePreconditionFailed {
 		return http.StatusPreconditionFailed
 	}
 
@@ -154,16 +154,16 @@ func checkPutCondition(b *MemoryBucket, key string, cond PutCondition) error {
 
 	if cond.IfMatch != "" {
 		if !exists {
-			return &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+			return &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 		}
 
 		if !matchesAnyETag(cond.IfMatch, current.ETag) {
-			return &ObjectError{Code: "PreconditionFailed", Message: "At least one of the preconditions you specified did not hold.", Key: key}
+			return &ObjectError{Code: errCodePreconditionFailed, Message: "At least one of the preconditions you specified did not hold.", Key: key}
 		}
 	}
 
 	if cond.IfNoneMatchAny && exists {
-		return &ObjectError{Code: "PreconditionFailed", Message: "At least one of the preconditions you specified did not hold.", Key: key}
+		return &ObjectError{Code: errCodePreconditionFailed, Message: "At least one of the preconditions you specified did not hold.", Key: key}
 	}
 
 	return nil

@@ -82,7 +82,7 @@ func (s *Service) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.CollectionID == "" {
-		writeError(w, errInvalidParameter, "CollectionId is required", http.StatusBadRequest)
+		writeError(w, errInvalidParameter, msgCollectionIDRequired, http.StatusBadRequest)
 
 		return
 	}
@@ -125,7 +125,7 @@ func (s *Service) DescribeCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.CollectionID == "" {
-		writeError(w, errInvalidParameter, "CollectionId is required", http.StatusBadRequest)
+		writeError(w, errInvalidParameter, msgCollectionIDRequired, http.StatusBadRequest)
 
 		return
 	}

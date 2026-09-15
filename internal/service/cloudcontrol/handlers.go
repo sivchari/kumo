@@ -6,6 +6,15 @@ import (
 	"github.com/google/uuid"
 )
 
+// operationStatusSuccess is the ProgressEvent OperationStatus kumo always
+// reports, since every storage call below runs synchronously.
+const operationStatusSuccess = "SUCCESS"
+
+// resourceTagsField is the DesiredState field name for a resource's tags,
+// zeroed out in the read-back ResourceModel across the aws_*.go resource
+// files (tags are not modeled as part of the resource schema).
+const resourceTagsField = "Tags"
+
 // CreateResource provisions a resource of the given type from a
 // DesiredState JSON document. kumo runs the storage call synchronously,
 // so the returned ProgressEvent always reports SUCCESS with the read-back
@@ -37,7 +46,7 @@ func (s *Service) CreateResource(w http.ResponseWriter, r *http.Request) {
 		Identifier:      identifier,
 		RequestToken:    requestToken(input.ClientToken),
 		Operation:       "CREATE",
-		OperationStatus: "SUCCESS",
+		OperationStatus: operationStatusSuccess,
 		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
 	}
@@ -118,7 +127,7 @@ func (s *Service) UpdateResource(w http.ResponseWriter, r *http.Request) {
 		Identifier:      input.Identifier,
 		RequestToken:    requestToken(input.ClientToken),
 		Operation:       "UPDATE",
-		OperationStatus: "SUCCESS",
+		OperationStatus: operationStatusSuccess,
 		EventTime:       nowEpoch(),
 		ResourceModel:   string(state),
 	}
@@ -161,7 +170,7 @@ func (s *Service) DeleteResource(w http.ResponseWriter, r *http.Request) {
 		Identifier:      input.Identifier,
 		RequestToken:    requestToken(input.ClientToken),
 		Operation:       "DELETE",
-		OperationStatus: "SUCCESS",
+		OperationStatus: operationStatusSuccess,
 		EventTime:       nowEpoch(),
 	}
 	s.progress.record(&ev)
@@ -227,7 +236,7 @@ func (s *Service) GetResourceRequestStatus(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, ProgressEventOutput{ProgressEvent: ProgressEvent{
 		RequestToken:    input.RequestToken,
-		OperationStatus: "SUCCESS",
+		OperationStatus: operationStatusSuccess,
 		EventTime:       nowEpoch(),
 	}})
 }

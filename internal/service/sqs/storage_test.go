@@ -139,12 +139,15 @@ func TestMemoryStorage_DeleteQueue_HostnameMismatch(t *testing.T) {
 func TestMemoryStorage_TagsLifecycle(t *testing.T) {
 	t.Parallel()
 
-	const tagValue2 = "val2"
+	const (
+		tagValue2 = "val2"
+		tagKey1   = "key1"
+	)
 
 	s := NewMemoryStorage("http://localhost:4566")
 	ctx := t.Context()
 
-	_, err := s.CreateQueue(ctx, "tagged-queue", nil, map[string]string{"key1": "val1"})
+	_, err := s.CreateQueue(ctx, "tagged-queue", nil, map[string]string{tagKey1: "val1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +157,11 @@ func TestMemoryStorage_TagsLifecycle(t *testing.T) {
 		t.Fatalf("ListQueueTags() error = %v", err)
 	}
 
-	if len(tags) != 1 || tags["key1"] != "val1" {
+	if len(tags) != 1 || tags[tagKey1] != "val1" {
 		t.Fatalf("unexpected tags after create: %#v", tags)
 	}
 
-	err = s.TagQueue(ctx, "http://kumo:4566/000000000000/tagged-queue", map[string]string{"key2": tagValue2, "key1": "updated"})
+	err = s.TagQueue(ctx, "http://kumo:4566/000000000000/tagged-queue", map[string]string{"key2": tagValue2, tagKey1: "updated"})
 	if err != nil {
 		t.Fatalf("TagQueue() error = %v", err)
 	}
@@ -168,11 +171,11 @@ func TestMemoryStorage_TagsLifecycle(t *testing.T) {
 		t.Fatalf("ListQueueTags() error = %v", err)
 	}
 
-	if len(tags) != 2 || tags["key1"] != "updated" || tags["key2"] != tagValue2 {
+	if len(tags) != 2 || tags[tagKey1] != "updated" || tags["key2"] != tagValue2 {
 		t.Fatalf("unexpected tags after tag: %#v", tags)
 	}
 
-	err = s.UntagQueue(ctx, "http://localhost:4566/000000000000/tagged-queue", []string{"key1"})
+	err = s.UntagQueue(ctx, "http://localhost:4566/000000000000/tagged-queue", []string{tagKey1})
 	if err != nil {
 		t.Fatalf("UntagQueue() error = %v", err)
 	}

@@ -503,7 +503,7 @@ func (s *MemoryStorage) DeleteBucket(_ context.Context, name string) error {
 
 	bucket, exists := s.Buckets[name]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: name}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: name}
 	}
 
 	if len(bucket.Objects) > 0 {
@@ -599,7 +599,7 @@ func (s *MemoryStorage) PutObjectIf(_ context.Context, bucket, key string, body 
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if err := checkPutCondition(b, key, cond); err != nil {
@@ -686,16 +686,16 @@ func (s *MemoryStorage) GetObject(_ context.Context, bucket, key string) (*Objec
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	obj, exists := b.Objects[key]
 	if !exists {
-		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		return nil, &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 	}
 
 	if obj.IsDeleteMarker {
-		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		return nil, &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 	}
 
 	return s.objectWithBody(obj)
@@ -708,7 +708,7 @@ func (s *MemoryStorage) GetObjectVersion(_ context.Context, bucket, key, version
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	versions := b.Versions[key]
@@ -732,12 +732,12 @@ func (s *MemoryStorage) PutObjectTagging(_ context.Context, bucket, key string, 
 
 	bd, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist"}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist}
 	}
 
 	obj, exists := bd.Objects[key]
 	if !exists {
-		return &BucketError{Code: "NoSuchKey", Message: "The specified key does not exist."}
+		return &BucketError{Code: errCodeNoSuchKey, Message: msgKeyNotExist}
 	}
 
 	obj.Tags = tags
@@ -755,12 +755,12 @@ func (s *MemoryStorage) GetObjectTagging(_ context.Context, bucket, key string) 
 
 	bd, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist"}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist}
 	}
 
 	obj, exists := bd.Objects[key]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchKey", Message: "The specified key does not exist."}
+		return nil, &BucketError{Code: errCodeNoSuchKey, Message: msgKeyNotExist}
 	}
 
 	if obj.Tags == nil {
@@ -778,7 +778,7 @@ func (s *MemoryStorage) DeleteObject(_ context.Context, bucket, key string) (*Ob
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if b.VersioningStatus == VersioningEnabled {
@@ -832,7 +832,7 @@ func (s *MemoryStorage) DeleteObjectVersion(_ context.Context, bucket, key, vers
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	versions := b.Versions[key]
@@ -881,12 +881,12 @@ func (s *MemoryStorage) HeadObject(_ context.Context, bucket, key string) (*Obje
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	obj, exists := b.Objects[key]
 	if !exists {
-		return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+		return nil, &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 	}
 
 	return &Object{
@@ -909,7 +909,7 @@ func (s *MemoryStorage) ListObjects(_ context.Context, bucket, prefix, delimiter
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if maxKeys <= 0 {
@@ -972,11 +972,11 @@ func (s *MemoryStorage) PutBucketVersioning(_ context.Context, bucket, status st
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if status != VersioningEnabled && status != VersioningSuspended && status != "" {
-		return &BucketError{Code: "MalformedXML", Message: "Invalid versioning status", BucketName: bucket}
+		return &BucketError{Code: errCodeMalformedXML, Message: "Invalid versioning status", BucketName: bucket}
 	}
 
 	b.VersioningStatus = status
@@ -993,7 +993,7 @@ func (s *MemoryStorage) GetBucketVersioning(_ context.Context, bucket string) (s
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return "", &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return "", &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	return b.VersioningStatus, nil
@@ -1006,7 +1006,7 @@ func (s *MemoryStorage) ListObjectVersions(_ context.Context, bucket, prefix, de
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if maxKeys <= 0 {
@@ -1173,7 +1173,7 @@ func (s *MemoryStorage) CreateMultipartUpload(_ context.Context, bucket, key str
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	uploadID := generateUploadID()
@@ -1200,16 +1200,16 @@ func (s *MemoryStorage) UploadPart(_ context.Context, bucket, key, uploadID stri
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	upload, exists := b.MultipartUploads[uploadID]
 	if !exists {
-		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	if upload.Key != key {
-		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	stored, err := s.materializeBody(body)
@@ -1249,12 +1249,12 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 
 	dstB, exists := s.Buckets[dstBucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: dstBucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: dstBucket}
 	}
 
 	upload, exists := dstB.MultipartUploads[uploadID]
 	if !exists || upload.Key != dstKey {
-		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	hydratedSrc, err := s.objectWithBody(srcObj)
@@ -1298,13 +1298,13 @@ func (s *MemoryStorage) UploadPartCopy(_ context.Context, dstBucket, dstKey, upl
 func (s *MemoryStorage) objectForCopySourceLocked(bucket, key, versionID string) (*Object, error) {
 	srcB, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if versionID == "" {
 		srcObj, exists := srcB.Objects[key]
 		if !exists || srcObj.IsDeleteMarker {
-			return nil, &ObjectError{Code: "NoSuchKey", Message: "The specified key does not exist.", Key: key}
+			return nil, &ObjectError{Code: errCodeNoSuchKey, Message: msgKeyNotExist, Key: key}
 		}
 
 		return srcObj, nil
@@ -1341,16 +1341,16 @@ func (s *MemoryStorage) CompleteMultipartUploadIf(_ context.Context, bucket, key
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	upload, exists := b.MultipartUploads[uploadID]
 	if !exists {
-		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	if upload.Key != key {
-		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	if err := checkPutCondition(b, key, cond); err != nil {
@@ -1430,7 +1430,7 @@ func (s *MemoryStorage) combineParts(selectedParts []*Part, combinedBody []byte)
 
 func validateMultipartParts(upload *MultipartUpload, parts []PartRequest, uploadID string) ([]*Part, error) {
 	if len(parts) == 0 {
-		return nil, &MultipartError{Code: "MalformedXML", Message: "CompleteMultipartUpload requires at least one part", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeMalformedXML, Message: "CompleteMultipartUpload requires at least one part", UploadID: uploadID}
 	}
 
 	selectedParts := make([]*Part, 0, len(parts))
@@ -1446,11 +1446,11 @@ func validateMultipartParts(upload *MultipartUpload, parts []PartRequest, upload
 
 		part, ok := upload.Parts[pr.PartNumber]
 		if !ok {
-			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
+			return nil, &MultipartError{Code: errCodeInvalidPart, Message: "One or more of the specified parts could not be found", UploadID: uploadID}
 		}
 
 		if part.ETag != pr.ETag && part.ETag != fmt.Sprintf("%q", strings.Trim(pr.ETag, "\"")) {
-			return nil, &MultipartError{Code: "InvalidPart", Message: "One or more of the specified parts could not be found", UploadID: uploadID}
+			return nil, &MultipartError{Code: errCodeInvalidPart, Message: "One or more of the specified parts could not be found", UploadID: uploadID}
 		}
 
 		selectedParts = append(selectedParts, part)
@@ -1486,16 +1486,16 @@ func (s *MemoryStorage) AbortMultipartUpload(_ context.Context, bucket, key, upl
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	upload, exists := b.MultipartUploads[uploadID]
 	if !exists {
-		return &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	if upload.Key != key {
-		return &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	delete(b.MultipartUploads, uploadID)
@@ -1512,7 +1512,7 @@ func (s *MemoryStorage) ListMultipartUploads(_ context.Context, bucket, prefix s
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if maxUploads <= 0 {
@@ -1549,16 +1549,16 @@ func (s *MemoryStorage) ListParts(_ context.Context, bucket, key, uploadID strin
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	upload, exists := b.MultipartUploads[uploadID]
 	if !exists {
-		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	if upload.Key != key {
-		return nil, &MultipartError{Code: "NoSuchUpload", Message: "The specified upload does not exist", UploadID: uploadID}
+		return nil, &MultipartError{Code: errCodeNoSuchUpload, Message: msgUploadNotExist, UploadID: uploadID}
 	}
 
 	if maxParts <= 0 {
@@ -1744,7 +1744,7 @@ func (s *MemoryStorage) PutPublicAccessBlock(_ context.Context, bucket string, c
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	c := cfg
@@ -1762,7 +1762,7 @@ func (s *MemoryStorage) GetPublicAccessBlock(_ context.Context, bucket string) (
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if b.PublicAccessBlock == nil {
@@ -1785,7 +1785,7 @@ func (s *MemoryStorage) DeletePublicAccessBlock(_ context.Context, bucket string
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.PublicAccessBlock = nil
@@ -1802,7 +1802,7 @@ func (s *MemoryStorage) PutBucketEncryption(_ context.Context, bucket string, cf
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	c := ServerSideEncryptionConfig{Rules: append([]ServerSideEncryptionRule(nil), cfg.Rules...)}
@@ -1820,7 +1820,7 @@ func (s *MemoryStorage) GetBucketEncryption(_ context.Context, bucket string) (*
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if b.Encryption == nil {
@@ -1843,7 +1843,7 @@ func (s *MemoryStorage) DeleteBucketEncryption(_ context.Context, bucket string)
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.Encryption = nil
@@ -1862,7 +1862,7 @@ func (s *MemoryStorage) PutBucketPolicy(_ context.Context, bucket, document stri
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.Policy = document
@@ -1880,7 +1880,7 @@ func (s *MemoryStorage) GetBucketPolicy(_ context.Context, bucket string) (strin
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return "", &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return "", &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if b.Policy == "" {
@@ -1903,7 +1903,7 @@ func (s *MemoryStorage) DeleteBucketPolicy(_ context.Context, bucket string) err
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	b.Policy = ""
@@ -1923,7 +1923,7 @@ func (s *MemoryStorage) PutBucketLogging(_ context.Context, bucket string, cfg B
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if cfg.TargetBucket == "" {
@@ -1952,7 +1952,7 @@ func (s *MemoryStorage) GetBucketLogging(_ context.Context, bucket string) (*Buc
 
 	b, exists := s.Buckets[bucket]
 	if !exists {
-		return nil, &BucketError{Code: "NoSuchBucket", Message: "The specified bucket does not exist", BucketName: bucket}
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
 	}
 
 	if b.Logging == nil {

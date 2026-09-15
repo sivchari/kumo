@@ -26,6 +26,9 @@ const (
 	errInvalidParameter     = "InvalidParameterException"
 	errInternalServiceError = "InternalServiceError"
 	errInvalidAction        = "InvalidAction"
+	errInvalidRequest       = "InvalidRequestException"
+
+	msgSecretScheduledForDeletion = "You can't perform this operation on a secret that's scheduled for deletion."
 )
 
 // CreateSecret handles the CreateSecret action.

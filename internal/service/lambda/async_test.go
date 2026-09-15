@@ -548,7 +548,7 @@ func newInvokeTestServiceMulti(t *testing.T, endpoints map[string]string) *Servi
 func invokeRequest(t *testing.T, fn, invocationType string) *http.Request {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodPost, "/2015-03-31/functions/"+fn+"/invocations", bytes.NewReader([]byte(`{}`)))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/2015-03-31/functions/"+fn+"/invocations", bytes.NewReader([]byte(`{}`)))
 	if invocationType != "" {
 		req.Header.Set("X-Amz-Invocation-Type", invocationType)
 	}

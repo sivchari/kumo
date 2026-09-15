@@ -17,6 +17,10 @@ const (
 	errInvalidRequestException = "InvalidRequestException"
 )
 
+// defaultWorkGroupName is the name of the WorkGroup every AWS account has
+// out of the box.
+const defaultWorkGroupName = "primary"
+
 // Storage defines the interface for Athena storage.
 type Storage interface {
 	StartQueryExecution(ctx context.Context, query string, workGroup string, context *QueryExecutionContext, resultConfig *ResultConfiguration, executionParams []string) (*QueryExecution, error)
@@ -61,8 +65,8 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		QueryResults:    make(map[string]*ResultSet),
 	}
 
-	s.WorkGroups["primary"] = &WorkGroup{
-		Name:         "primary",
+	s.WorkGroups[defaultWorkGroupName] = &WorkGroup{
+		Name:         defaultWorkGroupName,
 		State:        WorkGroupStateEnabled,
 		CreationTime: time.Now(),
 	}
@@ -149,7 +153,7 @@ func (s *MemoryStorage) StartQueryExecution(_ context.Context, query, workGroup 
 	defer s.mu.Unlock()
 
 	if workGroup == "" {
-		workGroup = "primary"
+		workGroup = defaultWorkGroupName
 	}
 
 	if _, ok := s.WorkGroups[workGroup]; !ok {
@@ -344,7 +348,7 @@ func (s *MemoryStorage) DeleteWorkGroup(_ context.Context, name string, recursiv
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if name == "primary" {
+	if name == defaultWorkGroupName {
 		return &ServiceError{
 			Code:    errInvalidRequestException,
 			Message: "Cannot delete the primary workgroup.",

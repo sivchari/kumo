@@ -20,6 +20,22 @@ const (
 	defaultAccountID = "000000000000"
 )
 
+// Error codes.
+const (
+	errLoadBalancerNotFound = "LoadBalancerNotFound"
+	errTargetGroupNotFound  = "TargetGroupNotFound"
+	errListenerNotFound     = "ListenerNotFound"
+	errRuleNotFound         = "RuleNotFound"
+)
+
+// Stringly-typed boolean attribute values, as ELBv2's attribute maps
+// (LoadBalancerAttributes/TargetGroupAttributes) represent every value as a
+// string regardless of its underlying type.
+const (
+	attrValueTrue  = "true"
+	attrValueFalse = "false"
+)
+
 // Storage defines the storage interface for ELB v2 service.
 type Storage interface {
 	CreateLoadBalancer(ctx context.Context, req *CreateLoadBalancerRequest) (*LoadBalancer, error)
@@ -273,7 +289,7 @@ func (m *MemoryStorage) DeleteLoadBalancer(_ context.Context, loadBalancerArn st
 
 	if _, ok := m.LoadBalancers[loadBalancerArn]; !ok {
 		return &Error{
-			Code:    "LoadBalancerNotFound",
+			Code:    errLoadBalancerNotFound,
 			Message: fmt.Sprintf("Load balancer '%s' not found", loadBalancerArn),
 		}
 	}
@@ -459,7 +475,7 @@ func (m *MemoryStorage) DeleteTargetGroup(_ context.Context, targetGroupArn stri
 
 	if _, ok := m.TargetGroups[targetGroupArn]; !ok {
 		return &Error{
-			Code:    "TargetGroupNotFound",
+			Code:    errTargetGroupNotFound,
 			Message: fmt.Sprintf("Target group '%s' not found", targetGroupArn),
 		}
 	}
@@ -525,7 +541,7 @@ func (m *MemoryStorage) RegisterTargets(_ context.Context, targetGroupArn string
 
 	if _, ok := m.TargetGroups[targetGroupArn]; !ok {
 		return &Error{
-			Code:    "TargetGroupNotFound",
+			Code:    errTargetGroupNotFound,
 			Message: fmt.Sprintf("Target group '%s' not found", targetGroupArn),
 		}
 	}
@@ -557,7 +573,7 @@ func (m *MemoryStorage) DeregisterTargets(_ context.Context, targetGroupArn stri
 
 	if _, ok := m.TargetGroups[targetGroupArn]; !ok {
 		return &Error{
-			Code:    "TargetGroupNotFound",
+			Code:    errTargetGroupNotFound,
 			Message: fmt.Sprintf("Target group '%s' not found", targetGroupArn),
 		}
 	}
@@ -591,7 +607,7 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 	lb, ok := m.LoadBalancers[req.LoadBalancerArn]
 	if !ok {
 		return nil, &Error{
-			Code:    "LoadBalancerNotFound",
+			Code:    errLoadBalancerNotFound,
 			Message: fmt.Sprintf("Load balancer '%s' not found", req.LoadBalancerArn),
 		}
 	}
@@ -639,7 +655,7 @@ func (m *MemoryStorage) DeleteListener(_ context.Context, listenerArn string) er
 
 	if _, ok := m.Listeners[listenerArn]; !ok {
 		return &Error{
-			Code:    "ListenerNotFound",
+			Code:    errListenerNotFound,
 			Message: fmt.Sprintf("Listener '%s' not found", listenerArn),
 		}
 	}
@@ -658,7 +674,7 @@ func (m *MemoryStorage) CreateRule(_ context.Context, listenerArn, priority stri
 
 	listener, ok := m.Listeners[listenerArn]
 	if !ok {
-		return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + listenerArn + "' not found"}
+		return nil, &Error{Code: errListenerNotFound, Message: "Listener '" + listenerArn + "' not found"}
 	}
 
 	// AWS rule ARNs replace ":listener/" with ":listener-rule/" and append
@@ -689,7 +705,7 @@ func (m *MemoryStorage) DescribeRules(_ context.Context, listenerArn string, rul
 	if listenerArn != "" {
 		listener, ok := m.Listeners[listenerArn]
 		if !ok {
-			return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + listenerArn + "' not found"}
+			return nil, &Error{Code: errListenerNotFound, Message: "Listener '" + listenerArn + "' not found"}
 		}
 
 		out = append(out, defaultRuleFor(listener))
@@ -753,7 +769,7 @@ func (m *MemoryStorage) ModifyRule(_ context.Context, ruleArn string, conditions
 		}
 	}
 
-	return nil, &Error{Code: "RuleNotFound", Message: "Rule '" + ruleArn + "' not found"}
+	return nil, &Error{Code: errRuleNotFound, Message: "Rule '" + ruleArn + "' not found"}
 }
 
 // DeleteRule removes a rule by ARN.
@@ -773,7 +789,7 @@ func (m *MemoryStorage) DeleteRule(_ context.Context, ruleArn string) error {
 		}
 	}
 
-	return &Error{Code: "RuleNotFound", Message: "Rule '" + ruleArn + "' not found"}
+	return &Error{Code: errRuleNotFound, Message: "Rule '" + ruleArn + "' not found"}
 }
 
 // SetRulePriorities updates the priorities of one or more rules atomically.
@@ -803,7 +819,7 @@ func (m *MemoryStorage) SetRulePriorities(_ context.Context, priorities map[stri
 		}
 
 		if !found {
-			return nil, &Error{Code: "RuleNotFound", Message: "Rule '" + arn + "' not found"}
+			return nil, &Error{Code: errRuleNotFound, Message: "Rule '" + arn + "' not found"}
 		}
 	}
 
@@ -820,14 +836,14 @@ func uuidLite() string {
 // surfaced on a freshly-created load balancer.
 func defaultLoadBalancerAttributes() map[string]string {
 	return map[string]string{
-		"access_logs.s3.enabled":                          "false",
+		"access_logs.s3.enabled":                          attrValueFalse,
 		"access_logs.s3.bucket":                           "",
 		"access_logs.s3.prefix":                           "",
-		"deletion_protection.enabled":                     "false",
+		"deletion_protection.enabled":                     attrValueFalse,
 		"idle_timeout.timeout_seconds":                    "60",
-		"routing.http2.enabled":                           "true",
-		"routing.http.drop_invalid_header_fields.enabled": "false",
-		"load_balancing.cross_zone.enabled":               "true",
+		"routing.http2.enabled":                           attrValueTrue,
+		"routing.http.drop_invalid_header_fields.enabled": attrValueFalse,
+		"load_balancing.cross_zone.enabled":               attrValueTrue,
 	}
 }
 
@@ -836,12 +852,12 @@ func defaultLoadBalancerAttributes() map[string]string {
 func defaultTargetGroupAttributes() map[string]string {
 	return map[string]string{
 		"deregistration_delay.timeout_seconds":  "300",
-		"stickiness.enabled":                    "false",
+		"stickiness.enabled":                    attrValueFalse,
 		"stickiness.type":                       "lb_cookie",
 		"stickiness.lb_cookie.duration_seconds": "86400",
 		"slow_start.duration_seconds":           "0",
 		"load_balancing.algorithm.type":         "round_robin",
-		"proxy_protocol_v2.enabled":             "false",
+		"proxy_protocol_v2.enabled":             attrValueFalse,
 	}
 }
 
@@ -852,7 +868,7 @@ func (m *MemoryStorage) ModifyLoadBalancerAttributes(_ context.Context, lbArn st
 
 	lb, ok := m.LoadBalancers[lbArn]
 	if !ok {
-		return nil, &Error{Code: "LoadBalancerNotFound", Message: "Load balancer '" + lbArn + "' not found"}
+		return nil, &Error{Code: errLoadBalancerNotFound, Message: "Load balancer '" + lbArn + "' not found"}
 	}
 
 	if lb.Attributes == nil {
@@ -876,7 +892,7 @@ func (m *MemoryStorage) DescribeLoadBalancerAttributes(_ context.Context, lbArn 
 
 	lb, ok := m.LoadBalancers[lbArn]
 	if !ok {
-		return nil, &Error{Code: "LoadBalancerNotFound", Message: "Load balancer '" + lbArn + "' not found"}
+		return nil, &Error{Code: errLoadBalancerNotFound, Message: "Load balancer '" + lbArn + "' not found"}
 	}
 
 	if lb.Attributes == nil {
@@ -895,7 +911,7 @@ func (m *MemoryStorage) ModifyTargetGroupAttributes(_ context.Context, tgArn str
 
 	tg, ok := m.TargetGroups[tgArn]
 	if !ok {
-		return nil, &Error{Code: "TargetGroupNotFound", Message: "Target group '" + tgArn + "' not found"}
+		return nil, &Error{Code: errTargetGroupNotFound, Message: "Target group '" + tgArn + "' not found"}
 	}
 
 	if tg.Attributes == nil {
@@ -918,7 +934,7 @@ func (m *MemoryStorage) DescribeTargetGroupAttributes(_ context.Context, tgArn s
 
 	tg, ok := m.TargetGroups[tgArn]
 	if !ok {
-		return nil, &Error{Code: "TargetGroupNotFound", Message: "Target group '" + tgArn + "' not found"}
+		return nil, &Error{Code: errTargetGroupNotFound, Message: "Target group '" + tgArn + "' not found"}
 	}
 
 	if tg.Attributes == nil {
@@ -950,7 +966,7 @@ func (m *MemoryStorage) DescribeListeners(_ context.Context, listenerArns []stri
 		for _, arn := range listenerArns {
 			listener, ok := m.Listeners[arn]
 			if !ok {
-				return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + arn + "' not found"}
+				return nil, &Error{Code: errListenerNotFound, Message: "Listener '" + arn + "' not found"}
 			}
 
 			out = append(out, listener)
@@ -977,7 +993,7 @@ func (m *MemoryStorage) ModifyListener(_ context.Context, listenerArn string, po
 
 	listener, ok := m.Listeners[listenerArn]
 	if !ok {
-		return nil, &Error{Code: "ListenerNotFound", Message: "Listener '" + listenerArn + "' not found"}
+		return nil, &Error{Code: errListenerNotFound, Message: "Listener '" + listenerArn + "' not found"}
 	}
 
 	if port != 0 {
@@ -1007,7 +1023,7 @@ func (m *MemoryStorage) DescribeTargetHealth(_ context.Context, targetGroupArn s
 	defer m.mu.RUnlock()
 
 	if _, ok := m.TargetGroups[targetGroupArn]; !ok {
-		return nil, &Error{Code: "TargetGroupNotFound", Message: "Target group '" + targetGroupArn + "' not found"}
+		return nil, &Error{Code: errTargetGroupNotFound, Message: "Target group '" + targetGroupArn + "' not found"}
 	}
 
 	registered := m.Targets[targetGroupArn]

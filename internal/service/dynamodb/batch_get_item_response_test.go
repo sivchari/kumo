@@ -28,7 +28,7 @@ func TestBatchGetItemResponseShape(t *testing.T) {
 		if _, err := store.CreateTable(t.Context(), &CreateTableRequest{
 			TableName: tableName,
 			KeySchema: []KeySchemaElement{
-				{AttributeName: "pk", KeyType: "HASH"},
+				{AttributeName: "pk", KeyType: keyTypeHash},
 			},
 			AttributeDefinitions: []AttributeDefinition{
 				{AttributeName: "pk", AttributeType: "S"},
@@ -39,8 +39,8 @@ func TestBatchGetItemResponseShape(t *testing.T) {
 	}
 
 	if _, err := store.PutItem(t.Context(), "batch-get-hit", Item{
-		"pk":   {S: ptr("existing")},
-		"name": {S: ptr("value")},
+		"pk":         {S: ptr("existing")},
+		testAttrName: {S: ptr("value")},
 	}, false, ConditionInput{}); err != nil {
 		t.Fatalf("PutItem: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestBatchGetItemResponseShape(t *testing.T) {
 func dispatchBatchGetItemRaw(t *testing.T, svc *Service, body string) (map[string][]json.RawMessage, map[string]json.RawMessage) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("X-Amz-Target", "DynamoDB_20120810.BatchGetItem")
 
 	w := httptest.NewRecorder()

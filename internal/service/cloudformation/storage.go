@@ -127,7 +127,7 @@ func (m *MemoryStorage) CreateStack(_ context.Context, req *CreateStackRequest) 
 	defer m.mu.Unlock()
 
 	if req.StackName == "" {
-		return nil, &Error{Code: "ValidationError", Message: "StackName is required"}
+		return nil, &Error{Code: errInvalidParameter, Message: "StackName is required"}
 	}
 
 	if _, exists := m.Stacks[req.StackName]; exists {
@@ -135,7 +135,7 @@ func (m *MemoryStorage) CreateStack(_ context.Context, req *CreateStackRequest) 
 	}
 
 	if req.TemplateBody == "" && req.TemplateURL == "" {
-		return nil, &Error{Code: "ValidationError", Message: "Either TemplateBody or TemplateURL must be specified"}
+		return nil, &Error{Code: errInvalidParameter, Message: "Either TemplateBody or TemplateURL must be specified"}
 	}
 
 	stackID := generateStackID(req.StackName)
@@ -168,7 +168,7 @@ func (m *MemoryStorage) DeleteStack(_ context.Context, stackName string) error {
 
 	stack, exists := m.Stacks[stackName]
 	if !exists {
-		return &Error{Code: "StackNotFoundException", Message: "Stack not found"}
+		return &Error{Code: errStackNotFound, Message: msgStackNotFound}
 	}
 
 	stack.StackStatus = StackStatusDeleteComplete
@@ -190,7 +190,7 @@ func (m *MemoryStorage) DescribeStacks(_ context.Context, stackName string) ([]*
 	if stackName != "" {
 		stack, exists := m.Stacks[stackName]
 		if !exists {
-			return nil, &Error{Code: "StackNotFoundException", Message: "Stack not found"}
+			return nil, &Error{Code: errStackNotFound, Message: msgStackNotFound}
 		}
 
 		return []*Stack{stack}, nil
@@ -231,11 +231,11 @@ func (m *MemoryStorage) UpdateStack(_ context.Context, req *UpdateStackRequest) 
 
 	stack, exists := m.Stacks[req.StackName]
 	if !exists {
-		return nil, &Error{Code: "StackNotFoundException", Message: "Stack not found"}
+		return nil, &Error{Code: errStackNotFound, Message: msgStackNotFound}
 	}
 
 	if req.TemplateBody == "" {
-		return nil, &Error{Code: "ValidationError", Message: "TemplateBody is required for update"}
+		return nil, &Error{Code: errInvalidParameter, Message: "TemplateBody is required for update"}
 	}
 
 	now := time.Now()
@@ -261,7 +261,7 @@ func (m *MemoryStorage) DescribeStackResources(_ context.Context, stackName, log
 
 	stack, exists := m.Stacks[stackName]
 	if !exists {
-		return nil, &Error{Code: "StackNotFoundException", Message: "Stack not found"}
+		return nil, &Error{Code: errStackNotFound, Message: msgStackNotFound}
 	}
 
 	if logicalResourceID != "" {
@@ -289,7 +289,7 @@ func (m *MemoryStorage) GetTemplate(_ context.Context, stackName string) (string
 
 	stack, exists := m.Stacks[stackName]
 	if !exists {
-		return "", &Error{Code: "StackNotFoundException", Message: "Stack not found"}
+		return "", &Error{Code: errStackNotFound, Message: msgStackNotFound}
 	}
 
 	return stack.TemplateBody, nil
@@ -298,12 +298,12 @@ func (m *MemoryStorage) GetTemplate(_ context.Context, stackName string) (string
 // ValidateTemplate validates a template.
 func (m *MemoryStorage) ValidateTemplate(_ context.Context, templateBody string) (*TemplateValidationResult, error) {
 	if templateBody == "" {
-		return nil, &Error{Code: "ValidationError", Message: "TemplateBody is required"}
+		return nil, &Error{Code: errInvalidParameter, Message: "TemplateBody is required"}
 	}
 
 	var template map[string]any
 	if err := json.Unmarshal([]byte(templateBody), &template); err != nil {
-		return nil, &Error{Code: "ValidationError", Message: "Template format error: " + err.Error()}
+		return nil, &Error{Code: errInvalidParameter, Message: "Template format error: " + err.Error()}
 	}
 
 	result := &TemplateValidationResult{

@@ -16,8 +16,8 @@ const callbackResourceSuffix = ".waitForTaskToken"
 // supports with .waitForTaskToken appended (AWS supports more; kumo only
 // implements the two integrations it already has without the suffix).
 var callbackIntegrations = map[string]bool{
-	"arn:aws:states:::lambda:invoke":   true,
-	"arn:aws:states:::sqs:sendMessage": true,
+	resourceLambdaInvoke:   true,
+	resourceSQSSendMessage: true,
 }
 
 // isCallbackResource reports whether resource uses the .waitForTaskToken
@@ -68,7 +68,7 @@ func (e *executionEngine) executeCallbackTask(ctx context.Context, name string, 
 // model the rest of the Context object ($$.Execution, $$.State, ...).
 func taskTokenContext(token string) map[string]any {
 	return map[string]any{
-		"Task": map[string]any{"Token": token},
+		stateTypeTask: map[string]any{"Token": token},
 	}
 }
 
@@ -77,11 +77,11 @@ func taskTokenContext(token string) map[string]any {
 // SendTaskSuccess, not this call.
 func (e *executionEngine) fireCallbackIntegration(ctx context.Context, baseResource string, params map[string]any) error {
 	switch baseResource {
-	case "arn:aws:states:::sqs:sendMessage":
+	case resourceSQSSendMessage:
 		_, err := e.executeSQSSendMessage(ctx, params)
 
 		return err
-	case "arn:aws:states:::lambda:invoke":
+	case resourceLambdaInvoke:
 		_, err := e.executeLambdaInvoke(ctx, params)
 
 		return err

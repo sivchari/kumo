@@ -6,6 +6,9 @@ import (
 	"net/http"
 )
 
+// jsonFieldMessage is the JSON response field name for a plain status message.
+const jsonFieldMessage = "message"
+
 // Schema mapping handlers.
 
 // CreateSchemaMapping handles POST /schemas.
@@ -73,7 +76,7 @@ func (s *Service) DeleteSchemaMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]string{"message": "Schema mapping deleted"})
+	writeJSON(w, map[string]string{jsonFieldMessage: "Schema mapping deleted"})
 }
 
 // ListSchemaMappings handles GET /schemas.
@@ -151,7 +154,7 @@ func (s *Service) DeleteMatchingWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, map[string]string{"message": "Matching workflow deleted"})
+	writeJSON(w, map[string]string{jsonFieldMessage: "Matching workflow deleted"})
 }
 
 // ListMatchingWorkflows handles GET /matchingworkflows.
@@ -229,7 +232,7 @@ func (s *Service) DeleteIDMappingWorkflow(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, map[string]string{"message": "ID mapping workflow deleted"})
+	writeJSON(w, map[string]string{jsonFieldMessage: "ID mapping workflow deleted"})
 }
 
 // ListIDMappingWorkflows handles GET /idmappingworkflows.
@@ -278,8 +281,8 @@ func writeError(w http.ResponseWriter, code, message string, status int) {
 	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"code":    code,
-		"message": message,
+		"code":           code,
+		jsonFieldMessage: message,
 	})
 }
 

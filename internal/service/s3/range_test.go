@@ -102,7 +102,7 @@ func TestGetObject_RangeRoundTrip(t *testing.T) {
 func runRangeCase(t *testing.T, svc *Service, tc rangeCase) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodGet, "/range-test/blob", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/range-test/blob", http.NoBody)
 	req.SetPathValue("bucket", "range-test")
 	req.SetPathValue("key", "blob")
 
@@ -145,7 +145,7 @@ func TestGetObject_AdvertisesAcceptRanges(t *testing.T) {
 	_, _ = store.PutObject(context.Background(), "ar-test", "k",
 		strings.NewReader("hello"), nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/ar-test/k", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ar-test/k", http.NoBody)
 	req.SetPathValue("bucket", "ar-test")
 	req.SetPathValue("key", "k")
 

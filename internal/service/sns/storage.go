@@ -19,6 +19,12 @@ import (
 const (
 	defaultRegion    = "us-east-1"
 	defaultAccountID = "000000000000"
+
+	protocolSQS = "sqs"
+
+	dataTypeString = "String"
+
+	subscriptionAttrRawMessageDelivery = "RawMessageDelivery"
 )
 
 // SQSPublisher is an interface for publishing messages to SQS.
@@ -211,7 +217,7 @@ func (m *MemoryStorage) GetTopic(_ context.Context, topicARN string) (*Topic, er
 
 	topic, exists := m.Topics[topicARN]
 	if !exists {
-		return nil, &TopicError{Code: "NotFound", Message: "Topic does not exist: " + topicARN}
+		return nil, &TopicError{Code: errNotFound, Message: "Topic does not exist: " + topicARN}
 	}
 
 	return topic, nil
@@ -231,7 +237,7 @@ func (m *MemoryStorage) SetTopicAttribute(_ context.Context, topicARN, name, val
 
 	topic, exists := m.Topics[topicARN]
 	if !exists {
-		return &TopicError{Code: "NotFound", Message: "Topic does not exist: " + topicARN}
+		return &TopicError{Code: errNotFound, Message: "Topic does not exist: " + topicARN}
 	}
 
 	if topic.Attributes == nil {
@@ -257,7 +263,7 @@ func (m *MemoryStorage) DeleteTopic(_ context.Context, topicARN string) error {
 	topic, exists := m.Topics[topicARN]
 	if !exists {
 		return &TopicError{
-			Code:    "NotFound",
+			Code:    errNotFound,
 			Message: fmt.Sprintf("Topic does not exist: %s", topicARN),
 		}
 	}
@@ -403,14 +409,14 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	topic, exists := m.Topics[topicARN]
 	if !exists {
 		return nil, &TopicError{
-			Code:    "NotFound",
+			Code:    errNotFound,
 			Message: fmt.Sprintf("Topic does not exist: %s", topicARN),
 		}
 	}
 
 	validProtocols := map[string]bool{
 		"http": true, "https": true, "email": true, "email-json": true,
-		"sms": true, "sqs": true, "application": true, "lambda": true,
+		"sms": true, protocolSQS: true, "application": true, "lambda": true,
 		"firehose": true,
 	}
 
@@ -433,7 +439,7 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	}
 
 	// For SQS and Lambda protocols, auto-confirm.
-	if protocol == "sqs" || protocol == "lambda" {
+	if protocol == protocolSQS || protocol == "lambda" {
 		subscription.ConfirmationWasAuthenticated = true
 	}
 
@@ -453,7 +459,7 @@ func (m *MemoryStorage) GetSubscription(_ context.Context, subscriptionARN strin
 	subscription, exists := m.Subscriptions[subscriptionARN]
 	if !exists {
 		return nil, &TopicError{
-			Code:    "NotFound",
+			Code:    errNotFound,
 			Message: fmt.Sprintf("Subscription does not exist: %s", subscriptionARN),
 		}
 	}
@@ -469,7 +475,7 @@ func (m *MemoryStorage) SetSubscriptionAttribute(_ context.Context, subscription
 	subscription, exists := m.Subscriptions[subscriptionARN]
 	if !exists {
 		return &TopicError{
-			Code:    "NotFound",
+			Code:    errNotFound,
 			Message: fmt.Sprintf("Subscription does not exist: %s", subscriptionARN),
 		}
 	}
@@ -493,7 +499,7 @@ func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) e
 	subscription, exists := m.Subscriptions[subscriptionARN]
 	if !exists {
 		return &TopicError{
-			Code:    "NotFound",
+			Code:    errNotFound,
 			Message: fmt.Sprintf("Subscription does not exist: %s", subscriptionARN),
 		}
 	}
@@ -518,7 +524,7 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject,
 		m.mu.RUnlock()
 
 		return "", &TopicError{
-			Code:    "NotFound",
+			Code:    errNotFound,
 			Message: fmt.Sprintf("Topic does not exist: %s", topicARN),
 		}
 	}
@@ -726,7 +732,7 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 	}
 
 	switch sub.Protocol {
-	case "sqs":
+	case protocolSQS:
 		return m.deliverToSQS(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes)
 	case "http", "https":
 		// HTTP delivery not implemented in emulator.
@@ -772,10 +778,10 @@ func (m *MemoryStorage) deliverToSQS(ctx context.Context, sub *Subscription, mes
 // not duplicated as SQS attributes.
 func sqsDeliveryAttributes(messageID, subject string, attributes map[string]MessageAttribute, raw bool) map[string]MessageAttribute {
 	attrs := map[string]MessageAttribute{
-		"MessageId": {DataType: "String", StringValue: messageID},
+		"MessageId": {DataType: dataTypeString, StringValue: messageID},
 	}
 	if subject != "" {
-		attrs["Subject"] = MessageAttribute{DataType: "String", StringValue: subject}
+		attrs["Subject"] = MessageAttribute{DataType: dataTypeString, StringValue: subject}
 	}
 
 	if !raw {
@@ -788,7 +794,7 @@ func sqsDeliveryAttributes(messageID, subject string, attributes map[string]Mess
 		}
 
 		if attr.DataType == "" {
-			attr.DataType = "String"
+			attr.DataType = dataTypeString
 		}
 
 		attrs[name] = attr
@@ -803,7 +809,7 @@ func isRawMessageDelivery(sub *Subscription) bool {
 		return false
 	}
 
-	return sub.SubscriptionAttributes["RawMessageDelivery"] == "true"
+	return sub.SubscriptionAttributes[subscriptionAttrRawMessageDelivery] == "true"
 }
 
 // buildSNSNotificationEnvelope wraps a message in the SNS notification JSON
@@ -892,7 +898,7 @@ func (m *MemoryStorage) ListSubscriptionsByTopic(_ context.Context, topicARN, ne
 	topic, exists := m.Topics[topicARN]
 	if !exists {
 		return nil, "", &TopicError{
-			Code:    "NotFound",
+			Code:    errNotFound,
 			Message: fmt.Sprintf("Topic does not exist: %s", topicARN),
 		}
 	}
