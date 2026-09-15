@@ -22,6 +22,8 @@ import (
 const (
 	testPolicyValue = "abc"
 	testRemoteAddr  = "127.0.0.1:12345"
+	testSignature   = "sig"
+	testKeyPairID   = "KID"
 )
 
 // testKeyPair generates a fresh RSA key pair and returns the private
@@ -103,9 +105,9 @@ func TestExtractSignedCredentials_Cookies(t *testing.T) {
 	t.Parallel()
 
 	req := newTestRequest(t, "/kumo/cdn/E123/file.txt")
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: testPolicyValue})
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: "sig"})
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: "KID"})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontPolicy, Value: testPolicyValue, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontSignature, Value: testSignature, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontKeyPairID, Value: testKeyPairID, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 
 	creds := extractSignedCredentials(req)
 	if creds == nil {
@@ -116,12 +118,12 @@ func TestExtractSignedCredentials_Cookies(t *testing.T) {
 		t.Errorf("Policy = %q, want %q", creds.Policy, testPolicyValue)
 	}
 
-	if creds.Signature != "sig" {
-		t.Errorf("Signature = %q, want %q", creds.Signature, "sig")
+	if creds.Signature != testSignature {
+		t.Errorf("Signature = %q, want %q", creds.Signature, testSignature)
 	}
 
-	if creds.KeyPairID != "KID" {
-		t.Errorf("KeyPairID = %q, want %q", creds.KeyPairID, "KID")
+	if creds.KeyPairID != testKeyPairID {
+		t.Errorf("KeyPairID = %q, want %q", creds.KeyPairID, testKeyPairID)
 	}
 }
 
@@ -268,9 +270,9 @@ func TestVerifySignature(t *testing.T) {
 	}{
 		{name: "empty algo accepts SHA1", sig: sha1Sig, hashAlg: "", wantErr: false},
 		{name: "SHA1 algo accepts SHA1", sig: sha1Sig, hashAlg: "SHA1", wantErr: false},
-		{name: "SHA256 algo accepts SHA256", sig: sha256Sig, hashAlg: "SHA256", wantErr: false},
+		{name: "SHA256 algo accepts SHA256", sig: sha256Sig, hashAlg: hashAlgorithmSHA256, wantErr: false},
 		{name: "SHA256 algo is case-insensitive", sig: sha256Sig, hashAlg: "sha256", wantErr: false},
-		{name: "SHA256 algo rejects SHA1 signature", sig: sha1Sig, hashAlg: "SHA256", wantErr: true},
+		{name: "SHA256 algo rejects SHA1 signature", sig: sha1Sig, hashAlg: hashAlgorithmSHA256, wantErr: true},
 		{name: "empty algo rejects SHA256 signature", sig: sha256Sig, hashAlg: "", wantErr: true},
 	}
 
@@ -294,18 +296,18 @@ func TestExtractSignedCredentials_CookiesSHA256(t *testing.T) {
 	t.Parallel()
 
 	req := newTestRequest(t, "/kumo/cdn/E123/file.txt")
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: testPolicyValue})
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: "sig"})
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: "KID"})
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: "SHA256"})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontPolicy, Value: testPolicyValue, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontSignature, Value: testSignature, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontKeyPairID, Value: testKeyPairID, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: hashAlgorithmSHA256, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 
 	creds := extractSignedCredentials(req)
 	if creds == nil {
 		t.Fatal("expected credentials from cookies")
 	}
 
-	if creds.HashAlgorithm != "SHA256" {
-		t.Errorf("HashAlgorithm = %q, want %q", creds.HashAlgorithm, "SHA256")
+	if creds.HashAlgorithm != hashAlgorithmSHA256 {
+		t.Errorf("HashAlgorithm = %q, want %q", creds.HashAlgorithm, hashAlgorithmSHA256)
 	}
 }
 
@@ -320,8 +322,8 @@ func TestExtractSignedCredentials_QuerySHA256(t *testing.T) {
 		t.Fatal("expected credentials from query")
 	}
 
-	if creds.HashAlgorithm != "SHA256" {
-		t.Errorf("HashAlgorithm = %q, want %q", creds.HashAlgorithm, "SHA256")
+	if creds.HashAlgorithm != hashAlgorithmSHA256 {
+		t.Errorf("HashAlgorithm = %q, want %q", creds.HashAlgorithm, hashAlgorithmSHA256)
 	}
 }
 
@@ -713,12 +715,12 @@ func signedCookieRequest(t *testing.T, policy []byte, sig, keyID, hashAlg string
 
 	req := newTestRequest(t, "/kumo/cdn/E1/file.txt")
 	req.RemoteAddr = testRemoteAddr
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Policy", Value: cfBase64Encode(policy)})
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Signature", Value: sig})
-	req.AddCookie(&http.Cookie{Name: "CloudFront-Key-Pair-Id", Value: keyID})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontPolicy, Value: cfBase64Encode(policy), Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontSignature, Value: sig, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: cookieCloudFrontKeyPairID, Value: keyID, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 
 	if hashAlg != "" {
-		req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: hashAlg})
+		req.AddCookie(&http.Cookie{Name: "CloudFront-Hash-Algorithm", Value: hashAlg, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	}
 
 	return req
@@ -742,7 +744,7 @@ func TestCheckEdgeSigning_SHA256Cookie(t *testing.T) {
 	dist, keyID := newSignedDistribution(t, storage, pubPEM)
 
 	sig := cfSignSHA256(t, priv, validCustomPolicy)
-	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, "SHA256")
+	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, hashAlgorithmSHA256)
 
 	rec := httptest.NewRecorder()
 	if !svc.checkEdgeSigning(rec, req, dist) {
@@ -783,7 +785,7 @@ func TestCheckEdgeSigning_SHA256SignatureMismatch(t *testing.T) {
 	otherPolicy := []byte(
 		`{"Statement":[{"Resource":"*","Condition":{"DateLessThan":{"AWS:EpochTime":1}}}]}`)
 	sig := cfSignSHA256(t, priv, otherPolicy)
-	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, "SHA256")
+	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, hashAlgorithmSHA256)
 
 	rec := httptest.NewRecorder()
 	if svc.checkEdgeSigning(rec, req, dist) {

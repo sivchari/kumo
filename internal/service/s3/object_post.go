@@ -20,6 +20,18 @@ const (
 	// form; larger uploads spill to temporary files.
 	maxPostFormMemory = 32 << 20 // 32 MiB
 
+	// maxPostObjectBodyBytes bounds the total POST body read from the wire,
+	// mirroring AWS's own ceiling for a single PutObject/POST upload so a
+	// client can't force unbounded disk/memory use before ParseMultipartForm
+	// even gets a chance to spill to temp files.
+	maxPostObjectBodyBytes = 5 << 30 // 5 GiB
+
+	// maxTaggingXMLBytes bounds the "tagging" form field before it is decoded.
+	// AWS caps object tagging at 10 tags of <=128/<=256 char key/value pairs,
+	// so a well-formed document never approaches this size; it exists to stop
+	// a client from forcing unbounded XML decoding work.
+	maxTaggingXMLBytes = 8 << 10 // 8 KiB
+
 	postFileField      = "file"
 	postKeyField       = "key"
 	postPolicyField    = "policy"
@@ -102,7 +114,16 @@ type postUpload struct {
 // response and returns ok=false. The caller is responsible for closing
 // upload.file and for cleaning up r.MultipartForm.
 func parsePostUpload(w http.ResponseWriter, r *http.Request) (postUpload, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxPostObjectBodyBytes)
+
 	if err := r.ParseMultipartForm(maxPostFormMemory); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeS3Error(w, r, "EntityTooLarge", "Your proposed upload exceeds the maximum allowed size.", http.StatusBadRequest)
+
+			return postUpload{}, false
+		}
+
 		writeS3Error(w, r, "MalformedPOSTRequest", "The body of your POST request is not well-formed multipart/form-data.", http.StatusBadRequest)
 
 		return postUpload{}, false
@@ -163,7 +184,7 @@ func writePostPolicyError(w http.ResponseWriter, r *http.Request, err error) {
 func validatePostPolicy(encoded string) error {
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return &PresignedURLError{Code: "InvalidPolicyDocument", Message: "The content of the form does not meet the conditions specified in the policy document."}
+		return &PresignedURLError{Code: errCodeInvalidPolicyDocument, Message: "The content of the form does not meet the conditions specified in the policy document."}
 	}
 
 	var doc struct {
@@ -171,7 +192,7 @@ func validatePostPolicy(encoded string) error {
 	}
 
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return &PresignedURLError{Code: "InvalidPolicyDocument", Message: "Invalid Policy: Invalid JSON."}
+		return &PresignedURLError{Code: errCodeInvalidPolicyDocument, Message: "Invalid Policy: Invalid JSON."}
 	}
 
 	if doc.Expiration == "" {
@@ -180,7 +201,7 @@ func validatePostPolicy(encoded string) error {
 
 	expiration, err := parsePolicyExpiration(doc.Expiration)
 	if err != nil {
-		return &PresignedURLError{Code: "InvalidPolicyDocument", Message: "Invalid Policy: Invalid expiration."}
+		return &PresignedURLError{Code: errCodeInvalidPolicyDocument, Message: "Invalid Policy: Invalid expiration."}
 	}
 
 	if time.Now().After(expiration) {
@@ -230,7 +251,7 @@ func postObjectMetadata(r *http.Request, fileHeader *multipart.FileHeader) map[s
 // parsePostTagging parses the optional "tagging" form field, an XML <Tagging>
 // document, into a tag map. Malformed input is ignored.
 func parsePostTagging(raw string) map[string]string {
-	if raw == "" {
+	if raw == "" || len(raw) > maxTaggingXMLBytes {
 		return nil
 	}
 
@@ -241,7 +262,8 @@ func parsePostTagging(raw string) map[string]string {
 		} `xml:"TagSet>Tag"`
 	}
 
-	if err := xml.Unmarshal([]byte(raw), &doc); err != nil {
+	decoder := xml.NewDecoder(io.LimitReader(strings.NewReader(raw), maxTaggingXMLBytes))
+	if err := decoder.Decode(&doc); err != nil {
 		return nil
 	}
 

@@ -15,6 +15,10 @@ const (
 	defaultAccountID = "000000000000"
 )
 
+// statusActive is the resource Status kumo reports once created, since every
+// mutation runs synchronously.
+const statusActive = "active"
+
 // ServiceError represents a MemoryDB service error.
 type ServiceError = service.CodedError
 
@@ -217,7 +221,7 @@ func applyOptionalClusterFields(cluster *Cluster, req *CreateClusterRequest) {
 		for _, sgID := range req.SecurityGroupIDs {
 			sgs = append(sgs, SecurityGroupMembership{
 				SecurityGroupID: sgID,
-				Status:          "active",
+				Status:          statusActive,
 			})
 		}
 
@@ -341,7 +345,7 @@ func applyClusterUpdates(cluster *Cluster, req *UpdateClusterRequest) {
 		for _, sgID := range req.SecurityGroupIDs {
 			sgs = append(sgs, SecurityGroupMembership{
 				SecurityGroupID: sgID,
-				Status:          "active",
+				Status:          statusActive,
 			})
 		}
 
@@ -402,7 +406,7 @@ func (m *MemoryStorage) CreateUser(_ context.Context, req *CreateUserRequest) (*
 			Type:          authType,
 		},
 		Name:     req.UserName,
-		Status:   "active",
+		Status:   statusActive,
 		ACLNames: []string{},
 	}
 
@@ -482,7 +486,7 @@ func (m *MemoryStorage) CreateACL(_ context.Context, req *CreateACLRequest) (*AC
 		Clusters:             []string{},
 		MinimumEngineVersion: "6.2.6",
 		Name:                 req.ACLName,
-		Status:               "active",
+		Status:               statusActive,
 		UserNames:            userNames,
 	}
 

@@ -13,6 +13,20 @@ import (
 	"time"
 )
 
+// Literals shared across this file and pattern_test.go.
+const (
+	testEventSourceMyApp  = "my.app"
+	testEventSourceMyTest = "my.test"
+	testDetailTypeOrder   = "OrderCreated"
+	testPathDetailNested  = "$.detail.nested"
+	testPathSource        = "$.source"
+	testPathNonexistent   = "$.nonexistent"
+	testPathDetailMarker  = "$.detail.marker"
+	testFieldMarker       = "marker"
+	testFieldVal          = "val"
+	testTargetID1         = "target-1"
+)
+
 //nolint:funlen // Table-driven test with comprehensive InputPath coverage.
 func TestResolveInputPath(t *testing.T) {
 	t.Parallel()
@@ -42,7 +56,7 @@ func TestResolveInputPath(t *testing.T) {
 		},
 		{
 			name:      "extract nested field",
-			inputPath: "$.detail.nested",
+			inputPath: testPathDetailNested,
 			want:      `{"key":"val"}`,
 		},
 		{
@@ -52,12 +66,12 @@ func TestResolveInputPath(t *testing.T) {
 		},
 		{
 			name:      "extract source",
-			inputPath: "$.source",
+			inputPath: testPathSource,
 			want:      `"my.app"`,
 		},
 		{
 			name:      "non-existent path returns nil",
-			inputPath: "$.nonexistent",
+			inputPath: testPathNonexistent,
 			wantNil:   true,
 		},
 		{
@@ -95,12 +109,12 @@ func TestExtractJSONPath(t *testing.T) {
 	event := map[string]any{
 		"version":     "0",
 		"id":          "abc-123",
-		"source":      "my.app",
-		"detail-type": "OrderCreated",
+		"source":      testEventSourceMyApp,
+		"detail-type": testDetailTypeOrder,
 		"detail": map[string]any{
-			"marker": "test-marker-value",
+			testFieldMarker: "test-marker-value",
 			"nested": map[string]any{
-				"key": "val",
+				"key": testFieldVal,
 			},
 			"count": float64(42),
 		},
@@ -113,23 +127,23 @@ func TestExtractJSONPath(t *testing.T) {
 	}{
 		{
 			name: "extract top-level string field",
-			path: "$.source",
-			want: "my.app",
+			path: testPathSource,
+			want: testEventSourceMyApp,
 		},
 		{
 			name: "extract nested string field",
-			path: "$.detail.marker",
+			path: testPathDetailMarker,
 			want: "test-marker-value",
 		},
 		{
 			name: "extract deeply nested field",
 			path: "$.detail.nested.key",
-			want: "val",
+			want: testFieldVal,
 		},
 		{
 			name: "extract nested object",
-			path: "$.detail.nested",
-			want: map[string]any{"key": "val"},
+			path: testPathDetailNested,
+			want: map[string]any{"key": testFieldVal},
 		},
 		{
 			name: "extract numeric field",
@@ -138,7 +152,7 @@ func TestExtractJSONPath(t *testing.T) {
 		},
 		{
 			name: "non-existent field returns nil",
-			path: "$.nonexistent",
+			path: testPathNonexistent,
 			want: nil,
 		},
 		{
@@ -206,7 +220,7 @@ func TestApplyInputTransformer(t *testing.T) {
 			name: "simple string replacement",
 			transformer: &InputTransformer{
 				InputPathsMap: map[string]string{
-					"marker": "$.detail.marker",
+					testFieldMarker: testPathDetailMarker,
 				},
 				InputTemplate: `{"transformedMarker": <marker>, "source": "custom-bus"}`,
 			},
@@ -216,8 +230,8 @@ func TestApplyInputTransformer(t *testing.T) {
 			name: "multiple replacements",
 			transformer: &InputTransformer{
 				InputPathsMap: map[string]string{
-					"marker": "$.detail.marker",
-					"src":    "$.source",
+					testFieldMarker: testPathDetailMarker,
+					"src":           testPathSource,
 				},
 				InputTemplate: `{"marker": <marker>, "src": <src>}`,
 			},
@@ -227,7 +241,7 @@ func TestApplyInputTransformer(t *testing.T) {
 			name: "object replacement",
 			transformer: &InputTransformer{
 				InputPathsMap: map[string]string{
-					"nested": "$.detail.nested",
+					"nested": testPathDetailNested,
 				},
 				InputTemplate: `{"data": <nested>}`,
 			},
@@ -237,7 +251,7 @@ func TestApplyInputTransformer(t *testing.T) {
 			name: "non-existent path yields null",
 			transformer: &InputTransformer{
 				InputPathsMap: map[string]string{
-					"missing": "$.nonexistent",
+					"missing": testPathNonexistent,
 				},
 				InputTemplate: `{"value": <missing>}`,
 			},
@@ -428,7 +442,7 @@ func TestPutEvents_APIDestinationCrossRegion(t *testing.T) {
 		AuthParameters: AuthParameters{
 			APIKeyAuthParameters: &APIKeyAuthParameters{
 				APIKeyName:  "X-Api-Key",
-				APIKeyValue: "secret",
+				APIKeyValue: "test-fake-api-key-value",
 			},
 		},
 	})
@@ -462,19 +476,19 @@ func TestPutEvents_APIDestinationCrossRegion(t *testing.T) {
 	if _, err := s.PutRule(ctx, &PutRuleRequest{
 		Name:         "test-rule",
 		EventPattern: `{"source":["my.test"]}`,
-		State:        "ENABLED",
+		State:        string(RuleStateEnabled),
 	}); err != nil {
 		t.Fatalf("PutRule: %v", err)
 	}
 
 	if _, err := s.PutTargets(ctx, "", "test-rule", []TargetInput{
-		{ID: "target-1", Arn: crossRegionTargetArn},
+		{ID: testTargetID1, Arn: crossRegionTargetArn},
 	}); err != nil {
 		t.Fatalf("PutTargets: %v", err)
 	}
 
 	if _, err := s.PutEvents(ctx, []PutEventsRequestEntry{
-		{Source: "my.test", DetailType: "TestEvent", Detail: `{"hello":"world"}`},
+		{Source: testEventSourceMyTest, DetailType: "TestEvent", Detail: `{"hello":"world"}`},
 	}); err != nil {
 		t.Fatalf("PutEvents: %v", err)
 	}
@@ -486,7 +500,7 @@ func TestPutEvents_APIDestinationCrossRegion(t *testing.T) {
 			t.Fatalf("dispatched body not valid JSON: %v", err)
 		}
 
-		if ev["source"] != "my.test" {
+		if ev["source"] != testEventSourceMyTest {
 			t.Errorf("source = %v, want my.test", ev["source"])
 		}
 	case <-time.After(2 * time.Second):
@@ -525,7 +539,7 @@ func TestPutEvents_APIDestinationPathParameters(t *testing.T) {
 		AuthParameters: AuthParameters{
 			APIKeyAuthParameters: &APIKeyAuthParameters{
 				APIKeyName:  "X-Api-Key",
-				APIKeyValue: "secret",
+				APIKeyValue: "test-fake-api-key-value",
 			},
 		},
 	})
@@ -546,14 +560,14 @@ func TestPutEvents_APIDestinationPathParameters(t *testing.T) {
 	if _, err := s.PutRule(ctx, &PutRuleRequest{
 		Name:         "test-rule",
 		EventPattern: `{"source":["my.test"]}`,
-		State:        "ENABLED",
+		State:        string(RuleStateEnabled),
 	}); err != nil {
 		t.Fatalf("PutRule: %v", err)
 	}
 
 	if _, err := s.PutTargets(ctx, "", "test-rule", []TargetInput{
 		{
-			ID:  "target-1",
+			ID:  testTargetID1,
 			Arn: dest.Arn,
 			HTTPParameters: &HTTPParameters{
 				PathParameterValues: []string{
@@ -567,7 +581,7 @@ func TestPutEvents_APIDestinationPathParameters(t *testing.T) {
 	}
 
 	if _, err := s.PutEvents(ctx, []PutEventsRequestEntry{
-		{Source: "my.test", DetailType: "TestEvent", Detail: `{"hello":"world"}`},
+		{Source: testEventSourceMyTest, DetailType: "TestEvent", Detail: `{"hello":"world"}`},
 	}); err != nil {
 		t.Fatalf("PutEvents: %v", err)
 	}
@@ -595,7 +609,7 @@ func TestDeliveredEventsCapped(t *testing.T) {
 	if _, err := s.PutRule(ctx, &PutRuleRequest{
 		Name:         "cap-test-rule",
 		EventPattern: `{"source":["cap.test"]}`,
-		State:        "ENABLED",
+		State:        string(RuleStateEnabled),
 	}); err != nil {
 		t.Fatalf("PutRule: %v", err)
 	}
@@ -604,7 +618,7 @@ func TestDeliveredEventsCapped(t *testing.T) {
 	// dispatch paths, so PutEvents only records the delivery without
 	// spawning any goroutine delivery.
 	if _, err := s.PutTargets(ctx, "", "cap-test-rule", []TargetInput{
-		{ID: "target-1", Arn: "arn:aws:events:us-east-1:000000000000:target/cap-test"},
+		{ID: testTargetID1, Arn: "arn:aws:events:us-east-1:000000000000:target/cap-test"},
 	}); err != nil {
 		t.Fatalf("PutTargets: %v", err)
 	}
@@ -649,13 +663,13 @@ func TestDeliveredEventsNotPersisted(t *testing.T) {
 	if _, err := s.PutRule(ctx, &PutRuleRequest{
 		Name:         "persist-test-rule",
 		EventPattern: `{"source":["persist.test"]}`,
-		State:        "ENABLED",
+		State:        string(RuleStateEnabled),
 	}); err != nil {
 		t.Fatalf("PutRule: %v", err)
 	}
 
 	if _, err := s.PutTargets(ctx, "", "persist-test-rule", []TargetInput{
-		{ID: "target-1", Arn: "arn:aws:events:us-east-1:000000000000:target/persist-test"},
+		{ID: testTargetID1, Arn: "arn:aws:events:us-east-1:000000000000:target/persist-test"},
 	}); err != nil {
 		t.Fatalf("PutTargets: %v", err)
 	}
