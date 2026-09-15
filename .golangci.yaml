@@ -312,6 +312,81 @@ linters:
       - path: internal/registry/registry\.go
         linters:
           - revive
+      # G703 is a false positive here: blob refs are sha256 hex digests
+      # derived from object bodies (bodyRefOf), never user-controlled
+      # paths, and the flagged os calls operate on constant directories
+      # and os.CreateTemp names. gosec's taint analysis fires on any
+      # os.MkdirAll/Remove in a function that merely takes an io.Reader.
+      - path: internal/service/s3/blob\.go
+        linters: [gosec]
+        text: "G703"
+      # G703: build-time README generator reading repo-local paths only.
+      - path: cmd/readme-gen/main\.go
+        linters: [gosec]
+        text: "G703"
+      # G204: executing user-provided init scripts is the initdir feature.
+      - path: internal/initdir/initdir\.go
+        linters: [gosec]
+        text: "G204"
+      # G704/G705: connecting to user-configured endpoints and echoing
+      # their responses is the emulator's purpose (AMP workspace proxy,
+      # CloudFront origin fetch, EventBridge API destinations, Lambda
+      # invocation, SFN HTTP tasks, ECS Exec endpoint, EBS blocks).
+      - path: internal/service/amp/service\.go
+        linters: [gosec]
+        text: "G704"
+      - path: internal/service/cloudfront/edge\.go
+        linters: [gosec]
+        text: "G704|G705"
+      - path: internal/service/cloudfront/edge_test\.go
+        linters: [gosec]
+        text: "G705"
+      - path: internal/service/ebs/handlers\.go
+        linters: [gosec]
+        text: "G705"
+      - path: internal/service/eventbridge/storage\.go
+        linters: [gosec]
+        text: "G704"
+      - path: internal/service/execapi/execapi\.go
+        linters: [gosec]
+        text: "G704"
+      - path: internal/service/lambda/handlers\.go
+        linters: [gosec]
+        text: "G704"
+      - path: internal/service/sfn/executor\.go
+        linters: [gosec]
+        text: "G704"
+      - path: internal/service/sfn/itemreader\.go
+        linters: [gosec]
+        text: "G704"
+      - path: internal/service/sfn/resultwriter\.go
+        linters: [gosec]
+        text: "G704"
+      # G101: dummy EventBridge connection credentials in test fixtures.
+      - path: internal/service/eventbridge/storage_test\.go
+        linters: [gosec]
+        text: "G101"
+      # G118: notification/event delivery is intentionally fire-and-forget;
+      # the request context would cancel delivery when the response
+      # returns. G120: object_post enforces a real MaxBytesReader cap, but
+      # gosec still flags the ParseMultipartForm call site regardless.
+      - path: internal/service/s3/handlers\.go
+        linters: [gosec]
+        text: "G118|G705"
+      - path: internal/service/s3/object_post\.go
+        linters: [gosec]
+        text: "G118|G120"
+      # The gosec G115 suppression comments in these files are required by
+      # golangci-lint v2.8's gosec but reported as unused by v2.13's.
+      - path: internal/service/emrserverless/handlers\.go
+        linters: [nolintlint]
+        text: "is unused"
+      - path: internal/service/pipes/handlers\.go
+        linters: [nolintlint]
+        text: "is unused"
+      - path: internal/service/memorydb/storage\.go
+        linters: [nolintlint]
+        text: "is unused"
   settings:
     gocritic:
       enable-all: true
