@@ -270,7 +270,7 @@ func (m *MemoryStorage) CreateTable(_ context.Context, req *CreateTableRequest) 
 		GlobalSecondaryIndexes: req.GlobalSecondaryIndexes,
 		LocalSecondaryIndexes:  req.LocalSecondaryIndexes,
 		CreationDateTime:       now,
-		TableStatus:            "ACTIVE",
+		TableStatus:            statusActive,
 		ItemCount:              0,
 		TableSizeBytes:         0,
 		TableARN:               fmt.Sprintf("arn:aws:dynamodb:%s:%s:table/%s", m.region, defaultAccountID, req.TableName),

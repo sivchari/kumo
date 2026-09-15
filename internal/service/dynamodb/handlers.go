@@ -465,7 +465,7 @@ func gsiToDescription(table *Table, gsi *GlobalSecondaryIndex) GlobalSecondaryIn
 		IndexName:      gsi.IndexName,
 		KeySchema:      gsi.KeySchema,
 		Projection:     gsi.Projection,
-		IndexStatus:    "ACTIVE",
+		IndexStatus:    statusActive,
 		IndexArn:       fmt.Sprintf("%s/index/%s", table.TableARN, gsi.IndexName),
 		ItemCount:      table.ItemCount,
 		IndexSizeBytes: table.TableSizeBytes,
@@ -515,7 +515,7 @@ func warmThroughputDescription(warm *WarmThroughput) *WarmThroughputDescription 
 	return &WarmThroughputDescription{
 		ReadUnitsPerSecond:  warm.ReadUnitsPerSecond,
 		WriteUnitsPerSecond: warm.WriteUnitsPerSecond,
-		Status:              "ACTIVE",
+		Status:              statusActive,
 	}
 }
 

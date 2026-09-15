@@ -90,7 +90,7 @@ func putSNSNotificationConfig(t *testing.T, svc *Service, bucket string, events 
 
 	body += filter + `</TopicConfiguration></NotificationConfiguration>`
 
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
 	req.SetPathValue("bucket", bucket)
 
 	w := httptest.NewRecorder()
@@ -110,7 +110,7 @@ func TestSNSNotification_PutObjectPublishesToSNS(t *testing.T) {
 	const bucket = "sns-notify-put"
 
 	_, svc := newSNSNotificationTestService(t, bucket)
-	putSNSNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"}, "")
+	putSNSNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll}, "")
 
 	publisher := newFakeSNSPublisher()
 	svc.SetSNSPublisher(publisher)
@@ -179,7 +179,7 @@ func TestSNSNotification_EventFilterMismatch(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"/dst.txt", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"/dst.txt", http.NoBody)
 	req.SetPathValue("bucket", bucket)
 	req.SetPathValue("key", "dst.txt")
 	req.Header.Set("X-Amz-Copy-Source", "/"+bucket+"/src.txt")
@@ -206,7 +206,7 @@ func TestSNSNotification_KeyFilterMismatch(t *testing.T) {
 		`</S3Key></Filter>`
 
 	_, svc := newSNSNotificationTestService(t, bucket)
-	putSNSNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"}, filter)
+	putSNSNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll}, filter)
 
 	publisher := newFakeSNSPublisher()
 	svc.SetSNSPublisher(publisher)
@@ -234,7 +234,7 @@ func TestSNSNotification_KeyFilterMatch(t *testing.T) {
 		`</S3Key></Filter>`
 
 	_, svc := newSNSNotificationTestService(t, bucket)
-	putSNSNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"}, filter)
+	putSNSNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll}, filter)
 
 	publisher := newFakeSNSPublisher()
 	svc.SetSNSPublisher(publisher)
@@ -258,7 +258,7 @@ func TestSNSNotification_NoPublisherInstalled(t *testing.T) {
 	const bucket = "sns-notify-nopublisher"
 
 	_, svc := newSNSNotificationTestService(t, bucket)
-	putSNSNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"}, "")
+	putSNSNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll}, "")
 
 	w := httptest.NewRecorder()
 	svc.PutObject(w, putObjectRequest(t, bucket, "hello.txt", "hello world"))
@@ -316,7 +316,7 @@ func TestSNSNotification_XMLRoundTrip(t *testing.T) {
 	}
 
 	// GET must echo the same TopicConfiguration back.
-	getReq := httptest.NewRequest(http.MethodGet, "/"+bucket+"?notification", http.NoBody)
+	getReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/"+bucket+"?notification", http.NoBody)
 	getReq.SetPathValue("bucket", bucket)
 
 	w := httptest.NewRecorder()
@@ -346,7 +346,7 @@ func TestSNSNotification_CompleteMultipartUploadFiresAllEmitters(t *testing.T) {
 	const bucket = "sns-notify-mpu"
 
 	store, svc := newSNSNotificationTestService(t, bucket)
-	putSNSNotificationConfig(t, svc, bucket, []string{"s3:ObjectCreated:*"}, "")
+	putSNSNotificationConfig(t, svc, bucket, []string{eventObjectCreatedAll}, "")
 
 	publisher := newFakeSNSPublisher()
 	svc.SetSNSPublisher(publisher)
@@ -365,7 +365,7 @@ func TestSNSNotification_CompleteMultipartUploadFiresAllEmitters(t *testing.T) {
 
 	completeBody := `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>` + part.ETag + `</ETag></Part></CompleteMultipartUpload>`
 
-	req := httptest.NewRequest(http.MethodPost, "/"+bucket+"/big.bin?uploadId="+upload.UploadID, strings.NewReader(completeBody))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/"+bucket+"/big.bin?uploadId="+upload.UploadID, strings.NewReader(completeBody))
 	req.SetPathValue("bucket", bucket)
 	req.SetPathValue("key", "big.bin")
 

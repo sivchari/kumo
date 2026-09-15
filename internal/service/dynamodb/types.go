@@ -242,6 +242,10 @@ const (
 	defaultWarmThroughputWriteUnits = 4000
 )
 
+// statusActive is the ACTIVE status reported for tables, GSIs, and warm
+// throughput.
+const statusActive = "ACTIVE"
+
 // StreamSpecification represents DynamoDB stream settings.
 type StreamSpecification struct {
 	StreamEnabled  bool   `json:"StreamEnabled"`

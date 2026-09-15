@@ -57,8 +57,10 @@ func lambdaConfigXML(id string, events []string, filter string) string {
 // putNotificationConfigXMLResponse is like putNotificationConfigXML but
 // returns the raw response instead of asserting success, so callers can
 // exercise both accepted and rejected configurations.
-func putNotificationConfigXMLResponse(svc *Service, bucket, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
+func putNotificationConfigXMLResponse(t *testing.T, svc *Service, bucket, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/"+bucket+"?notification", strings.NewReader(body))
 	req.SetPathValue("bucket", bucket)
 
 	w := httptest.NewRecorder()
@@ -88,9 +90,9 @@ var overlapTestCases = []overlapTestCase{
 	{
 		name: "invalid-overlapping-suffixes-jpg-pg-with-intersecting-wildcard-events",
 		configs: []string{
-			topicConfigXML("suffix-jpg", []string{"s3:ObjectCreated:*"},
+			topicConfigXML("suffix-jpg", []string{eventObjectCreatedAll},
 				keyFilterXML(filterRuleXML("suffix", "jpg"))),
-			topicConfigXML("suffix-pg", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("suffix-pg", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("suffix", "pg"))),
 		},
 		wantErr: true,
@@ -98,9 +100,9 @@ var overlapTestCases = []overlapTestCase{
 	{
 		name: "invalid-prefix-images-suffix-jpg-overlaps-suffix-jpg-via-default-prefix",
 		configs: []string{
-			topicConfigXML("images-jpg", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("images-jpg", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("prefix", "images"), filterRuleXML("suffix", "jpg"))),
-			topicConfigXML("jpg-only", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("jpg-only", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("suffix", "jpg"))),
 		},
 		wantErr: true,
@@ -108,34 +110,34 @@ var overlapTestCases = []overlapTestCase{
 	{
 		name: "valid-non-overlapping-prefixes-on-the-same-event",
 		configs: []string{
-			topicConfigXML("images", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("images", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("prefix", "images/"))),
-			topicConfigXML("logs", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("logs", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("prefix", "logs/"))),
 		},
 	},
 	{
 		name: "valid-non-overlapping-suffixes-on-the-same-event",
 		configs: []string{
-			topicConfigXML("jpg", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("jpg", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("suffix", ".jpg"))),
-			topicConfigXML("png", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("png", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("suffix", ".png"))),
 		},
 	},
 	{
 		name: "valid-same-prefix-with-non-overlapping-suffixes",
 		configs: []string{
-			topicConfigXML("images-jpg", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("images-jpg", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("prefix", "images"), filterRuleXML("suffix", ".jpg"))),
-			topicConfigXML("images-png", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("images-png", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("prefix", "images"), filterRuleXML("suffix", ".png"))),
 		},
 	},
 	{
 		name: "valid-identical-filter-on-non-intersecting-event-types",
 		configs: []string{
-			topicConfigXML("created", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("created", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("prefix", "images/"))),
 			topicConfigXML("removed", []string{"s3:ObjectRemoved:*"},
 				keyFilterXML(filterRuleXML("prefix", "images/"))),
@@ -144,7 +146,7 @@ var overlapTestCases = []overlapTestCase{
 	{
 		name: "invalid-two-prefix-rules-in-a-single-filter",
 		configs: []string{
-			topicConfigXML("dup-prefix", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("dup-prefix", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("prefix", "images/"), filterRuleXML("prefix", "photos/"))),
 		},
 		wantErr: true,
@@ -152,7 +154,7 @@ var overlapTestCases = []overlapTestCase{
 	{
 		name: "invalid-two-suffix-rules-in-a-single-filter",
 		configs: []string{
-			topicConfigXML("dup-suffix", []string{"s3:ObjectCreated:Put"},
+			topicConfigXML("dup-suffix", []string{eventObjectCreatedPut},
 				keyFilterXML(filterRuleXML("suffix", ".jpg"), filterRuleXML("suffix", ".png"))),
 		},
 		wantErr: true,
@@ -160,25 +162,25 @@ var overlapTestCases = []overlapTestCase{
 	{
 		name: "invalid-overlapping-filters-across-queue-and-topic",
 		configs: []string{
-			queueConfigXML("queue-cfg", []string{"s3:ObjectCreated:Put"}, keyFilterXML(filterRuleXML("prefix", "uploads/"))),
-			topicConfigXML("topic-cfg", []string{"s3:ObjectCreated:Put"}, keyFilterXML(filterRuleXML("prefix", "uploads/photo"))),
+			queueConfigXML("queue-cfg", []string{eventObjectCreatedPut}, keyFilterXML(filterRuleXML("prefix", "uploads/"))),
+			topicConfigXML("topic-cfg", []string{eventObjectCreatedPut}, keyFilterXML(filterRuleXML("prefix", "uploads/photo"))),
 		},
 		wantErr: true,
 	},
 	{
 		name: "invalid-overlapping-filters-across-lambda-and-topic",
 		configs: []string{
-			lambdaConfigXML("lambda-cfg", []string{"s3:ObjectCreated:Put"}, keyFilterXML(filterRuleXML("suffix", ".jpg"))),
-			topicConfigXML("topic-cfg", []string{"s3:ObjectCreated:Put"}, keyFilterXML(filterRuleXML("suffix", ".jpg"))),
+			lambdaConfigXML("lambda-cfg", []string{eventObjectCreatedPut}, keyFilterXML(filterRuleXML("suffix", ".jpg"))),
+			topicConfigXML("topic-cfg", []string{eventObjectCreatedPut}, keyFilterXML(filterRuleXML("suffix", ".jpg"))),
 		},
 		wantErr: true,
 	},
 	{
 		name: "valid-non-overlapping-filters-across-queue-lambda-and-topic",
 		configs: []string{
-			queueConfigXML("queue-cfg", []string{"s3:ObjectCreated:Put"}, keyFilterXML(filterRuleXML("prefix", "uploads/"))),
-			lambdaConfigXML("lambda-cfg", []string{"s3:ObjectCreated:Put"}, keyFilterXML(filterRuleXML("prefix", "logs/"))),
-			topicConfigXML("topic-cfg", []string{"s3:ObjectCreated:Put"}, keyFilterXML(filterRuleXML("prefix", "archive/"))),
+			queueConfigXML("queue-cfg", []string{eventObjectCreatedPut}, keyFilterXML(filterRuleXML("prefix", "uploads/"))),
+			lambdaConfigXML("lambda-cfg", []string{eventObjectCreatedPut}, keyFilterXML(filterRuleXML("prefix", "logs/"))),
+			topicConfigXML("topic-cfg", []string{eventObjectCreatedPut}, keyFilterXML(filterRuleXML("prefix", "archive/"))),
 		},
 	},
 }
@@ -201,7 +203,7 @@ func runOverlapCase(t *testing.T, bucket string, tt overlapTestCase) {
 	_, svc := newLambdaNotificationTestService(t, bucket)
 
 	body := `<NotificationConfiguration>` + strings.Join(tt.configs, "") + `</NotificationConfiguration>`
-	w := putNotificationConfigXMLResponse(svc, bucket, body)
+	w := putNotificationConfigXMLResponse(t, svc, bucket, body)
 
 	if tt.wantErr {
 		assertInvalidArgument(t, w)
@@ -236,7 +238,7 @@ func assertInvalidArgument(t *testing.T, w *httptest.ResponseRecorder) {
 func assertPersistedConfigCount(t *testing.T, svc *Service, bucket string, want int) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodGet, "/"+bucket+"?notification", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/"+bucket+"?notification", http.NoBody)
 	req.SetPathValue("bucket", bucket)
 
 	w := httptest.NewRecorder()
