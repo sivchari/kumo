@@ -10,6 +10,7 @@ import (
 
 const (
 	testFieldACL     = "acl"
+	testFieldCustom  = "x-custom"
 	testPolicyBucket = "demo-bucket"
 	testPolicyNow    = "2026-01-01T00:00:00Z"
 	testPolicyFuture = "2030-01-01T00:00:00Z"
@@ -181,7 +182,7 @@ func TestPostPolicy_StartsWithOnlyForSupportedFields(t *testing.T) {
 		{"x-amz-security-token", "x-amz-security-token", "token"},
 		{"other x-amz header", "x-amz-storage-class", "STANDARD"},
 		{"tagging", "tagging", "<Tagging/>"},
-		{"toolkit field", "x-custom", "abc"},
+		{"toolkit field", testFieldCustom, "abc"},
 	}
 
 	for _, tc := range cases {
@@ -321,7 +322,7 @@ func TestPostPolicy_ExtraInputFields(t *testing.T) {
 
 	doc := policyDoc(`[["starts-with","$key",""]]`)
 
-	err := evaluatePolicy(t, doc, "k", map[string][]string{postKeyField: {"k"}, "x-custom": {"1"}}, 0)
+	err := evaluatePolicy(t, doc, "k", map[string][]string{postKeyField: {"k"}, testFieldCustom: {"1"}}, 0)
 	assertPolicyError(t, err, http.StatusForbidden, "AccessDenied", "Invalid according to Policy: Extra input fields: x-custom")
 
 	err = evaluatePolicy(t, doc, "k", map[string][]string{postKeyField: {"k"}, "zeta": {"1"}, "alpha": {"2"}}, 0)
@@ -351,7 +352,7 @@ func TestPostPolicy_FieldNamesAreCaseInsensitive(t *testing.T) {
 
 	// Names that differ only by case are resolved deterministically: the
 	// lexicographically first submitted name wins.
-	collision := map[string][]string{"X-Custom": {"A"}, "x-custom": {"B"}}
+	collision := map[string][]string{"X-Custom": {"A"}, testFieldCustom: {"B"}}
 	if err := evaluatePolicy(t, policyDoc(`[{"x-custom":"A"}]`), "", collision, 0); err != nil {
 		t.Fatalf("case collision: unexpected error %v", err)
 	}
