@@ -60,6 +60,16 @@ type ExecuteAPIHandler interface {
 	HandleExecuteAPI(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
 }
 
+// FunctionURLHandler is an optional interface for services that serve Lambda
+// function URLs. The router dispatches virtual-hosted function URL requests
+// ({urlId}.lambda-url.<host>) to it.
+type FunctionURLHandler interface {
+	// HandleFunctionURL handles an invocation of the function URL urlID. It
+	// returns false when no function URL with that id exists, so the router
+	// can answer the way AWS does for an unknown URL.
+	HandleFunctionURL(w http.ResponseWriter, r *http.Request, urlID string) bool
+}
+
 // JSONProtocolService is an optional interface for services using AWS JSON 1.0 protocol.
 // Services implementing this interface will have their handlers dispatched via
 // a unified POST / endpoint based on the X-Amz-Target header.

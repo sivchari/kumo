@@ -174,6 +174,11 @@ func (s *Server) RegisterService(svc service.Service) {
 		s.logger.Debug("registered execute-api handler", "name", svc.Name())
 	}
 
+	if urlSvc, ok := svc.(service.FunctionURLHandler); ok {
+		s.router.AddFunctionURLHandler(urlSvc.HandleFunctionURL)
+		s.logger.Debug("registered function URL handler", "name", svc.Name())
+	}
+
 	if querySvc, ok := svc.(service.QueryProtocolService); ok {
 		s.queryDispatcher.Register(querySvc.TargetPrefix(), querySvc.DispatchAction)
 

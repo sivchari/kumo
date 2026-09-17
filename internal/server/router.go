@@ -26,19 +26,30 @@ type Route struct {
 // false when apiID is not owned by the handler.
 type executeAPIDispatch func(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
 
+// functionURLDispatch is the signature of a virtual-hosted function URL
+// handler. It returns false when the service does not own urlID.
+type functionURLDispatch func(w http.ResponseWriter, r *http.Request, urlID string) bool
+
 // Router is the HTTP router for kumo.
 type Router struct {
-	mux                *http.ServeMux
-	routes             []Route
-	prefixRouters      map[string]*http.ServeMux // Separate routers for services with prefixes
-	executeAPIHandlers []executeAPIDispatch
-	logger             *slog.Logger
+	mux                 *http.ServeMux
+	routes              []Route
+	prefixRouters       map[string]*http.ServeMux // Separate routers for services with prefixes
+	executeAPIHandlers  []executeAPIDispatch
+	functionURLHandlers []functionURLDispatch
+	logger              *slog.Logger
 }
 
 // AddExecuteAPIHandler registers a handler for virtual-hosted execute-api
 // requests ({apiId}.execute-api.<host>).
 func (r *Router) AddExecuteAPIHandler(fn executeAPIDispatch) {
 	r.executeAPIHandlers = append(r.executeAPIHandlers, fn)
+}
+
+// AddFunctionURLHandler registers a handler for virtual-hosted Lambda function
+// URL requests ({urlId}.lambda-url.<host>).
+func (r *Router) AddFunctionURLHandler(fn functionURLDispatch) {
+	r.functionURLHandlers = append(r.functionURLHandlers, fn)
 }
 
 // NewRouter creates a new router.
@@ -183,6 +194,15 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Virtual-hosted Lambda function URLs come first: every path on
+	// {urlId}.lambda-url.<host> belongs to the function, including /health,
+	// and the S3 host rewrite below must never see these hosts.
+	if urlID, ok := extractFunctionURLHost(req.Host); ok {
+		r.serveFunctionURL(w, req, urlID)
+
+		return
+	}
+
 	// Handle health endpoint before ServeMux to avoid route conflicts.
 	if req.URL.Path == "/health" {
 		w.Header().Set("Content-Type", "application/json")
@@ -262,6 +282,63 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // Routes returns all registered routes.
 func (r *Router) Routes() []Route {
 	return r.routes
+}
+
+// serveFunctionURL dispatches a function URL request to the owning service;
+// an unknown url id is refused the way AWS does (403 AccessDeniedException).
+func (r *Router) serveFunctionURL(w http.ResponseWriter, req *http.Request, urlID string) {
+	for _, h := range r.functionURLHandlers {
+		if h(w, req, urlID) {
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("x-amzn-ErrorType", "AccessDeniedException")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"Message":null}`))
+}
+
+// extractFunctionURLHost recognises Lambda function URL virtual-hosted hosts
+// and returns the lower-cased url id. Recognised shapes (the kumo-local form
+// resolves to loopback):
+//
+//	{urlId}.lambda-url.localhost(:port)
+//	{urlId}.lambda-url.{region}.on.aws
+func extractFunctionURLHost(host string) (string, bool) {
+	host = strings.ToLower(stripHostPort(host))
+
+	const marker = ".lambda-url."
+
+	urlID, rest, found := strings.Cut(host, marker)
+	if !found || urlID == "" || strings.Contains(urlID, ".") {
+		return "", false
+	}
+
+	if rest == localhostHost {
+		return urlID, true
+	}
+
+	region, domain, ok := strings.Cut(rest, ".")
+	if ok && region != "" && !strings.Contains(region, ".") && domain == "on.aws" {
+		return urlID, true
+	}
+
+	return "", false
+}
+
+// stripHostPort removes an optional :port from a Host header value, leaving
+// bracketed IPv6 literals intact.
+func stripHostPort(host string) string {
+	if strings.HasSuffix(host, "]") {
+		return host
+	}
+
+	if idx := strings.LastIndex(host, ":"); idx >= 0 && !strings.Contains(host[idx:], "]") {
+		return host[:idx]
+	}
+
+	return host
 }
 
 // extractExecuteAPIHost recognises API Gateway execute-api virtual-hosted

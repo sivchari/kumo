@@ -38,6 +38,7 @@ type Storage interface {
 	UpdateFunctionURLConfig(ctx context.Context, functionName string, update FunctionURLConfigUpdate) (*FunctionURLConfig, error)
 	DeleteFunctionURLConfig(ctx context.Context, functionName string) error
 	ListFunctionURLConfigs(ctx context.Context, functionName string) ([]*FunctionURLConfig, error)
+	LookupFunctionURL(ctx context.Context, urlID string) (*FunctionURLConfig, string, error)
 
 	// Permission operations
 	AddPermission(ctx context.Context, functionName string, stmt *PolicyStatement) error
