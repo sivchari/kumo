@@ -2,8 +2,6 @@ package s3
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -58,7 +56,7 @@ func (s *Service) PostObject(w http.ResponseWriter, r *http.Request) {
 
 	s.applyCORSHeaders(w, r, bucket)
 
-	upload, ok := parsePostUpload(w, r)
+	upload, ok := parsePostUpload(w, r, bucket)
 
 	if r.MultipartForm != nil {
 		defer func() { _ = r.MultipartForm.RemoveAll() }()
@@ -113,7 +111,7 @@ type postUpload struct {
 // object key, and opens the uploaded file. On failure it writes an error
 // response and returns ok=false. The caller is responsible for closing
 // upload.file and for cleaning up r.MultipartForm.
-func parsePostUpload(w http.ResponseWriter, r *http.Request) (postUpload, bool) {
+func parsePostUpload(w http.ResponseWriter, r *http.Request, bucket string) (postUpload, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxPostObjectBodyBytes)
 
 	if err := r.ParseMultipartForm(maxPostFormMemory); err != nil {
@@ -149,7 +147,7 @@ func parsePostUpload(w http.ResponseWriter, r *http.Request) (postUpload, bool) 
 	key = strings.ReplaceAll(key, postFilenameVar, fileHeader.Filename)
 
 	if policy := r.FormValue(postPolicyField); policy != "" {
-		if err := validatePostPolicy(policy); err != nil {
+		if err := checkPostPolicy(policy, bucket, key, r.MultipartForm.Value, fileHeader.Size); err != nil {
 			writePostPolicyError(w, r, err)
 
 			return postUpload{}, false
@@ -168,47 +166,20 @@ func parsePostUpload(w http.ResponseWriter, r *http.Request) (postUpload, bool) 
 
 // writePostPolicyError maps a policy validation error to an S3 error response.
 func writePostPolicyError(w http.ResponseWriter, r *http.Request, err error) {
-	var presignErr *PresignedURLError
-	if errors.As(err, &presignErr) {
-		writeS3Error(w, r, presignErr.Code, presignErr.Message, http.StatusForbidden)
+	var policyErr *postPolicyError
+	if errors.As(err, &policyErr) {
+		writeS3ErrorResponse(w, policyErr.Status, &ErrorResponse{
+			Code:           policyErr.Code,
+			Message:        policyErr.Message,
+			ProposedSize:   policyErr.ProposedSize,
+			MinSizeAllowed: policyErr.MinSizeAllowed,
+			MaxSizeAllowed: policyErr.MaxSizeAllowed,
+		})
 
 		return
 	}
 
 	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
-}
-
-// validatePostPolicy decodes the base64 POST policy document and rejects the
-// request if the policy has expired. Like presigned URLs, kumo validates the
-// expiration only and does not recompute the HMAC signature.
-func validatePostPolicy(encoded string) error {
-	raw, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return &PresignedURLError{Code: errCodeInvalidPolicyDocument, Message: "The content of the form does not meet the conditions specified in the policy document."}
-	}
-
-	var doc struct {
-		Expiration string `json:"expiration"`
-	}
-
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return &PresignedURLError{Code: errCodeInvalidPolicyDocument, Message: "Invalid Policy: Invalid JSON."}
-	}
-
-	if doc.Expiration == "" {
-		return nil
-	}
-
-	expiration, err := parsePolicyExpiration(doc.Expiration)
-	if err != nil {
-		return &PresignedURLError{Code: errCodeInvalidPolicyDocument, Message: "Invalid Policy: Invalid expiration."}
-	}
-
-	if time.Now().After(expiration) {
-		return &PresignedURLError{Code: "AccessDenied", Message: "Invalid according to Policy: Policy expired."}
-	}
-
-	return nil
 }
 
 // parsePolicyExpiration parses the policy expiration timestamp, accepting both
