@@ -455,3 +455,34 @@ type snsNotificationAttribute struct {
 	Type  string `json:"Type"`
 	Value string `json:"Value"`
 }
+
+// snsLambdaEvent is the payload SNS delivers to a lambda-protocol
+// subscription. See https://docs.aws.amazon.com/lambda/latest/dg/with-sns.html
+type snsLambdaEvent struct {
+	Records []snsLambdaRecord `json:"Records"`
+}
+
+// snsLambdaRecord is one entry of snsLambdaEvent.Records.
+type snsLambdaRecord struct {
+	EventSource          string           `json:"EventSource"`
+	EventVersion         string           `json:"EventVersion"`
+	EventSubscriptionArn string           `json:"EventSubscriptionArn"`
+	Sns                  snsLambdaMessage `json:"Sns"`
+}
+
+// snsLambdaMessage mirrors the SQS envelope with the spelling the Lambda
+// event uses (SigningCertUrl / UnsubscribeUrl), an explicit null Subject
+// when none was published and an always-present MessageAttributes object.
+type snsLambdaMessage struct {
+	Type              string                              `json:"Type"`
+	MessageID         string                              `json:"MessageId"`
+	TopicArn          string                              `json:"TopicArn"`
+	Subject           *string                             `json:"Subject"`
+	Message           string                              `json:"Message"`
+	Timestamp         string                              `json:"Timestamp"`
+	SignatureVersion  string                              `json:"SignatureVersion"`
+	Signature         string                              `json:"Signature"`
+	SigningCertURL    string                              `json:"SigningCertUrl"`
+	UnsubscribeURL    string                              `json:"UnsubscribeUrl"`
+	MessageAttributes map[string]snsNotificationAttribute `json:"MessageAttributes"`
+}

@@ -20,9 +20,13 @@ const (
 	defaultRegion    = "us-east-1"
 	defaultAccountID = "000000000000"
 
-	protocolSQS = "sqs"
+	protocolSQS    = "sqs"
+	protocolLambda = "lambda"
 
 	dataTypeString = "String"
+
+	snsNotificationType       = "Notification"
+	signingCertURLPlaceholder = "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem"
 
 	subscriptionAttrRawMessageDelivery = "RawMessageDelivery"
 )
@@ -30,6 +34,13 @@ const (
 // SQSPublisher is an interface for publishing messages to SQS.
 type SQSPublisher interface {
 	PublishToSQS(ctx context.Context, queueURL, messageBody, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error
+}
+
+// LambdaInvoker asynchronously invokes the Lambda function behind a
+// lambda-protocol subscription. The server wiring provides an implementation
+// so the sns package does not import the lambda service.
+type LambdaInvoker interface {
+	InvokeAsync(ctx context.Context, functionArn string, payload []byte) error
 }
 
 // Storage defines the SNS storage interface.
@@ -75,6 +86,7 @@ type MemoryStorage struct {
 	Tags          map[string][]Tag         `json:"tags,omitempty"` // keyed by resource ARN
 	baseURL       string
 	SqsPublisher  SQSPublisher `json:"-"`
+	lambdaInvoker LambdaInvoker
 	dataDir       string
 }
 
@@ -165,6 +177,12 @@ func (m *MemoryStorage) Close() error {
 // SetSQSPublisher sets the SQS publisher for SNS to SQS integration.
 func (m *MemoryStorage) SetSQSPublisher(publisher SQSPublisher) {
 	m.SqsPublisher = publisher
+}
+
+// SetLambdaInvoker sets the invoker used to deliver notifications to
+// lambda-protocol subscriptions. It is never persisted.
+func (m *MemoryStorage) SetLambdaInvoker(invoker LambdaInvoker) {
+	m.lambdaInvoker = invoker
 }
 
 // CreateTopic creates a new topic.
@@ -416,7 +434,7 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 
 	validProtocols := map[string]bool{
 		"http": true, "https": true, "email": true, "email-json": true,
-		"sms": true, protocolSQS: true, "application": true, "lambda": true,
+		"sms": true, protocolSQS: true, "application": true, protocolLambda: true,
 		"firehose": true,
 	}
 
@@ -439,7 +457,7 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	}
 
 	// For SQS and Lambda protocols, auto-confirm.
-	if protocol == protocolSQS || protocol == "lambda" {
+	if protocol == protocolSQS || protocol == protocolLambda {
 		subscription.ConfirmationWasAuthenticated = true
 	}
 
@@ -734,6 +752,8 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 	switch sub.Protocol {
 	case protocolSQS:
 		return m.deliverToSQS(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes)
+	case protocolLambda:
+		return m.deliverToLambda(ctx, sub, message, subject, messageID, attributes)
 	case "http", "https":
 		// HTTP delivery not implemented in emulator.
 		return nil
@@ -818,15 +838,15 @@ func buildSNSNotificationEnvelope(topicARN, message, subject, messageID string, 
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	envelope := snsNotificationEnvelope{
-		Type:             "Notification",
+		Type:             snsNotificationType,
 		MessageID:        messageID,
 		TopicArn:         topicARN,
 		Message:          message,
 		Timestamp:        now,
 		SignatureVersion: "1",
 		Signature:        "EXAMPLE",
-		SigningCertURL:   "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem",
-		UnsubscribeURL:   fmt.Sprintf("https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=%s", topicARN),
+		SigningCertURL:   signingCertURLPlaceholder,
+		UnsubscribeURL:   unsubscribeURL(topicARN),
 	}
 
 	if subject != "" {

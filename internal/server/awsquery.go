@@ -199,14 +199,7 @@ func formToJSON(form map[string][]string) []byte {
 			}
 		}
 
-		// Convert key from Query format to JSON format.
-		// e.g., "Attributes.entry.1.key" -> handled specially
-		// Simple values: "Name" -> "Name"
-		if len(values) == 1 {
-			result[key] = parseFormValue(values[0])
-		} else if len(values) > 1 {
-			result[key] = values
-		}
+		assignFormValue(result, key, values)
 	}
 
 	// Add indexed arrays to result, sorted by original index.
@@ -242,12 +235,30 @@ func formToJSON(form map[string][]string) []byte {
 	// Handle nested attributes (like Attributes.entry.N.key/value).
 	result = flattenAttributes(result)
 
-	// Handle MessageAttributes.entry.N.Name / Value.DataType / Value.StringValue.
+	// Handle MessageAttributes.entry.N.Name / Value.DataType / Value.StringValue / Value.BinaryValue.
 	result = flattenMessageAttributes(result)
 
 	jsonBytes, _ := json.Marshal(result)
 
 	return jsonBytes
+}
+
+// messageAttributesPrefix is the Query-protocol prefix of SNS/SQS message
+// attribute entries, whose values are kept verbatim.
+const messageAttributesPrefix = "MessageAttributes.entry."
+
+// assignFormValue stores a non-indexed form field. Message attribute values
+// are opaque strings ("42" or "true" must stay strings); every other single
+// value goes through parseFormValue and repeated values become a list.
+func assignFormValue(result map[string]any, key string, values []string) {
+	switch {
+	case len(values) == 1 && strings.HasPrefix(key, messageAttributesPrefix):
+		result[key] = values[0]
+	case len(values) == 1:
+		result[key] = parseFormValue(values[0])
+	case len(values) > 1:
+		result[key] = values
+	}
 }
 
 // parseFormValue converts a form value string to appropriate JSON type.
@@ -428,82 +439,84 @@ func buildAttributesMap(attrs map[string]string, result map[string]any) {
 //
 //	{"MessageAttributes": {"event_type": {"DataType":"String","StringValue":"billing"}}}
 //
-//nolint:funlen // AWS Query form attribute parsing.
+// Binary attributes carry their base64 text in Value.BinaryValue.
 func flattenMessageAttributes(data map[string]any) map[string]any {
-	const prefix = "MessageAttributes.entry."
-
-	// Collect per-index fields.
-	type entryFields struct {
-		name        string
-		dataType    string
-		stringValue string
-	}
-
-	entries := make(map[string]*entryFields) // keyed by index (e.g. "1")
+	entries := make(map[string]*messageAttributeEntry) // keyed by index (e.g. "1")
 	result := make(map[string]any)
 
 	for key, value := range data {
-		if !strings.HasPrefix(key, prefix) {
+		rest, isEntry := strings.CutPrefix(key, messageAttributesPrefix)
+		idx, field, hasField := strings.Cut(rest, ".") // e.g. "1", "Value.DataType"
+
+		if !isEntry || !hasField {
 			result[key] = value
 
 			continue
 		}
 
-		rest := key[len(prefix):] // e.g. "1.Name", "1.Value.DataType"
-		dotIdx := strings.Index(rest, ".")
-
-		if dotIdx < 0 {
-			result[key] = value
-
-			continue
-		}
-
-		idx := rest[:dotIdx]
-		field := rest[dotIdx+1:]
-		strValue, _ := value.(string)
-
-		e, ok := entries[idx]
+		entry, ok := entries[idx]
 		if !ok {
-			e = &entryFields{}
-			entries[idx] = e
+			entry = &messageAttributeEntry{}
+			entries[idx] = entry
 		}
 
-		switch field {
-		case "Name":
-			e.name = strValue
-		case "Value.DataType":
-			e.dataType = strValue
-		case "Value.StringValue":
-			e.stringValue = strValue
+		strValue, _ := value.(string)
+		entry.set(field, strValue)
+	}
+
+	msgAttrs := make(map[string]map[string]string, len(entries))
+
+	for _, entry := range entries {
+		if entry.name != "" {
+			msgAttrs[entry.name] = entry.attribute()
 		}
 	}
 
-	if len(entries) > 0 {
-		msgAttrs := make(map[string]map[string]string, len(entries))
-
-		for _, e := range entries {
-			if e.name == "" {
-				continue
-			}
-
-			attr := make(map[string]string)
-			if e.dataType != "" {
-				attr["DataType"] = e.dataType
-			}
-
-			if e.stringValue != "" {
-				attr["StringValue"] = e.stringValue
-			}
-
-			msgAttrs[e.name] = attr
-		}
-
-		if len(msgAttrs) > 0 {
-			result["MessageAttributes"] = msgAttrs
-		}
+	if len(msgAttrs) > 0 {
+		result["MessageAttributes"] = msgAttrs
 	}
 
 	return result
+}
+
+// messageAttributeEntry collects the fields of one MessageAttributes.entry.N group.
+type messageAttributeEntry struct {
+	name        string
+	dataType    string
+	stringValue string
+	binaryValue string
+}
+
+func (e *messageAttributeEntry) set(field, value string) {
+	switch field {
+	case "Name":
+		e.name = value
+	case "Value.DataType":
+		e.dataType = value
+	case "Value.StringValue":
+		e.stringValue = value
+	case "Value.BinaryValue":
+		e.binaryValue = value
+	}
+}
+
+// attribute renders the entry as the JSON object the service handlers decode.
+func (e *messageAttributeEntry) attribute() map[string]string {
+	attr := make(map[string]string)
+
+	if e.dataType != "" {
+		attr["DataType"] = e.dataType
+	}
+
+	if e.stringValue != "" {
+		attr["StringValue"] = e.stringValue
+	}
+
+	if e.binaryValue != "" {
+		attr["BinaryValue"] = e.binaryValue
+	}
+
+	return attr
 }
 
 // writeQueryError writes an AWS Query protocol error response.
