@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// TestS3ToLambdaInvoker_InvokeAsync_StatusHandling regression-tests a bug
+// TestLambdaAsyncInvoker_InvokeAsync_StatusHandling regression-tests a bug
 // where InvokeAsync ignored the HTTP response status from the Lambda invoke
 // endpoint: a 404 (function not found) or 500 returned nil, so the S3 event
 // notification silently vanished instead of surfacing an error the caller
@@ -17,7 +17,7 @@ import (
 // includes the status code; success statuses (e.g. 202 Accepted, which is
 // what the real Lambda invoke endpoint returns for async invocations) must
 // still return nil.
-func TestS3ToLambdaInvoker_InvokeAsync_StatusHandling(t *testing.T) {
+func TestLambdaAsyncInvoker_InvokeAsync_StatusHandling(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -53,7 +53,7 @@ func TestS3ToLambdaInvoker_InvokeAsync_StatusHandling(t *testing.T) {
 			// A dedicated Transport keeps the parallel subtests off the shared
 			// http.DefaultTransport: httptest's Close closes its idle
 			// connections, killing the sibling subtest's in-flight request.
-			inv := &s3ToLambdaInvoker{
+			inv := &lambdaAsyncInvoker{
 				baseURL:    srv.URL,
 				httpClient: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{}},
 			}

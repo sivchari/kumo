@@ -20,9 +20,15 @@ const (
 	defaultRegion    = "us-east-1"
 	defaultAccountID = "000000000000"
 
-	protocolSQS = "sqs"
+	protocolSQS    = "sqs"
+	protocolLambda = "lambda"
+	protocolHTTP   = "http"
+	protocolHTTPS  = "https"
 
 	dataTypeString = "String"
+
+	snsNotificationType       = "Notification"
+	signingCertURLPlaceholder = "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem"
 
 	subscriptionAttrRawMessageDelivery = "RawMessageDelivery"
 )
@@ -30,6 +36,13 @@ const (
 // SQSPublisher is an interface for publishing messages to SQS.
 type SQSPublisher interface {
 	PublishToSQS(ctx context.Context, queueURL, messageBody, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error
+}
+
+// LambdaInvoker asynchronously invokes the Lambda function behind a
+// lambda-protocol subscription. The server wiring provides an implementation
+// so the sns package does not import the lambda service.
+type LambdaInvoker interface {
+	InvokeAsync(ctx context.Context, functionArn string, payload []byte) error
 }
 
 // Storage defines the SNS storage interface.
@@ -43,7 +56,7 @@ type Storage interface {
 	GetSubscription(ctx context.Context, subscriptionARN string) (*Subscription, error)
 	SetSubscriptionAttribute(ctx context.Context, subscriptionARN, name, value string) error
 	Unsubscribe(ctx context.Context, subscriptionARN string) error
-	Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error)
+	Publish(ctx context.Context, topicARN, message, messageStructure, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error)
 	ListSubscriptions(ctx context.Context, nextToken string) ([]*Subscription, string, error)
 	ListSubscriptionsByTopic(ctx context.Context, topicARN, nextToken string) ([]*Subscription, string, error)
 	ListTagsForResource(ctx context.Context, resourceArn string) ([]Tag, error)
@@ -75,6 +88,7 @@ type MemoryStorage struct {
 	Tags          map[string][]Tag         `json:"tags,omitempty"` // keyed by resource ARN
 	baseURL       string
 	SqsPublisher  SQSPublisher `json:"-"`
+	lambdaInvoker LambdaInvoker
 	dataDir       string
 }
 
@@ -165,6 +179,12 @@ func (m *MemoryStorage) Close() error {
 // SetSQSPublisher sets the SQS publisher for SNS to SQS integration.
 func (m *MemoryStorage) SetSQSPublisher(publisher SQSPublisher) {
 	m.SqsPublisher = publisher
+}
+
+// SetLambdaInvoker sets the invoker used to deliver notifications to
+// lambda-protocol subscriptions. It is never persisted.
+func (m *MemoryStorage) SetLambdaInvoker(invoker LambdaInvoker) {
+	m.lambdaInvoker = invoker
 }
 
 // CreateTopic creates a new topic.
@@ -415,8 +435,8 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	}
 
 	validProtocols := map[string]bool{
-		"http": true, "https": true, "email": true, "email-json": true,
-		"sms": true, protocolSQS: true, "application": true, "lambda": true,
+		protocolHTTP: true, protocolHTTPS: true, "email": true, "email-json": true,
+		"sms": true, protocolSQS: true, "application": true, protocolLambda: true,
 		"firehose": true,
 	}
 
@@ -439,7 +459,7 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	}
 
 	// For SQS and Lambda protocols, auto-confirm.
-	if protocol == protocolSQS || protocol == "lambda" {
+	if protocol == protocolSQS || protocol == protocolLambda {
 		subscription.ConfirmationWasAuthenticated = true
 	}
 
@@ -516,7 +536,15 @@ func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) e
 }
 
 // Publish publishes a message to a topic.
-func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error) {
+// Publish fans a message out to the topic's subscribers. Like SNS, it
+// validates a json-structured body before it looks the topic up, so a
+// malformed body is reported even when the topic does not exist.
+func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, messageStructure, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error) {
+	messages, err := messagesForStructure(message, messageStructure)
+	if err != nil {
+		return "", err
+	}
+
 	m.mu.RLock()
 
 	topic, exists := m.Topics[topicARN]
@@ -540,7 +568,7 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject,
 
 	// Deliver to all subscriptions.
 	for _, sub := range subscriptions {
-		if err := m.deliverMessage(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
+		if err := m.deliverMessage(ctx, sub, messages, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
 			slog.Error("sns: failed to deliver to subscription",
 				"endpoint", sub.Endpoint,
 				"protocol", sub.Protocol,
@@ -721,8 +749,9 @@ func matchAnythingBut(obj map[string]json.RawMessage, value string, exists bool)
 	return false, false
 }
 
-// deliverMessage delivers a message to a subscription.
-func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
+// deliverMessage delivers the subscription's protocol entry of messages to a
+// subscription.
+func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, messages protocolMessages, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
 	if sub.SubscriptionAttributes != nil {
 		if fp, ok := sub.SubscriptionAttributes["FilterPolicy"]; ok {
 			if !matchesFilterPolicy(fp, attributes) {
@@ -731,10 +760,14 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 		}
 	}
 
+	message := messages.forProtocol(sub.Protocol)
+
 	switch sub.Protocol {
 	case protocolSQS:
 		return m.deliverToSQS(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes)
-	case "http", "https":
+	case protocolLambda:
+		return m.deliverToLambda(ctx, sub, message, subject, messageID, attributes)
+	case protocolHTTP, protocolHTTPS:
 		// HTTP delivery not implemented in emulator.
 		return nil
 	default:
@@ -818,15 +851,15 @@ func buildSNSNotificationEnvelope(topicARN, message, subject, messageID string, 
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	envelope := snsNotificationEnvelope{
-		Type:             "Notification",
+		Type:             snsNotificationType,
 		MessageID:        messageID,
 		TopicArn:         topicARN,
 		Message:          message,
 		Timestamp:        now,
 		SignatureVersion: "1",
 		Signature:        "EXAMPLE",
-		SigningCertURL:   "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-0000000000000000000000.pem",
-		UnsubscribeURL:   fmt.Sprintf("https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=%s", topicARN),
+		SigningCertURL:   signingCertURLPlaceholder,
+		UnsubscribeURL:   unsubscribeURL(topicARN),
 	}
 
 	if subject != "" {
