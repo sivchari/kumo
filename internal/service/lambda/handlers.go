@@ -920,6 +920,14 @@ func (s *Service) AddPermission(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.FunctionURLAuthType != "" {
+		if err := validateAuthType("FunctionUrlAuthType", req.FunctionURLAuthType); err != nil {
+			writeFunctionError(w, ErrInvalidParameterValue, err.Error(), http.StatusBadRequest)
+
+			return
+		}
+	}
+
 	fn, err := s.storage.GetFunction(r.Context(), name)
 	if err != nil {
 		handleGetFunctionError(w, err)
@@ -966,14 +974,23 @@ func buildPermissionStatement(req *addPermissionRequest, resourceArn string) *Po
 		}
 	}
 
+	equals := make(map[string]string)
+
 	if req.SourceAccount != "" {
+		equals["AWS:SourceAccount"] = req.SourceAccount
+	}
+
+	// aws_lambda_permission's function_url_auth_type reads this key back.
+	if req.FunctionURLAuthType != "" {
+		equals["lambda:FunctionUrlAuthType"] = req.FunctionURLAuthType
+	}
+
+	if len(equals) > 0 {
 		if stmt.Condition == nil {
 			stmt.Condition = make(map[string]any)
 		}
 
-		stmt.Condition["StringEquals"] = map[string]string{
-			"AWS:SourceAccount": req.SourceAccount,
-		}
+		stmt.Condition["StringEquals"] = equals
 	}
 
 	return stmt

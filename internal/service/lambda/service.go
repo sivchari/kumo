@@ -79,6 +79,8 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("GET", prefix+"/2017-03-31/tags/{arn...}", s.ListTags)
 		r.Handle("POST", prefix+"/2017-03-31/tags/{arn...}", s.TagResource)
 		r.Handle("DELETE", prefix+"/2017-03-31/tags/{arn...}", s.UntagResource)
+
+		s.registerFunctionURLRoutes(r, prefix)
 	}
 
 	// kumo-native Lambda Runtime API. A handler built with lambda.Start
