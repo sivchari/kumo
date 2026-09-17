@@ -32,6 +32,80 @@ type Function struct {
 	InvokeEndpoint   string // kumo extension: HTTP endpoint to proxy invocations
 }
 
+// FunctionURLConfig is a function URL. kumo has no aliases, so a function
+// has at most one URL, keyed by function name in storage.
+type FunctionURLConfig struct {
+	URLID            string           `json:"UrlId"`
+	FunctionArn      string           `json:"FunctionArn"`
+	FunctionURL      string           `json:"FunctionUrl"`
+	AuthType         string           `json:"AuthType"`
+	InvokeMode       string           `json:"InvokeMode"`
+	Cors             *FunctionURLCORS `json:"Cors,omitempty"`
+	CreationTime     time.Time        `json:"CreationTime"`
+	LastModifiedTime time.Time        `json:"LastModifiedTime"`
+}
+
+// FunctionURLCORS is the cross-origin resource sharing configuration of a
+// function URL.
+type FunctionURLCORS struct {
+	AllowCredentials bool     `json:"AllowCredentials"`
+	AllowHeaders     []string `json:"AllowHeaders,omitempty"`
+	AllowMethods     []string `json:"AllowMethods,omitempty"`
+	AllowOrigins     []string `json:"AllowOrigins,omitempty"`
+	ExposeHeaders    []string `json:"ExposeHeaders,omitempty"`
+	MaxAge           int      `json:"MaxAge,omitempty"`
+}
+
+// FunctionURLConfigSpec is the input of CreateFunctionURLConfig.
+type FunctionURLConfigSpec struct {
+	AuthType   string
+	InvokeMode string
+	Cors       *FunctionURLCORS
+}
+
+// FunctionURLConfigUpdate carries the fields UpdateFunctionURLConfig changes;
+// nil fields are left untouched, Cors is replaced as a whole and ClearCors
+// removes it (the API expresses removal as an empty Cors object).
+type FunctionURLConfigUpdate struct {
+	AuthType   *string
+	InvokeMode *string
+	Cors       *FunctionURLCORS
+	ClearCors  bool
+}
+
+// createFunctionURLConfigRequest is the request body for CreateFunctionUrlConfig.
+type createFunctionURLConfigRequest struct {
+	AuthType   string           `json:"AuthType"`
+	Cors       *FunctionURLCORS `json:"Cors,omitempty"`
+	InvokeMode string           `json:"InvokeMode,omitempty"`
+}
+
+// updateFunctionURLConfigRequest is the request body for UpdateFunctionUrlConfig;
+// absent fields keep their value.
+type updateFunctionURLConfigRequest struct {
+	AuthType   *string          `json:"AuthType,omitempty"`
+	Cors       *FunctionURLCORS `json:"Cors,omitempty"`
+	InvokeMode *string          `json:"InvokeMode,omitempty"`
+}
+
+// functionURLConfigResponse is the wire shape shared by the FunctionUrlConfig
+// operations; LastModifiedTime is absent on create.
+type functionURLConfigResponse struct {
+	AuthType         string           `json:"AuthType"`
+	Cors             *FunctionURLCORS `json:"Cors,omitempty"`
+	CreationTime     string           `json:"CreationTime"`
+	FunctionArn      string           `json:"FunctionArn"`
+	FunctionURL      string           `json:"FunctionUrl"`
+	InvokeMode       string           `json:"InvokeMode"`
+	LastModifiedTime string           `json:"LastModifiedTime,omitempty"`
+}
+
+// listFunctionURLConfigsResponse is the response of ListFunctionUrlConfigs.
+type listFunctionURLConfigsResponse struct {
+	FunctionURLConfigs []functionURLConfigResponse `json:"FunctionUrlConfigs"`
+	NextMarker         string                      `json:"NextMarker,omitempty"`
+}
+
 // ResourcePolicy represents a Lambda function resource policy.
 type ResourcePolicy struct {
 	Version    string             `json:"Version"`
