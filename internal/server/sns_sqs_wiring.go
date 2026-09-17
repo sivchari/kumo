@@ -376,7 +376,7 @@ type cloudWatchToSNSPublisher struct {
 
 // Publish sends a CloudWatch alarm notification to an SNS topic.
 func (p *cloudWatchToSNSPublisher) Publish(ctx context.Context, topicARN, message, subject string) error {
-	_, err := p.snsStorage.Publish(ctx, topicARN, message, subject, "", "", nil)
+	_, err := p.snsStorage.Publish(ctx, topicARN, message, "", subject, "", "", nil)
 	if err != nil {
 		return fmt.Errorf("cloudwatch alarm action publish failed: %w", err)
 	}
@@ -425,7 +425,7 @@ type s3ToSNSPublisher struct {
 
 // Publish sends an S3 event notification message to an SNS topic.
 func (p *s3ToSNSPublisher) Publish(ctx context.Context, topicARN, message, subject string) error {
-	_, err := p.snsStorage.Publish(ctx, topicARN, message, subject, "", "", nil)
+	_, err := p.snsStorage.Publish(ctx, topicARN, message, "", subject, "", "", nil)
 	if err != nil {
 		return fmt.Errorf("s3 notification publish failed: %w", err)
 	}

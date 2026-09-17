@@ -22,6 +22,8 @@ const (
 
 	protocolSQS    = "sqs"
 	protocolLambda = "lambda"
+	protocolHTTP   = "http"
+	protocolHTTPS  = "https"
 
 	dataTypeString = "String"
 
@@ -54,7 +56,7 @@ type Storage interface {
 	GetSubscription(ctx context.Context, subscriptionARN string) (*Subscription, error)
 	SetSubscriptionAttribute(ctx context.Context, subscriptionARN, name, value string) error
 	Unsubscribe(ctx context.Context, subscriptionARN string) error
-	Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error)
+	Publish(ctx context.Context, topicARN, message, messageStructure, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error)
 	ListSubscriptions(ctx context.Context, nextToken string) ([]*Subscription, string, error)
 	ListSubscriptionsByTopic(ctx context.Context, topicARN, nextToken string) ([]*Subscription, string, error)
 	ListTagsForResource(ctx context.Context, resourceArn string) ([]Tag, error)
@@ -433,7 +435,7 @@ func (m *MemoryStorage) Subscribe(_ context.Context, topicARN, protocol, endpoin
 	}
 
 	validProtocols := map[string]bool{
-		"http": true, "https": true, "email": true, "email-json": true,
+		protocolHTTP: true, protocolHTTPS: true, "email": true, "email-json": true,
 		"sms": true, protocolSQS: true, "application": true, protocolLambda: true,
 		"firehose": true,
 	}
@@ -534,7 +536,15 @@ func (m *MemoryStorage) Unsubscribe(_ context.Context, subscriptionARN string) e
 }
 
 // Publish publishes a message to a topic.
-func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error) {
+// Publish fans a message out to the topic's subscribers. Like SNS, it
+// validates a json-structured body before it looks the topic up, so a
+// malformed body is reported even when the topic does not exist.
+func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, messageStructure, subject, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) (string, error) {
+	messages, err := messagesForStructure(message, messageStructure)
+	if err != nil {
+		return "", err
+	}
+
 	m.mu.RLock()
 
 	topic, exists := m.Topics[topicARN]
@@ -558,7 +568,7 @@ func (m *MemoryStorage) Publish(ctx context.Context, topicARN, message, subject,
 
 	// Deliver to all subscriptions.
 	for _, sub := range subscriptions {
-		if err := m.deliverMessage(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
+		if err := m.deliverMessage(ctx, sub, messages, subject, messageID, messageGroupID, messageDeduplicationID, attributes); err != nil {
 			slog.Error("sns: failed to deliver to subscription",
 				"endpoint", sub.Endpoint,
 				"protocol", sub.Protocol,
@@ -739,8 +749,9 @@ func matchAnythingBut(obj map[string]json.RawMessage, value string, exists bool)
 	return false, false
 }
 
-// deliverMessage delivers a message to a subscription.
-func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, message, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
+// deliverMessage delivers the subscription's protocol entry of messages to a
+// subscription.
+func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, messages protocolMessages, subject, messageID, messageGroupID, messageDeduplicationID string, attributes map[string]MessageAttribute) error {
 	if sub.SubscriptionAttributes != nil {
 		if fp, ok := sub.SubscriptionAttributes["FilterPolicy"]; ok {
 			if !matchesFilterPolicy(fp, attributes) {
@@ -749,12 +760,14 @@ func (m *MemoryStorage) deliverMessage(ctx context.Context, sub *Subscription, m
 		}
 	}
 
+	message := messages.forProtocol(sub.Protocol)
+
 	switch sub.Protocol {
 	case protocolSQS:
 		return m.deliverToSQS(ctx, sub, message, subject, messageID, messageGroupID, messageDeduplicationID, attributes)
 	case protocolLambda:
 		return m.deliverToLambda(ctx, sub, message, subject, messageID, attributes)
-	case "http", "https":
+	case protocolHTTP, protocolHTTPS:
 		// HTTP delivery not implemented in emulator.
 		return nil
 	default:

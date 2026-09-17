@@ -69,7 +69,7 @@ func publishToLambda(t *testing.T, subject string, attributes map[string]Message
 	invoker := &capturingInvoker{}
 	storage, sub := newTopicWithLambdaSubscription(t, invoker, nil)
 
-	messageID, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, subject, "", "", attributes)
+	messageID, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", subject, "", "", attributes)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -253,7 +253,7 @@ func TestPublish_LambdaFilterPolicyMismatchSkipsInvocation(t *testing.T) {
 	storage, sub := newTopicWithLambdaSubscription(t, invoker, map[string]string{"FilterPolicy": `{"kind":["billing"]}`})
 
 	attributes := map[string]MessageAttribute{"kind": {DataType: dataTypeString, StringValue: "audit"}}
-	if _, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", attributes); err != nil {
+	if _, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", "", attributes); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
 
@@ -267,7 +267,7 @@ func TestPublish_LambdaWithoutInvokerIsANoop(t *testing.T) {
 
 	storage, sub := newTopicWithLambdaSubscription(t, nil, nil)
 
-	messageID, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", nil)
+	messageID, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", "", nil)
 	if err != nil || messageID == "" {
 		t.Fatalf("Publish() = %q, %v; want a message id and no error", messageID, err)
 	}
@@ -279,7 +279,7 @@ func TestPublish_LambdaInvokerErrorDoesNotFailPublish(t *testing.T) {
 	invoker := &capturingInvoker{err: errors.New("boom")}
 	storage, sub := newTopicWithLambdaSubscription(t, invoker, nil)
 
-	messageID, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", nil)
+	messageID, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", "", nil)
 	if err != nil || messageID == "" {
 		t.Fatalf("Publish() = %q, %v; delivery failures must not fail Publish", messageID, err)
 	}
@@ -297,7 +297,7 @@ func TestPublish_DeliversToSQSAndLambdaSubscribers(t *testing.T) {
 		t.Fatalf("Subscribe(sqs) error = %v", err)
 	}
 
-	if _, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", nil); err != nil {
+	if _, err := storage.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", "", nil); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
 
@@ -328,7 +328,7 @@ func TestMemoryStorage_SnapshotExcludesLambdaInvokerAndRestoresDelivery(t *testi
 	invoker := &capturingInvoker{}
 	restored.SetLambdaInvoker(invoker)
 
-	if _, err := restored.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", nil); err != nil {
+	if _, err := restored.Publish(context.Background(), sub.TopicARN, testLambdaMessage, "", "", "", "", nil); err != nil {
 		t.Fatalf("Publish() on restored storage error = %v", err)
 	}
 

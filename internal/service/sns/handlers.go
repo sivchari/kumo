@@ -261,7 +261,7 @@ func (s *Service) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messageID, err := s.storage.Publish(r.Context(), topicARN, req.Message, req.Subject, req.MessageGroupID, req.MessageDeduplicationID, req.MessageAttributes)
+	messageID, err := s.storage.Publish(r.Context(), topicARN, req.Message, req.MessageStructure, req.Subject, req.MessageGroupID, req.MessageDeduplicationID, req.MessageAttributes)
 	if err != nil {
 		var sErr *TopicError
 		if errors.As(err, &sErr) {
