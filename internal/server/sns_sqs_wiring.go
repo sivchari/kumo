@@ -228,25 +228,64 @@ func wireS3toLambda(registry *service.Registry) {
 		return
 	}
 
-	s3Typed.SetLambdaInvoker(&s3ToLambdaInvoker{
-		baseURL:    lambdaTyped.BaseURL(),
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-	})
+	s3Typed.SetLambdaInvoker(newLambdaAsyncInvoker(lambdaTyped.BaseURL()))
 }
 
-// s3ToLambdaInvoker adapts the Lambda service's HTTP invoke endpoint to
-// the S3 LambdaInvoker interface. It POSTs the S3 event notification
-// payload to the Lambda invoke endpoint with the async invocation-type
-// header so the request rides Lambda's async dispatch queue instead of
-// blocking for a response.
-type s3ToLambdaInvoker struct {
+// wireSNStoLambda connects the SNS service to the Lambda service so that
+// lambda-protocol subscriptions actually invoke their function on Publish.
+//
+// Without this wiring, MemoryStorage.deliverMessage skips lambda
+// subscriptions because no invoker is installed. The pattern mirrors
+// wireS3toLambda and shares its adapter.
+func wireSNStoLambda(registry *service.Registry) {
+	snsSvc, ok := registry.Get("sns")
+	if !ok {
+		return
+	}
+
+	lambdaSvc, ok := registry.Get("lambda")
+	if !ok {
+		return
+	}
+
+	snsTyped, ok := snsSvc.(*sns.Service)
+	if !ok {
+		return
+	}
+
+	lambdaTyped, ok := lambdaSvc.(*lambda.Service)
+	if !ok {
+		return
+	}
+
+	snsStorage, ok := snsTyped.Storage().(*sns.MemoryStorage)
+	if !ok {
+		return
+	}
+
+	snsStorage.SetLambdaInvoker(newLambdaAsyncInvoker(lambdaTyped.BaseURL()))
+}
+
+// lambdaAsyncInvoker adapts the Lambda service's HTTP invoke endpoint to
+// the LambdaInvoker interfaces of the S3 and SNS services. It POSTs the
+// event payload to the Lambda invoke endpoint with the async
+// invocation-type header so the request rides Lambda's async dispatch
+// queue instead of blocking for a response.
+type lambdaAsyncInvoker struct {
 	baseURL    string
 	httpClient *http.Client
 }
 
+func newLambdaAsyncInvoker(baseURL string) *lambdaAsyncInvoker {
+	return &lambdaAsyncInvoker{
+		baseURL:    baseURL,
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+	}
+}
+
 // InvokeAsync invokes the Lambda function identified by functionArn,
-// asynchronously delivering the S3 event notification payload.
-func (inv *s3ToLambdaInvoker) InvokeAsync(ctx context.Context, functionArn string, payload []byte) error {
+// asynchronously delivering the event payload.
+func (inv *lambdaAsyncInvoker) InvokeAsync(ctx context.Context, functionArn string, payload []byte) error {
 	functionName := lambdaFunctionNameFromArn(functionArn)
 
 	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", inv.baseURL, functionName)

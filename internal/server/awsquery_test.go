@@ -321,3 +321,40 @@ func TestFormToJSON(t *testing.T) {
 		})
 	}
 }
+
+// TestFormToJSON_MessageAttributesKeepRawValues guards SNS/SQS message
+// attribute values against the numeric/boolean coercion parseFormValue
+// applies to ordinary form fields: "42" and "true" are opaque attribute
+// values and BinaryValue must travel as its base64 text.
+func TestFormToJSON_MessageAttributesKeepRawValues(t *testing.T) {
+	t.Parallel()
+
+	form := map[string][]string{
+		"MessageAttributes.entry.1.Name":              {"count"},
+		"MessageAttributes.entry.1.Value.DataType":    {"Number"},
+		"MessageAttributes.entry.1.Value.StringValue": {"007"},
+		"MessageAttributes.entry.2.Name":              {"flag"},
+		"MessageAttributes.entry.2.Value.DataType":    {"String"},
+		"MessageAttributes.entry.2.Value.StringValue": {"true"},
+		"MessageAttributes.entry.3.Name":              {"blob"},
+		"MessageAttributes.entry.3.Value.DataType":    {"Binary"},
+		"MessageAttributes.entry.3.Value.BinaryValue": {"aGk="},
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(formToJSON(form), &got); err != nil {
+		t.Fatalf("failed to unmarshal formToJSON output: %v", err)
+	}
+
+	const dataTypeKey = "DataType"
+
+	want := map[string]any{"MessageAttributes": map[string]any{
+		"count": map[string]any{dataTypeKey: "Number", "StringValue": "007"},
+		"flag":  map[string]any{dataTypeKey: "String", "StringValue": "true"},
+		"blob":  map[string]any{dataTypeKey: "Binary", "BinaryValue": "aGk="},
+	}}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("formToJSON(message attributes) = %v, want %v", got, want)
+	}
+}
