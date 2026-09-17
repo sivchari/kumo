@@ -17,6 +17,9 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+// headerFunctionError marks a synchronous invocation whose function failed.
+const headerFunctionError = "X-Amz-Function-Error"
+
 const pathSegmentFunctions = "functions"
 
 // CreateFunction handles the CreateFunction API.
@@ -343,7 +346,7 @@ func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn st
 	writeInvokeHeaders(w)
 
 	if res.errored {
-		w.Header().Set("X-Amz-Function-Error", "Unhandled")
+		w.Header().Set(headerFunctionError, "Unhandled")
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -472,6 +475,14 @@ func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoin
 	}
 
 	writeInvokeHeaders(w)
+
+	// An endpoint that emulates a failing function reports it the way the
+	// Runtime API path does, so callers (SDK FunctionError, execute-api,
+	// function URLs) see the failure instead of a plain payload.
+	if functionError := resp.Header.Get(headerFunctionError); functionError != "" {
+		w.Header().Set(headerFunctionError, functionError)
+	}
+
 	w.WriteHeader(http.StatusOK)
 
 	if len(respBody) == 0 {
@@ -920,6 +931,14 @@ func (s *Service) AddPermission(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.FunctionURLAuthType != "" {
+		if err := validateAuthType("FunctionUrlAuthType", req.FunctionURLAuthType); err != nil {
+			writeFunctionError(w, ErrInvalidParameterValue, err.Error(), http.StatusBadRequest)
+
+			return
+		}
+	}
+
 	fn, err := s.storage.GetFunction(r.Context(), name)
 	if err != nil {
 		handleGetFunctionError(w, err)
@@ -966,14 +985,23 @@ func buildPermissionStatement(req *addPermissionRequest, resourceArn string) *Po
 		}
 	}
 
+	equals := make(map[string]string)
+
 	if req.SourceAccount != "" {
+		equals["AWS:SourceAccount"] = req.SourceAccount
+	}
+
+	// aws_lambda_permission's function_url_auth_type reads this key back.
+	if req.FunctionURLAuthType != "" {
+		equals["lambda:FunctionUrlAuthType"] = req.FunctionURLAuthType
+	}
+
+	if len(equals) > 0 {
 		if stmt.Condition == nil {
 			stmt.Condition = make(map[string]any)
 		}
 
-		stmt.Condition["StringEquals"] = map[string]string{
-			"AWS:SourceAccount": req.SourceAccount,
-		}
+		stmt.Condition["StringEquals"] = equals
 	}
 
 	return stmt

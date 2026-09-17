@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/sivchari/kumo/internal/service"
+	"github.com/sivchari/kumo/internal/service/execapi"
 )
 
 const defaultBaseURL = "http://localhost:4566"
@@ -26,17 +27,21 @@ func init() {
 type Service struct {
 	storage Storage
 	baseURL string
-	broker  *runtimeBroker
-	async   *asyncDispatcher
+	// invokeBaseURL is the kumo endpoint used for in-process self-calls
+	// (function URL -> Invoke); it follows KUMO_HOST / KUMO_PORT like execapi.
+	invokeBaseURL string
+	broker        *runtimeBroker
+	async         *asyncDispatcher
 }
 
 // New creates a new Lambda service.
 func New(storage Storage, baseURL string) *Service {
 	return &Service{
-		storage: storage,
-		baseURL: baseURL,
-		broker:  newRuntimeBroker(),
-		async:   newAsyncDispatcher(),
+		storage:       storage,
+		baseURL:       baseURL,
+		invokeBaseURL: execapi.ResolveBaseURL(),
+		broker:        newRuntimeBroker(),
+		async:         newAsyncDispatcher(),
 	}
 }
 
@@ -79,6 +84,8 @@ func (s *Service) RegisterRoutes(r service.Router) {
 		r.Handle("GET", prefix+"/2017-03-31/tags/{arn...}", s.ListTags)
 		r.Handle("POST", prefix+"/2017-03-31/tags/{arn...}", s.TagResource)
 		r.Handle("DELETE", prefix+"/2017-03-31/tags/{arn...}", s.UntagResource)
+
+		s.registerFunctionURLRoutes(r, prefix)
 	}
 
 	// kumo-native Lambda Runtime API. A handler built with lambda.Start

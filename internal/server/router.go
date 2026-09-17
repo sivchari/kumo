@@ -26,19 +26,30 @@ type Route struct {
 // false when apiID is not owned by the handler.
 type executeAPIDispatch func(w http.ResponseWriter, r *http.Request, apiID, invokePath string) bool
 
+// functionURLDispatch is the signature of a virtual-hosted function URL
+// handler. It returns false when the service does not own urlID.
+type functionURLDispatch func(w http.ResponseWriter, r *http.Request, urlID string) bool
+
 // Router is the HTTP router for kumo.
 type Router struct {
-	mux                *http.ServeMux
-	routes             []Route
-	prefixRouters      map[string]*http.ServeMux // Separate routers for services with prefixes
-	executeAPIHandlers []executeAPIDispatch
-	logger             *slog.Logger
+	mux                 *http.ServeMux
+	routes              []Route
+	prefixRouters       map[string]*http.ServeMux // Separate routers for services with prefixes
+	executeAPIHandlers  []executeAPIDispatch
+	functionURLHandlers []functionURLDispatch
+	logger              *slog.Logger
 }
 
 // AddExecuteAPIHandler registers a handler for virtual-hosted execute-api
 // requests ({apiId}.execute-api.<host>).
 func (r *Router) AddExecuteAPIHandler(fn executeAPIDispatch) {
 	r.executeAPIHandlers = append(r.executeAPIHandlers, fn)
+}
+
+// AddFunctionURLHandler registers a handler for virtual-hosted Lambda function
+// URL requests ({urlId}.lambda-url.<host>).
+func (r *Router) AddFunctionURLHandler(fn functionURLDispatch) {
+	r.functionURLHandlers = append(r.functionURLHandlers, fn)
 }
 
 // NewRouter creates a new router.
@@ -94,7 +105,8 @@ func extractRoutePrefix(pattern string) string {
 	// EMR Serverless uses /applications paths
 	// Amazon Managed Prometheus uses /workspaces paths
 	// API Gateway v2 (HTTP API) uses /v2/apis and /v2/tags paths.
-	prefixes := []string{"/_aws", "/_runtime", "/kumo", "/lambda", "/2015-03-31", "/2017-03-31", "/2019-09-25", "/2020-06-30", "/eks", "/iam", "/buckets", "/namespaces", "/tables", "/get-table", "/apigatewayv2", "/v2", "/apigateway", "/restapis", "/ses", "/2020-05-31", "/2013-04-01", "/service", "/appsync", "/v1", "/tags", "/applications", "/workspaces", "/v20190125", "/scheduler", "/dlm", "/mq", "/v20180820", "/kx", "/kafka", "/create-app", "/describe-app", "/update-app", "/delete-app", "/list-apps", "/create-resiliency-policy", "/describe-resiliency-policy", "/update-resiliency-policy", "/delete-resiliency-policy", "/list-resiliency-policies", "/start-app-assessment", "/describe-app-assessment", "/delete-app-assessment", "/list-app-assessments", "/tag-resource", "/untag-resource", "/list-tags-for-resource", "/schemas", "/matchingworkflows", "/idmappingworkflows", "/providerservices", "/-", "/snapshots", "/apps", "/backup-vaults", "/backup", "/associations", "/codereviews", "/feedback", "/profilingGroups", "/maps", "/places", "/routes", "/geofencing", "/tracking", "/metadata", "/macie", "/allow-lists", "/jobs", "/custom-data-identifiers", "/findingsfilters", "/findings", "/managed-data-identifiers"}
+	// Lambda function URLs use /2021-10-31 versioned paths.
+	prefixes := []string{"/_aws", "/_runtime", "/kumo", "/lambda", "/2015-03-31", "/2017-03-31", "/2019-09-25", "/2020-06-30", "/2021-10-31", "/eks", "/iam", "/buckets", "/namespaces", "/tables", "/get-table", "/apigatewayv2", "/v2", "/apigateway", "/restapis", "/ses", "/2020-05-31", "/2013-04-01", "/service", "/appsync", "/v1", "/tags", "/applications", "/workspaces", "/v20190125", "/scheduler", "/dlm", "/mq", "/v20180820", "/kx", "/kafka", "/create-app", "/describe-app", "/update-app", "/delete-app", "/list-apps", "/create-resiliency-policy", "/describe-resiliency-policy", "/update-resiliency-policy", "/delete-resiliency-policy", "/list-resiliency-policies", "/start-app-assessment", "/describe-app-assessment", "/delete-app-assessment", "/list-app-assessments", "/tag-resource", "/untag-resource", "/list-tags-for-resource", "/schemas", "/matchingworkflows", "/idmappingworkflows", "/providerservices", "/-", "/snapshots", "/apps", "/backup-vaults", "/backup", "/associations", "/codereviews", "/feedback", "/profilingGroups", "/maps", "/places", "/routes", "/geofencing", "/tracking", "/metadata", "/macie", "/allow-lists", "/jobs", "/custom-data-identifiers", "/findingsfilters", "/findings", "/managed-data-identifiers"}
 
 	for _, prefix := range prefixes {
 		if hasPathPrefix(pattern, prefix) {
@@ -182,6 +194,15 @@ func (r *Router) wrapHandler(method, pattern string, handler http.HandlerFunc) h
 
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Virtual-hosted Lambda function URLs come first: every path on
+	// {urlId}.lambda-url.<host> belongs to the function, including /health,
+	// and the S3 host rewrite below must never see these hosts.
+	if urlID, ok := extractFunctionURLHost(req.Host); ok {
+		r.serveFunctionURL(w, req, urlID)
+
+		return
+	}
+
 	// Handle health endpoint before ServeMux to avoid route conflicts.
 	if req.URL.Path == "/health" {
 		w.Header().Set("Content-Type", "application/json")
@@ -261,6 +282,63 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // Routes returns all registered routes.
 func (r *Router) Routes() []Route {
 	return r.routes
+}
+
+// serveFunctionURL dispatches a function URL request to the owning service;
+// an unknown url id is refused the way AWS does (403 AccessDeniedException).
+func (r *Router) serveFunctionURL(w http.ResponseWriter, req *http.Request, urlID string) {
+	for _, h := range r.functionURLHandlers {
+		if h(w, req, urlID) {
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("x-amzn-ErrorType", "AccessDeniedException")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"Message":null}`))
+}
+
+// extractFunctionURLHost recognises Lambda function URL virtual-hosted hosts
+// and returns the lower-cased url id. Recognised shapes (the kumo-local form
+// resolves to loopback):
+//
+//	{urlId}.lambda-url.localhost(:port)
+//	{urlId}.lambda-url.{region}.on.aws
+func extractFunctionURLHost(host string) (string, bool) {
+	host = strings.ToLower(stripHostPort(host))
+
+	const marker = ".lambda-url."
+
+	urlID, rest, found := strings.Cut(host, marker)
+	if !found || urlID == "" || strings.Contains(urlID, ".") {
+		return "", false
+	}
+
+	if rest == localhostHost {
+		return urlID, true
+	}
+
+	region, domain, ok := strings.Cut(rest, ".")
+	if ok && region != "" && !strings.Contains(region, ".") && domain == "on.aws" {
+		return urlID, true
+	}
+
+	return "", false
+}
+
+// stripHostPort removes an optional :port from a Host header value, leaving
+// bracketed IPv6 literals intact.
+func stripHostPort(host string) string {
+	if strings.HasSuffix(host, "]") {
+		return host
+	}
+
+	if idx := strings.LastIndex(host, ":"); idx >= 0 && !strings.Contains(host[idx:], "]") {
+		return host[:idx]
+	}
+
+	return host
 }
 
 // extractExecuteAPIHost recognises API Gateway execute-api virtual-hosted

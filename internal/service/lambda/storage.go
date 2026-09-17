@@ -32,6 +32,14 @@ type Storage interface {
 	TagResource(ctx context.Context, arn string, tags map[string]string) error
 	UntagResource(ctx context.Context, arn string, tagKeys []string) error
 
+	// Function URL operations
+	CreateFunctionURLConfig(ctx context.Context, functionName string, spec FunctionURLConfigSpec) (*FunctionURLConfig, error)
+	GetFunctionURLConfig(ctx context.Context, functionName string) (*FunctionURLConfig, error)
+	UpdateFunctionURLConfig(ctx context.Context, functionName string, update FunctionURLConfigUpdate) (*FunctionURLConfig, error)
+	DeleteFunctionURLConfig(ctx context.Context, functionName string) error
+	ListFunctionURLConfigs(ctx context.Context, functionName string) ([]*FunctionURLConfig, error)
+	LookupFunctionURL(ctx context.Context, urlID string) (*FunctionURLConfig, string, error)
+
 	// Permission operations
 	AddPermission(ctx context.Context, functionName string, stmt *PolicyStatement) error
 	RemovePermission(ctx context.Context, functionName, statementID string) error
@@ -72,6 +80,7 @@ type MemoryStorage struct {
 	mu                  sync.RWMutex                   `json:"-"`
 	Functions           map[string]*Function           `json:"functions"`
 	EventSourceMappings map[string]*EventSourceMapping `json:"eventSourceMappings"`
+	FunctionURLs        map[string]*FunctionURLConfig  `json:"functionUrls,omitempty"` // keyed by function name
 	baseURL             string
 	region              string
 	accountID           string
@@ -88,6 +97,7 @@ func NewMemoryStorage(baseURL string, opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
 		Functions:           make(map[string]*Function),
 		EventSourceMappings: make(map[string]*EventSourceMapping),
+		FunctionURLs:        make(map[string]*FunctionURLConfig),
 		baseURL:             baseURL,
 		region:              region,
 		accountID:           "000000000000",
@@ -145,6 +155,10 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if s.EventSourceMappings == nil {
 		s.EventSourceMappings = make(map[string]*EventSourceMapping)
+	}
+
+	if s.FunctionURLs == nil {
+		s.FunctionURLs = make(map[string]*FunctionURLConfig)
 	}
 
 	return nil
@@ -280,6 +294,7 @@ func (s *MemoryStorage) DeleteFunction(_ context.Context, name string) error {
 	}
 
 	delete(s.Functions, name)
+	delete(s.FunctionURLs, name)
 
 	s.saveLocked()
 
