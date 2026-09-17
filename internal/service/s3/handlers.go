@@ -2029,11 +2029,12 @@ func writeXMLResponse(w http.ResponseWriter, v any) {
 
 // writeS3Error writes an S3 error response.
 func writeS3Error(w http.ResponseWriter, _ *http.Request, code, message string, status int) {
-	errResp := ErrorResponse{
-		Code:      code,
-		Message:   message,
-		RequestID: uuid.New().String(),
-	}
+	writeS3ErrorResponse(w, status, &ErrorResponse{Code: code, Message: message})
+}
+
+// writeS3ErrorResponse writes errResp as an S3 XML error with a fresh RequestId.
+func writeS3ErrorResponse(w http.ResponseWriter, status int, errResp *ErrorResponse) {
+	errResp.RequestID = uuid.New().String()
 
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)

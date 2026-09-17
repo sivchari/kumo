@@ -221,6 +221,12 @@ type ErrorResponse struct {
 	RequestID  string   `xml:"RequestId"`
 	BucketName string   `xml:"BucketName,omitempty"`
 	Key        string   `xml:"Key,omitempty"`
+
+	// Set by POST Object content-length-range violations; pointers so that an
+	// applicable zero (empty upload, zero maximum) is still serialized.
+	ProposedSize   *int64 `xml:"ProposedSize,omitempty"`
+	MinSizeAllowed *int64 `xml:"MinSizeAllowed,omitempty"`
+	MaxSizeAllowed *int64 `xml:"MaxSizeAllowed,omitempty"`
 }
 
 // PostResponse is the body returned for a POST Object request when

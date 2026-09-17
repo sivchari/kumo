@@ -2163,6 +2163,8 @@ func TestS3_PresignedPost_SuccessActionStatus201(t *testing.T) {
 		Key:    aws.String(key),
 	}, func(opts *s3.PresignPostOptions) {
 		opts.Expires = 15 * time.Minute
+		// Every submitted field must be covered by a policy condition.
+		opts.Conditions = []any{map[string]string{"success_action_status": "201"}}
 	})
 	if err != nil {
 		t.Fatalf("failed to presign POST: %v", err)
