@@ -18,14 +18,20 @@ const (
 type capturingPublisher struct {
 	endpoint string
 	body     string
+	groupID  string
+	dedupID  string
 	attrs    map[string]MessageAttribute
+	calls    int
 	err      error
 }
 
-func (c *capturingPublisher) PublishToSQS(_ context.Context, endpoint, body, _, _ string, attrs map[string]MessageAttribute) error {
+func (c *capturingPublisher) PublishToSQS(_ context.Context, endpoint, body, groupID, dedupID string, attrs map[string]MessageAttribute) error {
 	c.endpoint = endpoint
 	c.body = body
+	c.groupID = groupID
+	c.dedupID = dedupID
 	c.attrs = attrs
+	c.calls++
 
 	return c.err
 }
@@ -67,7 +73,7 @@ func TestPublish_RawDeliveryForwardsAttributes(t *testing.T) {
 		"traceId": {DataType: dataTypeString, StringValue: testTraceValueAbc},
 	}
 
-	messageID, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", attributes)
+	messageID, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", "", attributes)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -102,7 +108,7 @@ func TestPublish_RawDeliveryPreservesTypedAttributes(t *testing.T) {
 		"blob":  {DataType: "Binary", BinaryValue: []byte{1, 2}},
 	}
 
-	_, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", attributes)
+	_, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", "", attributes)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -137,7 +143,7 @@ func TestPublish_EnvelopeDeliveryDoesNotDuplicateAttributes(t *testing.T) {
 		"traceId": {DataType: dataTypeString, StringValue: testTraceValueAbc},
 	}
 
-	_, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", attributes)
+	_, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", "", attributes)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -157,7 +163,7 @@ func TestPublish_SubscriberErrorDoesNotFailPublish(t *testing.T) {
 	publisher := &capturingPublisher{err: errors.New("boom")}
 	storage, topicARN := newTopicWithSQSSubscription(t, publisher, map[string]string{subscriptionAttrRawMessageDelivery: testAttrValueTrue})
 
-	messageID, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", nil)
+	messageID, err := storage.Publish(context.Background(), topicARN, "hello", "", "", "", "", nil)
 	if err != nil {
 		t.Fatalf("Publish() error = %v, want nil (fire-and-forget contract)", err)
 	}
