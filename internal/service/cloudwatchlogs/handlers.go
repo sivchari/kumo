@@ -292,43 +292,151 @@ func (s *Service) DeleteRetentionPolicy(w http.ResponseWriter, r *http.Request) 
 	writeEmptyResponse(w)
 }
 
+// ListTagsLogGroup handles the ListTagsLogGroup action.
+func (s *Service) ListTagsLogGroup(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsLogGroupRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTags(r.Context(), req.LogGroupName)
+	if err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, TagsResponse{Tags: tags})
+}
+
+// ListTagsForResource handles the ListTagsForResource action.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTags(r.Context(), req.ResourceARN)
+	if err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, TagsResponse{Tags: tags})
+}
+
+// TagLogGroup handles the TagLogGroup action.
+func (s *Service) TagLogGroup(w http.ResponseWriter, r *http.Request) {
+	var req TagLogGroupRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Tag(r.Context(), req.LogGroupName, req.Tags); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// TagResource handles the TagResource action.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Tag(r.Context(), req.ResourceARN, req.Tags); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// UntagLogGroup handles the UntagLogGroup action.
+func (s *Service) UntagLogGroup(w http.ResponseWriter, r *http.Request) {
+	var req UntagLogGroupRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Untag(r.Context(), req.LogGroupName, req.Tags); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// UntagResource handles the UntagResource action.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeLogsError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.Untag(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
+		handleLogsError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
 // DispatchAction routes the request to the appropriate handler based on X-Amz-Target header.
 // This method implements the JSONProtocolService interface.
 func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
 	action := strings.TrimPrefix(target, "Logs_20140328.")
 
-	switch action {
-	case "CreateLogGroup":
-		s.CreateLogGroup(w, r)
-	case "DeleteLogGroup":
-		s.DeleteLogGroup(w, r)
-	case "CreateLogStream":
-		s.CreateLogStream(w, r)
-	case "DeleteLogStream":
-		s.DeleteLogStream(w, r)
-	case "PutLogEvents":
-		s.PutLogEvents(w, r)
-	case "GetLogEvents":
-		s.GetLogEvents(w, r)
-	case "FilterLogEvents":
-		s.FilterLogEvents(w, r)
-	case "DescribeLogGroups":
-		s.DescribeLogGroups(w, r)
-	case "DescribeLogStreams":
-		s.DescribeLogStreams(w, r)
-	case "PutRetentionPolicy":
-		s.PutRetentionPolicy(w, r)
-	case "DeleteRetentionPolicy":
-		s.DeleteRetentionPolicy(w, r)
-	case "ListTagsForResource", "ListTagsLogGroup",
-		"TagResource", "UntagResource",
-		"TagLogGroup", "UntagLogGroup":
-		// Tags are not modeled; respond as no-op so AWS SDK clients
-		// reading state after CreateLogGroup do not see InvalidAction.
-		writeEmptyResponse(w)
-	default:
+	handler, ok := s.actionHandlers()[action]
+	if !ok {
 		writeLogsError(w, errInvalidAction, "The action "+action+" is not valid for this web service", http.StatusBadRequest)
+
+		return
+	}
+
+	handler(w, r)
+}
+
+func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
+	return map[string]func(http.ResponseWriter, *http.Request){
+		"CreateLogGroup":        s.CreateLogGroup,
+		"DeleteLogGroup":        s.DeleteLogGroup,
+		"CreateLogStream":       s.CreateLogStream,
+		"DeleteLogStream":       s.DeleteLogStream,
+		"PutLogEvents":          s.PutLogEvents,
+		"GetLogEvents":          s.GetLogEvents,
+		"FilterLogEvents":       s.FilterLogEvents,
+		"DescribeLogGroups":     s.DescribeLogGroups,
+		"DescribeLogStreams":    s.DescribeLogStreams,
+		"PutRetentionPolicy":    s.PutRetentionPolicy,
+		"DeleteRetentionPolicy": s.DeleteRetentionPolicy,
+		"ListTagsForResource":   s.ListTagsForResource,
+		"ListTagsLogGroup":      s.ListTagsLogGroup,
+		"TagResource":           s.TagResource,
+		"UntagResource":         s.UntagResource,
+		"TagLogGroup":           s.TagLogGroup,
+		"UntagLogGroup":         s.UntagLogGroup,
 	}
 }
 
