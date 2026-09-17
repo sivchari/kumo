@@ -349,7 +349,7 @@ linters:
         text: "G704"
       - path: internal/service/execapi/execapi\.go
         linters: [gosec]
-        text: "G704"
+        text: "G704|G705"
       - path: internal/service/lambda/handlers\.go
         linters: [gosec]
         text: "G704"

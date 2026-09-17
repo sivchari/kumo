@@ -18,6 +18,9 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+// headerFunctionError marks a synchronous invocation whose function failed.
+const headerFunctionError = "X-Amz-Function-Error"
+
 const pathSegmentFunctions = "functions"
 
 // CreateFunction handles the CreateFunction API.
@@ -355,7 +358,7 @@ func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn st
 	writeInvokeHeaders(w)
 
 	if res.errored {
-		w.Header().Set("X-Amz-Function-Error", "Unhandled")
+		w.Header().Set(headerFunctionError, "Unhandled")
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -495,6 +498,14 @@ func (s *Service) invokeSync(ctx context.Context, w http.ResponseWriter, endpoin
 	}
 
 	writeInvokeHeaders(w)
+
+	// An endpoint that emulates a failing function reports it the way the
+	// Runtime API path does, so callers (SDK FunctionError, execute-api,
+	// function URLs) see the failure instead of a plain payload.
+	if functionError := resp.Header.Get(headerFunctionError); functionError != "" {
+		w.Header().Set(headerFunctionError, functionError)
+	}
+
 	w.WriteHeader(http.StatusOK)
 
 	if len(respBody) == 0 {

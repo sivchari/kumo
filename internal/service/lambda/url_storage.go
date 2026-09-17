@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -162,6 +163,22 @@ func (s *MemoryStorage) functionURLLocked(functionName string) (*FunctionURLConf
 	}
 
 	return cfg, nil
+}
+
+// LookupFunctionURL finds the function that owns urlID (matched
+// case-insensitively, as hostnames are) and returns a clone of its URL config
+// together with the function name.
+func (s *MemoryStorage) LookupFunctionURL(_ context.Context, urlID string) (*FunctionURLConfig, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for functionName, cfg := range s.FunctionURLs {
+		if strings.EqualFold(cfg.URLID, urlID) {
+			return cfg.clone(), functionName, nil
+		}
+	}
+
+	return nil, "", &FunctionError{Type: ErrResourceNotFound, Message: msgFunctionURLNotFound}
 }
 
 // uniqueFunctionURLIDLocked draws url ids until one is not in use; the caller holds the lock.

@@ -7,6 +7,7 @@ package execapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -110,11 +111,29 @@ func invokeLambda(w http.ResponseWriter, r *http.Request, t Target, req *Request
 }
 
 // invoke POSTs the event to kumo's own Lambda invoke endpoint and returns the
-// function's response body.
+// function's response body. A function error still comes back as its JSON
+// error document, which is what the execute-api proxy path expects.
 func invoke(r *http.Request, baseURL, name string, event []byte) ([]byte, error) {
+	result, err := invokeFunction(r.Context(), baseURL, name, event)
+	if err != nil {
+		return nil, err
+	}
+
+	return result.Body, nil
+}
+
+// invokeResult is a synchronous invocation's outcome: the payload and, when
+// the function failed, the X-Amz-Function-Error header value.
+type invokeResult struct {
+	Body          []byte
+	FunctionError string
+}
+
+// invokeFunction POSTs the event to kumo's own Lambda invoke endpoint.
+func invokeFunction(ctx context.Context, baseURL, name string, event []byte) (*invokeResult, error) {
 	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", baseURL, name)
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(event))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(event))
 	if err != nil {
 		return nil, fmt.Errorf("build invoke request: %w", err)
 	}
@@ -138,7 +157,7 @@ func invoke(r *http.Request, baseURL, name string, event []byte) ([]byte, error)
 		return nil, fmt.Errorf("lambda invoke returned status %d", resp.StatusCode)
 	}
 
-	return respBody, nil
+	return &invokeResult{Body: respBody, FunctionError: resp.Header.Get("X-Amz-Function-Error")}, nil
 }
 
 // proxyResponseEnvelope is the response a Lambda proxy integration returns.
