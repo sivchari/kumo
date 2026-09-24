@@ -341,7 +341,7 @@ func TestAsyncDispatcher_RuntimeDeliveredAfterHandlerPollsLate(t *testing.T) {
 
 	received := make(chan []byte, 1)
 
-	deliverer := &runtimeDeliverer{broker: broker, fn: "fn", waitTimeout: 20 * time.Millisecond}
+	deliverer := &runtimeDeliverer{broker: broker, fn: "fn", pickupTimeout: 20 * time.Millisecond}
 	d.enqueue("fn", deliverer, []byte(`{"late":true}`))
 
 	// Let the deliverer's first wait (and at least one retry) time out
@@ -450,7 +450,7 @@ func TestAsyncDispatcher_RuntimeFunctionErrorOnResponseTimeout(t *testing.T) {
 		return attempts
 	}
 
-	deliverer := &runtimeDeliverer{broker: broker, fn: "fn", waitTimeout: 20 * time.Millisecond}
+	deliverer := &runtimeDeliverer{broker: broker, fn: "fn", timeout: 20 * time.Millisecond}
 	d.enqueue("fn", deliverer, []byte(`{}`))
 
 	wantAttempts := 1 + asyncMaxFunctionErrorRetries

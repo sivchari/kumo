@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -316,7 +317,7 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 	// configured InvokeEndpoint, otherwise there is nothing to execute.
 	switch {
 	case s.broker.registered(functionName):
-		s.invokeViaRuntime(w, r, functionName, payload, async)
+		s.invokeViaRuntime(w, r, functionName, functionTimeout(fn), payload, async)
 	case fn.InvokeEndpoint != "":
 		s.invokeViaEndpoint(w, r, functionName, fn.InvokeEndpoint, payload, async)
 	default:
@@ -325,15 +326,26 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 }
 
 // invokeViaRuntime dispatches to a handler connected through the Runtime API.
-func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn string, payload []byte, async bool) {
+func (s *Service) invokeViaRuntime(w http.ResponseWriter, r *http.Request, fn string, timeout time.Duration, payload []byte, async bool) {
 	if async {
-		s.async.enqueue(fn, &runtimeDeliverer{broker: s.broker, fn: fn}, payload)
+		s.async.enqueue(fn, &runtimeDeliverer{broker: s.broker, fn: fn, timeout: timeout}, payload)
 		writeInvokeAccepted(w)
 
 		return
 	}
 
-	res, err := s.broker.invoke(r.Context(), fn, payload, runtimeInvokeTimeout)
+	res, err := s.broker.invoke(r.Context(), fn, payload, runtimePickupTimeout, timeout)
+	if errors.Is(err, errRuntimeResponseTimeout) {
+		// As on AWS, a function timeout is a function error, not a service
+		// failure.
+		writeInvokeHeaders(w)
+		w.Header().Set("X-Amz-Function-Error", "Unhandled")
+		w.WriteHeader(http.StatusOK)
+		writeInvokePayload(w, timedOutPayload(timeout))
+
+		return
+	}
+
 	if err != nil {
 		writeFunctionError(w, ErrServiceException, "runtime invocation failed: "+err.Error(), http.StatusBadGateway)
 
@@ -383,6 +395,17 @@ func (s *Service) invokeNoBackend(w http.ResponseWriter, fn string, async bool) 
 	writeFunctionError(w, ErrServiceException,
 		"function "+fn+" has no runtime handler; run it with AWS_LAMBDA_RUNTIME_API=<kumo>/_runtime/"+fn+" or set InvokeEndpoint",
 		http.StatusBadGateway)
+}
+
+// timedOutPayload is the error payload of a synchronous invocation whose
+// function ran past its timeout, in the shape Lambda returns.
+func timedOutPayload(timeout time.Duration) []byte {
+	body, _ := json.Marshal(map[string]string{
+		"errorType":    "Sandbox.Timedout",
+		"errorMessage": fmt.Sprintf("Task timed out after %.2f seconds", timeout.Seconds()),
+	})
+
+	return body
 }
 
 // writeInvokeAccepted writes the 202 response for an async invocation.

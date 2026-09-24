@@ -14,20 +14,25 @@ import (
 	"github.com/google/uuid"
 )
 
-// runtimeInvokeTimeout bounds how long an invocation waits to be picked up by
-// a polling handler and to receive its response.
-const runtimeInvokeTimeout = 30 * time.Second
+// runtimePickupTimeout bounds how long an invocation waits to be picked up by
+// a polling handler. It is a kumo-side limit with no AWS counterpart; once a
+// handler has the invocation, the function's own Timeout applies instead.
+const runtimePickupTimeout = 30 * time.Second
+
+// defaultFunctionTimeout is Lambda's default function timeout, used when a
+// function has no Timeout configured.
+const defaultFunctionTimeout = 3 * time.Second
 
 // errRuntimeNoPoller is returned when no handler polls next and picks up an
-// invocation within the wait timeout — nobody ever started the work, which
+// invocation within the pickup timeout — nobody ever started the work, which
 // AWS treats as a system-level delivery failure (retried with backoff).
 var errRuntimeNoPoller = errors.New("no runtime handler available to poll the invocation")
 
 // errRuntimeResponseTimeout is returned when a handler polled next and took
-// the invocation but never posted a response or error within the wait
-// timeout — the handler picked up the work but its function timed out,
-// which AWS treats as a function error (limited retries).
-var errRuntimeResponseTimeout = errors.New("runtime handler did not respond before the timeout")
+// the invocation but never posted a response or error before the function's
+// timeout — the function timed out, which AWS treats as a function error
+// (limited retries).
+var errRuntimeResponseTimeout = errors.New("runtime handler did not respond before the function timeout")
 
 // runtimeBroker bridges kumo invocations to handlers that speak the AWS
 // Lambda Runtime API (lambda.Start). A handler polls next for its function;
@@ -47,6 +52,10 @@ type funcRuntime struct {
 type runtimeInvocation struct {
 	id      string
 	payload []byte
+
+	// timeout is the function's execution timeout. The handler that picks
+	// up the invocation is given a deadline this far in the future.
+	timeout time.Duration
 }
 
 type runtimeResult struct {
@@ -86,15 +95,25 @@ func (b *runtimeBroker) get(fn string) *funcRuntime {
 	return fr
 }
 
+// functionTimeout returns fn's configured execution timeout.
+func functionTimeout(fn *Function) time.Duration {
+	if fn.Timeout <= 0 {
+		return defaultFunctionTimeout
+	}
+
+	return time.Duration(fn.Timeout) * time.Second
+}
+
 // invoke hands an invocation to a polling handler and waits for its
-// response, up to timeout for each of the two phases (waiting to be picked
-// up by next, then waiting for a response/error). Callers that want async
-// (fire-and-forget-but-not-really) semantics should queue a runtimeDeliverer
-// on the asyncDispatcher instead of calling invoke directly — see
-// invokeViaRuntime.
-func (b *runtimeBroker) invoke(ctx context.Context, fn string, payload []byte, timeout time.Duration) (runtimeResult, error) {
+// response. It waits up to pickupTimeout for a handler to take the
+// invocation from next, then up to timeout (the function's execution
+// timeout, also reported to the handler as its deadline) for a
+// response/error. Callers that want async (fire-and-forget-but-not-really)
+// semantics should queue a runtimeDeliverer on the asyncDispatcher instead
+// of calling invoke directly — see invokeViaRuntime.
+func (b *runtimeBroker) invoke(ctx context.Context, fn string, payload []byte, pickupTimeout, timeout time.Duration) (runtimeResult, error) {
 	fr := b.get(fn)
-	inv := &runtimeInvocation{id: uuid.New().String(), payload: payload}
+	inv := &runtimeInvocation{id: uuid.New().String(), payload: payload, timeout: timeout}
 
 	resCh := make(chan runtimeResult, 1)
 
@@ -112,7 +131,7 @@ func (b *runtimeBroker) invoke(ctx context.Context, fn string, payload []byte, t
 	case fr.invocations <- inv:
 	case <-ctx.Done():
 		return runtimeResult{}, fmt.Errorf("invocation canceled: %w", ctx.Err())
-	case <-time.After(timeout):
+	case <-time.After(pickupTimeout):
 		return runtimeResult{}, errRuntimeNoPoller
 	}
 
@@ -135,11 +154,16 @@ type runtimeDeliverer struct {
 	broker *runtimeBroker
 	fn     string
 
-	// waitTimeout bounds how long one delivery attempt waits for a handler
-	// to pick up and respond to the invocation. Zero means
-	// runtimeInvokeTimeout; tests inject a short value so retry scenarios
-	// don't need to wait out the real 30s default.
-	waitTimeout time.Duration
+	// timeout is the function's execution timeout: how long one delivery
+	// attempt waits for the handler's response once it has picked up the
+	// event. Zero means defaultFunctionTimeout.
+	timeout time.Duration
+
+	// pickupTimeout bounds how long one delivery attempt waits for a handler
+	// to pick up the event. Zero means runtimePickupTimeout; tests inject a
+	// short value so retry scenarios don't need to wait out the real 30s
+	// default.
+	pickupTimeout time.Duration
 }
 
 // deliver hands the event to a polling handler and waits for its response.
@@ -150,12 +174,17 @@ type runtimeDeliverer struct {
 // so it is a system error retried with backoff until the event's deadline. A
 // handler-reported error is likewise a function error.
 func (r *runtimeDeliverer) deliver(ctx context.Context, _ string, payload []byte) deliveryResult {
-	timeout := r.waitTimeout
-	if timeout == 0 {
-		timeout = runtimeInvokeTimeout
+	pickupTimeout := r.pickupTimeout
+	if pickupTimeout == 0 {
+		pickupTimeout = runtimePickupTimeout
 	}
 
-	res, err := r.broker.invoke(ctx, r.fn, payload, timeout)
+	timeout := r.timeout
+	if timeout == 0 {
+		timeout = defaultFunctionTimeout
+	}
+
+	res, err := r.broker.invoke(ctx, r.fn, payload, pickupTimeout, timeout)
 	if err != nil {
 		if errors.Is(err, errRuntimeResponseTimeout) {
 			return asyncFunctionError
@@ -217,8 +246,10 @@ func (s *Service) RuntimeNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The aws-lambda-go runtime requires a parseable deadline header.
-	deadline := time.Now().Add(runtimeInvokeTimeout).UnixMilli()
+	// As on AWS, the deadline is when the function times out: its Timeout
+	// counted from the moment the handler picks up the invocation.
+	// https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-next
+	deadline := time.Now().Add(inv.timeout).UnixMilli()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Lambda-Runtime-Aws-Request-Id", inv.id)

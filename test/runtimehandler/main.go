@@ -5,15 +5,23 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 )
 
-func handler(_ context.Context, event map[string]any) (map[string]any, error) {
-	return map[string]any{
+func handler(ctx context.Context, event map[string]any) (map[string]any, error) {
+	resp := map[string]any{
 		"handled": true,
 		"echo":    event,
-	}, nil
+	}
+
+	// lambda.Start derives ctx's deadline from Lambda-Runtime-Deadline-Ms.
+	if deadline, ok := ctx.Deadline(); ok {
+		resp["remainingMs"] = time.Until(deadline).Milliseconds()
+	}
+
+	return resp, nil
 }
 
 func main() {
