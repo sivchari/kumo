@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 
 // Default values.
 const defaultRegion = "us-east-1"
+
+// latestVersion is the only function version kumo has: it publishes no
+// versions or aliases.
+const latestVersion = "$LATEST"
 
 // Storage defines the Lambda storage interface.
 type Storage interface {
@@ -241,7 +246,7 @@ func (s *MemoryStorage) buildFunction(req *CreateFunctionRequest) *Function {
 		MemorySize:   memorySize,
 		CodeSize:     int64(len(req.Code.ZipFile)),
 		CodeSha256:   codeSha256,
-		Version:      "$LATEST",
+		Version:      latestVersion,
 		LastModified: time.Now().UTC(),
 		State:        "Active",
 		// kumo applies configuration/code updates synchronously, so the
@@ -264,12 +269,55 @@ func (s *MemoryStorage) buildFunction(req *CreateFunctionRequest) *Function {
 	}
 }
 
+// functionNamePattern is the FunctionName pattern from the Lambda API
+// reference: a function name, full ARN or partial ARN, each optionally
+// followed by a version or alias qualifier.
+// https://docs.aws.amazon.com/lambda/latest/api/API_GetFunction.html#API_GetFunction_RequestParameters
+var functionNamePattern = regexp.MustCompile(
+	`^(?:arn:(?:aws[a-zA-Z-]*)?:lambda:)?` +
+		`(?:(?P<region>[a-z]{2}(?:(?:-gov)|(?:-iso(?:[a-z]?)))?-[a-z]+-\d{1}):)?` +
+		`(?:(?P<account>\d{12}):)?` +
+		`(?:function:)?` +
+		`(?P<name>[a-zA-Z0-9-_\.]+)` +
+		`(?::(?P<qualifier>\$LATEST(?:\.PUBLISHED)?|[a-zA-Z0-9-_]+))?$`)
+
+// lookupLocked finds the function a FunctionName refers to. As in the
+// Lambda API, it accepts the function name, the full ARN or a partial ARN.
+// kumo publishes no versions or aliases, so a qualifier resolves only when
+// it is $LATEST. A region or account that does not match this storage finds
+// nothing. An exact key match wins, so a function whose name itself looks
+// like an ARN stays reachable by that name. The caller must hold s.mu.
+func (s *MemoryStorage) lookupLocked(functionName string) (*Function, bool) {
+	if fn, ok := s.Functions[functionName]; ok {
+		return fn, true
+	}
+
+	m := functionNamePattern.FindStringSubmatch(functionName)
+	if m == nil {
+		return nil, false
+	}
+
+	region := m[functionNamePattern.SubexpIndex("region")]
+	account := m[functionNamePattern.SubexpIndex("account")]
+	qualifier := m[functionNamePattern.SubexpIndex("qualifier")]
+
+	if (region != "" && region != s.region) ||
+		(account != "" && account != s.accountID) ||
+		(qualifier != "" && qualifier != latestVersion) {
+		return nil, false
+	}
+
+	fn, ok := s.Functions[m[functionNamePattern.SubexpIndex("name")]]
+
+	return fn, ok
+}
+
 // GetFunction retrieves a Lambda function by name.
 func (s *MemoryStorage) GetFunction(_ context.Context, name string) (*Function, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	fn, exists := s.Functions[name]
+	fn, exists := s.lookupLocked(name)
 	if !exists {
 		return nil, &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -285,15 +333,16 @@ func (s *MemoryStorage) DeleteFunction(_ context.Context, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, exists := s.Functions[name]; !exists {
+	fn, exists := s.lookupLocked(name)
+	if !exists {
 		return &FunctionError{
 			Type:    ErrResourceNotFound,
 			Message: fmt.Sprintf("Function not found: %s", name),
 		}
 	}
 
-	delete(s.Functions, name)
-	delete(s.FunctionURLs, name)
+	delete(s.Functions, fn.FunctionName)
+	delete(s.FunctionURLs, fn.FunctionName)
 
 	s.saveLocked()
 
@@ -347,7 +396,7 @@ func (s *MemoryStorage) UpdateFunctionCode(_ context.Context, name string, req *
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fn, exists := s.Functions[name]
+	fn, exists := s.lookupLocked(name)
 	if !exists {
 		return nil, &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -395,7 +444,7 @@ func (s *MemoryStorage) UpdateFunctionConfiguration(_ context.Context, name stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fn, exists := s.Functions[name]
+	fn, exists := s.lookupLocked(name)
 	if !exists {
 		return nil, &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -464,7 +513,7 @@ func (s *MemoryStorage) AddPermission(_ context.Context, functionName string, st
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fn, exists := s.Functions[functionName]
+	fn, exists := s.lookupLocked(functionName)
 	if !exists {
 		return &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -500,7 +549,7 @@ func (s *MemoryStorage) RemovePermission(_ context.Context, functionName, statem
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fn, exists := s.Functions[functionName]
+	fn, exists := s.lookupLocked(functionName)
 	if !exists {
 		return &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -536,7 +585,7 @@ func (s *MemoryStorage) GetPolicy(_ context.Context, functionName string) (*Reso
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	fn, exists := s.Functions[functionName]
+	fn, exists := s.lookupLocked(functionName)
 	if !exists {
 		return nil, &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -631,7 +680,7 @@ func (s *MemoryStorage) ListVersionsByFunction(_ context.Context, functionName s
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	fn, exists := s.Functions[functionName]
+	fn, exists := s.lookupLocked(functionName)
 	if !exists {
 		return nil, &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -647,7 +696,7 @@ func (s *MemoryStorage) ListAliases(_ context.Context, functionName string) erro
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if _, exists := s.Functions[functionName]; !exists {
+	if _, exists := s.lookupLocked(functionName); !exists {
 		return &FunctionError{
 			Type:    ErrResourceNotFound,
 			Message: fmt.Sprintf("Function not found: %s", functionName),
@@ -662,7 +711,7 @@ func (s *MemoryStorage) ListFunctionEventInvokeConfigs(_ context.Context, functi
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if _, exists := s.Functions[functionName]; !exists {
+	if _, exists := s.lookupLocked(functionName); !exists {
 		return &FunctionError{
 			Type:    ErrResourceNotFound,
 			Message: fmt.Sprintf("Function not found: %s", functionName),
@@ -677,7 +726,7 @@ func (s *MemoryStorage) GetFunctionCodeSigningConfig(_ context.Context, function
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if _, exists := s.Functions[functionName]; !exists {
+	if _, exists := s.lookupLocked(functionName); !exists {
 		return "", &FunctionError{
 			Type:    ErrResourceNotFound,
 			Message: fmt.Sprintf("Function not found: %s", functionName),
@@ -693,7 +742,7 @@ func (s *MemoryStorage) CreateEventSourceMapping(_ context.Context, req *CreateE
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fn, exists := s.Functions[req.FunctionName]
+	fn, exists := s.lookupLocked(req.FunctionName)
 	if !exists {
 		return nil, &FunctionError{
 			Type:    ErrResourceNotFound,
@@ -842,7 +891,7 @@ func (s *MemoryStorage) UpdateEventSourceMapping(_ context.Context, uuid string,
 	}
 
 	if req.FunctionName != "" {
-		fn, fnExists := s.Functions[req.FunctionName]
+		fn, fnExists := s.lookupLocked(req.FunctionName)
 		if !fnExists {
 			return nil, &FunctionError{
 				Type:    ErrResourceNotFound,

@@ -105,7 +105,7 @@ func (s *Service) GetFunction(w http.ResponseWriter, r *http.Request) {
 		Configuration: functionToConfiguration(fn),
 		Code: &FunctionCodeLocation{
 			RepositoryType: "S3",
-			Location:       s.baseURL + "/lambda-code/" + functionName,
+			Location:       s.baseURL + "/lambda-code/" + fn.FunctionName,
 		},
 		Tags: tags,
 	}
@@ -313,15 +313,19 @@ func (s *Service) Invoke(w http.ResponseWriter, r *http.Request) {
 
 	async := invocationType == "Event"
 
+	// FunctionName may be an ARN; handlers poll the Runtime API under the
+	// function's name, so route by the name the lookup resolved to.
+	name := fn.FunctionName
+
 	// Resolution order: a handler polling the Runtime API wins, then a
 	// configured InvokeEndpoint, otherwise there is nothing to execute.
 	switch {
-	case s.broker.registered(functionName):
-		s.invokeViaRuntime(w, r, functionName, functionTimeout(fn), payload, async)
+	case s.broker.registered(name):
+		s.invokeViaRuntime(w, r, name, functionTimeout(fn), payload, async)
 	case fn.InvokeEndpoint != "":
-		s.invokeViaEndpoint(w, r, functionName, fn.InvokeEndpoint, payload, async)
+		s.invokeViaEndpoint(w, r, name, fn.InvokeEndpoint, payload, async)
 	default:
-		s.invokeNoBackend(w, functionName, async)
+		s.invokeNoBackend(w, name, async)
 	}
 }
 
@@ -446,7 +450,7 @@ func handleGetFunctionError(w http.ResponseWriter, err error) {
 // writeInvokeHeaders writes common invoke response headers.
 func writeInvokeHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Amz-Executed-Version", "$LATEST")
+	w.Header().Set("X-Amz-Executed-Version", latestVersion)
 	w.Header().Set("X-Amz-Request-Id", uuid.New().String())
 }
 
@@ -811,7 +815,7 @@ func (s *Service) ListVersionsByFunction(w http.ResponseWriter, r *http.Request)
 				Runtime:      fn.Runtime,
 				Role:         fn.Role,
 				Handler:      fn.Handler,
-				Version:      "$LATEST",
+				Version:      latestVersion,
 				LastModified: fn.LastModified.UTC().Format("2006-01-02T15:04:05.000+0000"),
 			},
 		},

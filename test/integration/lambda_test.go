@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -256,6 +257,115 @@ func TestLambda_InvokeWithEndpoint(t *testing.T) {
 
 	if result["statusCode"] != float64(200) {
 		t.Errorf("unexpected statusCode in response: %v", result["statusCode"])
+	}
+}
+
+// TestLambda_FunctionNameAsARN verifies that FunctionName accepts the
+// function's full or partial ARN, as the Lambda API does, for lookups,
+// updates, Invoke and DeleteFunction.
+func TestLambda_FunctionNameAsARN(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"handled":true}`))
+	}))
+	t.Cleanup(mockServer.Close)
+
+	client := newLambdaClient(t)
+	ctx := t.Context()
+	functionName := "test-function-name-as-arn"
+
+	// InvokeEndpoint is a kumo extension, so create the function with a raw request.
+	createBody, _ := json.Marshal(map[string]any{
+		"FunctionName":   functionName,
+		"Runtime":        "python3.12",
+		"Role":           "arn:aws:iam::000000000000:role/test-role",
+		"Handler":        "index.handler",
+		"InvokeEndpoint": mockServer.URL,
+		"Code":           map[string]any{"ZipFile": []byte("fake-zip-content")},
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
+		testEndpoint()+"/lambda/2015-03-31/functions", bytes.NewReader(createBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to create function: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// The test deletes the function by ARN itself; this only cleans up after a failure.
+	t.Cleanup(func() {
+		_, _ = client.DeleteFunction(context.Background(), &lambda.DeleteFunctionInput{
+			FunctionName: aws.String(functionName),
+		})
+	})
+
+	getOutput, err := client.GetFunction(ctx, &lambda.GetFunctionInput{FunctionName: aws.String(functionName)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	functionArn := aws.ToString(getOutput.Configuration.FunctionArn)
+	accountID := strings.Split(functionArn, ":")[4]
+	partialArn := accountID + ":function:" + functionName
+
+	for _, name := range []string{functionArn, partialArn, functionArn + ":$LATEST"} {
+		out, err := client.GetFunction(ctx, &lambda.GetFunctionInput{FunctionName: aws.String(name)})
+		if err != nil {
+			t.Fatalf("GetFunction(%q): %v", name, err)
+		}
+
+		if got := aws.ToString(out.Configuration.FunctionName); got != functionName {
+			t.Errorf("GetFunction(%q) resolved to %q, want %q", name, got, functionName)
+		}
+	}
+
+	if _, err := client.UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
+		FunctionName: aws.String(functionArn),
+		Timeout:      aws.Int32(60),
+	}); err != nil {
+		t.Fatalf("UpdateFunctionConfiguration by ARN: %v", err)
+	}
+
+	cfg, err := client.GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{FunctionName: aws.String(partialArn)})
+	if err != nil {
+		t.Fatalf("GetFunctionConfiguration by partial ARN: %v", err)
+	}
+
+	if aws.ToInt32(cfg.Timeout) != 60 {
+		t.Errorf("Timeout = %d, want 60 after updating by ARN", aws.ToInt32(cfg.Timeout))
+	}
+
+	invokeOutput, err := client.Invoke(ctx, &lambda.InvokeInput{
+		FunctionName: aws.String(functionArn),
+		Payload:      []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke by ARN: %v", err)
+	}
+
+	if got := string(invokeOutput.Payload); got != `{"handled":true}` {
+		t.Errorf("Invoke by ARN payload = %s, want the endpoint's response", got)
+	}
+
+	// Another account's function is a different function.
+	if _, err := client.GetFunction(ctx, &lambda.GetFunctionInput{
+		FunctionName: aws.String("111111111111:function:" + functionName),
+	}); err == nil {
+		t.Error("GetFunction with another account's partial ARN succeeded, want ResourceNotFoundException")
+	}
+
+	if _, err := client.DeleteFunction(ctx, &lambda.DeleteFunctionInput{FunctionName: aws.String(functionArn)}); err != nil {
+		t.Fatalf("DeleteFunction by ARN: %v", err)
+	}
+
+	if _, err := client.GetFunction(ctx, &lambda.GetFunctionInput{FunctionName: aws.String(functionName)}); err == nil {
+		t.Error("function still exists after DeleteFunction by ARN")
 	}
 }
 
