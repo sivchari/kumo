@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.31.0](https://github.com/sivchari/kumo/compare/v0.30.0...v0.31.0) - 2026-09-29
+- fix(s3): enforce POST policy conditions by @wakame1367 in https://github.com/sivchari/kumo/pull/936
+- feat(sns): deliver notifications to Lambda subscriptions by @wakame1367 in https://github.com/sivchari/kumo/pull/938
+- fix(lambda): derive the Runtime API deadline from the function's Timeout by @MH4GF in https://github.com/sivchari/kumo/pull/947
+- feat(lambda): add function URL configuration APIs by @wakame1367 in https://github.com/sivchari/kumo/pull/942
+- fix(sns): honor MessageStructure=json in Publish by @wakame1367 in https://github.com/sivchari/kumo/pull/940
+- feat(lambda): add function URL invocation by @wakame1367 in https://github.com/sivchari/kumo/pull/943
+- fix(lambda): resolve FunctionName given as a full or partial ARN by @MH4GF in https://github.com/sivchari/kumo/pull/948
+- fix(sns): put the subscription ARN in the envelope UnsubscribeURL by @sivchari in https://github.com/sivchari/kumo/pull/951
+- release v0.31.0 by @sivchari in https://github.com/sivchari/kumo/pull/952
+
 ## [v0.30.0](https://github.com/sivchari/kumo/compare/v0.29.0...v0.30.0) - 2026-09-15
 - fix(ci): run fuzz tests with go1.27.1 to avoid spurious deadline failures by @sivchari in https://github.com/sivchari/kumo/pull/928
 - feat(s3): support SNS TopicConfiguration in bucket notifications by @sivchari in https://github.com/sivchari/kumo/pull/929
