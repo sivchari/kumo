@@ -5,7 +5,6 @@ package integration
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
@@ -617,9 +616,5 @@ func TestSNS_EnvelopeDeliveryUnsubscribeURLUsesSubscriptionARN(t *testing.T) {
 	wantURL := "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=" + aws.ToString(subOutput.SubscriptionArn)
 	if envelope.UnsubscribeURL != wantURL {
 		t.Errorf("envelope.UnsubscribeURL = %q, want %q", envelope.UnsubscribeURL, wantURL)
-	}
-
-	if strings.Contains(envelope.UnsubscribeURL, aws.ToString(topicOutput.TopicArn)) {
-		t.Errorf("envelope.UnsubscribeURL must not reference the topic ARN, got %q", envelope.UnsubscribeURL)
 	}
 }
