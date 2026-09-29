@@ -91,6 +91,21 @@ func lambdaMessageAttribute(attr MessageAttribute) snsNotificationAttribute {
 }
 
 // unsubscribeURL builds the Unsubscribe link SNS embeds in notifications.
+// The host's region is taken from the subscription ARN, e.g.
+// "arn:aws:sns:ap-northeast-1:000000000000:topic:sub-id" yields
+// "https://sns.ap-northeast-1.amazonaws.com/...".
 func unsubscribeURL(subscriptionARN string) string {
-	return "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=" + subscriptionARN
+	return "https://sns." + arnRegion(subscriptionARN) + ".amazonaws.com/?Action=Unsubscribe&SubscriptionArn=" + subscriptionARN
+}
+
+// arnRegion extracts the region field from an ARN
+// ("arn:partition:service:region:account-id:resource"). It falls back to
+// defaultRegion when the ARN doesn't have enough fields to parse.
+func arnRegion(arn string) string {
+	fields := strings.SplitN(arn, ":", 5)
+	if len(fields) < 4 || fields[3] == "" {
+		return defaultRegion
+	}
+
+	return fields[3]
 }

@@ -789,7 +789,7 @@ func (m *MemoryStorage) deliverToSQS(ctx context.Context, sub *Subscription, mes
 
 	body := message
 	if !raw {
-		body = buildSNSNotificationEnvelope(sub.TopicARN, message, subject, messageID, attributes)
+		body = buildSNSNotificationEnvelope(sub, message, subject, messageID, attributes)
 	}
 
 	attrs := sqsDeliveryAttributes(messageID, subject, attributes, raw)
@@ -847,19 +847,19 @@ func isRawMessageDelivery(sub *Subscription) bool {
 
 // buildSNSNotificationEnvelope wraps a message in the SNS notification JSON
 // envelope that AWS sends to SQS when RawMessageDelivery is not enabled.
-func buildSNSNotificationEnvelope(topicARN, message, subject, messageID string, attributes map[string]MessageAttribute) string {
+func buildSNSNotificationEnvelope(sub *Subscription, message, subject, messageID string, attributes map[string]MessageAttribute) string {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	envelope := snsNotificationEnvelope{
 		Type:             snsNotificationType,
 		MessageID:        messageID,
-		TopicArn:         topicARN,
+		TopicArn:         sub.TopicARN,
 		Message:          message,
 		Timestamp:        now,
 		SignatureVersion: "1",
 		Signature:        "EXAMPLE",
 		SigningCertURL:   signingCertURLPlaceholder,
-		UnsubscribeURL:   unsubscribeURL(topicARN),
+		UnsubscribeURL:   unsubscribeURL(sub.ARN),
 	}
 
 	if subject != "" {

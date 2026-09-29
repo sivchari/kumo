@@ -3,6 +3,7 @@ package sns
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -154,6 +155,50 @@ func TestPublish_EnvelopeDeliveryDoesNotDuplicateAttributes(t *testing.T) {
 
 	if !strings.Contains(publisher.body, `"traceId"`) {
 		t.Errorf("expected envelope body to contain traceId, got %q", publisher.body)
+	}
+}
+
+func TestPublish_EnvelopeUnsubscribeURLUsesSubscriptionARN(t *testing.T) {
+	t.Parallel()
+
+	publisher := &capturingPublisher{}
+	// No RawMessageDelivery attribute -> envelope mode.
+	storage, topicARN := newTopicWithSQSSubscription(t, publisher, nil)
+
+	ctx := context.Background()
+
+	subs, _, err := storage.ListSubscriptionsByTopic(ctx, topicARN, "")
+	if err != nil {
+		t.Fatalf("ListSubscriptionsByTopic() error = %v", err)
+	}
+
+	if len(subs) != 1 {
+		t.Fatalf("expected 1 subscription, got %d", len(subs))
+	}
+
+	sub := subs[0]
+
+	// Give the subscription an ARN in a distinct region to verify the
+	// UnsubscribeURL host is derived from the subscription's own region,
+	// not the topic's or a hardcoded default.
+	sub.ARN = "arn:aws:sns:ap-northeast-1:000000000000:test-topic:11111111-1111-1111-1111-111111111111"
+
+	if _, err := storage.Publish(ctx, topicARN, "hello", "", "", "", "", nil); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+
+	var envelope snsNotificationEnvelope
+	if err := json.Unmarshal([]byte(publisher.body), &envelope); err != nil {
+		t.Fatalf("sqs body is not an envelope: %v\n%s", err, publisher.body)
+	}
+
+	wantURL := "https://sns.ap-northeast-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=" + sub.ARN
+	if envelope.UnsubscribeURL != wantURL {
+		t.Errorf("envelope.UnsubscribeURL = %q, want %q", envelope.UnsubscribeURL, wantURL)
+	}
+
+	if envelope.TopicArn != topicARN {
+		t.Errorf("envelope.TopicArn = %q, want %q", envelope.TopicArn, topicARN)
 	}
 }
 

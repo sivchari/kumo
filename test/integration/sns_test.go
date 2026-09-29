@@ -4,6 +4,8 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -504,5 +506,120 @@ func TestSNS_RawMessageDeliveryForwardsAttributes(t *testing.T) {
 
 	if aws.ToString(attr.StringValue) != "infra" {
 		t.Errorf("MessageAttributes[team].StringValue = %q, want %q", aws.ToString(attr.StringValue), "infra")
+	}
+}
+
+// snsNotificationEnvelope mirrors the JSON envelope kumo wraps messages in
+// when delivering to SQS without RawMessageDelivery.
+type snsNotificationEnvelope struct {
+	TopicArn       string `json:"TopicArn"`
+	Message        string `json:"Message"`
+	UnsubscribeURL string `json:"UnsubscribeURL"`
+}
+
+// TestSNS_EnvelopeDeliveryUnsubscribeURLUsesSubscriptionARN verifies that,
+// without RawMessageDelivery, the SNS notification envelope delivered to
+// SQS carries an UnsubscribeURL identifying the subscription, not the
+// topic (https://docs.aws.amazon.com/sns/latest/dg/sns-message-and-json-formats.html).
+func TestSNS_EnvelopeDeliveryUnsubscribeURLUsesSubscriptionARN(t *testing.T) {
+	snsClient := newSNSClient(t)
+	sqsClient := newSQSClient(t)
+	ctx := t.Context()
+
+	topicName := "test-envelope-unsubscribe-topic"
+	queueName := "test-envelope-unsubscribe-queue"
+
+	topicOutput, err := snsClient.CreateTopic(ctx, &sns.CreateTopicInput{
+		Name: aws.String(topicName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = snsClient.DeleteTopic(context.Background(), &sns.DeleteTopicInput{
+			TopicArn: topicOutput.TopicArn,
+		})
+	})
+
+	createQueueOutput, err := sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	queueURL := *createQueueOutput.QueueUrl
+
+	t.Cleanup(func() {
+		_, _ = sqsClient.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: aws.String(queueURL),
+		})
+	})
+
+	queueARN := "arn:aws:sqs:us-east-1:000000000000:" + queueName
+
+	subOutput, err := snsClient.Subscribe(ctx, &sns.SubscribeInput{
+		TopicArn: topicOutput.TopicArn,
+		Protocol: aws.String("sqs"),
+		Endpoint: aws.String(queueARN),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = snsClient.Unsubscribe(context.Background(), &sns.UnsubscribeInput{
+			SubscriptionArn: subOutput.SubscriptionArn,
+		})
+	})
+
+	// RawMessageDelivery is left at its default (disabled), so the message
+	// arrives wrapped in the SNS notification envelope.
+	if _, err := snsClient.Publish(ctx, &sns.PublishInput{
+		TopicArn: topicOutput.TopicArn,
+		Message:  aws.String("envelope delivery test"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var recvOutput *sqs.ReceiveMessageOutput
+
+	for range 10 {
+		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:        aws.String(queueURL),
+			WaitTimeSeconds: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(recvOutput.Messages) > 0 {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if len(recvOutput.Messages) == 0 {
+		t.Fatal("expected enveloped message on the SQS queue, but no message received")
+	}
+
+	var envelope snsNotificationEnvelope
+	if err := json.Unmarshal([]byte(aws.ToString(recvOutput.Messages[0].Body)), &envelope); err != nil {
+		t.Fatalf("body is not an SNS notification envelope: %v\n%s", err, aws.ToString(recvOutput.Messages[0].Body))
+	}
+
+	if envelope.TopicArn != aws.ToString(topicOutput.TopicArn) {
+		t.Errorf("envelope.TopicArn = %q, want %q", envelope.TopicArn, aws.ToString(topicOutput.TopicArn))
+	}
+
+	wantURL := "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=" + aws.ToString(subOutput.SubscriptionArn)
+	if envelope.UnsubscribeURL != wantURL {
+		t.Errorf("envelope.UnsubscribeURL = %q, want %q", envelope.UnsubscribeURL, wantURL)
+	}
+
+	if strings.Contains(envelope.UnsubscribeURL, aws.ToString(topicOutput.TopicArn)) {
+		t.Errorf("envelope.UnsubscribeURL must not reference the topic ARN, got %q", envelope.UnsubscribeURL)
 	}
 }
