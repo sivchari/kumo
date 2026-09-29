@@ -11,6 +11,7 @@
 package kumo
 
 import (
+	"net/http"
 	"net/http/httptest"
 
 	// Register all services via init(). See internal/registry for the
@@ -32,16 +33,20 @@ type Server struct {
 // The server listens on a random available port on localhost.
 // Use srv.URL as the BaseEndpoint for AWS SDK clients.
 func NewServer() *Server {
-	cfg := server.DefaultConfig()
-	cfg.LogLevel = 100 // Suppress all logs in test mode.
-	internalSrv := server.New(cfg)
-
-	ts := httptest.NewServer(internalSrv.Handler())
+	ts := httptest.NewServer(handler())
 
 	return &Server{
 		URL:        ts.URL,
 		httpServer: ts,
 	}
+}
+
+// handler builds the emulator handler used by every server constructor.
+func handler() http.Handler {
+	cfg := server.DefaultConfig()
+	cfg.LogLevel = 100 // Suppress all logs in test mode.
+
+	return server.New(cfg).Handler()
 }
 
 // Close shuts down the server.

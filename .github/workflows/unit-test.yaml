@@ -9,15 +9,24 @@ on:
 
 jobs:
   test:
-    name: Unit tests
+    name: Unit tests (Go ${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: go.mod
+            go-version-file: 'go.mod'
+          - name: '1.27'
+            go-version: '1.27'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: 'go.mod'
+          go-version: ${{ matrix.go-version }}
+          go-version-file: ${{ matrix.go-version-file }}
           cache-dependency-path: |
             go.sum
             test/go.sum
