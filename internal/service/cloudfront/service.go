@@ -64,6 +64,14 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("GET", "/2020-05-31/key-group/{id}", s.GetKeyGroup)
 	r.Handle("DELETE", "/2020-05-31/key-group/{id}", s.DeleteKeyGroup)
 
+	// Origin access control — the signing policy of OAC-protected origins.
+	r.Handle("POST", "/2020-05-31/origin-access-control", s.CreateOriginAccessControl)
+	r.Handle("GET", "/2020-05-31/origin-access-control", s.ListOriginAccessControls)
+	r.Handle("GET", "/2020-05-31/origin-access-control/{id}", s.GetOriginAccessControl)
+	r.Handle("GET", "/2020-05-31/origin-access-control/{id}/config", s.GetOriginAccessControlConfig)
+	r.Handle("PUT", "/2020-05-31/origin-access-control/{id}/config", s.UpdateOriginAccessControl)
+	r.Handle("DELETE", "/2020-05-31/origin-access-control/{id}", s.DeleteOriginAccessControl)
+
 	// Edge — proxies real requests through the cache layer.
 	for _, method := range []string{"GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"} {
 		r.Handle(method, "/kumo/cdn/{distributionId}/{path...}", s.Edge)

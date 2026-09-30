@@ -39,6 +39,13 @@ type Storage interface {
 	GetKeyGroup(ctx context.Context, id string) (*KeyGroup, error)
 	ListKeyGroups(ctx context.Context) []*KeyGroup
 	DeleteKeyGroup(ctx context.Context, id string) error
+
+	// Origin access control.
+	CreateOriginAccessControl(ctx context.Context, cfg *OriginAccessControlConfig) (*OriginAccessControl, error)
+	GetOriginAccessControl(ctx context.Context, id string) (*OriginAccessControl, error)
+	ListOriginAccessControls(ctx context.Context, marker string, maxItems int) ([]*OriginAccessControl, string, error)
+	UpdateOriginAccessControl(ctx context.Context, id string, cfg *OriginAccessControlConfig, ifMatch string) (*OriginAccessControl, error)
+	DeleteOriginAccessControl(ctx context.Context, id, ifMatch string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -59,18 +66,20 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu            sync.RWMutex                        `json:"-"`
-	Distributions map[string]*Distribution            `json:"distributions"`
-	Invalidations map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
-	signing       signingStore
-	dataDir       string
+	mu                   sync.RWMutex                        `json:"-"`
+	Distributions        map[string]*Distribution            `json:"distributions"`
+	Invalidations        map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
+	OriginAccessControls map[string]*OriginAccessControl     `json:"originAccessControls,omitempty"`
+	signing              signingStore
+	dataDir              string
 }
 
 // NewMemoryStorage creates a new memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
-		Distributions: make(map[string]*Distribution),
-		Invalidations: make(map[string]map[string]*Invalidation),
+		Distributions:        make(map[string]*Distribution),
+		Invalidations:        make(map[string]map[string]*Invalidation),
+		OriginAccessControls: make(map[string]*OriginAccessControl),
 		signing: signingStore{
 			PublicKeys: make(map[string]*PublicKey),
 			KeyGroups:  make(map[string]*KeyGroup),
@@ -124,6 +133,7 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	s.ensureSigningInit()
+	s.ensureOACInit()
 
 	return nil
 }
@@ -169,6 +179,10 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 
 	distConfig := newDistributionConfig(config)
 	if err := validateTargetOrigins(distConfig); err != nil {
+		return nil, err
+	}
+
+	if err := s.validateOriginAccessLocked(distConfig); err != nil {
 		return nil, err
 	}
 
@@ -273,6 +287,10 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 
 	distConfig := newDistributionConfig(config)
 	if err := validateTargetOrigins(distConfig); err != nil {
+		return nil, err
+	}
+
+	if err := s.validateOriginAccessLocked(distConfig); err != nil {
 		return nil, err
 	}
 

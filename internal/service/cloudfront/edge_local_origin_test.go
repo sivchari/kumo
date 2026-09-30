@@ -94,7 +94,7 @@ func TestEdge_KumoHostedCustomOriginsResolveInProcess(t *testing.T) {
 			t.Setenv("KUMO_S3_BACKEND", backend.URL)
 
 			svc := New(NewMemoryStorage())
-			createCustomOriginDistribution(t, svc, origin, &CustomOriginConfigXML{HTTPSPort: 443, OriginProtocolPolicy: "https-only"})
+			createCustomOriginDistribution(t, svc, origin, &CustomOriginConfigXML{HTTPSPort: 443, OriginProtocolPolicy: originPolicyHTTPS})
 
 			w := callEdge(t, svc, http.MethodGet, "/hello/world", nil)
 			if w.Code != http.StatusOK || w.Body.String() != backendBody {
