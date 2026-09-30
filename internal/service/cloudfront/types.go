@@ -177,26 +177,11 @@ type CacheBehaviors struct {
 	Items    []CacheBehavior
 }
 
-// CacheBehavior represents a cache behavior.
+// CacheBehavior is an ordered cache behavior: the default behavior's settings
+// applied to the requests whose path matches PathPattern.
 type CacheBehavior struct {
-	PathPattern             string
-	TargetOriginID          string
-	ViewerProtocolPolicy    string
-	AllowedMethods          *AllowedMethods
-	CachedMethods           *CachedMethods
-	ForwardedValues         *ForwardedValues
-	MinTTL                  int64
-	DefaultTTL              int64
-	MaxTTL                  int64
-	Compress                bool
-	SmoothStreaming         bool
-	CachePolicyID           string
-	OriginRequestPolicyID   string
-	ResponseHeadersPolicyID string
-	TrustedSigners          *TrustedSigners
-	TrustedKeyGroups        *TrustedKeyGroups
-	FieldLevelEncryptionID  string
-	RealtimeLogConfigArn    string
+	PathPattern string
+	DefaultCacheBehavior
 }
 
 // ViewerCertificate represents viewer certificate configuration.
@@ -337,17 +322,22 @@ type OriginSSLProtocolsXML struct {
 
 // DefaultCacheBehaviorXML represents default cache behavior in XML format.
 type DefaultCacheBehaviorXML struct {
-	TargetOriginID       string               `xml:"TargetOriginId"`
-	ViewerProtocolPolicy string               `xml:"ViewerProtocolPolicy"`
-	AllowedMethods       *AllowedMethodsXML   `xml:"AllowedMethods,omitempty"`
-	ForwardedValues      *ForwardedValuesXML  `xml:"ForwardedValues,omitempty"`
-	MinTTL               int64                `xml:"MinTTL,omitempty"`
-	DefaultTTL           int64                `xml:"DefaultTTL,omitempty"`
-	MaxTTL               int64                `xml:"MaxTTL,omitempty"`
-	Compress             bool                 `xml:"Compress,omitempty"`
-	CachePolicyID        string               `xml:"CachePolicyId,omitempty"`
-	TrustedSigners       *TrustedSignersXML   `xml:"TrustedSigners,omitempty"`
-	TrustedKeyGroups     *TrustedKeyGroupsXML `xml:"TrustedKeyGroups,omitempty"`
+	TargetOriginID          string               `xml:"TargetOriginId"`
+	ViewerProtocolPolicy    string               `xml:"ViewerProtocolPolicy"`
+	AllowedMethods          *AllowedMethodsXML   `xml:"AllowedMethods,omitempty"`
+	ForwardedValues         *ForwardedValuesXML  `xml:"ForwardedValues,omitempty"`
+	MinTTL                  int64                `xml:"MinTTL,omitempty"`
+	DefaultTTL              int64                `xml:"DefaultTTL,omitempty"`
+	MaxTTL                  int64                `xml:"MaxTTL,omitempty"`
+	Compress                bool                 `xml:"Compress,omitempty"`
+	SmoothStreaming         bool                 `xml:"SmoothStreaming,omitempty"`
+	CachePolicyID           string               `xml:"CachePolicyId,omitempty"`
+	OriginRequestPolicyID   string               `xml:"OriginRequestPolicyId,omitempty"`
+	ResponseHeadersPolicyID string               `xml:"ResponseHeadersPolicyId,omitempty"`
+	FieldLevelEncryptionID  string               `xml:"FieldLevelEncryptionId,omitempty"`
+	RealtimeLogConfigArn    string               `xml:"RealtimeLogConfigArn,omitempty"`
+	TrustedSigners          *TrustedSignersXML   `xml:"TrustedSigners,omitempty"`
+	TrustedKeyGroups        *TrustedKeyGroupsXML `xml:"TrustedKeyGroups,omitempty"`
 }
 
 // AllowedMethodsXML represents allowed methods in XML format.
@@ -365,14 +355,28 @@ type CachedMethodsXML struct {
 
 // ForwardedValuesXML represents forwarded values in XML format.
 type ForwardedValuesXML struct {
-	QueryString bool        `xml:"QueryString"`
-	Cookies     *CookiesXML `xml:"Cookies"`
-	Headers     *HeadersXML `xml:"Headers,omitempty"`
+	QueryString          bool                     `xml:"QueryString"`
+	Cookies              *CookiesXML              `xml:"Cookies"`
+	Headers              *HeadersXML              `xml:"Headers,omitempty"`
+	QueryStringCacheKeys *QueryStringCacheKeysXML `xml:"QueryStringCacheKeys,omitempty"`
 }
 
 // CookiesXML represents cookies configuration in XML format.
 type CookiesXML struct {
-	Forward string `xml:"Forward"`
+	Forward          string          `xml:"Forward"`
+	WhitelistedNames *CookieNamesXML `xml:"WhitelistedNames,omitempty"`
+}
+
+// CookieNamesXML lists whitelisted cookie names in XML format.
+type CookieNamesXML struct {
+	Quantity int      `xml:"Quantity"`
+	Items    []string `xml:"Items>Name,omitempty"`
+}
+
+// QueryStringCacheKeysXML lists query string cache keys in XML format.
+type QueryStringCacheKeysXML struct {
+	Quantity int      `xml:"Quantity"`
+	Items    []string `xml:"Items>Name,omitempty"`
 }
 
 // HeadersXML represents headers in XML format.
@@ -397,7 +401,15 @@ type TrustedKeyGroupsXML struct {
 
 // CacheBehaviorsXML represents cache behaviors in XML format.
 type CacheBehaviorsXML struct {
-	Quantity int `xml:"Quantity"`
+	Quantity int                `xml:"Quantity"`
+	Items    []CacheBehaviorXML `xml:"Items>CacheBehavior,omitempty"`
+}
+
+// CacheBehaviorXML is an ordered cache behavior in XML format: PathPattern
+// plus the default behavior's fields.
+type CacheBehaviorXML struct {
+	PathPattern string `xml:"PathPattern"`
+	DefaultCacheBehaviorXML
 }
 
 // RestrictionsXML represents restrictions in XML format.
@@ -574,4 +586,5 @@ const (
 	errPreconditionFailed        = "PreconditionFailed"
 	errInvalidIfMatchVersion     = "InvalidIfMatchVersion"
 	errNoSuchInvalidation        = "NoSuchInvalidation"
+	errNoSuchOrigin              = "NoSuchOrigin"
 )

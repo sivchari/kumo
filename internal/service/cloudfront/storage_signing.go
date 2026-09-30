@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -164,7 +165,8 @@ func (s *MemoryStorage) ListKeyGroups(_ context.Context) []*KeyGroup {
 }
 
 // DeleteKeyGroup removes a KeyGroup. Returns ResourceInUse if any
-// Distribution references it via TrustedKeyGroups.
+// Distribution references it via TrustedKeyGroups, on its default or on
+// an ordered cache behavior.
 func (s *MemoryStorage) DeleteKeyGroup(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -176,17 +178,8 @@ func (s *MemoryStorage) DeleteKeyGroup(_ context.Context, id string) error {
 	}
 
 	for _, d := range s.Distributions {
-		if d.DistributionConfig == nil || d.DistributionConfig.DefaultCacheBehavior == nil {
-			continue
-		}
-
-		dcb := d.DistributionConfig.DefaultCacheBehavior
-		if dcb.TrustedKeyGroups == nil {
-			continue
-		}
-
-		for _, ref := range dcb.TrustedKeyGroups.Items {
-			if ref == id {
+		for _, behavior := range d.DistributionConfig.behaviors() {
+			if behavior.TrustedKeyGroups != nil && slices.Contains(behavior.TrustedKeyGroups.Items, id) {
 				return &Error{Code: errKeyGroupReferencedError, Message: fmt.Sprintf("Key group %s is referenced by distribution %s", id, d.ID)}
 			}
 		}

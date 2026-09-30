@@ -7,19 +7,25 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sivchari/kumo/internal/service/cloudfront/cache"
+	"github.com/sivchari/kumo/internal/service/execapi"
+	"github.com/sivchari/kumo/internal/vhost"
 )
 
 const maxEdgeCacheEntries = 1024
 
 // originPolicyHTTP is the CustomOriginConfig.OriginProtocolPolicy value that
 // forces plain HTTP to the origin, regardless of the viewer's own scheme.
-const originPolicyHTTP = "http-only"
+const (
+	originPolicyHTTP  = "http-only"
+	originPolicyHTTPS = "https-only"
+)
 
 // cacheEntry is one cached response variant for a distribution.
 type cacheEntry struct {
@@ -272,11 +278,16 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.checkEdgeSigning(w, r, dist) {
+	// The matched cache behaviour drives signed-URL enforcement, the origin
+	// and the TTLs below. The cache key stays path-based: the path alone
+	// selects the behaviour, so entries can never cross behaviours.
+	behavior := resolveBehavior(dist, r.PathValue("path"))
+
+	if !s.checkEdgeSigning(w, r, behavior) {
 		return
 	}
 
-	originURL, ok := edgeOriginURL(dist, r.PathValue("path"), r.URL.RawQuery)
+	originURL, ok := edgeOriginURL(dist, behavior, r.PathValue("path"), r.URL.RawQuery)
 	if !ok {
 		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
 
@@ -289,7 +300,7 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, ok := edgeCacheConfig(dist)
+	cfg, ok := edgeCacheConfig(behavior)
 	if !ok {
 		http.Error(w, "distribution missing DefaultCacheBehavior", http.StatusServiceUnavailable)
 
@@ -598,40 +609,90 @@ func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, originURL 
 	writeUpstream(w, upstream, "Bypass from kumo", 0)
 }
 
-// edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of
-// a Distribution's DefaultCacheBehavior. Returns ok=false when the
-// distribution config isn't filled in (terraform almost always does).
-func edgeCacheConfig(dist *Distribution) (cache.DistributionConfig, bool) {
-	if dist == nil || dist.DistributionConfig == nil || dist.DistributionConfig.DefaultCacheBehavior == nil {
+// edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of the
+// matched cache behaviour. Returns ok=false when the distribution has no
+// behaviour for the request (terraform almost always configures one).
+func edgeCacheConfig(behavior *DefaultCacheBehavior) (cache.DistributionConfig, bool) {
+	if behavior == nil {
 		return cache.DistributionConfig{}, false
 	}
 
-	dcb := dist.DistributionConfig.DefaultCacheBehavior
-
 	return cache.DistributionConfig{
-		MinTTL:     time.Duration(dcb.MinTTL) * time.Second,
-		DefaultTTL: time.Duration(dcb.DefaultTTL) * time.Second,
-		MaxTTL:     time.Duration(dcb.MaxTTL) * time.Second,
+		MinTTL:     time.Duration(behavior.MinTTL) * time.Second,
+		DefaultTTL: time.Duration(behavior.DefaultTTL) * time.Second,
+		MaxTTL:     time.Duration(behavior.MaxTTL) * time.Second,
 	}, true
 }
 
+// resolveBehavior picks the cache behaviour for a request path the way
+// CloudFront does: the first ordered behaviour whose PathPattern matches, in
+// list order, otherwise the default behaviour (nil when the distribution has
+// none). path is the request path without its leading slash.
+func resolveBehavior(dist *Distribution, path string) *DefaultCacheBehavior {
+	if dist == nil || dist.DistributionConfig == nil {
+		return nil
+	}
+
+	if behaviors := dist.DistributionConfig.CacheBehaviors; behaviors != nil {
+		for i := range behaviors.Items {
+			if matchPathPattern(behaviors.Items[i].PathPattern, path) {
+				return &behaviors.Items[i].DefaultCacheBehavior
+			}
+		}
+	}
+
+	return dist.DistributionConfig.DefaultCacheBehavior
+}
+
+// matchPathPattern applies a CloudFront path pattern to a request path: `*`
+// matches zero or more characters (including `/`), `?` exactly one, the
+// comparison is case-sensitive, a leading `/` on the pattern is optional and
+// the query string is never part of the path.
+func matchPathPattern(pattern, path string) bool {
+	var expr strings.Builder
+
+	expr.WriteString("^")
+
+	for _, r := range strings.TrimPrefix(pattern, "/") {
+		switch r {
+		case '*':
+			expr.WriteString(".*")
+		case '?':
+			expr.WriteString(".")
+		default:
+			expr.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+
+	expr.WriteString("$")
+
+	re, err := regexp.Compile(expr.String())
+	if err != nil {
+		return false
+	}
+
+	return re.MatchString(path)
+}
+
 // edgeOriginURL builds the upstream URL for the request, choosing the
-// origin pinned by `DefaultCacheBehavior.TargetOriginID` and falling
+// origin pinned by the matched behaviour's TargetOriginID and falling
 // back to the first registered origin when the ID doesn't resolve.
 //
 // Two origin shapes are honoured:
 //
 //   - **CustomOriginConfig**: arbitrary HTTP(S) origin.
-//     `<scheme>://<DomainName>[:<HTTPPort>]<OriginPath>/<path>`.
+//     `<scheme>://<DomainName>[:<HTTPPort>]<OriginPath>/<path>`. When the
+//     DomainName is a host kumo serves itself (a Lambda function URL or an
+//     execute-api endpoint, see kumoHostedOrigin) the request is sent to
+//     kumo's own listener with that Host header, so no DNS is needed.
 //   - **S3OriginConfig**: an AWS S3 bucket. The DomainName is the
 //     virtual-hosted bucket DNS name (e.g.
 //     `mybucket.s3.us-east-1.amazonaws.com`). At the edge we extract
 //     the bucket name and target kumo's own S3 service in path-style
 //     so the proxy stays inside this kumo (no real AWS round-trip).
-//     The S3 base URL is `KUMO_S3_BACKEND` (default
-//     `http://127.0.0.1:4566`).
-func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
-	o, ok := selectOrigin(dist)
+//     The S3 base URL is kumo's own base URL (see localBackendURL).
+func edgeOriginURL(dist *Distribution, behavior *DefaultCacheBehavior, path, rawQuery string) (string, bool) {
+	o, ok := selectOrigin(dist, behavior)
 	if !ok {
 		return "", false
 	}
@@ -658,10 +719,9 @@ func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
 	return full, true
 }
 
-// selectOrigin returns the origin pinned by the distribution's
-// DefaultCacheBehavior.TargetOriginID, falling back to the first
-// origin when the ID doesn't match.
-func selectOrigin(dist *Distribution) (Origin, bool) {
+// selectOrigin returns the origin pinned by the matched behaviour's
+// TargetOriginID, falling back to the first origin when the ID doesn't match.
+func selectOrigin(dist *Distribution, behavior *DefaultCacheBehavior) (Origin, bool) {
 	if dist.DistributionConfig == nil || dist.DistributionConfig.Origins == nil {
 		return Origin{}, false
 	}
@@ -671,9 +731,9 @@ func selectOrigin(dist *Distribution) (Origin, bool) {
 		return Origin{}, false
 	}
 
-	if dcb := dist.DistributionConfig.DefaultCacheBehavior; dcb != nil && dcb.TargetOriginID != "" {
+	if behavior != nil && behavior.TargetOriginID != "" {
 		for _, o := range origins {
-			if o.ID == dcb.TargetOriginID {
+			if o.ID == behavior.TargetOriginID {
 				return o, true
 			}
 		}
@@ -695,7 +755,7 @@ func customOriginURL(o *Origin, path string) string {
 			if o.CustomOriginConfig.HTTPPort > 0 && o.CustomOriginConfig.HTTPPort != 80 {
 				host = o.DomainName + ":" + strconv.Itoa(o.CustomOriginConfig.HTTPPort)
 			}
-		case "https-only", "match-viewer":
+		case originPolicyHTTPS, "match-viewer":
 			scheme = schemeHTTPS
 		}
 	}
@@ -721,12 +781,49 @@ func s3OriginURL(o *Origin, path string) (string, bool) {
 		return "", false
 	}
 
-	base := os.Getenv("KUMO_S3_BACKEND")
-	if base == "" {
-		base = "http://127.0.0.1:4566"
+	return localBackendURL() + "/" + bucket + o.OriginPath + "/" + path, true
+}
+
+// localBackendURL is kumo's own base URL, used for origins kumo serves itself
+// (S3 buckets, Lambda function URLs, execute-api endpoints). KUMO_S3_BACKEND
+// keeps its historical precedence; otherwise KUMO_HOST / KUMO_PORT decide, as
+// for the other services' self-calls.
+func localBackendURL() string {
+	if base := os.Getenv("KUMO_S3_BACKEND"); base != "" {
+		return strings.TrimRight(base, "/")
 	}
 
-	return strings.TrimRight(base, "/") + "/" + bucket + o.OriginPath + "/" + path, true
+	return execapi.ResolveBaseURL()
+}
+
+// kumoHostedOrigin reports whether a custom origin's domain is a host kumo
+// serves itself: a Lambda function URL (`<url-id>.lambda-url.<...>`) or an
+// execute-api endpoint (`<api-id>.execute-api.<...>`), as recognised by the
+// router. The edge can reach those through kumo's own listener.
+func kumoHostedOrigin(host string) bool {
+	if _, ok := vhost.FunctionURLID(host); ok {
+		return true
+	}
+
+	_, ok := vhost.ExecuteAPIID(host)
+
+	return ok
+}
+
+// redirectToLocalBackend keeps the origin's Host header, as CloudFront does,
+// but connects to kumo's own listener because nothing resolves the origin
+// domain locally.
+func redirectToLocalBackend(req *http.Request, originHost string) error {
+	backend, err := url.Parse(localBackendURL())
+	if err != nil {
+		return fmt.Errorf("parse kumo base URL: %w", err)
+	}
+
+	req.Host = originHost
+	req.URL.Scheme = backend.Scheme
+	req.URL.Host = backend.Host
+
+	return nil
 }
 
 // s3BucketFromDomain extracts the bucket name from a virtual-hosted
@@ -808,6 +905,12 @@ func originRequest(target string, r *http.Request, reqBody io.Reader) (*originRe
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, parsed.String(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("build origin request: %w", err)
+	}
+
+	if kumoHostedOrigin(parsed.Host) {
+		if err := redirectToLocalBackend(req, parsed.Host); err != nil {
+			return nil, err
+		}
 	}
 
 	// Forward all request headers except hop-by-hop. CloudFront's
