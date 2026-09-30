@@ -167,30 +167,23 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 		}
 	}
 
+	distConfig := newDistributionConfig(config)
+	if err := validateTargetOrigins(distConfig); err != nil {
+		return nil, err
+	}
+
 	id := generateDistributionID()
 	etag := generateETag()
 	now := time.Now()
 
 	dist := &Distribution{
-		ID:               id,
-		ARN:              fmt.Sprintf("arn:aws:cloudfront::000000000000:distribution/%s", id),
-		Status:           distributionStatusInProgress,
-		LastModifiedTime: now,
-		DomainName:       fmt.Sprintf("%s.cloudfront.net", id),
-		ETag:             etag,
-		DistributionConfig: &DistributionConfig{
-			CallerReference:      config.CallerReference,
-			Comment:              config.Comment,
-			Enabled:              config.Enabled,
-			PriceClass:           defaultString(config.PriceClass, "PriceClass_All"),
-			DefaultRootObject:    config.DefaultRootObject,
-			HTTPVersion:          defaultString(config.HTTPVersion, "http2"),
-			IsIPV6Enabled:        config.IsIPV6Enabled,
-			Origins:              convertOriginsFromXML(config.Origins),
-			DefaultCacheBehavior: convertDefaultCacheBehaviorFromXML(config.DefaultCacheBehavior),
-			Aliases:              convertAliasesFromXML(config.Aliases),
-			ViewerCertificate:    convertViewerCertificateFromXML(config.ViewerCertificate),
-		},
+		ID:                     id,
+		ARN:                    fmt.Sprintf("arn:aws:cloudfront::000000000000:distribution/%s", id),
+		Status:                 distributionStatusInProgress,
+		LastModifiedTime:       now,
+		DomainName:             fmt.Sprintf("%s.cloudfront.net", id),
+		ETag:                   etag,
+		DistributionConfig:     distConfig,
 		ActiveTrustedSigners:   &ActiveTrustedSigners{Enabled: false, Quantity: 0},
 		ActiveTrustedKeyGroups: &ActiveTrustedKeyGroups{Enabled: false, Quantity: 0},
 	}
@@ -278,11 +271,25 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 		}
 	}
 
-	newETag := generateETag()
-	dist.ETag = newETag
+	distConfig := newDistributionConfig(config)
+	if err := validateTargetOrigins(distConfig); err != nil {
+		return nil, err
+	}
+
+	dist.ETag = generateETag()
 	dist.LastModifiedTime = time.Now()
 	dist.Status = distributionStatusInProgress
-	dist.DistributionConfig = &DistributionConfig{
+	dist.DistributionConfig = distConfig
+
+	s.saveLocked()
+
+	return dist, nil
+}
+
+// newDistributionConfig converts a Create/UpdateDistribution body into the
+// stored configuration, applying the defaults CloudFront applies.
+func newDistributionConfig(config *CreateDistributionRequest) *DistributionConfig {
+	return &DistributionConfig{
 		CallerReference:      config.CallerReference,
 		Comment:              config.Comment,
 		Enabled:              config.Enabled,
@@ -292,13 +299,51 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 		IsIPV6Enabled:        config.IsIPV6Enabled,
 		Origins:              convertOriginsFromXML(config.Origins),
 		DefaultCacheBehavior: convertDefaultCacheBehaviorFromXML(config.DefaultCacheBehavior),
+		CacheBehaviors:       convertCacheBehaviorsFromXML(config.CacheBehaviors),
 		Aliases:              convertAliasesFromXML(config.Aliases),
 		ViewerCertificate:    convertViewerCertificateFromXML(config.ViewerCertificate),
 	}
+}
 
-	s.saveLocked()
+// validateTargetOrigins rejects behaviors whose TargetOriginId names no
+// origin, as CloudFront does (NoSuchOrigin).
+func validateTargetOrigins(config *DistributionConfig) error {
+	known := map[string]bool{}
 
-	return dist, nil
+	if config.Origins != nil {
+		for _, o := range config.Origins.Items {
+			known[o.ID] = true
+		}
+	}
+
+	for _, behavior := range config.behaviors() {
+		if !known[behavior.TargetOriginID] {
+			return &Error{Code: errNoSuchOrigin, Message: "No origin exists with the specified Origin Id."}
+		}
+	}
+
+	return nil
+}
+
+// behaviors lists the default behavior followed by the ordered ones; nil-safe.
+func (c *DistributionConfig) behaviors() []*DefaultCacheBehavior {
+	if c == nil {
+		return nil
+	}
+
+	var out []*DefaultCacheBehavior
+
+	if c.DefaultCacheBehavior != nil {
+		out = append(out, c.DefaultCacheBehavior)
+	}
+
+	if c.CacheBehaviors != nil {
+		for i := range c.CacheBehaviors.Items {
+			out = append(out, &c.CacheBehaviors.Items[i].DefaultCacheBehavior)
+		}
+	}
+
+	return out
 }
 
 // DeleteDistribution deletes a distribution.
@@ -545,13 +590,18 @@ func convertDefaultCacheBehaviorFromXML(behavior *DefaultCacheBehaviorXML) *Defa
 	}
 
 	result := &DefaultCacheBehavior{
-		TargetOriginID:       behavior.TargetOriginID,
-		ViewerProtocolPolicy: behavior.ViewerProtocolPolicy,
-		MinTTL:               behavior.MinTTL,
-		DefaultTTL:           behavior.DefaultTTL,
-		MaxTTL:               behavior.MaxTTL,
-		Compress:             behavior.Compress,
-		CachePolicyID:        behavior.CachePolicyID,
+		TargetOriginID:          behavior.TargetOriginID,
+		ViewerProtocolPolicy:    behavior.ViewerProtocolPolicy,
+		MinTTL:                  behavior.MinTTL,
+		DefaultTTL:              behavior.DefaultTTL,
+		MaxTTL:                  behavior.MaxTTL,
+		Compress:                behavior.Compress,
+		SmoothStreaming:         behavior.SmoothStreaming,
+		CachePolicyID:           behavior.CachePolicyID,
+		OriginRequestPolicyID:   behavior.OriginRequestPolicyID,
+		ResponseHeadersPolicyID: behavior.ResponseHeadersPolicyID,
+		FieldLevelEncryptionID:  behavior.FieldLevelEncryptionID,
+		RealtimeLogConfigArn:    behavior.RealtimeLogConfigArn,
 	}
 
 	convertAllowedMethodsFromXML(behavior.AllowedMethods, result)
@@ -587,12 +637,7 @@ func convertForwardedValuesFromXML(fv *ForwardedValuesXML, result *DefaultCacheB
 
 	result.ForwardedValues = &ForwardedValues{
 		QueryString: fv.QueryString,
-	}
-
-	if fv.Cookies != nil {
-		result.ForwardedValues.Cookies = &CookiePreference{
-			Forward: fv.Cookies.Forward,
-		}
+		Cookies:     convertCookiesFromXML(fv.Cookies),
 	}
 
 	if fv.Headers != nil {
@@ -601,6 +646,50 @@ func convertForwardedValuesFromXML(fv *ForwardedValuesXML, result *DefaultCacheB
 			Items:    fv.Headers.Items,
 		}
 	}
+
+	if fv.QueryStringCacheKeys != nil {
+		result.ForwardedValues.QueryStringCacheKeys = &QueryStringCacheKeys{
+			Quantity: fv.QueryStringCacheKeys.Quantity,
+			Items:    fv.QueryStringCacheKeys.Items,
+		}
+	}
+}
+
+func convertCookiesFromXML(cookies *CookiesXML) *CookiePreference {
+	if cookies == nil {
+		return nil
+	}
+
+	result := &CookiePreference{Forward: cookies.Forward}
+
+	if cookies.WhitelistedNames != nil {
+		result.WhitelistedNames = &CookieNames{
+			Quantity: cookies.WhitelistedNames.Quantity,
+			Items:    cookies.WhitelistedNames.Items,
+		}
+	}
+
+	return result
+}
+
+// convertCacheBehaviorsFromXML stores the ordered cache behaviors in list
+// order; Quantity follows the items actually present.
+func convertCacheBehaviorsFromXML(behaviors *CacheBehaviorsXML) *CacheBehaviors {
+	if behaviors == nil {
+		return nil
+	}
+
+	result := &CacheBehaviors{Quantity: len(behaviors.Items), Items: make([]CacheBehavior, 0, len(behaviors.Items))}
+
+	for i := range behaviors.Items {
+		item := &behaviors.Items[i]
+		result.Items = append(result.Items, CacheBehavior{
+			PathPattern:          item.PathPattern,
+			DefaultCacheBehavior: *convertDefaultCacheBehaviorFromXML(&item.DefaultCacheBehaviorXML),
+		})
+	}
+
+	return result
 }
 
 func convertTrustedSignersFromXML(ts *TrustedSignersXML, result *DefaultCacheBehavior) {

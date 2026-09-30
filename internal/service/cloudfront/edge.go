@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -274,11 +275,16 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.checkEdgeSigning(w, r, dist) {
+	// The matched cache behaviour drives signed-URL enforcement, the origin
+	// and the TTLs below. The cache key stays path-based: the path alone
+	// selects the behaviour, so entries can never cross behaviours.
+	behavior := resolveBehavior(dist, r.PathValue("path"))
+
+	if !s.checkEdgeSigning(w, r, behavior) {
 		return
 	}
 
-	originURL, ok := edgeOriginURL(dist, r.PathValue("path"), r.URL.RawQuery)
+	originURL, ok := edgeOriginURL(dist, behavior, r.PathValue("path"), r.URL.RawQuery)
 	if !ok {
 		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
 
@@ -291,7 +297,7 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, ok := edgeCacheConfig(dist)
+	cfg, ok := edgeCacheConfig(behavior)
 	if !ok {
 		http.Error(w, "distribution missing DefaultCacheBehavior", http.StatusServiceUnavailable)
 
@@ -600,25 +606,73 @@ func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, originURL 
 	writeUpstream(w, upstream, "Bypass from kumo", 0)
 }
 
-// edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of
-// a Distribution's DefaultCacheBehavior. Returns ok=false when the
-// distribution config isn't filled in (terraform almost always does).
-func edgeCacheConfig(dist *Distribution) (cache.DistributionConfig, bool) {
-	if dist == nil || dist.DistributionConfig == nil || dist.DistributionConfig.DefaultCacheBehavior == nil {
+// edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of the
+// matched cache behaviour. Returns ok=false when the distribution has no
+// behaviour for the request (terraform almost always configures one).
+func edgeCacheConfig(behavior *DefaultCacheBehavior) (cache.DistributionConfig, bool) {
+	if behavior == nil {
 		return cache.DistributionConfig{}, false
 	}
 
-	dcb := dist.DistributionConfig.DefaultCacheBehavior
-
 	return cache.DistributionConfig{
-		MinTTL:     time.Duration(dcb.MinTTL) * time.Second,
-		DefaultTTL: time.Duration(dcb.DefaultTTL) * time.Second,
-		MaxTTL:     time.Duration(dcb.MaxTTL) * time.Second,
+		MinTTL:     time.Duration(behavior.MinTTL) * time.Second,
+		DefaultTTL: time.Duration(behavior.DefaultTTL) * time.Second,
+		MaxTTL:     time.Duration(behavior.MaxTTL) * time.Second,
 	}, true
 }
 
+// resolveBehavior picks the cache behaviour for a request path the way
+// CloudFront does: the first ordered behaviour whose PathPattern matches, in
+// list order, otherwise the default behaviour (nil when the distribution has
+// none). path is the request path without its leading slash.
+func resolveBehavior(dist *Distribution, path string) *DefaultCacheBehavior {
+	if dist == nil || dist.DistributionConfig == nil {
+		return nil
+	}
+
+	if behaviors := dist.DistributionConfig.CacheBehaviors; behaviors != nil {
+		for i := range behaviors.Items {
+			if matchPathPattern(behaviors.Items[i].PathPattern, path) {
+				return &behaviors.Items[i].DefaultCacheBehavior
+			}
+		}
+	}
+
+	return dist.DistributionConfig.DefaultCacheBehavior
+}
+
+// matchPathPattern applies a CloudFront path pattern to a request path: `*`
+// matches zero or more characters (including `/`), `?` exactly one, the
+// comparison is case-sensitive, a leading `/` on the pattern is optional and
+// the query string is never part of the path.
+func matchPathPattern(pattern, path string) bool {
+	var expr strings.Builder
+
+	expr.WriteString("^")
+
+	for _, r := range strings.TrimPrefix(pattern, "/") {
+		switch r {
+		case '*':
+			expr.WriteString(".*")
+		case '?':
+			expr.WriteString(".")
+		default:
+			expr.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+
+	expr.WriteString("$")
+
+	re, err := regexp.Compile(expr.String())
+	if err != nil {
+		return false
+	}
+
+	return re.MatchString(path)
+}
+
 // edgeOriginURL builds the upstream URL for the request, choosing the
-// origin pinned by `DefaultCacheBehavior.TargetOriginID` and falling
+// origin pinned by the matched behaviour's TargetOriginID and falling
 // back to the first registered origin when the ID doesn't resolve.
 //
 // Two origin shapes are honoured:
@@ -634,8 +688,8 @@ func edgeCacheConfig(dist *Distribution) (cache.DistributionConfig, bool) {
 //     the bucket name and target kumo's own S3 service in path-style
 //     so the proxy stays inside this kumo (no real AWS round-trip).
 //     The S3 base URL is kumo's own base URL (see localBackendURL).
-func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
-	o, ok := selectOrigin(dist)
+func edgeOriginURL(dist *Distribution, behavior *DefaultCacheBehavior, path, rawQuery string) (string, bool) {
+	o, ok := selectOrigin(dist, behavior)
 	if !ok {
 		return "", false
 	}
@@ -662,10 +716,9 @@ func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
 	return full, true
 }
 
-// selectOrigin returns the origin pinned by the distribution's
-// DefaultCacheBehavior.TargetOriginID, falling back to the first
-// origin when the ID doesn't match.
-func selectOrigin(dist *Distribution) (Origin, bool) {
+// selectOrigin returns the origin pinned by the matched behaviour's
+// TargetOriginID, falling back to the first origin when the ID doesn't match.
+func selectOrigin(dist *Distribution, behavior *DefaultCacheBehavior) (Origin, bool) {
 	if dist.DistributionConfig == nil || dist.DistributionConfig.Origins == nil {
 		return Origin{}, false
 	}
@@ -675,9 +728,9 @@ func selectOrigin(dist *Distribution) (Origin, bool) {
 		return Origin{}, false
 	}
 
-	if dcb := dist.DistributionConfig.DefaultCacheBehavior; dcb != nil && dcb.TargetOriginID != "" {
+	if behavior != nil && behavior.TargetOriginID != "" {
 		for _, o := range origins {
-			if o.ID == dcb.TargetOriginID {
+			if o.ID == behavior.TargetOriginID {
 				return o, true
 			}
 		}

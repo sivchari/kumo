@@ -268,7 +268,7 @@ func handleStorageError(w http.ResponseWriter, err error) {
 		status := http.StatusBadRequest
 
 		switch cfErr.Code {
-		case errDistributionNotFound, errNoSuchInvalidation:
+		case errDistributionNotFound, errNoSuchInvalidation, errNoSuchOrigin:
 			status = http.StatusNotFound
 		case errPreconditionFailed, errInvalidIfMatchVersion:
 			status = http.StatusPreconditionFailed
@@ -321,6 +321,7 @@ func buildDistributionConfigXML(config *DistributionConfig) *DistributionConfigX
 
 	result.Origins = buildOriginsXML(config.Origins)
 	result.DefaultCacheBehavior = buildDefaultCacheBehaviorXML(config.DefaultCacheBehavior)
+	result.CacheBehaviors = buildCacheBehaviorsXML(config.CacheBehaviors)
 	result.Aliases = buildAliasesConfigXML(config.Aliases)
 	result.ViewerCertificate = buildViewerCertificateConfigXML(config.ViewerCertificate)
 
@@ -398,19 +399,31 @@ func buildDefaultCacheBehaviorXML(dcb *DefaultCacheBehavior) *DefaultCacheBehavi
 	}
 
 	result := &DefaultCacheBehaviorXML{
-		TargetOriginID:       dcb.TargetOriginID,
-		ViewerProtocolPolicy: dcb.ViewerProtocolPolicy,
-		MinTTL:               dcb.MinTTL,
-		DefaultTTL:           dcb.DefaultTTL,
-		MaxTTL:               dcb.MaxTTL,
-		Compress:             dcb.Compress,
-		CachePolicyID:        dcb.CachePolicyID,
+		TargetOriginID:          dcb.TargetOriginID,
+		ViewerProtocolPolicy:    dcb.ViewerProtocolPolicy,
+		MinTTL:                  dcb.MinTTL,
+		DefaultTTL:              dcb.DefaultTTL,
+		MaxTTL:                  dcb.MaxTTL,
+		Compress:                dcb.Compress,
+		SmoothStreaming:         dcb.SmoothStreaming,
+		CachePolicyID:           dcb.CachePolicyID,
+		OriginRequestPolicyID:   dcb.OriginRequestPolicyID,
+		ResponseHeadersPolicyID: dcb.ResponseHeadersPolicyID,
+		FieldLevelEncryptionID:  dcb.FieldLevelEncryptionID,
+		RealtimeLogConfigArn:    dcb.RealtimeLogConfigArn,
 	}
 
 	if dcb.AllowedMethods != nil {
 		result.AllowedMethods = &AllowedMethodsXML{
 			Quantity: dcb.AllowedMethods.Quantity,
 			Items:    dcb.AllowedMethods.Items,
+		}
+
+		if dcb.CachedMethods != nil {
+			result.AllowedMethods.CachedMethods = &CachedMethodsXML{
+				Quantity: dcb.CachedMethods.Quantity,
+				Items:    dcb.CachedMethods.Items,
+			}
 		}
 	}
 
@@ -428,12 +441,7 @@ func buildForwardedValuesXML(fv *ForwardedValues, result *DefaultCacheBehaviorXM
 
 	result.ForwardedValues = &ForwardedValuesXML{
 		QueryString: fv.QueryString,
-	}
-
-	if fv.Cookies != nil {
-		result.ForwardedValues.Cookies = &CookiesXML{
-			Forward: fv.Cookies.Forward,
-		}
+		Cookies:     buildCookiesXML(fv.Cookies),
 	}
 
 	if fv.Headers != nil {
@@ -442,6 +450,51 @@ func buildForwardedValuesXML(fv *ForwardedValues, result *DefaultCacheBehaviorXM
 			Items:    fv.Headers.Items,
 		}
 	}
+
+	if fv.QueryStringCacheKeys != nil {
+		result.ForwardedValues.QueryStringCacheKeys = &QueryStringCacheKeysXML{
+			Quantity: fv.QueryStringCacheKeys.Quantity,
+			Items:    fv.QueryStringCacheKeys.Items,
+		}
+	}
+}
+
+func buildCookiesXML(cookies *CookiePreference) *CookiesXML {
+	if cookies == nil {
+		return nil
+	}
+
+	result := &CookiesXML{Forward: cookies.Forward}
+
+	if cookies.WhitelistedNames != nil {
+		result.WhitelistedNames = &CookieNamesXML{
+			Quantity: cookies.WhitelistedNames.Quantity,
+			Items:    cookies.WhitelistedNames.Items,
+		}
+	}
+
+	return result
+}
+
+// buildCacheBehaviorsXML always emits the element, as CloudFront does, with
+// Quantity 0 when the distribution has no ordered behaviors.
+func buildCacheBehaviorsXML(behaviors *CacheBehaviors) *CacheBehaviorsXML {
+	result := &CacheBehaviorsXML{}
+	if behaviors == nil {
+		return result
+	}
+
+	for i := range behaviors.Items {
+		item := &behaviors.Items[i]
+		result.Items = append(result.Items, CacheBehaviorXML{
+			PathPattern:             item.PathPattern,
+			DefaultCacheBehaviorXML: *buildDefaultCacheBehaviorXML(&item.DefaultCacheBehavior),
+		})
+	}
+
+	result.Quantity = len(result.Items)
+
+	return result
 }
 
 func buildTrustedSignersXML(ts *TrustedSigners, result *DefaultCacheBehaviorXML) {
@@ -537,7 +590,7 @@ func buildDistributionSummaryXML(d *Distribution) DistributionSummaryXML {
 		PriceClass:           d.DistributionConfig.PriceClass,
 		HTTPVersion:          d.DistributionConfig.HTTPVersion,
 		IsIPV6Enabled:        d.DistributionConfig.IsIPV6Enabled,
-		CacheBehaviors:       &CacheBehaviorsXML{Quantity: 0},
+		CacheBehaviors:       buildCacheBehaviorsXML(d.DistributionConfig.CacheBehaviors),
 		CustomErrorResponses: &CustomErrorResponsesXML{Quantity: 0},
 		Restrictions: &RestrictionsXML{
 			GeoRestriction: &GeoRestrictionXML{

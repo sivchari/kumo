@@ -137,12 +137,12 @@ func cookieValue(r *http.Request, name string) string {
 }
 
 // checkEdgeSigning enforces signed cookie / signed URL verification
-// when the distribution's DefaultCacheBehavior has TrustedKeyGroups
-// enabled. Returns true when the request may proceed (either because
-// signing is not required or the credentials are valid), false when an
-// error response has already been written to w.
-func (s *Service) checkEdgeSigning(w http.ResponseWriter, r *http.Request, dist *Distribution) bool {
-	if !requiresSigning(dist) {
+// when the matched cache behaviour has TrustedKeyGroups enabled. Returns
+// true when the request may proceed (either because signing is not
+// required or the credentials are valid), false when an error response
+// has already been written to w.
+func (s *Service) checkEdgeSigning(w http.ResponseWriter, r *http.Request, behavior *DefaultCacheBehavior) bool {
+	if !requiresSigning(behavior) {
 		return true
 	}
 
@@ -153,7 +153,7 @@ func (s *Service) checkEdgeSigning(w http.ResponseWriter, r *http.Request, dist 
 		return false
 	}
 
-	if err := s.verifySigned(r, dist, creds, time.Now()); err != nil {
+	if err := s.verifySigned(r, behavior, creds, time.Now()); err != nil {
 		http.Error(w, "access denied: "+err.Error(), http.StatusForbidden)
 
 		return false
@@ -162,11 +162,11 @@ func (s *Service) checkEdgeSigning(w http.ResponseWriter, r *http.Request, dist 
 	return true
 }
 
-// verifySigned checks the signed credentials against the distribution's
+// verifySigned checks the signed credentials against the behaviour's
 // trusted key groups. Returns nil on success, or an error describing
 // the failure.
-func (s *Service) verifySigned(r *http.Request, dist *Distribution, creds *signedCredentials, now time.Time) error {
-	pubKey, err := s.resolvePublicKey(r, dist, creds.KeyPairID)
+func (s *Service) verifySigned(r *http.Request, behavior *DefaultCacheBehavior, creds *signedCredentials, now time.Time) error {
+	pubKey, err := s.resolvePublicKey(r, behavior, creds.KeyPairID)
 	if err != nil {
 		return err
 	}
@@ -189,14 +189,13 @@ func (s *Service) verifySigned(r *http.Request, dist *Distribution, creds *signe
 }
 
 // resolvePublicKey finds the PEM-encoded public key matching keyPairID
-// through the distribution's TrustedKeyGroups.
-func (s *Service) resolvePublicKey(r *http.Request, dist *Distribution, keyPairID string) (*rsa.PublicKey, error) {
-	dcb := dist.DistributionConfig.DefaultCacheBehavior
-	if dcb == nil || dcb.TrustedKeyGroups == nil || !dcb.TrustedKeyGroups.Enabled {
+// through the behaviour's TrustedKeyGroups.
+func (s *Service) resolvePublicKey(r *http.Request, behavior *DefaultCacheBehavior, keyPairID string) (*rsa.PublicKey, error) {
+	if behavior == nil || behavior.TrustedKeyGroups == nil || !behavior.TrustedKeyGroups.Enabled {
 		return nil, fmt.Errorf("distribution has no trusted key groups")
 	}
 
-	for _, kgID := range dcb.TrustedKeyGroups.Items {
+	for _, kgID := range behavior.TrustedKeyGroups.Items {
 		kg, err := s.storage.GetKeyGroup(r.Context(), kgID)
 		if err != nil {
 			continue
@@ -429,17 +428,8 @@ func extractClientIP(r *http.Request) string {
 	return host
 }
 
-// requiresSigning reports whether the distribution requires signed
-// access (via TrustedKeyGroups on the DefaultCacheBehavior).
-func requiresSigning(dist *Distribution) bool {
-	if dist == nil || dist.DistributionConfig == nil {
-		return false
-	}
-
-	dcb := dist.DistributionConfig.DefaultCacheBehavior
-	if dcb == nil {
-		return false
-	}
-
-	return dcb.TrustedKeyGroups != nil && dcb.TrustedKeyGroups.Enabled
+// requiresSigning reports whether the behaviour restricts viewer access
+// through TrustedKeyGroups.
+func requiresSigning(behavior *DefaultCacheBehavior) bool {
+	return behavior != nil && behavior.TrustedKeyGroups != nil && behavior.TrustedKeyGroups.Enabled
 }

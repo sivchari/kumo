@@ -15,7 +15,10 @@
     "DistributionConfig": {
       "Aliases": null,
       "AnycastIpListId": null,
-      "CacheBehaviors": null,
+      "CacheBehaviors": {
+        "Quantity": 0,
+        "Items": []
+      },
       "CacheTagConfig": null,
       "CallerReference": "test-cli-cloudfront-create-distribution",
       "Comment": "CLI test distribution",
