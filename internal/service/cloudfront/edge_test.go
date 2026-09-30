@@ -310,7 +310,7 @@ func TestS3BucketFromDomain(t *testing.T) {
 		want   string
 	}{
 		{"mybucket.s3.amazonaws.com", testBucketName},
-		{"mybucket.s3.us-east-1.amazonaws.com", testBucketName},
+		{oacTestS3Domain, testBucketName},
 		{"mybucket.s3-us-west-2.amazonaws.com", testBucketName},
 		{"mybucket.s3.dualstack.us-east-1.amazonaws.com", testBucketName},
 		{"example.com", ""},
@@ -356,7 +356,7 @@ func TestEdge_S3Origin(t *testing.T) {
 			Items: &OriginList{
 				Origin: []OriginXML{{
 					ID:             testOriginIDS3,
-					DomainName:     "mybucket.s3.us-east-1.amazonaws.com",
+					DomainName:     oacTestS3Domain,
 					S3OriginConfig: &S3OriginConfigXML{OriginAccessIdentity: ""},
 				}},
 			},

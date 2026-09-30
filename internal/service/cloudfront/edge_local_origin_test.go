@@ -9,6 +9,7 @@ import (
 const (
 	testLambdaURLOrigin  = "abc123.lambda-url.us-east-1.on.aws"
 	testExecuteAPIOrigin = "api123.execute-api.us-east-1.amazonaws.com"
+	testLambdaURLLocal   = "abc123.lambda-url.localhost"
 	backendBody          = "served-by-local-backend"
 )
 
@@ -17,7 +18,7 @@ func TestKumoHostedOrigin(t *testing.T) {
 
 	cases := map[string]bool{
 		testLambdaURLOrigin:                      true,
-		"abc123.lambda-url.localhost":            true,
+		testLambdaURLLocal:                       true,
 		"abc123.lambda-url.localhost:4566":       true,
 		"ABC123.Lambda-URL.us-east-1.on.aws":     true,
 		testExecuteAPIOrigin:                     true,

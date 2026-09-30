@@ -72,7 +72,7 @@ func TestOriginDomainSupportsOAC(t *testing.T) {
 		{oacOriginTypeS3, oacTestLambdaDomain, false},
 		{oacOriginTypeS3, oacTestPlainDomain, false},
 		{oacOriginTypeLambda, oacTestLambdaDomain, true},
-		{oacOriginTypeLambda, "abc123.lambda-url.localhost", true},
+		{oacOriginTypeLambda, testLambdaURLLocal, true},
 		{oacOriginTypeLambda, oacTestS3Domain, false},
 		{oacOriginTypeLambda, "app.lambda-url.example.com", false},
 		{oacOriginTypeMediaStore, oacTestPlainDomain, true},
