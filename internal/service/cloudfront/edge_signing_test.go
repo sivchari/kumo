@@ -500,7 +500,7 @@ func TestRequiresSigning(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := requiresSigning(tt.dist)
+			got := requiresSigning(resolveBehavior(tt.dist, ""))
 			if got != tt.want {
 				t.Errorf("requiresSigning() = %v, want %v", got, tt.want)
 			}
@@ -638,7 +638,7 @@ func TestCheckEdgeSigning_NoTrustedKeyGroups(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := newTestRequest(t, "/kumo/cdn/E1/file.txt")
 
-	if !svc.checkEdgeSigning(rec, req, dist) {
+	if !svc.checkEdgeSigning(rec, req, resolveBehavior(dist, "")) {
 		t.Fatal("expected pass-through when signing is not required")
 	}
 }
@@ -660,7 +660,7 @@ func TestCheckEdgeSigning_MissingCredentials(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := newTestRequest(t, "/kumo/cdn/E1/file.txt")
 
-	if svc.checkEdgeSigning(rec, req, dist) {
+	if svc.checkEdgeSigning(rec, req, resolveBehavior(dist, "")) {
 		t.Fatal("expected rejection when credentials are missing")
 	}
 
@@ -747,7 +747,7 @@ func TestCheckEdgeSigning_SHA256Cookie(t *testing.T) {
 	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, hashAlgorithmSHA256)
 
 	rec := httptest.NewRecorder()
-	if !svc.checkEdgeSigning(rec, req, dist) {
+	if !svc.checkEdgeSigning(rec, req, resolveBehavior(dist, "")) {
 		t.Fatalf("expected SHA256-signed request to pass, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -766,7 +766,7 @@ func TestCheckEdgeSigning_SHA1CookieBackwardCompat(t *testing.T) {
 	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, "")
 
 	rec := httptest.NewRecorder()
-	if !svc.checkEdgeSigning(rec, req, dist) {
+	if !svc.checkEdgeSigning(rec, req, resolveBehavior(dist, "")) {
 		t.Fatalf("expected SHA1-signed request to pass, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -788,7 +788,7 @@ func TestCheckEdgeSigning_SHA256SignatureMismatch(t *testing.T) {
 	req := signedCookieRequest(t, validCustomPolicy, sig, keyID, hashAlgorithmSHA256)
 
 	rec := httptest.NewRecorder()
-	if svc.checkEdgeSigning(rec, req, dist) {
+	if svc.checkEdgeSigning(rec, req, resolveBehavior(dist, "")) {
 		t.Fatal("expected rejection for mismatched SHA256 signature")
 	}
 

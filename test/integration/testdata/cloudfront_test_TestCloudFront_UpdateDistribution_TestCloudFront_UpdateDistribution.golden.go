@@ -50,7 +50,10 @@
       },
       "Aliases": null,
       "AnycastIpListId": null,
-      "CacheBehaviors": null,
+      "CacheBehaviors": {
+        "Quantity": 0,
+        "Items": []
+      },
       "ConnectionFunctionAssociation": null,
       "ConnectionMode": "",
       "ContinuousDeploymentPolicyId": null,

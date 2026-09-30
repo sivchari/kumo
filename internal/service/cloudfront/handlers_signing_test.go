@@ -115,6 +115,47 @@ func TestKeyGroup_DeleteWhileReferencedByDistributionFails(t *testing.T) {
 	}
 }
 
+// TestKeyGroup_DeleteWhileReferencedByOrderedBehaviorFails — a key group
+// trusted only by an ordered cache behavior is just as much in use.
+func TestKeyGroup_DeleteWhileReferencedByOrderedBehaviorFails(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store)
+	ctx := context.Background()
+
+	pk, err := store.CreatePublicKey(ctx, &PublicKeyConfig{CallerReference: "r-ordered", Name: "k-ordered", EncodedKey: samplePEM})
+	if err != nil {
+		t.Fatalf("CreatePublicKey: %v", err)
+	}
+
+	group, err := store.CreateKeyGroup(ctx, &KeyGroupConfig{Name: "g-ordered", Items: []string{pk.ID}})
+	if err != nil {
+		t.Fatalf("CreateKeyGroup: %v", err)
+	}
+
+	store.Distributions["DIST456"] = &Distribution{
+		ID: "DIST456",
+		DistributionConfig: &DistributionConfig{
+			DefaultCacheBehavior: &DefaultCacheBehavior{},
+			CacheBehaviors: &CacheBehaviors{Quantity: 1, Items: []CacheBehavior{{
+				PathPattern:          "/private/*",
+				DefaultCacheBehavior: DefaultCacheBehavior{TrustedKeyGroups: &TrustedKeyGroups{Enabled: true, Quantity: 1, Items: []string{group.ID}}},
+			}}},
+		},
+	}
+
+	delReq := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/2020-05-31/key-group/"+group.ID, http.NoBody)
+	delReq.SetPathValue("id", group.ID)
+
+	delW := httptest.NewRecorder()
+	svc.DeleteKeyGroup(delW, delReq)
+
+	if delW.Code != http.StatusConflict {
+		t.Fatalf("DeleteKeyGroup while referenced by an ordered behavior: status %d, want 409", delW.Code)
+	}
+}
+
 func TestSigningReadMethodsDoNotInitializeNilMaps(t *testing.T) {
 	t.Parallel()
 
