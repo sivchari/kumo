@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/vhost"
 )
 
 // localhostHost is the loopback host label used by kumo virtual-hosted URLs.
@@ -300,83 +302,15 @@ func (r *Router) serveFunctionURL(w http.ResponseWriter, req *http.Request, urlI
 }
 
 // extractFunctionURLHost recognises Lambda function URL virtual-hosted hosts
-// and returns the lower-cased url id. Recognised shapes (the kumo-local form
-// resolves to loopback):
-//
-//	{urlId}.lambda-url.localhost(:port)
-//	{urlId}.lambda-url.{region}.on.aws
+// and returns the lower-cased url id (see vhost.FunctionURLID).
 func extractFunctionURLHost(host string) (string, bool) {
-	host = strings.ToLower(stripHostPort(host))
-
-	const marker = ".lambda-url."
-
-	urlID, rest, found := strings.Cut(host, marker)
-	if !found || urlID == "" || strings.Contains(urlID, ".") {
-		return "", false
-	}
-
-	if rest == localhostHost {
-		return urlID, true
-	}
-
-	region, domain, ok := strings.Cut(rest, ".")
-	if ok && region != "" && !strings.Contains(region, ".") && domain == "on.aws" {
-		return urlID, true
-	}
-
-	return "", false
-}
-
-// stripHostPort removes an optional :port from a Host header value, leaving
-// bracketed IPv6 literals intact.
-func stripHostPort(host string) string {
-	if strings.HasSuffix(host, "]") {
-		return host
-	}
-
-	if idx := strings.LastIndex(host, ":"); idx >= 0 && !strings.Contains(host[idx:], "]") {
-		return host[:idx]
-	}
-
-	return host
+	return vhost.FunctionURLID(host)
 }
 
 // extractExecuteAPIHost recognises API Gateway execute-api virtual-hosted
-// hosts and returns the API id. Empty/false means it is not such a host.
-//
-// Recognised shapes (the kumo-local form resolves to loopback):
-//
-//	{apiId}.execute-api.localhost(:port)
-//	{apiId}.execute-api.{region}.amazonaws.com
+// hosts and returns the API id (see vhost.ExecuteAPIID).
 func extractExecuteAPIHost(host string) (string, bool) {
-	if host == "" {
-		return "", false
-	}
-
-	if idx := strings.LastIndex(host, ":"); idx >= 0 {
-		host = host[:idx]
-	}
-
-	const marker = ".execute-api."
-
-	i := strings.Index(host, marker)
-	if i <= 0 {
-		return "", false
-	}
-
-	apiID := host[:i]
-	rest := host[i+len(marker):]
-
-	// The API id is a single label.
-	if apiID == "" || strings.Contains(apiID, ".") {
-		return "", false
-	}
-
-	if rest == localhostHost || strings.HasSuffix(rest, ".amazonaws.com") {
-		return apiID, true
-	}
-
-	return "", false
+	return vhost.ExecuteAPIID(host)
 }
 
 // extractBucketFromHost recognises AWS S3 virtual-hosted-style hosts

@@ -7,19 +7,25 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sivchari/kumo/internal/service/cloudfront/cache"
+	"github.com/sivchari/kumo/internal/service/execapi"
+	"github.com/sivchari/kumo/internal/vhost"
 )
 
 const maxEdgeCacheEntries = 1024
 
 // originPolicyHTTP is the CustomOriginConfig.OriginProtocolPolicy value that
 // forces plain HTTP to the origin, regardless of the viewer's own scheme.
-const originPolicyHTTP = "http-only"
+const (
+	originPolicyHTTP  = "http-only"
+	originPolicyHTTPS = "https-only"
+)
 
 // cacheEntry is one cached response variant for a distribution.
 type cacheEntry struct {
@@ -272,24 +278,27 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.checkEdgeSigning(w, r, dist) {
+	// The matched cache behaviour drives signed-URL enforcement, the origin
+	// and the TTLs below. The cache key stays path-based: the path alone
+	// selects the behaviour, so entries can never cross behaviours.
+	behavior := resolveBehavior(dist, r.PathValue("path"))
+
+	if !s.checkEdgeSigning(w, r, behavior) {
 		return
 	}
 
-	originURL, ok := edgeOriginURL(dist, r.PathValue("path"), r.URL.RawQuery)
+	target, ok := s.resolveUpstream(w, r, dist, behavior)
 	if !ok {
-		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
-
 		return
 	}
 
 	if !isCacheableMethod(r.Method) {
-		s.passthrough(w, r, originURL)
+		s.passthrough(w, r, target)
 
 		return
 	}
 
-	cfg, ok := edgeCacheConfig(dist)
+	cfg, ok := edgeCacheConfig(behavior)
 	if !ok {
 		http.Error(w, "distribution missing DefaultCacheBehavior", http.StatusServiceUnavailable)
 
@@ -300,7 +309,7 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 	base := cache.Key(r, nil)
 
 	// Request `no-store` bypasses the cache on both serve and store.
-	if !clientCC.NoStore && s.tryServeFromCache(w, r, distID, base, originURL, cfg, clientCC) {
+	if !clientCC.NoStore && s.tryServeFromCache(w, r, distID, base, target, cfg, clientCC) {
 		return
 	}
 
@@ -310,7 +319,7 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstream, err := fetchOrigin(originURL, r)
+	upstream, err := fetchOrigin(target, r)
 	if err != nil {
 		http.Error(w, "origin fetch failed: "+err.Error(), http.StatusBadGateway)
 
@@ -328,7 +337,7 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 // triggers a revalidation, or reports back that the caller must do a
 // fresh origin fetch. Returns true when the response has already been
 // written.
-func (s *Service) tryServeFromCache(w http.ResponseWriter, r *http.Request, distID, base, originURL string, cfg cache.DistributionConfig, clientCC cache.RequestDirectives) bool {
+func (s *Service) tryServeFromCache(w http.ResponseWriter, r *http.Request, distID, base string, target upstreamTarget, cfg cache.DistributionConfig, clientCC cache.RequestDirectives) bool {
 	entry, hit := s.edgeCache.lookup(distID, base, r)
 	if !hit {
 		return false
@@ -350,14 +359,14 @@ func (s *Service) tryServeFromCache(w http.ResponseWriter, r *http.Request, dist
 	// revalidation refreshes the cache for the next request.
 	staleness := age - entry.TTL
 	if staleness > 0 && staleness <= entry.StaleWhileRevalidate && !serverForcesRevalidate && !clientCC.NoCache {
-		s.kickBackgroundRevalidate(distID, base, r, entry, originURL, cfg)
+		s.kickBackgroundRevalidate(distID, base, r, entry, target, cfg)
 		serveFromCache(w, r, entry, age)
 
 		return true
 	}
 
 	if clientDecision.Revalidate || serverForcesRevalidate {
-		return s.revalidate(w, r, distID, base, entry, originURL, cfg)
+		return s.revalidate(w, r, distID, base, entry, target, cfg)
 	}
 
 	return false
@@ -368,7 +377,7 @@ func (s *Service) tryServeFromCache(w http.ResponseWriter, r *http.Request, dist
 // same key via a per-entry mutex flag. The current request is served
 // stale by the caller; this goroutine just keeps the cache fresh for
 // the next one.
-func (s *Service) kickBackgroundRevalidate(distID, base string, r *http.Request, entry *cacheEntry, originURL string, cfg cache.DistributionConfig) {
+func (s *Service) kickBackgroundRevalidate(distID, base string, r *http.Request, entry *cacheEntry, target upstreamTarget, cfg cache.DistributionConfig) {
 	entry.revalidateMu.Lock()
 	if entry.revalidating {
 		entry.revalidateMu.Unlock()
@@ -395,7 +404,7 @@ func (s *Service) kickBackgroundRevalidate(distID, base string, r *http.Request,
 			return
 		}
 
-		upstream, err := revalidateOrigin(originURL, cloned, cond)
+		upstream, err := revalidateOrigin(target, cloned, cond)
 		if err != nil {
 			return
 		}
@@ -438,13 +447,13 @@ func serveFromCache(w http.ResponseWriter, r *http.Request, entry *cacheEntry, a
 // when it served a response (either 304-refreshed cache or 200-replaced
 // cache), false when the caller should fall through to a normal miss
 // fetch (e.g. the cached entry has no validators).
-func (s *Service) revalidate(w http.ResponseWriter, r *http.Request, distID, base string, entry *cacheEntry, originURL string, cfg cache.DistributionConfig) bool {
+func (s *Service) revalidate(w http.ResponseWriter, r *http.Request, distID, base string, entry *cacheEntry, target upstreamTarget, cfg cache.DistributionConfig) bool {
 	cond := cache.ConditionalHeaders(entry.Header)
 	if len(cond) == 0 {
 		return false
 	}
 
-	upstream, err := revalidateOrigin(originURL, r, cond)
+	upstream, err := revalidateOrigin(target, r, cond)
 	if err != nil {
 		http.Error(w, "origin revalidate failed: "+err.Error(), http.StatusBadGateway)
 
@@ -587,8 +596,8 @@ func isHopByHopHeader(name string) bool {
 
 // passthrough forwards the request body verbatim, returns the response
 // without touching the cache. Used for PUT / POST / DELETE / PATCH.
-func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, originURL string) {
-	upstream, err := forwardOrigin(originURL, r)
+func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, target upstreamTarget) {
+	upstream, err := forwardOrigin(target, r)
 	if err != nil {
 		http.Error(w, "origin fetch failed: "+err.Error(), http.StatusBadGateway)
 
@@ -598,54 +607,137 @@ func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, originURL 
 	writeUpstream(w, upstream, "Bypass from kumo", 0)
 }
 
-// edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of
-// a Distribution's DefaultCacheBehavior. Returns ok=false when the
-// distribution config isn't filled in (terraform almost always does).
-func edgeCacheConfig(dist *Distribution) (cache.DistributionConfig, bool) {
-	if dist == nil || dist.DistributionConfig == nil || dist.DistributionConfig.DefaultCacheBehavior == nil {
+// edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of the
+// matched cache behaviour. Returns ok=false when the distribution has no
+// behaviour for the request (terraform almost always configures one).
+func edgeCacheConfig(behavior *DefaultCacheBehavior) (cache.DistributionConfig, bool) {
+	if behavior == nil {
 		return cache.DistributionConfig{}, false
 	}
 
-	dcb := dist.DistributionConfig.DefaultCacheBehavior
-
 	return cache.DistributionConfig{
-		MinTTL:     time.Duration(dcb.MinTTL) * time.Second,
-		DefaultTTL: time.Duration(dcb.DefaultTTL) * time.Second,
-		MaxTTL:     time.Duration(dcb.MaxTTL) * time.Second,
+		MinTTL:     time.Duration(behavior.MinTTL) * time.Second,
+		DefaultTTL: time.Duration(behavior.DefaultTTL) * time.Second,
+		MaxTTL:     time.Duration(behavior.MaxTTL) * time.Second,
 	}, true
 }
 
-// edgeOriginURL builds the upstream URL for the request, choosing the
-// origin pinned by `DefaultCacheBehavior.TargetOriginID` and falling
-// back to the first registered origin when the ID doesn't resolve.
+// resolveBehavior picks the cache behaviour for a request path the way
+// CloudFront does: the first ordered behaviour whose PathPattern matches, in
+// list order, otherwise the default behaviour (nil when the distribution has
+// none). path is the request path without its leading slash.
+func resolveBehavior(dist *Distribution, path string) *DefaultCacheBehavior {
+	if dist == nil || dist.DistributionConfig == nil {
+		return nil
+	}
+
+	if behaviors := dist.DistributionConfig.CacheBehaviors; behaviors != nil {
+		for i := range behaviors.Items {
+			if matchPathPattern(behaviors.Items[i].PathPattern, path) {
+				return &behaviors.Items[i].DefaultCacheBehavior
+			}
+		}
+	}
+
+	return dist.DistributionConfig.DefaultCacheBehavior
+}
+
+// matchPathPattern applies a CloudFront path pattern to a request path: `*`
+// matches zero or more characters (including `/`), `?` exactly one, the
+// comparison is case-sensitive, a leading `/` on the pattern is optional and
+// the query string is never part of the path.
+func matchPathPattern(pattern, path string) bool {
+	var expr strings.Builder
+
+	expr.WriteString("^")
+
+	for _, r := range strings.TrimPrefix(pattern, "/") {
+		switch r {
+		case '*':
+			expr.WriteString(".*")
+		case '?':
+			expr.WriteString(".")
+		default:
+			expr.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+
+	expr.WriteString("$")
+
+	re, err := regexp.Compile(expr.String())
+	if err != nil {
+		return false
+	}
+
+	return re.MatchString(path)
+}
+
+// upstreamTarget is where an origin request goes and how the edge signs it.
+type upstreamTarget struct {
+	url     string
+	signing *originSigning
+}
+
+// resolveUpstream picks the origin the matched behaviour points at, builds
+// its URL and decides whether the edge signs the request. A Lambda origin
+// behind an origin access control is reached with the edge's SigV4
+// signature, which needs the viewer's payload hash when there is a body.
+// Returns ok=false after writing the error response.
+func (s *Service) resolveUpstream(w http.ResponseWriter, r *http.Request, dist *Distribution, behavior *DefaultCacheBehavior) (upstreamTarget, bool) {
+	origin, ok := selectOrigin(dist, behavior)
+	if !ok {
+		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
+
+		return upstreamTarget{}, false
+	}
+
+	originURL, ok := edgeOriginURL(&origin, r.PathValue("path"), r.URL.RawQuery)
+	if !ok {
+		http.Error(w, "distribution has no usable origin", http.StatusServiceUnavailable)
+
+		return upstreamTarget{}, false
+	}
+
+	target := upstreamTarget{url: originURL, signing: s.originSigning(r.Context(), &origin, behavior)}
+	if target.signing != nil && target.signing.requiresPayloadHash(r) {
+		writeForbidden(w)
+
+		return upstreamTarget{}, false
+	}
+
+	return target, true
+}
+
+// edgeOriginURL builds the upstream URL for the request on the origin the
+// matched behaviour selected (see selectOrigin).
 //
 // Two origin shapes are honoured:
 //
 //   - **CustomOriginConfig**: arbitrary HTTP(S) origin.
-//     `<scheme>://<DomainName>[:<HTTPPort>]<OriginPath>/<path>`.
+//     `<scheme>://<DomainName>[:<HTTPPort>]<OriginPath>/<path>`. When the
+//     DomainName is a host kumo serves itself (a Lambda function URL or an
+//     execute-api endpoint, see kumoHostedOrigin) the request is sent to
+//     kumo's own listener with that Host header, so no DNS is needed.
 //   - **S3OriginConfig**: an AWS S3 bucket. The DomainName is the
 //     virtual-hosted bucket DNS name (e.g.
 //     `mybucket.s3.us-east-1.amazonaws.com`). At the edge we extract
 //     the bucket name and target kumo's own S3 service in path-style
 //     so the proxy stays inside this kumo (no real AWS round-trip).
-//     The S3 base URL is `KUMO_S3_BACKEND` (default
-//     `http://127.0.0.1:4566`).
-func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
-	o, ok := selectOrigin(dist)
-	if !ok {
-		return "", false
-	}
-
-	var full string
+//     The S3 base URL is kumo's own base URL (see localBackendURL).
+func edgeOriginURL(o *Origin, path, rawQuery string) (string, bool) {
+	var (
+		full string
+		ok   bool
+	)
 
 	switch {
 	case o.S3OriginConfig != nil:
-		full, ok = s3OriginURL(&o, path)
+		full, ok = s3OriginURL(o, path)
 		if !ok {
 			return "", false
 		}
 	case o.CustomOriginConfig != nil:
-		full = customOriginURL(&o, path)
+		full = customOriginURL(o, path)
 	default:
 		// No config block — assume HTTPS to the bare DomainName.
 		full = schemeHTTPS + "://" + o.DomainName + o.OriginPath + "/" + path
@@ -658,10 +750,9 @@ func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
 	return full, true
 }
 
-// selectOrigin returns the origin pinned by the distribution's
-// DefaultCacheBehavior.TargetOriginID, falling back to the first
-// origin when the ID doesn't match.
-func selectOrigin(dist *Distribution) (Origin, bool) {
+// selectOrigin returns the origin pinned by the matched behaviour's
+// TargetOriginID, falling back to the first origin when the ID doesn't match.
+func selectOrigin(dist *Distribution, behavior *DefaultCacheBehavior) (Origin, bool) {
 	if dist.DistributionConfig == nil || dist.DistributionConfig.Origins == nil {
 		return Origin{}, false
 	}
@@ -671,9 +762,9 @@ func selectOrigin(dist *Distribution) (Origin, bool) {
 		return Origin{}, false
 	}
 
-	if dcb := dist.DistributionConfig.DefaultCacheBehavior; dcb != nil && dcb.TargetOriginID != "" {
+	if behavior != nil && behavior.TargetOriginID != "" {
 		for _, o := range origins {
-			if o.ID == dcb.TargetOriginID {
+			if o.ID == behavior.TargetOriginID {
 				return o, true
 			}
 		}
@@ -695,7 +786,7 @@ func customOriginURL(o *Origin, path string) string {
 			if o.CustomOriginConfig.HTTPPort > 0 && o.CustomOriginConfig.HTTPPort != 80 {
 				host = o.DomainName + ":" + strconv.Itoa(o.CustomOriginConfig.HTTPPort)
 			}
-		case "https-only", "match-viewer":
+		case originPolicyHTTPS, "match-viewer":
 			scheme = schemeHTTPS
 		}
 	}
@@ -721,12 +812,49 @@ func s3OriginURL(o *Origin, path string) (string, bool) {
 		return "", false
 	}
 
-	base := os.Getenv("KUMO_S3_BACKEND")
-	if base == "" {
-		base = "http://127.0.0.1:4566"
+	return localBackendURL() + "/" + bucket + o.OriginPath + "/" + path, true
+}
+
+// localBackendURL is kumo's own base URL, used for origins kumo serves itself
+// (S3 buckets, Lambda function URLs, execute-api endpoints). KUMO_S3_BACKEND
+// keeps its historical precedence; otherwise KUMO_HOST / KUMO_PORT decide, as
+// for the other services' self-calls.
+func localBackendURL() string {
+	if base := os.Getenv("KUMO_S3_BACKEND"); base != "" {
+		return strings.TrimRight(base, "/")
 	}
 
-	return strings.TrimRight(base, "/") + "/" + bucket + o.OriginPath + "/" + path, true
+	return execapi.ResolveBaseURL()
+}
+
+// kumoHostedOrigin reports whether a custom origin's domain is a host kumo
+// serves itself: a Lambda function URL (`<url-id>.lambda-url.<...>`) or an
+// execute-api endpoint (`<api-id>.execute-api.<...>`), as recognised by the
+// router. The edge can reach those through kumo's own listener.
+func kumoHostedOrigin(host string) bool {
+	if _, ok := vhost.FunctionURLID(host); ok {
+		return true
+	}
+
+	_, ok := vhost.ExecuteAPIID(host)
+
+	return ok
+}
+
+// redirectToLocalBackend keeps the origin's Host header, as CloudFront does,
+// but connects to kumo's own listener because nothing resolves the origin
+// domain locally.
+func redirectToLocalBackend(req *http.Request, originHost string) error {
+	backend, err := url.Parse(localBackendURL())
+	if err != nil {
+		return fmt.Errorf("parse kumo base URL: %w", err)
+	}
+
+	req.Host = originHost
+	req.URL.Scheme = backend.Scheme
+	req.URL.Host = backend.Host
+
+	return nil
 }
 
 // s3BucketFromDomain extracts the bucket name from a virtual-hosted
@@ -765,13 +893,13 @@ type originResponse struct {
 // fetchOrigin sends a body-less request upstream (GET/HEAD) and
 // returns the buffered response. We need the body twice (once to
 // serve, once to cache), so it's read into memory here.
-func fetchOrigin(target string, r *http.Request) (*originResponse, error) {
+func fetchOrigin(target upstreamTarget, r *http.Request) (*originResponse, error) {
 	return originRequest(target, r, http.NoBody)
 }
 
 // forwardOrigin proxies a non-cacheable request (PUT/POST/DELETE/PATCH)
 // with its body intact. The cache is not consulted.
-func forwardOrigin(target string, r *http.Request) (*originResponse, error) {
+func forwardOrigin(target upstreamTarget, r *http.Request) (*originResponse, error) {
 	return originRequest(target, r, r.Body)
 }
 
@@ -779,7 +907,7 @@ func forwardOrigin(target string, r *http.Request) (*originResponse, error) {
 // conditional headers attached. Used for stale-entry refresh; if the
 // origin returns 304 the cache extends the existing entry, otherwise
 // it replaces it.
-func revalidateOrigin(target string, r *http.Request, conditional http.Header) (*originResponse, error) {
+func revalidateOrigin(target upstreamTarget, r *http.Request, conditional http.Header) (*originResponse, error) {
 	clone := r.Clone(r.Context())
 
 	// Drop client-supplied conditionals so the cache's own validators
@@ -799,8 +927,8 @@ func revalidateOrigin(target string, r *http.Request, conditional http.Header) (
 
 // originRequest is the shared upstream request path used by both
 // fetchOrigin and forwardOrigin.
-func originRequest(target string, r *http.Request, reqBody io.Reader) (*originResponse, error) {
-	parsed, err := url.Parse(target)
+func originRequest(target upstreamTarget, r *http.Request, reqBody io.Reader) (*originResponse, error) {
+	parsed, err := url.Parse(target.url)
 	if err != nil {
 		return nil, fmt.Errorf("parse origin URL: %w", err)
 	}
@@ -808,6 +936,12 @@ func originRequest(target string, r *http.Request, reqBody io.Reader) (*originRe
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, parsed.String(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("build origin request: %w", err)
+	}
+
+	if kumoHostedOrigin(parsed.Host) {
+		if err := redirectToLocalBackend(req, parsed.Host); err != nil {
+			return nil, err
+		}
 	}
 
 	// Forward all request headers except hop-by-hop. CloudFront's
@@ -821,6 +955,12 @@ func originRequest(target string, r *http.Request, reqBody io.Reader) (*originRe
 
 		for _, v := range vs {
 			req.Header.Add(k, v)
+		}
+	}
+
+	if target.signing != nil {
+		if err := target.signing.sign(req, r, reqBody != http.NoBody && r.ContentLength != 0); err != nil {
+			return nil, err
 		}
 	}
 
