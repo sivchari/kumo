@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/sivchari/kumo/internal/service/cloudfront/cache"
+	"github.com/sivchari/kumo/internal/service/execapi"
+	"github.com/sivchari/kumo/internal/vhost"
 )
 
 const maxEdgeCacheEntries = 1024
@@ -622,14 +624,16 @@ func edgeCacheConfig(dist *Distribution) (cache.DistributionConfig, bool) {
 // Two origin shapes are honoured:
 //
 //   - **CustomOriginConfig**: arbitrary HTTP(S) origin.
-//     `<scheme>://<DomainName>[:<HTTPPort>]<OriginPath>/<path>`.
+//     `<scheme>://<DomainName>[:<HTTPPort>]<OriginPath>/<path>`. When the
+//     DomainName is a host kumo serves itself (a Lambda function URL or an
+//     execute-api endpoint, see kumoHostedOrigin) the request is sent to
+//     kumo's own listener with that Host header, so no DNS is needed.
 //   - **S3OriginConfig**: an AWS S3 bucket. The DomainName is the
 //     virtual-hosted bucket DNS name (e.g.
 //     `mybucket.s3.us-east-1.amazonaws.com`). At the edge we extract
 //     the bucket name and target kumo's own S3 service in path-style
 //     so the proxy stays inside this kumo (no real AWS round-trip).
-//     The S3 base URL is `KUMO_S3_BACKEND` (default
-//     `http://127.0.0.1:4566`).
+//     The S3 base URL is kumo's own base URL (see localBackendURL).
 func edgeOriginURL(dist *Distribution, path, rawQuery string) (string, bool) {
 	o, ok := selectOrigin(dist)
 	if !ok {
@@ -721,12 +725,49 @@ func s3OriginURL(o *Origin, path string) (string, bool) {
 		return "", false
 	}
 
-	base := os.Getenv("KUMO_S3_BACKEND")
-	if base == "" {
-		base = "http://127.0.0.1:4566"
+	return localBackendURL() + "/" + bucket + o.OriginPath + "/" + path, true
+}
+
+// localBackendURL is kumo's own base URL, used for origins kumo serves itself
+// (S3 buckets, Lambda function URLs, execute-api endpoints). KUMO_S3_BACKEND
+// keeps its historical precedence; otherwise KUMO_HOST / KUMO_PORT decide, as
+// for the other services' self-calls.
+func localBackendURL() string {
+	if base := os.Getenv("KUMO_S3_BACKEND"); base != "" {
+		return strings.TrimRight(base, "/")
 	}
 
-	return strings.TrimRight(base, "/") + "/" + bucket + o.OriginPath + "/" + path, true
+	return execapi.ResolveBaseURL()
+}
+
+// kumoHostedOrigin reports whether a custom origin's domain is a host kumo
+// serves itself: a Lambda function URL (`<url-id>.lambda-url.<...>`) or an
+// execute-api endpoint (`<api-id>.execute-api.<...>`), as recognised by the
+// router. The edge can reach those through kumo's own listener.
+func kumoHostedOrigin(host string) bool {
+	if _, ok := vhost.FunctionURLID(host); ok {
+		return true
+	}
+
+	_, ok := vhost.ExecuteAPIID(host)
+
+	return ok
+}
+
+// redirectToLocalBackend keeps the origin's Host header, as CloudFront does,
+// but connects to kumo's own listener because nothing resolves the origin
+// domain locally.
+func redirectToLocalBackend(req *http.Request, originHost string) error {
+	backend, err := url.Parse(localBackendURL())
+	if err != nil {
+		return fmt.Errorf("parse kumo base URL: %w", err)
+	}
+
+	req.Host = originHost
+	req.URL.Scheme = backend.Scheme
+	req.URL.Host = backend.Host
+
+	return nil
 }
 
 // s3BucketFromDomain extracts the bucket name from a virtual-hosted
@@ -808,6 +849,12 @@ func originRequest(target string, r *http.Request, reqBody io.Reader) (*originRe
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, parsed.String(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("build origin request: %w", err)
+	}
+
+	if kumoHostedOrigin(parsed.Host) {
+		if err := redirectToLocalBackend(req, parsed.Host); err != nil {
+			return nil, err
+		}
 	}
 
 	// Forward all request headers except hop-by-hop. CloudFront's
