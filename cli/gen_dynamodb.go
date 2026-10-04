@@ -26,6 +26,7 @@ func newDynamoDBCmd() *cobra.Command {
 		newDynamoDBDeleteItemCmd(),
 		newDynamoDBDeleteTableCmd(),
 		newDynamoDBDescribeContinuousBackupsCmd(),
+		newDynamoDBDescribeLimitsCmd(),
 		newDynamoDBDescribeTableCmd(),
 		newDynamoDBDescribeTimeToLiveCmd(),
 		newDynamoDBGetItemCmd(),
@@ -547,6 +548,41 @@ func newDynamoDBDescribeContinuousBackupsCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&tableName, "table-name", "", "Table name")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newDynamoDBDescribeLimitsCmd() *cobra.Command {
+
+	cmd := &cobra.Command{
+		Use:   "describe-limits",
+		Short: "DescribeLimits",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &dynamodb.DescribeLimitsInput{}
+
+			out, err := client.DescribeLimits(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("describe-limits failed: %w", err)
+			}
+
+			if err := writeOutput(out); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
 
 	cmd.Flags().String("region", "", "Region override (ignored)")
 
