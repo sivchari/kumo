@@ -498,6 +498,14 @@ type DescribeTimeToLiveResponse struct {
 	TimeToLiveDescription TimeToLiveDescription `json:"TimeToLiveDescription"`
 }
 
+// DescribeLimitsResponse is the response for DescribeLimits.
+type DescribeLimitsResponse struct {
+	AccountMaxReadCapacityUnits  int64 `json:"AccountMaxReadCapacityUnits"`
+	AccountMaxWriteCapacityUnits int64 `json:"AccountMaxWriteCapacityUnits"`
+	TableMaxReadCapacityUnits    int64 `json:"TableMaxReadCapacityUnits"`
+	TableMaxWriteCapacityUnits   int64 `json:"TableMaxWriteCapacityUnits"`
+}
+
 // TransactWriteItemsRequest is the request for TransactWriteItems.
 type TransactWriteItemsRequest struct {
 	TransactItems               []TransactWriteItem `json:"TransactItems"`

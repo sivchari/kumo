@@ -43,6 +43,29 @@ func newDynamoDBV1Client(t *testing.T) *dynamodbv1.DynamoDB {
 	return dynamodbv1.New(sess)
 }
 
+func TestDynamoDB_DescribeLimits(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+
+	output, err := client.DescribeLimits(ctx, &dynamodb.DescribeLimitsInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if output.AccountMaxReadCapacityUnits == nil || *output.AccountMaxReadCapacityUnits != 80000 {
+		t.Fatalf("unexpected AccountMaxReadCapacityUnits: %v", output.AccountMaxReadCapacityUnits)
+	}
+	if output.AccountMaxWriteCapacityUnits == nil || *output.AccountMaxWriteCapacityUnits != 80000 {
+		t.Fatalf("unexpected AccountMaxWriteCapacityUnits: %v", output.AccountMaxWriteCapacityUnits)
+	}
+	if output.TableMaxReadCapacityUnits == nil || *output.TableMaxReadCapacityUnits != 40000 {
+		t.Fatalf("unexpected TableMaxReadCapacityUnits: %v", output.TableMaxReadCapacityUnits)
+	}
+	if output.TableMaxWriteCapacityUnits == nil || *output.TableMaxWriteCapacityUnits != 40000 {
+		t.Fatalf("unexpected TableMaxWriteCapacityUnits: %v", output.TableMaxWriteCapacityUnits)
+	}
+}
+
 func TestDynamoDB_CreateAndDeleteTable(t *testing.T) {
 	client := newDynamoDBClient(t)
 	ctx := t.Context()

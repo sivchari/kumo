@@ -632,6 +632,16 @@ func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DescribeLimits handles the DescribeLimits action.
+func (s *Service) DescribeLimits(w http.ResponseWriter, _ *http.Request) {
+	writeJSONResponse(w, DescribeLimitsResponse{
+		AccountMaxReadCapacityUnits:  80000,
+		AccountMaxWriteCapacityUnits: 80000,
+		TableMaxReadCapacityUnits:    40000,
+		TableMaxWriteCapacityUnits:   40000,
+	})
+}
+
 // TransactWriteItems handles the TransactWriteItems action.
 func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 	var req TransactWriteItemsRequest
@@ -741,6 +751,7 @@ func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Re
 		"Scan":                      s.Scan,
 		"UpdateTimeToLive":          s.UpdateTimeToLive,
 		"DescribeTimeToLive":        s.DescribeTimeToLive,
+		"DescribeLimits":            s.DescribeLimits,
 		"TransactWriteItems":        s.TransactWriteItems,
 		"TransactGetItems":          s.TransactGetItems,
 		"BatchWriteItem":            s.BatchWriteItem,
