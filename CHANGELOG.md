@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.32.0](https://github.com/sivchari/kumo/compare/v0.31.0...v0.32.0) - 2026-10-05
+- feat(httptest): Support Go 1.27 httptest.NewTestServer by @thomasf in https://github.com/sivchari/kumo/pull/953
+- feat(dynamodb): add DescribeLimits support by @alecoletti in https://github.com/sivchari/kumo/pull/960
+- feat(cloudfront): serve kumo-hosted custom origins in-process by @wakame1367 in https://github.com/sivchari/kumo/pull/955
+- test(dynamodb): verify DescribeLimits with golden files by @sivchari in https://github.com/sivchari/kumo/pull/966
+- feat(cloudfront): support CreateDistributionWithTags and resource tagging by @sivchari in https://github.com/sivchari/kumo/pull/968
+- refactor(cloudfront): extract path pattern matching and validate path patterns by @sivchari in https://github.com/sivchari/kumo/pull/965
+- fix(cloudfront): improve OAC signing fidelity and error surfacing by @sivchari in https://github.com/sivchari/kumo/pull/967
+- fix(cloudfront): always emit AWS-mandatory empty elements in distribution XML by @sivchari in https://github.com/sivchari/kumo/pull/970
+- fix(cloudfront): report distributions as Deployed and invalidations as Completed by @sivchari in https://github.com/sivchari/kumo/pull/971
+- test(cloudfront): add Terraform fixture for ordered cache behaviors by @sivchari in https://github.com/sivchari/kumo/pull/969
+- release v0.32.0 by @sivchari in https://github.com/sivchari/kumo/pull/972
+
 ## [v0.31.0](https://github.com/sivchari/kumo/compare/v0.30.0...v0.31.0) - 2026-09-29
 - fix(s3): enforce POST policy conditions by @wakame1367 in https://github.com/sivchari/kumo/pull/936
 - feat(sns): deliver notifications to Lambda subscriptions by @wakame1367 in https://github.com/sivchari/kumo/pull/938
