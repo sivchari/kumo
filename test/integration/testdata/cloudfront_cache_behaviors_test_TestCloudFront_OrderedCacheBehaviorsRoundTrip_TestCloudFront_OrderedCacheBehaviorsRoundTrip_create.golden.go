@@ -1,29 +1,56 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/E6be5e702-8631",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/E5bf3f1ea-046f",
     "DistributionConfig": {
-      "CallerReference": "test-cf-cache-behaviors-dlsyz1iujhau",
+      "CallerReference": "test-cf-cache-behaviors-dlwpkqszzdts",
       "Comment": "ordered cache behaviors",
       "DefaultCacheBehavior": {
         "TargetOriginId": "assets",
         "ViewerProtocolPolicy": "redirect-to-https",
-        "AllowedMethods": null,
+        "AllowedMethods": {
+          "Items": [
+            "GET",
+            "HEAD"
+          ],
+          "Quantity": 2,
+          "CachedMethods": {
+            "Items": [
+              "GET",
+              "HEAD"
+            ],
+            "Quantity": 2
+          }
+        },
         "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
         "Compress": true,
         "DefaultTTL": null,
         "FieldLevelEncryptionId": null,
         "ForwardedValues": null,
-        "FunctionAssociations": null,
+        "FunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "GrpcConfig": null,
-        "LambdaFunctionAssociations": null,
+        "LambdaFunctionAssociations": {
+          "Quantity": 0,
+          "Items": null
+        },
         "MaxTTL": null,
         "MinTTL": null,
         "OriginRequestPolicyId": null,
         "RealtimeLogConfigArn": null,
         "ResponseHeadersPolicyId": "67f7725c-6f97-4210-82d7-5512b31e9d03",
         "SmoothStreaming": null,
-        "TrustedKeyGroups": null,
-        "TrustedSigners": null
+        "TrustedKeyGroups": {
+          "Enabled": false,
+          "Quantity": 0,
+          "Items": []
+        },
+        "TrustedSigners": {
+          "Enabled": false,
+          "Quantity": 0,
+          "Items": []
+        }
       },
       "Enabled": true,
       "Origins": {
@@ -106,9 +133,15 @@
             "DefaultTTL": null,
             "FieldLevelEncryptionId": null,
             "ForwardedValues": null,
-            "FunctionAssociations": null,
+            "FunctionAssociations": {
+              "Quantity": 0,
+              "Items": null
+            },
             "GrpcConfig": null,
-            "LambdaFunctionAssociations": null,
+            "LambdaFunctionAssociations": {
+              "Quantity": 0,
+              "Items": null
+            },
             "MaxTTL": null,
             "MinTTL": null,
             "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
@@ -130,7 +163,20 @@
             "PathPattern": "/legacy/*",
             "TargetOriginId": "assets",
             "ViewerProtocolPolicy": "allow-all",
-            "AllowedMethods": null,
+            "AllowedMethods": {
+              "Items": [
+                "GET",
+                "HEAD"
+              ],
+              "Quantity": 2,
+              "CachedMethods": {
+                "Items": [
+                  "GET",
+                  "HEAD"
+                ],
+                "Quantity": 2
+              }
+            },
             "CachePolicyId": null,
             "Compress": null,
             "DefaultTTL": 300,
@@ -159,17 +205,31 @@
                 ]
               }
             },
-            "FunctionAssociations": null,
+            "FunctionAssociations": {
+              "Quantity": 0,
+              "Items": null
+            },
             "GrpcConfig": null,
-            "LambdaFunctionAssociations": null,
+            "LambdaFunctionAssociations": {
+              "Quantity": 0,
+              "Items": null
+            },
             "MaxTTL": 3600,
             "MinTTL": null,
             "OriginRequestPolicyId": null,
             "RealtimeLogConfigArn": null,
             "ResponseHeadersPolicyId": null,
             "SmoothStreaming": null,
-            "TrustedKeyGroups": null,
-            "TrustedSigners": null
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0,
+              "Items": []
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0,
+              "Items": []
+            }
           }
         ]
       },
@@ -181,7 +241,10 @@
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
       "Logging": null,
-      "OriginGroups": null,
+      "OriginGroups": {
+        "Quantity": 0,
+        "Items": null
+      },
       "PriceClass": "PriceClass_All",
       "Restrictions": null,
       "Staging": null,
@@ -198,10 +261,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "E6be5e702-8631.cloudfront.net",
-    "Id": "E6be5e702-8631",
+    "DomainName": "E5bf3f1ea-046f.cloudfront.net",
+    "Id": "E5bf3f1ea-046f",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-10-01T06:30:19+09:00",
+    "LastModifiedTime": "2026-10-05T15:59:09+09:00",
     "Status": "InProgress",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -215,7 +278,7 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "E38d78c53-bec5-4b0d-ab48-8d5afe13",
-  "Location": "/2020-05-31/distribution/E6be5e702-8631",
+  "ETag": "Ec986ae0c-6e16-48f6-83c5-1b5afc18",
+  "Location": "/2020-05-31/distribution/E5bf3f1ea-046f",
   "ResultMetadata": {}
 }

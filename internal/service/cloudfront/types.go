@@ -256,6 +256,7 @@ type DistributionConfigXML struct {
 	Aliases              *AliasesXML              `xml:"Aliases,omitempty"`
 	DefaultRootObject    string                   `xml:"DefaultRootObject,omitempty"`
 	Origins              *OriginsXML              `xml:"Origins"`
+	OriginGroups         *OriginGroupsXML         `xml:"OriginGroups,omitempty"`
 	DefaultCacheBehavior *DefaultCacheBehaviorXML `xml:"DefaultCacheBehavior"`
 	CacheBehaviors       *CacheBehaviorsXML       `xml:"CacheBehaviors,omitempty"`
 	Comment              string                   `xml:"Comment"`
@@ -264,6 +265,12 @@ type DistributionConfigXML struct {
 	ViewerCertificate    *ViewerCertificateXML    `xml:"ViewerCertificate,omitempty"`
 	HTTPVersion          string                   `xml:"HttpVersion,omitempty"`
 	IsIPV6Enabled        bool                     `xml:"IsIPV6Enabled,omitempty"`
+}
+
+// OriginGroupsXML represents origin groups in XML format. kumo does not
+// implement origin groups, so only the empty form is emitted.
+type OriginGroupsXML struct {
+	Quantity int `xml:"Quantity"`
 }
 
 // AliasesXML represents aliases in XML format.
@@ -339,6 +346,21 @@ type DefaultCacheBehaviorXML struct {
 	RealtimeLogConfigArn    string               `xml:"RealtimeLogConfigArn,omitempty"`
 	TrustedSigners          *TrustedSignersXML   `xml:"TrustedSigners,omitempty"`
 	TrustedKeyGroups        *TrustedKeyGroupsXML `xml:"TrustedKeyGroups,omitempty"`
+
+	LambdaFunctionAssociations *LambdaFunctionAssociationsXML `xml:"LambdaFunctionAssociations,omitempty"`
+	FunctionAssociations       *FunctionAssociationsXML       `xml:"FunctionAssociations,omitempty"`
+}
+
+// LambdaFunctionAssociationsXML represents Lambda@Edge associations in XML
+// format. kumo does not implement them, so only the empty form is emitted.
+type LambdaFunctionAssociationsXML struct {
+	Quantity int `xml:"Quantity"`
+}
+
+// FunctionAssociationsXML represents CloudFront Function associations in XML
+// format. kumo does not implement them, so only the empty form is emitted.
+type FunctionAssociationsXML struct {
+	Quantity int `xml:"Quantity"`
 }
 
 // AllowedMethodsXML represents allowed methods in XML format.
@@ -576,6 +598,12 @@ type ErrorDetail struct {
 	Code    string `xml:"Code"`
 	Message string `xml:"Message"`
 }
+
+// HTTP methods CloudFront allows and caches when a behavior does not say.
+const (
+	methodGet  = "GET"
+	methodHead = "HEAD"
+)
 
 // CloudFront error codes.
 const (
