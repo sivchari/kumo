@@ -1,7 +1,7 @@
 {
   "Invalidation": {
-    "CreateTime": "2026-03-23T07:45:28Z",
-    "Id": "I8ddf1570-aad9",
+    "CreateTime": "2026-10-05T16:22:06+09:00",
+    "Id": "I405d353e-f21d",
     "InvalidationBatch": {
       "CallerReference": "test-invalidation-1",
       "Paths": {
@@ -11,8 +11,8 @@
         ]
       }
     },
-    "Status": "InProgress"
+    "Status": "Completed"
   },
-  "Location": "/2020-05-31/distribution/Ecef27e4c-06f1/invalidation/I8ddf1570-aad9",
+  "Location": "/2020-05-31/distribution/E4f476787-3d4e/invalidation/I405d353e-f21d",
   "ResultMetadata": {}
 }
