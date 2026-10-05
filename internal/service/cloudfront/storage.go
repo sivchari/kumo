@@ -13,10 +13,15 @@ import (
 	"github.com/sivchari/kumo/internal/storage"
 )
 
-// distributionStatusInProgress is the Distribution/Invalidation Status kumo
-// reports immediately after a mutating call, since real CloudFront's
-// propagation delay isn't modeled.
-const distributionStatusInProgress = "InProgress"
+// kumo reports the terminal Status immediately after a mutating call:
+// real CloudFront's propagation delay isn't modeled, and clients such as
+// the Terraform AWS provider block until a distribution is "Deployed"
+// (its delete path waits unconditionally) and an invalidation is
+// "Completed".
+const (
+	distributionStatusDeployed  = "Deployed"
+	invalidationStatusCompleted = "Completed"
+)
 
 // Storage defines the CloudFront storage interface.
 type Storage interface {
@@ -202,7 +207,7 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 	dist := &Distribution{
 		ID:                     id,
 		ARN:                    fmt.Sprintf("arn:aws:cloudfront::000000000000:distribution/%s", id),
-		Status:                 distributionStatusInProgress,
+		Status:                 distributionStatusDeployed,
 		LastModifiedTime:       now,
 		DomainName:             fmt.Sprintf("%s.cloudfront.net", id),
 		ETag:                   etag,
@@ -309,7 +314,7 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 
 	dist.ETag = generateETag()
 	dist.LastModifiedTime = time.Now()
-	dist.Status = distributionStatusInProgress
+	dist.Status = distributionStatusDeployed
 	dist.DistributionConfig = distConfig
 
 	s.saveLocked()
@@ -447,7 +452,7 @@ func (s *MemoryStorage) CreateInvalidation(_ context.Context, distributionID str
 
 	inv := &Invalidation{
 		ID:         id,
-		Status:     distributionStatusInProgress,
+		Status:     invalidationStatusCompleted,
 		CreateTime: now,
 		InvalidationBatch: &InvalidationBatch{
 			CallerReference: batch.CallerReference,
