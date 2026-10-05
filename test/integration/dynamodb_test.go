@@ -52,18 +52,7 @@ func TestDynamoDB_DescribeLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if output.AccountMaxReadCapacityUnits == nil || *output.AccountMaxReadCapacityUnits != 80000 {
-		t.Fatalf("unexpected AccountMaxReadCapacityUnits: %v", output.AccountMaxReadCapacityUnits)
-	}
-	if output.AccountMaxWriteCapacityUnits == nil || *output.AccountMaxWriteCapacityUnits != 80000 {
-		t.Fatalf("unexpected AccountMaxWriteCapacityUnits: %v", output.AccountMaxWriteCapacityUnits)
-	}
-	if output.TableMaxReadCapacityUnits == nil || *output.TableMaxReadCapacityUnits != 40000 {
-		t.Fatalf("unexpected TableMaxReadCapacityUnits: %v", output.TableMaxReadCapacityUnits)
-	}
-	if output.TableMaxWriteCapacityUnits == nil || *output.TableMaxWriteCapacityUnits != 40000 {
-		t.Fatalf("unexpected TableMaxWriteCapacityUnits: %v", output.TableMaxWriteCapacityUnits)
-	}
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), output)
 }
 
 func TestDynamoDB_CreateAndDeleteTable(t *testing.T) {

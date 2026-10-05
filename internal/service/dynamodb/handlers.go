@@ -12,6 +12,15 @@ import (
 	"github.com/sivchari/kumo/internal/service"
 )
 
+// Default AWS service quotas for provisioned mode, reported by DescribeLimits.
+// See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ServiceQuotas.html
+const (
+	defaultAccountMaxReadCapacityUnits  = 80000
+	defaultAccountMaxWriteCapacityUnits = 80000
+	defaultTableMaxReadCapacityUnits    = 40000
+	defaultTableMaxWriteCapacityUnits   = 40000
+)
+
 // CreateTable handles the CreateTable action.
 func (s *Service) CreateTable(w http.ResponseWriter, r *http.Request) {
 	var req CreateTableRequest
@@ -635,10 +644,10 @@ func (s *Service) DescribeTimeToLive(w http.ResponseWriter, r *http.Request) {
 // DescribeLimits handles the DescribeLimits action.
 func (s *Service) DescribeLimits(w http.ResponseWriter, _ *http.Request) {
 	writeJSONResponse(w, DescribeLimitsResponse{
-		AccountMaxReadCapacityUnits:  80000,
-		AccountMaxWriteCapacityUnits: 80000,
-		TableMaxReadCapacityUnits:    40000,
-		TableMaxWriteCapacityUnits:   40000,
+		AccountMaxReadCapacityUnits:  defaultAccountMaxReadCapacityUnits,
+		AccountMaxWriteCapacityUnits: defaultAccountMaxWriteCapacityUnits,
+		TableMaxReadCapacityUnits:    defaultTableMaxReadCapacityUnits,
+		TableMaxWriteCapacityUnits:   defaultTableMaxWriteCapacityUnits,
 	})
 }
 

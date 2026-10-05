@@ -199,6 +199,11 @@ func TestCLI_DynamoDB_CreateTableAndListTables(t *testing.T) {
 	}
 }
 
+func TestCLI_DynamoDB_DescribeLimits(t *testing.T) {
+	out := runCLI(t, "dynamodb", "describe-limits")
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), out)
+}
+
 func TestCLI_Events_CreateBusAndPutEvents(t *testing.T) {
 	busName := "test-cli-events-bus"
 
