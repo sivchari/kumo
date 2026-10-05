@@ -29,6 +29,11 @@ type Storage interface {
 	GetInvalidation(ctx context.Context, distributionID, invalidationID string) (*Invalidation, error)
 	ListInvalidations(ctx context.Context, distributionID, marker string, maxItems int) ([]*Invalidation, string, error)
 
+	// Tagging, keyed by distribution ARN.
+	TagResource(ctx context.Context, arn string, tags map[string]string) error
+	UntagResource(ctx context.Context, arn string, keys []string) error
+	ListTagsForResource(ctx context.Context, arn string) (map[string]string, error)
+
 	// Signed URL building blocks.
 	CreatePublicKey(ctx context.Context, cfg *PublicKeyConfig) (*PublicKey, error)
 	GetPublicKey(ctx context.Context, id string) (*PublicKey, error)

@@ -17,6 +17,7 @@ type Distribution struct {
 	DistributionConfig     *DistributionConfig
 	ActiveTrustedSigners   *ActiveTrustedSigners
 	ActiveTrustedKeyGroups *ActiveTrustedKeyGroups
+	Tags                   map[string]string
 }
 
 // DistributionConfig represents CloudFront distribution configuration.
@@ -587,4 +588,5 @@ const (
 	errInvalidIfMatchVersion     = "InvalidIfMatchVersion"
 	errNoSuchInvalidation        = "NoSuchInvalidation"
 	errNoSuchOrigin              = "NoSuchOrigin"
+	errNoSuchResource            = "NoSuchResource"
 )

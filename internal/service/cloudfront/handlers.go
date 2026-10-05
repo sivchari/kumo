@@ -16,8 +16,17 @@ const (
 	cloudfrontXmlns = "http://cloudfront.amazonaws.com/doc/2020-05-31/"
 )
 
-// CreateDistribution handles the CreateDistribution operation.
+// CreateDistribution handles the CreateDistribution operation, and delegates
+// to CreateDistributionWithTags when the request carries the WithTags query.
+//
+// The router matches on method and path only, so both operations share this route.
 func (s *Service) CreateDistribution(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Has("WithTags") {
+		s.CreateDistributionWithTags(w, r)
+
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeCloudFrontError(w, errMissingBody, "Request body is missing", http.StatusBadRequest)
@@ -32,11 +41,25 @@ func (s *Service) CreateDistribution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dist, err := s.storage.CreateDistribution(r.Context(), &req)
+	s.createDistribution(w, r, &req, nil)
+}
+
+// createDistribution creates the distribution, stores tags (if any) under its
+// ARN and writes the 201 response shared by both create operations.
+func (s *Service) createDistribution(w http.ResponseWriter, r *http.Request, req *CreateDistributionRequest, tags map[string]string) {
+	dist, err := s.storage.CreateDistribution(r.Context(), req)
 	if err != nil {
 		handleStorageError(w, err)
 
 		return
+	}
+
+	if len(tags) > 0 {
+		if err := s.storage.TagResource(r.Context(), dist.ARN, tags); err != nil {
+			handleStorageError(w, err)
+
+			return
+		}
 	}
 
 	resp := buildDistributionXML(dist)
@@ -268,7 +291,7 @@ func handleStorageError(w http.ResponseWriter, err error) {
 		status := http.StatusBadRequest
 
 		switch cfErr.Code {
-		case errDistributionNotFound, errNoSuchInvalidation, errNoSuchOrigin:
+		case errDistributionNotFound, errNoSuchInvalidation, errNoSuchOrigin, errNoSuchResource:
 			status = http.StatusNotFound
 		case errPreconditionFailed, errInvalidIfMatchVersion:
 			status = http.StatusPreconditionFailed
