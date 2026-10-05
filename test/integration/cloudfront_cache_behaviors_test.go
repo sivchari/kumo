@@ -181,7 +181,35 @@ func TestCloudFront_CacheBehaviorTargetMustExist(t *testing.T) {
 	assertCloudFrontAPIError(t, err, "NoSuchOrigin", http.StatusNotFound)
 }
 
-// TestCloudFront_EdgeRoutesOrderedCacheBehaviors — `/api/*` reaches the api
+func TestCloudFront_CacheBehaviorPathPatternInvalid(t *testing.T) {
+	client := newCloudFrontClient(t)
+
+	for name, patterns := range map[string][]string{
+		"duplicate": {apiPathPattern, apiPathPattern},
+		"empty":     {apiPathPattern, ""},
+	} {
+		items := make([]cloudfronttypes.CacheBehavior, 0, len(patterns))
+		for _, pattern := range patterns {
+			items = append(items, apiCacheBehavior(pattern, "assets"))
+		}
+
+		_, err := client.CreateDistribution(t.Context(), &cloudfront.CreateDistributionInput{DistributionConfig: &cloudfronttypes.DistributionConfig{
+			CallerReference: aws.String("test-cf-" + name + "-pattern-" + strconv.FormatInt(time.Now().UnixNano(), 36)),
+			Comment:         aws.String(name + " path pattern"),
+			Enabled:         aws.Bool(true),
+			Origins:         &cloudfronttypes.Origins{Quantity: aws.Int32(1), Items: []cloudfronttypes.Origin{customOrigin("assets", "assets.example.com")}},
+			DefaultCacheBehavior: &cloudfronttypes.DefaultCacheBehavior{
+				TargetOriginId:       aws.String("assets"),
+				ViewerProtocolPolicy: cloudfronttypes.ViewerProtocolPolicyAllowAll,
+				CachePolicyId:        aws.String(cachingDisabledID),
+			},
+			CacheBehaviors: &cloudfronttypes.CacheBehaviors{Quantity: aws.Int32(int32(len(items))), Items: items},
+		}})
+		assertCloudFrontAPIError(t, err, "InvalidArgument", http.StatusBadRequest)
+	}
+}
+
+// TestCloudFront_EdgeRoutesOrderedCacheBehaviors —`/api/*` reaches the api
 // function URL, everything else the default one, through the edge.
 func TestCloudFront_EdgeRoutesOrderedCacheBehaviors(t *testing.T) {
 	assets := newFunctionURLEcho(t)

@@ -182,6 +182,10 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 		return nil, err
 	}
 
+	if err := validatePathPatterns(distConfig); err != nil {
+		return nil, err
+	}
+
 	if err := s.validateOriginAccessLocked(distConfig); err != nil {
 		return nil, err
 	}
@@ -290,6 +294,10 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 		return nil, err
 	}
 
+	if err := validatePathPatterns(distConfig); err != nil {
+		return nil, err
+	}
+
 	if err := s.validateOriginAccessLocked(distConfig); err != nil {
 		return nil, err
 	}
@@ -338,6 +346,31 @@ func validateTargetOrigins(config *DistributionConfig) error {
 		if !known[behavior.TargetOriginID] {
 			return &Error{Code: errNoSuchOrigin, Message: "No origin exists with the specified Origin Id."}
 		}
+	}
+
+	return nil
+}
+
+// validatePathPatterns rejects ordered behaviors with an empty or duplicated
+// PathPattern, as CloudFront does (InvalidArgument).
+func validatePathPatterns(config *DistributionConfig) error {
+	if config.CacheBehaviors == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(config.CacheBehaviors.Items))
+
+	for i := range config.CacheBehaviors.Items {
+		pattern := config.CacheBehaviors.Items[i].PathPattern
+		if pattern == "" {
+			return &Error{Code: errInvalidArgument, Message: "PathPattern is required for an ordered cache behavior."}
+		}
+
+		if _, dup := seen[pattern]; dup {
+			return &Error{Code: errInvalidArgument, Message: fmt.Sprintf("The path pattern %s is specified more than once.", pattern)}
+		}
+
+		seen[pattern] = struct{}{}
 	}
 
 	return nil

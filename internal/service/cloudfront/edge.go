@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -620,56 +619,6 @@ func edgeCacheConfig(behavior *DefaultCacheBehavior) (cache.DistributionConfig, 
 		DefaultTTL: time.Duration(behavior.DefaultTTL) * time.Second,
 		MaxTTL:     time.Duration(behavior.MaxTTL) * time.Second,
 	}, true
-}
-
-// resolveBehavior picks the cache behaviour for a request path the way
-// CloudFront does: the first ordered behaviour whose PathPattern matches, in
-// list order, otherwise the default behaviour (nil when the distribution has
-// none). path is the request path without its leading slash.
-func resolveBehavior(dist *Distribution, path string) *DefaultCacheBehavior {
-	if dist == nil || dist.DistributionConfig == nil {
-		return nil
-	}
-
-	if behaviors := dist.DistributionConfig.CacheBehaviors; behaviors != nil {
-		for i := range behaviors.Items {
-			if matchPathPattern(behaviors.Items[i].PathPattern, path) {
-				return &behaviors.Items[i].DefaultCacheBehavior
-			}
-		}
-	}
-
-	return dist.DistributionConfig.DefaultCacheBehavior
-}
-
-// matchPathPattern applies a CloudFront path pattern to a request path: `*`
-// matches zero or more characters (including `/`), `?` exactly one, the
-// comparison is case-sensitive, a leading `/` on the pattern is optional and
-// the query string is never part of the path.
-func matchPathPattern(pattern, path string) bool {
-	var expr strings.Builder
-
-	expr.WriteString("^")
-
-	for _, r := range strings.TrimPrefix(pattern, "/") {
-		switch r {
-		case '*':
-			expr.WriteString(".*")
-		case '?':
-			expr.WriteString(".")
-		default:
-			expr.WriteString(regexp.QuoteMeta(string(r)))
-		}
-	}
-
-	expr.WriteString("$")
-
-	re, err := regexp.Compile(expr.String())
-	if err != nil {
-		return false
-	}
-
-	return re.MatchString(path)
 }
 
 // upstreamTarget is where an origin request goes and how the edge signs it.
