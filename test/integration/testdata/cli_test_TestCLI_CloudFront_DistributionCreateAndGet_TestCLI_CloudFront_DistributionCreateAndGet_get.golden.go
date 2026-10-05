@@ -1,6 +1,6 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/Eea728034-b4d7",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/E8ab841bd-1c79",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
       "Items": null,
@@ -16,8 +16,8 @@
       "Aliases": null,
       "AnycastIpListId": null,
       "CacheBehaviors": {
-        "Quantity": 0,
-        "Items": []
+        "Items": [],
+        "Quantity": 0
       },
       "CacheTagConfig": null,
       "CallerReference": "test-cli-cloudfront-create-distribution",
@@ -27,15 +27,34 @@
       "ContinuousDeploymentPolicyId": null,
       "CustomErrorResponses": null,
       "DefaultCacheBehavior": {
-        "AllowedMethods": null,
+        "AllowedMethods": {
+          "CachedMethods": {
+            "Items": [
+              "GET",
+              "HEAD"
+            ],
+            "Quantity": 2
+          },
+          "Items": [
+            "GET",
+            "HEAD"
+          ],
+          "Quantity": 2
+        },
         "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
         "Compress": null,
         "DefaultTTL": null,
         "FieldLevelEncryptionId": null,
         "ForwardedValues": null,
-        "FunctionAssociations": null,
+        "FunctionAssociations": {
+          "Items": null,
+          "Quantity": 0
+        },
         "GrpcConfig": null,
-        "LambdaFunctionAssociations": null,
+        "LambdaFunctionAssociations": {
+          "Items": null,
+          "Quantity": 0
+        },
         "MaxTTL": null,
         "MinTTL": null,
         "OriginRequestPolicyId": null,
@@ -43,8 +62,16 @@
         "ResponseHeadersPolicyId": null,
         "SmoothStreaming": null,
         "TargetOriginId": "myS3Origin",
-        "TrustedKeyGroups": null,
-        "TrustedSigners": null,
+        "TrustedKeyGroups": {
+          "Enabled": false,
+          "Items": [],
+          "Quantity": 0
+        },
+        "TrustedSigners": {
+          "Enabled": false,
+          "Items": [],
+          "Quantity": 0
+        },
         "ViewerProtocolPolicy": "allow-all"
       },
       "DefaultRootObject": null,
@@ -52,7 +79,10 @@
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
       "Logging": null,
-      "OriginGroups": null,
+      "OriginGroups": {
+        "Items": null,
+        "Quantity": 0
+      },
       "Origins": {
         "Items": [
           {
@@ -91,12 +121,12 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "Eea728034-b4d7.cloudfront.net",
-    "Id": "Eea728034-b4d7",
+    "DomainName": "E8ab841bd-1c79.cloudfront.net",
+    "Id": "E8ab841bd-1c79",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-08-06T18:06:55+09:00",
+    "LastModifiedTime": "2026-10-05T16:00:00+09:00",
     "Status": "InProgress"
   },
-  "ETag": "E42557c67-6c26-4e11-bb14-fc3cb426",
+  "ETag": "E7fc63097-67b6-4f38-8eff-0b025e10",
   "ResultMetadata": {}
 }

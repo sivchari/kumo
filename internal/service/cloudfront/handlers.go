@@ -343,6 +343,9 @@ func buildDistributionConfigXML(config *DistributionConfig) *DistributionConfigX
 	}
 
 	result.Origins = buildOriginsXML(config.Origins)
+	// Always emitted, as CloudFront does; the Terraform AWS provider
+	// dereferences OriginGroups.Quantity without a nil check.
+	result.OriginGroups = &OriginGroupsXML{}
 	result.DefaultCacheBehavior = buildDefaultCacheBehaviorXML(config.DefaultCacheBehavior)
 	result.CacheBehaviors = buildCacheBehaviorsXML(config.CacheBehaviors)
 	result.Aliases = buildAliasesConfigXML(config.Aliases)
@@ -421,6 +424,10 @@ func buildDefaultCacheBehaviorXML(dcb *DefaultCacheBehavior) *DefaultCacheBehavi
 		return nil
 	}
 
+	// AllowedMethods (with CachedMethods), TrustedSigners, TrustedKeyGroups,
+	// LambdaFunctionAssociations and FunctionAssociations are emitted even when
+	// empty, as CloudFront does. The Terraform AWS provider dereferences them
+	// without nil checks and panics when they are missing.
 	result := &DefaultCacheBehaviorXML{
 		TargetOriginID:          dcb.TargetOriginID,
 		ViewerProtocolPolicy:    dcb.ViewerProtocolPolicy,
@@ -436,25 +443,46 @@ func buildDefaultCacheBehaviorXML(dcb *DefaultCacheBehavior) *DefaultCacheBehavi
 		RealtimeLogConfigArn:    dcb.RealtimeLogConfigArn,
 	}
 
-	if dcb.AllowedMethods != nil {
-		result.AllowedMethods = &AllowedMethodsXML{
-			Quantity: dcb.AllowedMethods.Quantity,
-			Items:    dcb.AllowedMethods.Items,
-		}
-
-		if dcb.CachedMethods != nil {
-			result.AllowedMethods.CachedMethods = &CachedMethodsXML{
-				Quantity: dcb.CachedMethods.Quantity,
-				Items:    dcb.CachedMethods.Items,
-			}
-		}
-	}
+	result.AllowedMethods = buildAllowedMethodsXML(dcb)
 
 	buildForwardedValuesXML(dcb.ForwardedValues, result)
 	buildTrustedSignersXML(dcb.TrustedSigners, result)
 	buildTrustedKeyGroupsXML(dcb.TrustedKeyGroups, result)
 
+	result.LambdaFunctionAssociations = &LambdaFunctionAssociationsXML{}
+	result.FunctionAssociations = &FunctionAssociationsXML{}
+
 	return result
+}
+
+// buildAllowedMethodsXML returns the behavior's methods, defaulting to GET and
+// HEAD for both allowed and cached methods as CloudFront does.
+func buildAllowedMethodsXML(dcb *DefaultCacheBehavior) *AllowedMethodsXML {
+	allowed, cached := defaultMethods(), defaultMethods()
+
+	result := &AllowedMethodsXML{
+		Quantity:      len(allowed),
+		Items:         allowed,
+		CachedMethods: &CachedMethodsXML{Quantity: len(cached), Items: cached},
+	}
+
+	if dcb.AllowedMethods != nil {
+		result.Quantity = dcb.AllowedMethods.Quantity
+		result.Items = dcb.AllowedMethods.Items
+	}
+
+	if dcb.CachedMethods != nil {
+		result.CachedMethods = &CachedMethodsXML{
+			Quantity: dcb.CachedMethods.Quantity,
+			Items:    dcb.CachedMethods.Items,
+		}
+	}
+
+	return result
+}
+
+func defaultMethods() []string {
+	return []string{methodGet, methodHead}
 }
 
 func buildForwardedValuesXML(fv *ForwardedValues, result *DefaultCacheBehaviorXML) {
@@ -522,6 +550,8 @@ func buildCacheBehaviorsXML(behaviors *CacheBehaviors) *CacheBehaviorsXML {
 
 func buildTrustedSignersXML(ts *TrustedSigners, result *DefaultCacheBehaviorXML) {
 	if ts == nil {
+		result.TrustedSigners = &TrustedSignersXML{}
+
 		return
 	}
 
@@ -534,6 +564,8 @@ func buildTrustedSignersXML(ts *TrustedSigners, result *DefaultCacheBehaviorXML)
 
 func buildTrustedKeyGroupsXML(tkg *TrustedKeyGroups, result *DefaultCacheBehaviorXML) {
 	if tkg == nil {
+		result.TrustedKeyGroups = &TrustedKeyGroupsXML{}
+
 		return
 	}
 
@@ -627,7 +659,7 @@ func buildDistributionSummaryXML(d *Distribution) DistributionSummaryXML {
 
 	summary.Aliases = buildSummaryAliasesXML(d.DistributionConfig.Aliases)
 	summary.Origins = buildSummaryOriginsXML(d.DistributionConfig.Origins)
-	summary.DefaultCacheBehavior = buildSummaryDefaultCacheBehaviorXML(d.DistributionConfig.DefaultCacheBehavior)
+	summary.DefaultCacheBehavior = buildDefaultCacheBehaviorXML(d.DistributionConfig.DefaultCacheBehavior)
 	summary.ViewerCertificate = buildSummaryViewerCertificateXML(d.DistributionConfig.ViewerCertificate)
 
 	return summary
@@ -675,17 +707,6 @@ func buildSummaryOriginsXML(origins *Origins) *OriginsXML {
 	}
 
 	return result
-}
-
-func buildSummaryDefaultCacheBehaviorXML(dcb *DefaultCacheBehavior) *DefaultCacheBehaviorXML {
-	if dcb == nil {
-		return nil
-	}
-
-	return &DefaultCacheBehaviorXML{
-		TargetOriginID:       dcb.TargetOriginID,
-		ViewerProtocolPolicy: dcb.ViewerProtocolPolicy,
-	}
 }
 
 func buildSummaryViewerCertificateXML(vc *ViewerCertificate) *ViewerCertificateXML {
