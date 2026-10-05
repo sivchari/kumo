@@ -2,6 +2,7 @@ package cloudfront
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -17,7 +18,7 @@ const (
 	testBodyHash        = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
 )
 
-var edgeAuthorizationPattern = regexp.MustCompile(`^AWS4-HMAC-SHA256 Credential=` + edgeAccessKeyID + `/\d{8}/us-east-1/lambda/aws4_request, SignedHeaders=[a-z0-9;-]*host[a-z0-9;-]*, Signature=[0-9a-f]{64}$`)
+var edgeAuthorizationPattern = regexp.MustCompile(`^AWS4-HMAC-SHA256 Credential=` + edgeCredentials().AccessKeyID + `/\d{8}/us-east-1/lambda/aws4_request, SignedHeaders=[a-z0-9;-]*host[a-z0-9;-]*, Signature=[0-9a-f]{64}$`)
 
 func TestLambdaURLRegion(t *testing.T) {
 	t.Setenv("AWS_DEFAULT_REGION", "")
@@ -65,37 +66,98 @@ func newSigningStorage(t *testing.T) (*MemoryStorage, map[string]string) {
 	return store, ids
 }
 
+func TestResolveSigning_NotSigned(t *testing.T) {
+	store, ids := newSigningStorage(t)
+	svc := New(store)
+
+	for name, o := range map[string]*Origin{
+		"an origin without an OAC":                     {DomainName: signingLambdaOrigin},
+		"a missing OAC":                                {DomainName: signingLambdaOrigin, OriginAccessControlID: "EMISSING"},
+		"an s3 OAC (kumo's S3 ignores signatures)":     {DomainName: "b.s3.us-east-1.amazonaws.com", OriginAccessControlID: ids[oacOriginTypeS3]},
+		"a lambda OAC whose signing behavior is never": {DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningNever]},
+	} {
+		if signing, err := svc.resolveSigning(t.Context(), o, &DefaultCacheBehavior{}); !errors.Is(err, errNotSigned) || signing != nil {
+			t.Errorf("%s: resolveSigning = %+v, %v; want errNotSigned", name, signing, err)
+		}
+	}
+}
+
 func TestOriginSigningDecision(t *testing.T) {
 	store, ids := newSigningStorage(t)
 	svc := New(store)
 	forwarding := &DefaultCacheBehavior{ForwardedValues: &ForwardedValues{Headers: &Headers{Quantity: 1, Items: []string{"authorization"}}}}
 	plain := &DefaultCacheBehavior{}
 
-	if svc.originSigning(t.Context(), &Origin{DomainName: signingLambdaOrigin}, plain) != nil {
-		t.Error("an origin without an OAC must not be signed")
+	resolve := func(o *Origin, behavior *DefaultCacheBehavior) *originSigning {
+		t.Helper()
+
+		signing, err := svc.resolveSigning(t.Context(), o, behavior)
+		if err != nil {
+			t.Fatalf("resolveSigning: %v", err)
+		}
+
+		return signing
 	}
 
-	if svc.originSigning(t.Context(), &Origin{DomainName: "b.s3.us-east-1.amazonaws.com", OriginAccessControlID: ids[oacOriginTypeS3]}, plain) != nil {
-		t.Error("an s3 OAC must not be signed (kumo's S3 ignores signatures)")
-	}
-
-	if svc.originSigning(t.Context(), &Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningNever]}, plain) != nil {
-		t.Error("never must not sign")
-	}
-
-	always := svc.originSigning(t.Context(), &Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningAlways]}, forwarding)
+	always := resolve(&Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningAlways]}, forwarding)
 	if always == nil || !always.shouldSign(viewerAuthorization) || !always.shouldSign("") || always.region != "us-east-1" {
 		t.Errorf("always = %+v", always)
 	}
 
-	noOverride := svc.originSigning(t.Context(), &Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningNoOverride]}, forwarding)
+	noOverride := resolve(&Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningNoOverride]}, forwarding)
 	if noOverride == nil || noOverride.shouldSign(viewerAuthorization) || !noOverride.shouldSign("") {
 		t.Errorf("no-override with a forwarded Authorization header = %+v", noOverride)
 	}
 
-	noOverridePlain := svc.originSigning(t.Context(), &Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningNoOverride]}, plain)
+	noOverridePlain := resolve(&Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningNoOverride]}, plain)
 	if noOverridePlain == nil || !noOverridePlain.shouldSign(viewerAuthorization) {
 		t.Errorf("no-override without forwarding must sign even when the viewer signed = %+v", noOverridePlain)
+	}
+}
+
+// failingOACStorage fails every origin access control lookup with a
+// non-not-found error.
+type failingOACStorage struct {
+	Storage
+}
+
+var errOACLookup = errors.New("oac lookup failed")
+
+func (failingOACStorage) GetOriginAccessControl(context.Context, string) (*OriginAccessControl, error) {
+	return nil, errOACLookup
+}
+
+// TestResolveSigning_StorageFailure — only a missing OAC means "unsigned"; any
+// other lookup failure reaches the viewer as a 502 instead of an opaque 403
+// from the function URL.
+func TestResolveSigning_StorageFailure(t *testing.T) {
+	backend, seen := newRecordingBackend(t)
+	t.Setenv("KUMO_S3_BACKEND", backend.URL)
+
+	store, ids := newSigningStorage(t)
+	svc := New(store)
+	createSigningDistribution(t, svc, lambdaOrigin(ids[oacSigningAlways]), false)
+
+	var distID string
+	for id := range store.Distributions {
+		distID = id
+	}
+
+	svc.storage = failingOACStorage{Storage: store}
+
+	if _, err := svc.resolveSigning(t.Context(), &Origin{DomainName: signingLambdaOrigin, OriginAccessControlID: ids[oacSigningAlways]}, nil); !errors.Is(err, errOACLookup) {
+		t.Fatalf("resolveSigning error = %v, want %v", err, errOACLookup)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kumo/cdn/"+distID+"/hello", http.NoBody)
+	req.SetPathValue("distributionId", distID)
+	req.SetPathValue("path", "hello")
+
+	w := httptest.NewRecorder()
+	svc.Edge(w, req)
+
+	if w.Code != http.StatusBadGateway || seen.Host != "" {
+		t.Fatalf("got %d (backend contacted: %v), want 502 without contacting the origin", w.Code, seen.Host != "")
 	}
 }
 
@@ -221,6 +283,22 @@ func TestEdge_LambdaOACSigningRequiresPayloadHash(t *testing.T) {
 	w := callEdgeWithBody(t, svc, http.MethodPost, "/submit", "test", hdr)
 	if w.Code != http.StatusOK || !edgeAuthorizationPattern.MatchString(seen.Header.Get("Authorization")) || seen.Header.Get("X-Amz-Content-Sha256") != testBodyHash {
 		t.Fatalf("body with hash: got %d, Authorization %q, hash %q", w.Code, seen.Header.Get("Authorization"), seen.Header.Get("X-Amz-Content-Sha256"))
+	}
+}
+
+// TestEdge_LambdaOACSigningIgnoresBodyOfCacheableMethods — the edge sends
+// GET/HEAD upstream body-less, so a viewer body there needs no payload hash.
+func TestEdge_LambdaOACSigningIgnoresBodyOfCacheableMethods(t *testing.T) {
+	backend, seen := newRecordingBackend(t)
+	t.Setenv("KUMO_S3_BACKEND", backend.URL)
+
+	store, ids := newSigningStorage(t)
+	svc := New(store)
+	createSigningDistribution(t, svc, lambdaOrigin(ids[oacSigningAlways]), false)
+
+	w := callEdgeWithBody(t, svc, http.MethodGet, "/hello", "ignored", nil)
+	if w.Code != http.StatusOK || !edgeAuthorizationPattern.MatchString(seen.Header.Get("Authorization")) || seen.Header.Get("X-Amz-Content-Sha256") != emptyPayloadHash {
+		t.Fatalf("GET with a body: got %d, Authorization %q, hash %q", w.Code, seen.Header.Get("Authorization"), seen.Header.Get("X-Amz-Content-Sha256"))
 	}
 }
 

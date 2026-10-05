@@ -21,8 +21,6 @@ import (
 // key only has to be well-formed; it is what a function behind an origin
 // access control sees in requestContext.authorizer.iam.accessKey.
 const (
-	edgeAccessKeyID      = "AKIAKUMOCLOUDFRONTOA"                  //nolint:gosec // G101: emulator principal, not a credential.
-	edgeSecretAccessKey  = "kumo-cloudfront-origin-access-control" //nolint:gosec // G101: emulator principal, not a credential.
 	defaultSigningRegion = "us-east-1"
 	signingService       = "lambda"
 
@@ -34,9 +32,24 @@ const (
 	headerContentSHA256 = "X-Amz-Content-Sha256"
 )
 
-// errUnsignedPayload reports a body without the viewer-supplied payload hash;
-// Lambda accepts no unsigned payloads, so CloudFront cannot sign such a request.
-var errUnsignedPayload = errors.New("request body without x-amz-content-sha256")
+// edgeCredentials returns the fixed principal the edge signs with.
+func edgeCredentials() aws.Credentials {
+	var creds aws.Credentials
+
+	creds.AccessKeyID = "AKIAKUMOCLOUDFRONTOA"
+	creds.SecretAccessKey = "kumo-cloudfront-origin-access-control"
+
+	return creds
+}
+
+var (
+	// errUnsignedPayload reports a body without the viewer-supplied payload hash;
+	// Lambda accepts no unsigned payloads, so CloudFront cannot sign such a request.
+	errUnsignedPayload = errors.New("request body without x-amz-content-sha256")
+
+	// errNotSigned reports an origin the edge does not sign.
+	errNotSigned = errors.New("origin is not signed")
+)
 
 // originSigning is the SigV4 signing the edge applies to origin requests of a
 // Lambda function URL behind an origin access control of type lambda.
@@ -61,9 +74,9 @@ func (o *originSigning) shouldSign(viewerAuthorization string) bool {
 }
 
 // requiresPayloadHash reports whether the viewer must have sent
-// x-amz-content-sha256: the edge is about to sign a request with a body.
+// x-amz-content-sha256: the edge is about to sign a request whose body it forwards.
 func (o *originSigning) requiresPayloadHash(r *http.Request) bool {
-	return requestHasBody(r) && o.shouldSign(r.Header.Get(headerAuthorization)) && r.Header.Get(headerContentSHA256) == ""
+	return forwardsBody(r) && o.shouldSign(r.Header.Get(headerAuthorization)) && r.Header.Get(headerContentSHA256) == ""
 }
 
 // sign replaces the viewer's Authorization with the edge's SigV4 signature
@@ -86,42 +99,51 @@ func (o *originSigning) sign(req, viewer *http.Request, hasBody bool) error {
 	req.Header.Del(headerAuthorization)
 	req.Header.Set(headerContentSHA256, payloadHash)
 
-	creds := aws.Credentials{AccessKeyID: edgeAccessKeyID, SecretAccessKey: edgeSecretAccessKey}
-
-	if err := v4.NewSigner().SignHTTP(req.Context(), creds, req, payloadHash, signingService, o.region, time.Now()); err != nil {
+	if err := v4.NewSigner().SignHTTP(req.Context(), edgeCredentials(), req, payloadHash, signingService, o.region, time.Now()); err != nil {
 		return fmt.Errorf("sign origin request: %w", err)
 	}
 
 	return nil
 }
 
-// originSigning resolves what the matched origin needs: nil when it has no
-// origin access control, when the control is not of type lambda (kumo's S3
-// verifies no signatures, so signing s3 origins would change nothing) or
-// when its SigningBehavior is never.
-func (s *Service) originSigning(ctx context.Context, o *Origin, behavior *DefaultCacheBehavior) *originSigning {
+// resolveSigning resolves what the matched origin needs. It returns errNotSigned
+// when the origin has no origin access control (or one that no longer exists),
+// when the control is not of type lambda (kumo's S3 verifies no signatures, so
+// signing s3 origins would change nothing) or when its SigningBehavior is never.
+// Storage failures other than not-found are returned as is.
+func (s *Service) resolveSigning(ctx context.Context, o *Origin, behavior *DefaultCacheBehavior) (*originSigning, error) {
 	if o.OriginAccessControlID == "" {
-		return nil
+		return nil, errNotSigned
 	}
 
 	oac, err := s.storage.GetOriginAccessControl(ctx, o.OriginAccessControlID)
-	if err != nil || oac.Config.OriginAccessControlOriginType != oacOriginTypeLambda {
-		return nil
+	if err != nil {
+		var cfErr *Error
+		if errors.As(err, &cfErr) && cfErr.Code == errNoSuchOriginAccessControl {
+			return nil, errNotSigned
+		}
+
+		return nil, fmt.Errorf("get origin access control: %w", err)
+	}
+
+	if oac.Config.OriginAccessControlOriginType != oacOriginTypeLambda {
+		return nil, errNotSigned
 	}
 
 	switch oac.Config.SigningBehavior {
 	case oacSigningAlways:
-		return &originSigning{region: lambdaURLRegion(o.DomainName), alwaysOverride: true}
+		return &originSigning{region: lambdaURLRegion(o.DomainName), alwaysOverride: true}, nil
 	case oacSigningNoOverride:
-		return &originSigning{region: lambdaURLRegion(o.DomainName), forwardsAuthorization: behaviorForwardsAuthorization(behavior)}
+		return &originSigning{region: lambdaURLRegion(o.DomainName), forwardsAuthorization: behaviorForwardsAuthorization(behavior)}, nil
 	}
 
-	return nil
+	return nil, errNotSigned
 }
 
 // behaviorForwardsAuthorization reports whether the behavior's legacy header
-// whitelist forwards Authorization (or every header). Cache policy ids are
-// opaque to kumo, so this is the only forwarding rule it can evaluate.
+// whitelist forwards Authorization (or every header). kumo does not store
+// origin request policies, so an Authorization forwarded through one is not
+// seen and no-override signs over it.
 func behaviorForwardsAuthorization(behavior *DefaultCacheBehavior) bool {
 	if behavior == nil || behavior.ForwardedValues == nil || behavior.ForwardedValues.Headers == nil {
 		return false
@@ -150,8 +172,10 @@ func lambdaURLRegion(domain string) string {
 	return defaultSigningRegion
 }
 
-func requestHasBody(r *http.Request) bool {
-	return r.Body != nil && r.Body != http.NoBody && r.ContentLength != 0
+// forwardsBody reports whether the edge sends the viewer's body upstream;
+// cacheable methods go out body-less.
+func forwardsBody(r *http.Request) bool {
+	return !isCacheableMethod(r.Method) && r.Body != nil && r.Body != http.NoBody && r.ContentLength != 0
 }
 
 // writeForbidden answers the way a function URL refuses a request.

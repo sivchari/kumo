@@ -2,6 +2,7 @@ package cloudfront
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -698,14 +699,20 @@ func (s *Service) resolveUpstream(w http.ResponseWriter, r *http.Request, dist *
 		return upstreamTarget{}, false
 	}
 
-	target := upstreamTarget{url: originURL, signing: s.originSigning(r.Context(), &origin, behavior)}
-	if target.signing != nil && target.signing.requiresPayloadHash(r) {
+	signing, err := s.resolveSigning(r.Context(), &origin, behavior)
+	if err != nil && !errors.Is(err, errNotSigned) {
+		http.Error(w, "origin signing failed: "+err.Error(), http.StatusBadGateway)
+
+		return upstreamTarget{}, false
+	}
+
+	if signing != nil && signing.requiresPayloadHash(r) {
 		writeForbidden(w)
 
 		return upstreamTarget{}, false
 	}
 
-	return target, true
+	return upstreamTarget{url: originURL, signing: signing}, true
 }
 
 // edgeOriginURL builds the upstream URL for the request on the origin the
