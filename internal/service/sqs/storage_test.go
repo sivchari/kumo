@@ -381,7 +381,7 @@ func TestMemoryStorage_ReceiveMessageAfterPersistedReload(t *testing.T) {
 		}
 	}()
 
-	msgs, err := s2.ReceiveMessage(ctx, queueURL, 10, 0, 0)
+	msgs, err := s2.ReceiveMessage(ctx, queueURL, 10, 0, nil)
 	if err != nil {
 		t.Fatalf("ReceiveMessage() error = %v", err)
 	}

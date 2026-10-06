@@ -181,7 +181,7 @@ type ReceiveMessageRequest struct {
 	MessageAttributeNames   []string `json:"MessageAttributeNames,omitempty"`
 	ReceiveRequestAttemptID string   `json:"ReceiveRequestAttemptId,omitempty"`
 	VisibilityTimeout       int      `json:"VisibilityTimeout,omitempty"`
-	WaitTimeSeconds         int      `json:"WaitTimeSeconds,omitempty"`
+	WaitTimeSeconds         *int     `json:"WaitTimeSeconds,omitempty"`
 }
 
 // ReceiveMessageResponse is the response for ReceiveMessage.

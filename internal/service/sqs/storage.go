@@ -37,7 +37,7 @@ type Storage interface {
 	TagQueue(ctx context.Context, queueURL string, tags map[string]string) error
 	UntagQueue(ctx context.Context, queueURL string, tagKeys []string) error
 	SendMessage(ctx context.Context, queueURL, body string, delaySeconds int, messageAttributes map[string]MessageAttributeValue, messageGroupID, messageDeduplicationID string) (*Message, error)
-	ReceiveMessage(ctx context.Context, queueURL string, maxMessages, visibilityTimeout, waitTimeSeconds int) ([]*Message, error)
+	ReceiveMessage(ctx context.Context, queueURL string, maxMessages, visibilityTimeout int, waitTimeSeconds *int) ([]*Message, error)
 	DeleteMessage(ctx context.Context, queueURL, receiptHandle string) error
 	ChangeMessageVisibility(ctx context.Context, queueURL, receiptHandle string, visibilityTimeout int) error
 	PurgeQueue(ctx context.Context, queueURL string) error
@@ -576,20 +576,28 @@ func buildMessage(body string, now time.Time, delay int, messageAttributes map[s
 }
 
 // ReceiveMessage receives messages from a queue.
-// If waitTimeSeconds > 0 and no messages are available, it waits for messages to arrive (long polling).
-func (s *MemoryStorage) ReceiveMessage(ctx context.Context, queueURL string, maxMessages, visibilityTimeout, waitTimeSeconds int) ([]*Message, error) {
+// The long-poll duration is waitTimeSeconds when the caller sent one, and the
+// queue's ReceiveMessageWaitTimeSeconds when it did not; a duration above zero
+// makes the call wait for a message to arrive.
+func (s *MemoryStorage) ReceiveMessage(ctx context.Context, queueURL string, maxMessages, visibilityTimeout int, waitTimeSeconds *int) ([]*Message, error) {
+	wait, err := s.receiveWaitTime(queueURL, waitTimeSeconds)
+	if err != nil {
+		return nil, err
+	}
+
 	// Try to receive messages immediately.
 	result, notify, err := s.receiveMessagesLocked(queueURL, maxMessages, visibilityTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(result) > 0 || waitTimeSeconds <= 0 {
+	if len(result) > 0 || wait <= 0 {
 		return result, nil
 	}
 
 	// Long polling: wait for messages or timeout.
-	timer := time.NewTimer(time.Duration(waitTimeSeconds) * time.Second)
+	timer := time.NewTimer(time.Duration(wait) * time.Second)
+	defer timer.Stop()
 	defer timer.Stop()
 
 	for {
@@ -609,6 +617,26 @@ func (s *MemoryStorage) ReceiveMessage(ctx context.Context, queueURL string, max
 			}
 		}
 	}
+}
+
+// receiveWaitTime resolves the long-poll duration for a receive: the caller's
+// WaitTimeSeconds when it sent one, and the queue's ReceiveMessageWaitTimeSeconds
+// when the field was omitted, which is what SQS does. A caller that sends 0
+// explicitly still gets an immediate return.
+func (s *MemoryStorage) receiveWaitTime(queueURL string, requested *int) (int, error) {
+	if requested != nil {
+		return *requested, nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	_, qd, err := s.resolveQueueData(queueURL)
+	if err != nil {
+		return 0, err
+	}
+
+	return qd.Queue.ReceiveWaitTimeSeconds, nil
 }
 
 // receiveMessagesLocked attempts to receive messages while holding the lock.
