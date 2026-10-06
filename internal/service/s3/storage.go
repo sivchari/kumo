@@ -125,6 +125,11 @@ type Storage interface {
 	PutObjectTagging(ctx context.Context, bucket, key string, tags map[string]string) error
 	GetObjectTagging(ctx context.Context, bucket, key string) (map[string]string, error)
 
+	// Bucket tagging
+	PutBucketTagging(ctx context.Context, bucket string, tags map[string]string) error
+	GetBucketTagging(ctx context.Context, bucket string) (map[string]string, error)
+	DeleteBucketTagging(ctx context.Context, bucket string) error
+
 	// Object ACL
 	PutObjectACL(ctx context.Context, bucket, key string, acl *ObjectACL) error
 	GetObjectACL(ctx context.Context, bucket, key string) (*ObjectACL, error)
@@ -225,6 +230,7 @@ type MemoryBucket struct {
 	Website              *WebsiteConfiguration         `json:"website,omitempty"`              // static-site-hosting configuration
 	Lifecycle            *LifecycleConfiguration       `json:"lifecycle,omitempty"`            // expiration / transition rules
 	ObjectRestores       map[string]*RestoreState      `json:"objectRestores,omitempty"`       // per-object restore state (key -> state)
+	Tags                 map[string]string             `json:"tags,omitempty"`                 // bucket tags (nil == no tag set configured)
 }
 
 // BucketLoggingConfig stores the destination for server access logs.
@@ -768,6 +774,65 @@ func (s *MemoryStorage) GetObjectTagging(_ context.Context, bucket, key string) 
 	}
 
 	return obj.Tags, nil
+}
+
+// PutBucketTagging replaces a bucket's tag set. Real S3 keeps at most 50 tags
+// per bucket; kumo stores whatever it is given, like the object tagging path.
+func (s *MemoryStorage) PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
+	}
+
+	// An empty tag set means "no tag set configured": real S3 reports
+	// NoSuchTagSet after such a request rather than an empty Tagging document.
+	if len(tags) == 0 {
+		b.Tags = nil
+	} else {
+		b.Tags = tags
+	}
+
+	s.saveLocked()
+
+	return nil
+}
+
+// GetBucketTagging retrieves the tags of a bucket.
+func (s *MemoryStorage) GetBucketTagging(_ context.Context, bucket string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return nil, &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
+	}
+
+	if b.Tags == nil {
+		return map[string]string{}, nil
+	}
+
+	return b.Tags, nil
+}
+
+// DeleteBucketTagging removes a bucket's tag set. Real S3 answers 204 whether or
+// not a tag set was configured, so this is idempotent.
+func (s *MemoryStorage) DeleteBucketTagging(_ context.Context, bucket string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b, exists := s.Buckets[bucket]
+	if !exists {
+		return &BucketError{Code: errCodeNoSuchBucket, Message: msgBucketNotExist, BucketName: bucket}
+	}
+
+	b.Tags = nil
+
+	s.saveLocked()
+
+	return nil
 }
 
 // DeleteObject deletes an object.

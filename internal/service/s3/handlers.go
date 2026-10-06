@@ -137,44 +137,102 @@ func (s *Service) HandleCORSPreflight(w http.ResponseWriter, r *http.Request) {
 
 // Route Dispatchers - dispatch based on query parameters
 
-// handleBucketGet dispatches GET /{bucket} requests based on query parameters.
-//
-// bucketGetSubresources maps a GET query-parameter key to its handler, in the
-// order they must be checked. AWS treats these subresource selectors as
-// mutually exclusive, so the first present key wins.
-var bucketGetSubresources = []struct {
+// Bucket sub-resource query-parameter keys, shared by the dispatch tables
+// below.
+const (
+	subresourceVersioning        = "versioning"
+	subresourcePublicAccessBlock = "publicAccessBlock"
+	subresourceEncryption        = "encryption"
+	subresourcePolicy            = "policy"
+	subresourceLogging           = "logging"
+	subresourceVersions          = "versions"
+	subresourceUploads           = "uploads"
+	subresourceWebsite           = "website"
+	subresourceLifecycle         = "lifecycle"
+	subresourceCORS              = "cors"
+	subresourceNotification      = "notification"
+	subresourceTagging           = "tagging"
+)
+
+// subresourceHandler pairs a bucket query-parameter key with the handler that
+// serves it. AWS treats sub-resource selectors as mutually exclusive, so the
+// first present key wins.
+type subresourceHandler struct {
 	key     string
 	handler func(*Service, http.ResponseWriter, *http.Request)
-}{
-	{"versioning", (*Service).GetBucketVersioning},
-	{"publicAccessBlock", (*Service).GetPublicAccessBlock},
-	{"encryption", (*Service).GetBucketEncryption},
-	{"policy", (*Service).GetBucketPolicy},
-	{"logging", (*Service).GetBucketLogging},
-	{"versions", (*Service).ListObjectVersions},
-	{"uploads", (*Service).ListMultipartUploads},
-	{"website", (*Service).GetBucketWebsite},
-	{"lifecycle", (*Service).GetBucketLifecycleConfiguration},
-	{"cors", (*Service).GetBucketCors},
-	{"notification", (*Service).GetBucketNotificationConfiguration},
 }
 
-func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
+// bucketGetSubresources maps a GET query-parameter key to its handler, in the
+// order they must be checked.
+var bucketGetSubresources = []subresourceHandler{
+	{subresourceVersioning, (*Service).GetBucketVersioning},
+	{subresourcePublicAccessBlock, (*Service).GetPublicAccessBlock},
+	{subresourceEncryption, (*Service).GetBucketEncryption},
+	{subresourcePolicy, (*Service).GetBucketPolicy},
+	{subresourceLogging, (*Service).GetBucketLogging},
+	{subresourceVersions, (*Service).ListObjectVersions},
+	{subresourceUploads, (*Service).ListMultipartUploads},
+	{subresourceWebsite, (*Service).GetBucketWebsite},
+	{subresourceLifecycle, (*Service).GetBucketLifecycleConfiguration},
+	{subresourceCORS, (*Service).GetBucketCors},
+	{subresourceNotification, (*Service).GetBucketNotificationConfiguration},
+	{subresourceTagging, (*Service).GetBucketTagging},
+}
+
+// bucketPutSubresources maps a PUT query-parameter key to its handler, in the
+// order they must be checked. A PUT carrying none of them creates the bucket.
+var bucketPutSubresources = []subresourceHandler{
+	{subresourceVersioning, (*Service).PutBucketVersioning},
+	{subresourceNotification, (*Service).PutBucketNotificationConfiguration},
+	{subresourceCORS, (*Service).PutBucketCors},
+	{subresourcePublicAccessBlock, (*Service).PutPublicAccessBlock},
+	{subresourceEncryption, (*Service).PutBucketEncryption},
+	{subresourcePolicy, (*Service).PutBucketPolicy},
+	{subresourceLogging, (*Service).PutBucketLogging},
+	{subresourceWebsite, (*Service).PutBucketWebsite},
+	{subresourceLifecycle, (*Service).PutBucketLifecycleConfiguration},
+	{subresourceTagging, (*Service).PutBucketTagging},
+}
+
+// bucketDeleteSubresources maps a DELETE query-parameter key to its handler, in
+// the order they must be checked. A DELETE carrying none of them removes the
+// bucket.
+var bucketDeleteSubresources = []subresourceHandler{
+	{subresourcePublicAccessBlock, (*Service).DeletePublicAccessBlock},
+	{subresourceEncryption, (*Service).DeleteBucketEncryption},
+	{subresourcePolicy, (*Service).DeleteBucketPolicy},
+	{subresourceWebsite, (*Service).DeleteBucketWebsite},
+	{subresourceLifecycle, (*Service).DeleteBucketLifecycle},
+	{subresourceTagging, (*Service).DeleteBucketTagging},
+}
+
+// dispatchBucketSubresource invokes the first registered sub-resource handler
+// whose query key is present and reports whether one ran.
+func dispatchBucketSubresource(s *Service, w http.ResponseWriter, r *http.Request, subresources []subresourceHandler) bool {
 	query := r.URL.Query()
 
-	for _, sub := range bucketGetSubresources {
+	for _, sub := range subresources {
 		if _, ok := query[sub.key]; ok {
 			sub.handler(s, w, r)
 
-			return
+			return true
 		}
+	}
+
+	return false
+}
+
+// handleBucketGet dispatches GET /{bucket} requests based on query parameters.
+func (s *Service) handleBucketGet(w http.ResponseWriter, r *http.Request) {
+	if dispatchBucketSubresource(s, w, r, bucketGetSubresources) {
+		return
 	}
 
 	if handled := s.serveBucketSubresourceStub(w, r); handled {
 		return
 	}
 
-	if query.Get("list-type") == "2" {
+	if r.URL.Query().Get("list-type") == "2" {
 		s.ListObjects(w, r)
 
 		return
@@ -229,7 +287,6 @@ func bucketSubresourceErrorCode(q map[string][]string) (string, bool) {
 	mapping := map[string]string{
 		"cors":              "NoSuchCORSConfiguration",
 		"replication":       "ReplicationConfigurationNotFoundError",
-		"tagging":           "NoSuchTagSet",
 		"object-lock":       "ObjectLockConfigurationNotFoundError",
 		"ownershipControls": "OwnershipControlsNotFoundError",
 	}
@@ -447,6 +504,11 @@ func (s *Service) CreateBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cfg, ok := decodeCreateBucketConfiguration(w, r)
+	if !ok {
+		return
+	}
+
 	err := s.storage.CreateBucket(r.Context(), bucket)
 	if err != nil {
 		var bucketErr *BucketError
@@ -466,8 +528,58 @@ func (s *Service) CreateBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if tags := cfg.bucketTags(); len(tags) > 0 {
+		if err := s.storage.PutBucketTagging(r.Context(), bucket, tags); err != nil {
+			writeBucketErrorOrInternal(w, r, err)
+
+			return
+		}
+	}
+
 	w.Header().Set("Location", "/"+bucket)
 	w.WriteHeader(http.StatusOK)
+}
+
+// decodeCreateBucketConfiguration decodes the optional CreateBucket request
+// body, writing a MalformedXML response and reporting ok=false when it cannot
+// be parsed. It returns a nil configuration for the empty body most clients
+// send, since only us-east-1 buckets without tags need one.
+func decodeCreateBucketConfiguration(w http.ResponseWriter, r *http.Request) (*CreateBucketConfiguration, bool) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeS3Error(w, r, "InternalError", "Failed to read request body", http.StatusInternalServerError)
+
+		return nil, false
+	}
+
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, true
+	}
+
+	var cfg CreateBucketConfiguration
+	if err := xml.Unmarshal(body, &cfg); err != nil {
+		writeS3Error(w, r, errCodeMalformedXML, "The XML you provided was not well-formed", http.StatusBadRequest)
+
+		return nil, false
+	}
+
+	return &cfg, true
+}
+
+// bucketTags returns the TagSet of a decoded CreateBucket request body as a tag
+// map, or nil when no configuration or no tags were sent. kumo ignores the
+// body's LocationConstraint, as it serves every region from one endpoint.
+func (c *CreateBucketConfiguration) bucketTags() map[string]string {
+	if c == nil || len(c.Tags.Tags) == 0 {
+		return nil
+	}
+
+	tags := make(map[string]string, len(c.Tags.Tags))
+	for _, tag := range c.Tags.Tags {
+		tags[tag.Key] = tag.Value
+	}
+
+	return tags
 }
 
 // DeleteBucket handles DELETE /{bucket} - delete a bucket.
@@ -1640,57 +1752,7 @@ func toCommonPrefixes(prefixes []string) []CommonPrefix {
 
 // handleBucketPut routes PUT /{bucket} requests based on query parameters.
 func (s *Service) handleBucketPut(w http.ResponseWriter, r *http.Request) {
-	if _, ok := r.URL.Query()["versioning"]; ok {
-		s.PutBucketVersioning(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["notification"]; ok {
-		s.PutBucketNotificationConfiguration(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["cors"]; ok {
-		s.PutBucketCors(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["publicAccessBlock"]; ok {
-		s.PutPublicAccessBlock(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["encryption"]; ok {
-		s.PutBucketEncryption(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["policy"]; ok {
-		s.PutBucketPolicy(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["logging"]; ok {
-		s.PutBucketLogging(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["website"]; ok {
-		s.PutBucketWebsite(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["lifecycle"]; ok {
-		s.PutBucketLifecycleConfiguration(w, r)
-
+	if dispatchBucketSubresource(s, w, r, bucketPutSubresources) {
 		return
 	}
 
@@ -1699,33 +1761,7 @@ func (s *Service) handleBucketPut(w http.ResponseWriter, r *http.Request) {
 
 // handleBucketDelete dispatches DELETE /{bucket} requests based on query parameters.
 func (s *Service) handleBucketDelete(w http.ResponseWriter, r *http.Request) {
-	if _, ok := r.URL.Query()["publicAccessBlock"]; ok {
-		s.DeletePublicAccessBlock(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["encryption"]; ok {
-		s.DeleteBucketEncryption(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["policy"]; ok {
-		s.DeleteBucketPolicy(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["website"]; ok {
-		s.DeleteBucketWebsite(w, r)
-
-		return
-	}
-
-	if _, ok := r.URL.Query()["lifecycle"]; ok {
-		s.DeleteBucketLifecycle(w, r)
-
+	if dispatchBucketSubresource(s, w, r, bucketDeleteSubresources) {
 		return
 	}
 
@@ -2656,6 +2692,85 @@ func parseTaggingHeader(raw string) (map[string]string, error) {
 	}
 
 	return tags, nil
+}
+
+// PutBucketTagging handles PUT /{bucket}?tagging.
+func (s *Service) PutBucketTagging(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeS3Error(w, r, "InternalError", "Failed to read request body", http.StatusInternalServerError)
+
+		return
+	}
+
+	var tagging Tagging
+	if err := xml.Unmarshal(body, &tagging); err != nil {
+		writeS3Error(w, r, errCodeMalformedXML, "Invalid XML in request body", http.StatusBadRequest)
+
+		return
+	}
+
+	tags := make(map[string]string, len(tagging.TagSet.Tags))
+	for _, tag := range tagging.TagSet.Tags {
+		tags[tag.Key] = tag.Value
+	}
+
+	if err := s.storage.PutBucketTagging(r.Context(), bucket, tags); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetBucketTagging handles GET /{bucket}?tagging. Real S3 answers NoSuchTagSet
+// (404) for a bucket whose tag set is empty, not an empty Tagging document.
+func (s *Service) GetBucketTagging(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	tags, err := s.storage.GetBucketTagging(r.Context(), bucket)
+	if err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	if len(tags) == 0 {
+		writeS3Error(w, r, "NoSuchTagSet", "The TagSet does not exist", http.StatusNotFound)
+
+		return
+	}
+
+	tagging := Tagging{TagSet: TagSet{Tags: make([]Tag, 0, len(tags))}}
+
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		tagging.TagSet.Tags = append(tagging.TagSet.Tags, Tag{Key: k, Value: tags[k]})
+	}
+
+	writeXMLResponse(w, tagging)
+}
+
+// DeleteBucketTagging handles DELETE /{bucket}?tagging.
+func (s *Service) DeleteBucketTagging(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+
+	if err := s.storage.DeleteBucketTagging(r.Context(), bucket); err != nil {
+		writeBucketErrorOrInternal(w, r, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // PutObjectTagging handles PUT /{bucket}/{key}?tagging.

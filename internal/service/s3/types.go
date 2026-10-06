@@ -132,6 +132,16 @@ type Tag struct {
 	Value string `xml:"Value"`
 }
 
+// CreateBucketConfiguration is the CreateBucket request body. AWS sends the
+// location for every region but us-east-1, and a TagSet when the client asks
+// for tag-on-create so that a bucket and its tags are created atomically.
+type CreateBucketConfiguration struct {
+	XMLName            xml.Name `xml:"CreateBucketConfiguration"`
+	Xmlns              string   `xml:"xmlns,attr,omitempty"`
+	LocationConstraint string   `xml:"LocationConstraint,omitempty"`
+	Tags               TagSet   `xml:"Tags"`
+}
+
 // XML Response Types
 
 // ListAllMyBucketsResult is the response for ListBuckets.
