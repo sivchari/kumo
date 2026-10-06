@@ -1,6 +1,7 @@
 {
   "Attributes": {
     "ApproximateNumberOfMessages": "0",
+    "ApproximateNumberOfMessagesDelayed": "0",
     "ApproximateNumberOfMessagesNotVisible": "0",
     "ContentBasedDeduplication": "false",
     "CreatedTimestamp": "1774251928",

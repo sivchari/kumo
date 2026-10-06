@@ -1144,3 +1144,135 @@ func TestSQS_AddPermissionErrors(t *testing.T) {
 		t.Fatalf("expected InvalidParameterValue error for unknown label, got %v", err)
 	}
 }
+
+func TestSQS_GetQueueAttributes_DelayedMessageIsNotAvailable(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-delayed-attributes"
+
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	if _, err := client.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:     createOutput.QueueUrl,
+		MessageBody:  aws.String("later"),
+		DelaySeconds: 900,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: createOutput.QueueUrl,
+		AttributeNames: []types.QueueAttributeName{
+			types.QueueAttributeNameApproximateNumberOfMessages,
+			types.QueueAttributeNameApproximateNumberOfMessagesDelayed,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := output.Attributes["ApproximateNumberOfMessages"]; got != "0" {
+		t.Errorf("ApproximateNumberOfMessages = %q, want %q", got, "0")
+	}
+
+	if got := output.Attributes["ApproximateNumberOfMessagesDelayed"]; got != "1" {
+		t.Errorf("ApproximateNumberOfMessagesDelayed = %q, want %q", got, "1")
+	}
+
+	received, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(received.Messages) != 0 {
+		t.Errorf("ReceiveMessage returned %d messages for a delayed queue, want 0", len(received.Messages))
+	}
+}
+
+func TestSQS_GetQueueAttributes_ReceivedMessageIsNotVisible(t *testing.T) {
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-received-attributes"
+
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	if _, err := client.SendMessage(ctx, &sqs.SendMessageInput{
+		QueueUrl:    createOutput.QueueUrl,
+		MessageBody: aws.String("ready"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	attributes := func() map[string]string {
+		t.Helper()
+
+		output, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+			QueueUrl: createOutput.QueueUrl,
+			AttributeNames: []types.QueueAttributeName{
+				types.QueueAttributeNameApproximateNumberOfMessages,
+				types.QueueAttributeNameApproximateNumberOfMessagesDelayed,
+				types.QueueAttributeNameApproximateNumberOfMessagesNotVisible,
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return output.Attributes
+	}
+
+	if got := attributes()["ApproximateNumberOfMessages"]; got != "1" {
+		t.Errorf("ApproximateNumberOfMessages before receive = %q, want %q", got, "1")
+	}
+
+	received, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+		QueueUrl:            createOutput.QueueUrl,
+		MaxNumberOfMessages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(received.Messages) != 1 {
+		t.Fatalf("ReceiveMessage returned %d messages, want 1", len(received.Messages))
+	}
+
+	after := attributes()
+
+	if got := after["ApproximateNumberOfMessages"]; got != "0" {
+		t.Errorf("ApproximateNumberOfMessages after receive = %q, want %q", got, "0")
+	}
+
+	if got := after["ApproximateNumberOfMessagesDelayed"]; got != "0" {
+		t.Errorf("ApproximateNumberOfMessagesDelayed after receive = %q, want %q", got, "0")
+	}
+
+	if got := after["ApproximateNumberOfMessagesNotVisible"]; got != "1" {
+		t.Errorf("ApproximateNumberOfMessagesNotVisible after receive = %q, want %q", got, "1")
+	}
+}

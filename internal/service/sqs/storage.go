@@ -494,6 +494,25 @@ func (qd *QueueData) lockedMessageGroups() map[string]struct{} {
 	return locked
 }
 
+// messageCounts splits the queue's not-inflight messages into the ones a
+// ReceiveMessage can return now and the ones still waiting out their delay.
+// SQS reports them separately: ApproximateNumberOfMessages counts only messages
+// available for retrieval, and delayed ones are reported by
+// ApproximateNumberOfMessagesDelayed instead.
+func (qd *QueueData) messageCounts(now time.Time) (visible, delayed int) {
+	for _, msg := range qd.Messages {
+		if msg.VisibleAt.After(now) {
+			delayed++
+
+			continue
+		}
+
+		visible++
+	}
+
+	return visible, delayed
+}
+
 // updateFIFOCache updates the deduplication cache with the message ID.
 func (qd *QueueData) updateFIFOCache(dedupID, messageID string) {
 	entry := qd.DeduplicationCache[dedupID]
@@ -790,6 +809,8 @@ func (s *MemoryStorage) GetQueueAttributes(_ context.Context, queueURL string, a
 		return nil, err
 	}
 
+	visible, delayed := qd.messageCounts(time.Now())
+
 	q := qd.Queue
 	allAttrs := map[string]string{
 		"QueueArn":                              q.ARN,
@@ -800,7 +821,8 @@ func (s *MemoryStorage) GetQueueAttributes(_ context.Context, queueURL string, a
 		"DelaySeconds":                          fmt.Sprintf("%d", q.DelaySeconds),
 		"MaximumMessageSize":                    fmt.Sprintf("%d", q.MaxMessageSize),
 		"ReceiveMessageWaitTimeSeconds":         fmt.Sprintf("%d", q.ReceiveWaitTimeSeconds),
-		"ApproximateNumberOfMessages":           fmt.Sprintf("%d", len(qd.Messages)),
+		"ApproximateNumberOfMessages":           fmt.Sprintf("%d", visible),
+		"ApproximateNumberOfMessagesDelayed":    fmt.Sprintf("%d", delayed),
 		"ApproximateNumberOfMessagesNotVisible": fmt.Sprintf("%d", len(qd.Inflight)),
 		"FifoQueue":                             fmt.Sprintf("%t", q.FifoQueue),
 		"ContentBasedDeduplication":             fmt.Sprintf("%t", q.ContentBasedDeduplication),
