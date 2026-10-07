@@ -350,8 +350,24 @@ func buildDistributionConfigXML(config *DistributionConfig) *DistributionConfigX
 	result.CacheBehaviors = buildCacheBehaviorsXML(config.CacheBehaviors)
 	result.Aliases = buildAliasesConfigXML(config.Aliases)
 	result.ViewerCertificate = buildViewerCertificateConfigXML(config.ViewerCertificate)
+	result.Logging = buildLoggingXML(config.Logging)
 
 	return result
+}
+
+// buildLoggingXML always returns Logging, as CloudFront does: a distribution
+// created without it reads back with logging disabled.
+func buildLoggingXML(logging *LoggingConfig) *LoggingConfigXML {
+	if logging == nil {
+		return &LoggingConfigXML{}
+	}
+
+	return &LoggingConfigXML{
+		Enabled:        logging.Enabled,
+		IncludeCookies: logging.IncludeCookies,
+		Bucket:         logging.Bucket,
+		Prefix:         logging.Prefix,
+	}
 }
 
 func buildOriginsXML(origins *Origins) *OriginsXML {

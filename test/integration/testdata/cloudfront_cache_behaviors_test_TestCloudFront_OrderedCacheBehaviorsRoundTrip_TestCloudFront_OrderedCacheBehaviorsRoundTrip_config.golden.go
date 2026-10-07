@@ -1,6 +1,6 @@
 {
   "DistributionConfig": {
-    "CallerReference": "test-cf-cache-behaviors-dlwpkqszzdts",
+    "CallerReference": "test-cf-cache-behaviors-dlyyl7xty652",
     "Comment": "ordered cache behaviors",
     "DefaultCacheBehavior": {
       "TargetOriginId": "assets",
@@ -238,7 +238,12 @@
     "DefaultRootObject": null,
     "HttpVersion": "http2",
     "IsIPV6Enabled": null,
-    "Logging": null,
+    "Logging": {
+      "Bucket": "",
+      "Enabled": false,
+      "IncludeCookies": false,
+      "Prefix": ""
+    },
     "OriginGroups": {
       "Quantity": 0,
       "Items": null
@@ -259,6 +264,6 @@
     "ViewerMtlsConfig": null,
     "WebACLId": null
   },
-  "ETag": "Ec986ae0c-6e16-48f6-83c5-1b5afc18",
+  "ETag": "Efb9dd2e3-8c74-413b-9e2a-e52f2731",
   "ResultMetadata": {}
 }
