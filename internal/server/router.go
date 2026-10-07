@@ -37,6 +37,7 @@ type Router struct {
 	mux                 *http.ServeMux
 	routes              []Route
 	prefixRouters       map[string]*http.ServeMux // Separate routers for services with prefixes
+	scopeRouters        map[string]*http.ServeMux // Routers keyed by SigV4 signing name
 	executeAPIHandlers  []executeAPIDispatch
 	functionURLHandlers []functionURLDispatch
 	logger              *slog.Logger
@@ -60,10 +61,45 @@ func NewRouter(logger *slog.Logger) *Router {
 		mux:           http.NewServeMux(),
 		routes:        make([]Route, 0),
 		prefixRouters: make(map[string]*http.ServeMux),
+		scopeRouters:  make(map[string]*http.ServeMux),
 		logger:        logger,
 	}
 
 	return r
+}
+
+// ScopedRouter registers routes matched only for requests whose SigV4
+// credential scope carries signingName. Services sharing a signing name
+// (API Gateway v1 and v2 both sign as "apigateway") share one scope router,
+// so their patterns must not overlap.
+type ScopedRouter struct {
+	router      *Router
+	signingName string
+	mux         *http.ServeMux
+}
+
+// ScopedRouter returns the registrar for the given SigV4 signing name,
+// creating it on first use.
+func (r *Router) ScopedRouter(signingName string) *ScopedRouter {
+	mux, ok := r.scopeRouters[signingName]
+	if !ok {
+		mux = http.NewServeMux()
+		r.scopeRouters[signingName] = mux
+	}
+
+	return &ScopedRouter{router: r, signingName: signingName, mux: mux}
+}
+
+// Handle registers a handler for the given method and pattern.
+func (s *ScopedRouter) Handle(method, pattern string, handler http.HandlerFunc) {
+	s.mux.HandleFunc(method+" "+pattern, s.router.wrapHandler(method, pattern, handler))
+	s.router.logger.Debug("registered scoped route",
+		"signing_name", s.signingName, "method", method, "pattern", pattern)
+}
+
+// HandleFunc is an alias for Handle for compatibility with service.Router.
+func (s *ScopedRouter) HandleFunc(method, pattern string, handler http.HandlerFunc) {
+	s.Handle(method, pattern, handler)
 }
 
 // Handle registers a handler for the given method and pattern.
@@ -261,9 +297,23 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		req.URL.Path = cleaned
 	}
 
-	// Check if the request matches a prefix router first.
-	// Use longest prefix match to avoid short prefixes (e.g., "/apps")
-	// incorrectly capturing longer ones (e.g., "/appsync").
+	if r.serveScoped(w, req) {
+		return
+	}
+
+	if r.servePrefixed(w, req) {
+		return
+	}
+
+	r.mux.ServeHTTP(w, req)
+}
+
+// servePrefixed serves the request from the matching prefix router,
+// reporting whether one matched.
+//
+// Longest prefix wins, so short prefixes (e.g. "/apps") cannot capture
+// longer ones (e.g. "/appsync").
+func (r *Router) servePrefixed(w http.ResponseWriter, req *http.Request) bool {
 	bestPrefix := ""
 
 	for prefix := range r.prefixRouters {
@@ -272,13 +322,42 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	if bestPrefix != "" {
-		r.prefixRouters[bestPrefix].ServeHTTP(w, req)
-
-		return
+	if bestPrefix == "" {
+		return false
 	}
 
-	r.mux.ServeHTTP(w, req)
+	r.prefixRouters[bestPrefix].ServeHTTP(w, req)
+
+	return true
+}
+
+// serveScoped serves the request from the scope router named by its SigV4
+// credential scope, reporting whether it did.
+//
+// The signing name is the only request attribute that disambiguates REST
+// services sharing identical paths (e.g. GET /tags/{arn}) on a single
+// endpoint, where real AWS uses per-service hostnames. A false return
+// (unsigned request, unmigrated service, or a path the scope router does
+// not know, such as a legacy prefixed one) keeps the request on path-based
+// routing.
+func (r *Router) serveScoped(w http.ResponseWriter, req *http.Request) bool {
+	name := sigV4SigningName(req)
+	if name == "" {
+		return false
+	}
+
+	mux, ok := r.scopeRouters[name]
+	if !ok {
+		return false
+	}
+
+	if _, pattern := mux.Handler(req); pattern == "" {
+		return false
+	}
+
+	mux.ServeHTTP(w, req)
+
+	return true
 }
 
 // Routes returns all registered routes.

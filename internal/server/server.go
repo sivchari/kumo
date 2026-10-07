@@ -165,6 +165,11 @@ func (s *Server) RegisterService(svc service.Service) {
 	s.registry.Register(svc)
 	svc.RegisterRoutes(s.router)
 
+	if sigSvc, ok := svc.(service.SigV4Service); ok {
+		sigSvc.RegisterScopedRoutes(s.router.ScopedRouter(sigSvc.SigningName()))
+		s.logger.Debug("registered SigV4 scoped routes", "name", svc.Name(), "signing_name", sigSvc.SigningName())
+	}
+
 	if jsonSvc, ok := svc.(service.JSONProtocolService); ok {
 		s.jsonDispatcher.Register(jsonSvc.TargetPrefix(), jsonSvc.DispatchAction)
 		s.logger.Debug("registered JSON protocol service", "name", svc.Name(), "prefix", jsonSvc.TargetPrefix())
