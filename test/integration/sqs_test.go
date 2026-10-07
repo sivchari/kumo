@@ -855,21 +855,20 @@ func TestSQS_VisibilityTimeoutRedelivery(t *testing.T) {
 		t.Fatalf("expected 0 messages while invisible, got %d", len(recvOutput2.Messages))
 	}
 
-	// Wait for visibility timeout to expire.
-	time.Sleep(1500 * time.Millisecond)
+	// Poll instead of sleeping a fixed margin past the 1s visibility timeout.
+	var recvOutput3 *sqs.ReceiveMessageOutput
 
-	// Second receive: message should be redelivered.
-	recvOutput3, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:            createOutput.QueueUrl,
-		MaxNumberOfMessages: 1,
+	waitFor(t, 10*time.Second, "message redelivered after visibility timeout", func() bool {
+		recvOutput3, err = client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            createOutput.QueueUrl,
+			MaxNumberOfMessages: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return len(recvOutput3.Messages) == 1
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(recvOutput3.Messages) != 1 {
-		t.Fatalf("expected 1 redelivered message, got %d", len(recvOutput3.Messages))
-	}
 
 	redeliveredBody := aws.ToString(recvOutput3.Messages[0].Body)
 	if redeliveredBody != "visibility-timeout-test" {
@@ -963,50 +962,48 @@ func TestSQS_VisibilityTimeoutDLQRedrive(t *testing.T) {
 		t.Fatalf("expected 1 message on first receive, got %d", len(recvOutput1.Messages))
 	}
 
-	// Wait for visibility timeout to expire.
-	time.Sleep(1500 * time.Millisecond)
-
 	// Second receive (ReceiveCount becomes 2, matches maxReceiveCount).
-	recvOutput2, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:            sourceOutput.QueueUrl,
-		MaxNumberOfMessages: 1,
+	// Poll past the 1s visibility timeout instead of sleeping a fixed margin.
+	waitFor(t, 10*time.Second, "message redelivered after visibility timeout", func() bool {
+		recvOutput2, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            sourceOutput.QueueUrl,
+			MaxNumberOfMessages: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return len(recvOutput2.Messages) == 1
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	if len(recvOutput2.Messages) != 1 {
-		t.Fatalf("expected 1 message on second receive, got %d", len(recvOutput2.Messages))
-	}
+	// The redrive to the DLQ happens when a receive on the source queue scans
+	// the message after its visibility timeout expired again, so each poll
+	// receives from the source first and then checks the DLQ.
+	var recvDLQ *sqs.ReceiveMessageOutput
 
-	// Wait for visibility timeout to expire again.
-	time.Sleep(1500 * time.Millisecond)
+	waitFor(t, 10*time.Second, "message moved to DLQ", func() bool {
+		recvSource, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            sourceOutput.QueueUrl,
+			MaxNumberOfMessages: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	// Third receive from source: should be empty because message was moved to DLQ.
-	recvOutput3, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:            sourceOutput.QueueUrl,
-		MaxNumberOfMessages: 1,
+		if len(recvSource.Messages) != 0 {
+			t.Fatalf("expected 0 messages from source (should move to DLQ), got %d", len(recvSource.Messages))
+		}
+
+		recvDLQ, err = client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            dlqOutput.QueueUrl,
+			MaxNumberOfMessages: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return len(recvDLQ.Messages) == 1
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(recvOutput3.Messages) != 0 {
-		t.Fatalf("expected 0 messages from source (should be in DLQ), got %d", len(recvOutput3.Messages))
-	}
-
-	// Receive from DLQ: message should be there.
-	recvDLQ, err := client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:            dlqOutput.QueueUrl,
-		MaxNumberOfMessages: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(recvDLQ.Messages) != 1 {
-		t.Fatalf("expected 1 message in DLQ, got %d", len(recvDLQ.Messages))
-	}
 
 	dlqBody := aws.ToString(recvDLQ.Messages[0].Body)
 	if dlqBody != "dlq-redrive-test" {

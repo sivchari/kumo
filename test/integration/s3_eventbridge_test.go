@@ -150,13 +150,11 @@ func TestS3_EventBridgeNotification(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields("ETag", "VersionId", "ResultMetadata")).Assert(t.Name()+"_put_object", putObjOutput)
 
-	// Wait for async EventBridge notification goroutine to complete.
-	time.Sleep(500 * time.Millisecond)
-
-	// 7. Receive message from SQS to confirm the event was delivered.
+	// 7. Receive message from SQS to confirm the event was delivered. The
+	// EventBridge notification is delivered by an async goroutine, so poll.
 	var recvOutput *sqs.ReceiveMessageOutput
 
-	for range 10 {
+	waitFor(t, 10*time.Second, "S3 event delivered to SQS via EventBridge", func() bool {
 		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 			QueueUrl:        aws.String(queueURL),
 			WaitTimeSeconds: 1,
@@ -165,14 +163,8 @@ func TestS3_EventBridgeNotification(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if len(recvOutput.Messages) > 0 {
-			break
-		}
-	}
-
-	if len(recvOutput.Messages) == 0 {
-		t.Fatal("expected S3 event to be delivered to SQS queue, but no message received")
-	}
+		return len(recvOutput.Messages) > 0
+	})
 
 	// 8. Verify the event payload.
 	var envelope map[string]any
@@ -279,13 +271,11 @@ func TestS3_NotificationToSQS(t *testing.T) {
 
 	golden.New(t, golden.WithIgnoreFields("ETag", "VersionId", "ResultMetadata")).Assert(t.Name()+"_put_object", putObjOutput)
 
-	// Wait for async notification goroutine to complete.
-	time.Sleep(500 * time.Millisecond)
-
-	// 5. Receive message from SQS to confirm the event was delivered.
+	// 5. Receive message from SQS to confirm the event was delivered. The
+	// notification is delivered by an async goroutine, so poll.
 	var recvOutput *sqs.ReceiveMessageOutput
 
-	for range 10 {
+	waitFor(t, 10*time.Second, "S3 event notification delivered to SQS", func() bool {
 		recvOutput, err = sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 			QueueUrl:        aws.String(queueURL),
 			WaitTimeSeconds: 1,
@@ -294,14 +284,8 @@ func TestS3_NotificationToSQS(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if len(recvOutput.Messages) > 0 {
-			break
-		}
-	}
-
-	if len(recvOutput.Messages) == 0 {
-		t.Fatal("expected S3 event notification to be delivered to SQS queue, but no message received")
-	}
+		return len(recvOutput.Messages) > 0
+	})
 
 	// 6. Verify the event payload matches the S3 event notification format.
 	msgBody := aws.ToString(recvOutput.Messages[0].Body)
