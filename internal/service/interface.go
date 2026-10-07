@@ -34,6 +34,25 @@ type Describer interface {
 	Meta() Meta
 }
 
+// SigV4Service is an optional interface for REST services routed by the
+// SigV4 credential scope signing name instead of a kumo path prefix.
+//
+// Real AWS tells REST services apart by hostname, so on a single endpoint
+// several services share identical paths (e.g. GET /tags/{resourceArn});
+// the signing name in the credential scope is what still identifies the
+// service. Services implementing this interface register their
+// AWS-faithful routes here and keep any legacy prefixed routes in
+// RegisterRoutes for backward compatibility.
+type SigV4Service interface {
+	// SigningName returns the service name used in the SigV4 credential
+	// scope, e.g. "ses" for SES v2.
+	SigningName() string
+
+	// RegisterScopedRoutes registers the service's AWS-faithful routes
+	// (without kumo path prefixes) on r.
+	RegisterScopedRoutes(r Router)
+}
+
 // Router is the interface for registering HTTP routes.
 type Router interface {
 	// Handle registers a handler for the given method and pattern.
