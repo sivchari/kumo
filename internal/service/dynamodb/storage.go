@@ -86,6 +86,7 @@ type MemoryStorage struct {
 	region      string
 	dataDir     string
 	stopTTL     chan struct{}
+	stopOnce    sync.Once
 	streamStore *streams.Store
 }
 
@@ -225,8 +226,10 @@ func (m *MemoryStorage) saveLocked() {
 	storage.ScheduleSave(m.dataDir, "dynamodb", m.MarshalJSON)
 }
 
-// Close saves the storage state to disk if persistence is enabled.
+// Close stops the TTL reaper and saves the storage state to disk if persistence is enabled.
 func (m *MemoryStorage) Close() error {
+	m.stopOnce.Do(func() { close(m.stopTTL) })
+
 	if m.dataDir == "" {
 		return nil
 	}
