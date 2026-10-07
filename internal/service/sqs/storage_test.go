@@ -5,6 +5,9 @@ import (
 	"testing"
 )
 
+// attrFifoQueue is the queue attribute that marks a queue as FIFO.
+const attrFifoQueue = "FifoQueue"
+
 func TestMemoryStorage_CreateQueueRejectsDelimiterNames(t *testing.T) {
 	t.Parallel()
 
@@ -36,7 +39,7 @@ func TestMemoryStorage_CreateQueueAcceptsValidNames(t *testing.T) {
 		attrs map[string]string
 	}{
 		{name: "queue_name-1"},
-		{name: "queue-name.fifo", attrs: map[string]string{"FifoQueue": "true"}},
+		{name: "queue-name.fifo", attrs: map[string]string{attrFifoQueue: attrValueTrue}},
 	}
 
 	for _, tt := range tests {
@@ -394,7 +397,7 @@ func TestMemoryStorage_FIFODeduplicationCacheAfterReload(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()
 
-	attrs := map[string]string{"FifoQueue": "true"}
+	attrs := map[string]string{attrFifoQueue: attrValueTrue}
 
 	s1 := NewMemoryStorage("http://localhost:4566", WithDataDir(dir))
 	if _, err := s1.CreateQueue(ctx, "reload-queue.fifo", attrs, nil); err != nil {
