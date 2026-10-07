@@ -16,9 +16,9 @@ import (
 	"github.com/sivchari/kumo"
 )
 
+// Not parallel: every NewTestServer shares the global service registry, so
+// concurrent servers race on its wiring and see each other's resources.
 func TestNewTestServerHealth(t *testing.T) {
-	t.Parallel()
-
 	srv := kumo.NewTestServer(t)
 
 	// The in-memory client routes every request to the server, whatever the
@@ -45,9 +45,8 @@ func TestNewTestServerHealth(t *testing.T) {
 	}
 }
 
+// Not parallel: see TestNewTestServerHealth.
 func TestNewTestServerSynctest(t *testing.T) {
-	t.Parallel()
-
 	synctest.Test(t, func(t *testing.T) {
 		srv := kumo.NewTestServer(t)
 
@@ -67,6 +66,16 @@ func TestNewTestServerSynctest(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("create bucket: %v", err)
 		}
+
+		// The bucket outlives the server in the global registry, so delete it
+		// to keep reruns in the same process (-count>1) passing.
+		t.Cleanup(func() {
+			if _, err := client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+				Bucket: aws.String("kumo-synctest"),
+			}); err != nil {
+				t.Errorf("delete bucket: %v", err)
+			}
+		})
 
 		out, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
 		if err != nil {
