@@ -1,0 +1,27 @@
+[
+  {
+    "name": "initial",
+    "dir": "initial"
+  },
+  {
+    "name": "update_in_place",
+    "dir": "update_in_place"
+  },
+  {
+    "name": "replace_in_use",
+    "dir": "update_in_place",
+    "replace": ["aws_cloudfront_cache_policy.custom"],
+    "expect_error": "CachePolicyInUse"
+  },
+  {
+    "name": "create_before_destroy_same_name",
+    "dir": "cbd_same_name",
+    "replace": ["aws_cloudfront_cache_policy.custom"],
+    "expect_error": "CachePolicyAlreadyExists"
+  },
+  {
+    "name": "create_before_destroy_new_name",
+    "dir": "cbd_new_name",
+    "replace": ["aws_cloudfront_cache_policy.custom"]
+  }
+]

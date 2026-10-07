@@ -56,6 +56,13 @@ type Storage interface {
 	ListOriginAccessControls(ctx context.Context, marker string, maxItems int) ([]*OriginAccessControl, string, error)
 	UpdateOriginAccessControl(ctx context.Context, id string, cfg *OriginAccessControlConfig, ifMatch string) (*OriginAccessControl, error)
 	DeleteOriginAccessControl(ctx context.Context, id, ifMatch string) error
+
+	// Cache policy.
+	CreateCachePolicy(ctx context.Context, cfg *CachePolicyConfig) (*CachePolicy, error)
+	GetCachePolicy(ctx context.Context, id string) (*CachePolicy, error)
+	ListCachePolicies(ctx context.Context, policyType, marker string, maxItems int) ([]*CachePolicy, string, error)
+	UpdateCachePolicy(ctx context.Context, id string, cfg *CachePolicyConfig, ifMatch string) (*CachePolicy, error)
+	DeleteCachePolicy(ctx context.Context, id, ifMatch string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -80,6 +87,7 @@ type MemoryStorage struct {
 	Distributions        map[string]*Distribution            `json:"distributions"`
 	Invalidations        map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
 	OriginAccessControls map[string]*OriginAccessControl     `json:"originAccessControls,omitempty"`
+	CachePolicies        map[string]*CachePolicy             `json:"cachePolicies,omitempty"`
 	signing              signingStore
 	dataDir              string
 }
@@ -90,6 +98,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		Distributions:        make(map[string]*Distribution),
 		Invalidations:        make(map[string]map[string]*Invalidation),
 		OriginAccessControls: make(map[string]*OriginAccessControl),
+		CachePolicies:        make(map[string]*CachePolicy),
 		signing: signingStore{
 			PublicKeys: make(map[string]*PublicKey),
 			KeyGroups:  make(map[string]*KeyGroup),
@@ -144,6 +153,7 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	s.ensureSigningInit()
 	s.ensureOACInit()
+	s.ensureCachePolicyInit()
 
 	return nil
 }
