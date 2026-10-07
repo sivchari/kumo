@@ -80,6 +80,19 @@ func TestS3_EventBridgeNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, _ = s3Client.DeleteObject(cleanupCtx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String("test-file.txt"),
+		})
+		_, _ = s3Client.DeleteBucket(cleanupCtx, &s3.DeleteBucketInput{
+			Bucket: aws.String(bucketName),
+		})
+	})
+
 	// 2. Enable EventBridge notification on the bucket.
 	notifXML := `<NotificationConfiguration><EventBridgeConfiguration></EventBridgeConfiguration></NotificationConfiguration>`
 
@@ -112,6 +125,12 @@ func TestS3_EventBridgeNotification(t *testing.T) {
 
 	queueURL := *createQueueOutput.QueueUrl
 
+	t.Cleanup(func() {
+		_, _ = sqsClient.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: aws.String(queueURL),
+		})
+	})
+
 	// 4. Create EventBridge rule matching S3 Object Created events for this bucket.
 	_, err = ebClient.PutRule(ctx, &eventbridge.PutRuleInput{
 		Name:         aws.String("s3-notif-rule"),
@@ -121,6 +140,19 @@ func TestS3_EventBridgeNotification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, _ = ebClient.RemoveTargets(cleanupCtx, &eventbridge.RemoveTargetsInput{
+			Rule: aws.String("s3-notif-rule"),
+			Ids:  []string{"s3-notif-sqs"},
+		})
+		_, _ = ebClient.DeleteRule(cleanupCtx, &eventbridge.DeleteRuleInput{
+			Name: aws.String("s3-notif-rule"),
+		})
+	})
 
 	// 5. Add SQS target.
 	putTargetsOutput, err := ebClient.PutTargets(ctx, &eventbridge.PutTargetsInput{
