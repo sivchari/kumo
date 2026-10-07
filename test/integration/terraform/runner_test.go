@@ -6,12 +6,14 @@
 package terraform_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -19,10 +21,21 @@ import (
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
-// awsEndpointURL is the single kumo endpoint every fixture's AWS provider is
-// pointed at via the AWS_ENDPOINT_URL env var, which the provider resolves
-// for every service without a per-service endpoints block.
-const awsEndpointURL = "http://localhost:4566"
+// defaultAWSEndpointURL is the kumo endpoint used when KUMO_TEST_ENDPOINT is
+// unset.
+const defaultAWSEndpointURL = "http://localhost:4566"
+
+// awsEndpointURL returns the single kumo endpoint every fixture's AWS
+// provider is pointed at via the AWS_ENDPOINT_URL env var, which the provider
+// resolves for every service without a per-service endpoints block. Like the
+// SDK integration tests, it is overridable via KUMO_TEST_ENDPOINT.
+func awsEndpointURL() string {
+	if e := os.Getenv("KUMO_TEST_ENDPOINT"); e != "" {
+		return e
+	}
+
+	return defaultAWSEndpointURL
+}
 
 // fixturesDir holds one directory per fixture, discovered at test time.
 const fixturesDir = "fixtures"
@@ -30,6 +43,22 @@ const fixturesDir = "fixtures"
 // expectedOutputsFile is the optional per-fixture file mapping terraform
 // output names to their expected string values.
 const expectedOutputsFile = "expected_outputs.json"
+
+// stepsFile is the optional per-fixture manifest that turns a fixture into
+// an ordered list of configs applied one after another to the same state.
+const stepsFile = "steps.json"
+
+// fixtureStep is one entry of stepsFile. Dir is a directory inside the
+// fixture holding the step's full config, which replaces the previous step's
+// config. Replace lists resource addresses passed as -replace. ExpectError,
+// when set, is a regexp the apply error must match, and the step fails if
+// apply succeeds instead.
+type fixtureStep struct {
+	Name        string   `json:"name"`
+	Dir         string   `json:"dir"`
+	Replace     []string `json:"replace"`
+	ExpectError string   `json:"expect_error"`
+}
 
 // providerVersionEnv names the env var overriding the AWS provider version
 // constraint written into every fixture's provider.tf.
@@ -89,7 +118,8 @@ func providerTF() string {
 var initMu sync.Mutex
 
 // TestTerraformFixtures discovers every directory under fixtures/ and runs
-// it through init -> apply -> plan (idempotency check) -> destroy.
+// it through init -> apply -> plan (idempotency check) -> destroy, applying
+// each step in turn for fixtures with a stepsFile.
 func TestTerraformFixtures(t *testing.T) {
 	bin := resolveTFBinary(t)
 	if bin == "" {
@@ -183,15 +213,15 @@ func warmPluginCache(t *testing.T, bin string) []byte {
 	return lockFile
 }
 
-// runFixture copies a fixture into a scratch dir, writes provider.tf and the
-// warmed dependency lock file, then drives init -> apply -> plan
-// (idempotency check) -> destroy.
+// runFixture writes provider.tf and the warmed dependency lock file into a
+// scratch dir, then drives the fixture (or each of its steps) through
+// init -> apply -> plan (idempotency check), and destroys what is left in
+// the state on cleanup.
 func runFixture(t *testing.T, bin, srcDir string, lockFile []byte) {
 	t.Helper()
 
+	steps := readSteps(t, srcDir)
 	workDir := t.TempDir()
-
-	copyFixtureFiles(t, srcDir, workDir)
 
 	if err := os.WriteFile(filepath.Join(workDir, "provider.tf"), []byte(providerTF()), 0o600); err != nil {
 		t.Fatalf("write provider.tf: %v", err)
@@ -210,34 +240,158 @@ func runFixture(t *testing.T, bin, srcDir string, lockFile []byte) {
 		t.Fatalf("terraform env: %v", err)
 	}
 
-	ctx := t.Context()
-
-	initMu.Lock()
-	err = tf.Init(ctx)
-	initMu.Unlock()
-
-	if err != nil {
-		t.Fatalf("terraform init: %v", err)
-	}
-
-	if err := tf.Apply(ctx); err != nil {
-		t.Fatalf("terraform apply: %v", err)
-	}
+	initialized := false
 
 	t.Cleanup(func() {
+		if !initialized {
+			return
+		}
+
 		if err := tf.Destroy(context.Background()); err != nil {
-			t.Logf("terraform destroy (cleanup): %v", err)
+			t.Errorf("terraform destroy (cleanup): %v", err)
 		}
 	})
 
-	assertPlanHasNoChanges(t, tf, workDir)
-	assertExpectedOutputs(t, tf, srcDir)
+	var copied []string
+
+	run := func(t *testing.T, configDir string, step fixtureStep) {
+		t.Helper()
+
+		removeFiles(t, workDir, copied)
+		copied = copyFixtureFiles(t, configDir, workDir)
+
+		initMu.Lock()
+		err := tf.Init(t.Context())
+		initMu.Unlock()
+
+		if err != nil {
+			t.Fatalf("terraform init: %v", err)
+		}
+
+		initialized = true
+
+		applyStep(t, tf, workDir, configDir, step)
+	}
+
+	if steps == nil {
+		run(t, srcDir, fixtureStep{})
+
+		return
+	}
+
+	for _, step := range steps {
+		ok := t.Run(step.Name, func(t *testing.T) {
+			run(t, filepath.Join(srcDir, step.Dir), step)
+		})
+		if !ok {
+			return
+		}
+	}
 }
 
-// copyFixtureFiles copies every fixture file except expectedOutputsFile into
-// dstDir. The fixture directories are flat (main.tf plus optional metadata),
-// so a non-recursive copy is enough.
-func copyFixtureFiles(t *testing.T, srcDir, dstDir string) {
+// readSteps parses the fixture's optional stepsFile, returning nil when the
+// fixture has none. A step without a name is named after its dir.
+func readSteps(t *testing.T, srcDir string) []fixtureStep {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Clean(filepath.Join(srcDir, stepsFile)))
+	if os.IsNotExist(err) {
+		return nil
+	}
+
+	if err != nil {
+		t.Fatalf("read %s: %v", stepsFile, err)
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+
+	var steps []fixtureStep
+	if err := dec.Decode(&steps); err != nil {
+		t.Fatalf("parse %s: %v", stepsFile, err)
+	}
+
+	if len(steps) == 0 {
+		t.Fatalf("%s lists no steps", stepsFile)
+	}
+
+	for i := range steps {
+		if steps[i].Dir == "" {
+			t.Fatalf("%s: step %d has no dir", stepsFile, i)
+		}
+
+		if steps[i].Name == "" {
+			steps[i].Name = steps[i].Dir
+		}
+	}
+
+	return steps
+}
+
+// applyStep applies the config in workDir. A step with ExpectError only
+// asserts the apply error and leaves the state as the failed apply left it;
+// any other step must apply cleanly, leave no pending changes and match the
+// optional expected outputs in configDir.
+func applyStep(t *testing.T, tf *tfexec.Terraform, workDir, configDir string, step fixtureStep) {
+	t.Helper()
+
+	opts := make([]tfexec.ApplyOption, 0, len(step.Replace))
+	for _, address := range step.Replace {
+		opts = append(opts, tfexec.Replace(address))
+	}
+
+	err := tf.Apply(t.Context(), opts...)
+
+	if step.ExpectError != "" {
+		assertApplyError(t, err, step.ExpectError)
+
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("terraform apply: %v", err)
+	}
+
+	assertPlanHasNoChanges(t, tf, workDir)
+	assertExpectedOutputs(t, tf, configDir)
+}
+
+// assertApplyError fails unless the apply failed with an error matching
+// pattern.
+func assertApplyError(t *testing.T, err error, pattern string) {
+	t.Helper()
+
+	re, reErr := regexp.Compile(pattern)
+	if reErr != nil {
+		t.Fatalf("compile expect_error %q: %v", pattern, reErr)
+	}
+
+	if err == nil {
+		t.Fatalf("terraform apply succeeded, want an error matching %q", pattern)
+	}
+
+	if !re.MatchString(err.Error()) {
+		t.Fatalf("terraform apply error does not match %q:\n%v", pattern, err)
+	}
+}
+
+// removeFiles deletes the named files from dir, so a step's config does not
+// leak into the next one.
+func removeFiles(t *testing.T, dir string, names []string) {
+	t.Helper()
+
+	for _, name := range names {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("remove %s: %v", name, err)
+		}
+	}
+}
+
+// copyFixtureFiles copies every file of srcDir except expectedOutputsFile and
+// stepsFile into dstDir and returns the copied names. Fixture and step
+// directories are flat (main.tf plus optional metadata), so a non-recursive
+// copy is enough.
+func copyFixtureFiles(t *testing.T, srcDir, dstDir string) []string {
 	t.Helper()
 
 	entries, err := os.ReadDir(srcDir)
@@ -245,8 +399,10 @@ func copyFixtureFiles(t *testing.T, srcDir, dstDir string) {
 		t.Fatalf("read fixture dir %s: %v", srcDir, err)
 	}
 
+	var copied []string
+
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == expectedOutputsFile {
+		if entry.IsDir() || entry.Name() == expectedOutputsFile || entry.Name() == stepsFile {
 			continue
 		}
 
@@ -258,7 +414,11 @@ func copyFixtureFiles(t *testing.T, srcDir, dstDir string) {
 		if err := os.WriteFile(filepath.Join(dstDir, entry.Name()), data, 0o600); err != nil {
 			t.Fatalf("write fixture file %s: %v", entry.Name(), err)
 		}
+
+		copied = append(copied, entry.Name())
 	}
+
+	return copied
 }
 
 // assertPlanHasNoChanges re-plans the applied fixture and fails with a
@@ -338,7 +498,7 @@ func fixtureEnv(t *testing.T) map[string]string {
 	t.Helper()
 
 	env := terraformEnvWithPluginCache(t)
-	env["AWS_ENDPOINT_URL"] = awsEndpointURL
+	env["AWS_ENDPOINT_URL"] = awsEndpointURL()
 
 	return env
 }
