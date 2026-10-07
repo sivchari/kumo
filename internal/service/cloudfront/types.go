@@ -34,6 +34,16 @@ type DistributionConfig struct {
 	ViewerCertificate    *ViewerCertificate
 	HTTPVersion          string
 	IsIPV6Enabled        bool
+	Logging              *LoggingConfig
+}
+
+// LoggingConfig represents standard (legacy) access log settings. kumo stores
+// them but does not deliver logs.
+type LoggingConfig struct {
+	Enabled        bool
+	IncludeCookies bool
+	Bucket         string
+	Prefix         string
 }
 
 // Origins represents the origins for a distribution.
@@ -260,11 +270,20 @@ type DistributionConfigXML struct {
 	DefaultCacheBehavior *DefaultCacheBehaviorXML `xml:"DefaultCacheBehavior"`
 	CacheBehaviors       *CacheBehaviorsXML       `xml:"CacheBehaviors,omitempty"`
 	Comment              string                   `xml:"Comment"`
+	Logging              *LoggingConfigXML        `xml:"Logging,omitempty"`
 	Enabled              bool                     `xml:"Enabled"`
 	PriceClass           string                   `xml:"PriceClass,omitempty"`
 	ViewerCertificate    *ViewerCertificateXML    `xml:"ViewerCertificate,omitempty"`
 	HTTPVersion          string                   `xml:"HttpVersion,omitempty"`
 	IsIPV6Enabled        bool                     `xml:"IsIPV6Enabled,omitempty"`
+}
+
+// LoggingConfigXML represents logging config in XML format.
+type LoggingConfigXML struct {
+	Enabled        bool   `xml:"Enabled"`
+	IncludeCookies bool   `xml:"IncludeCookies"`
+	Bucket         string `xml:"Bucket"`
+	Prefix         string `xml:"Prefix"`
 }
 
 // OriginGroupsXML represents origin groups in XML format. kumo does not
@@ -525,6 +544,7 @@ type CreateDistributionRequest struct {
 	DefaultCacheBehavior *DefaultCacheBehaviorXML `xml:"DefaultCacheBehavior"`
 	CacheBehaviors       *CacheBehaviorsXML       `xml:"CacheBehaviors,omitempty"`
 	Comment              string                   `xml:"Comment"`
+	Logging              *LoggingConfigXML        `xml:"Logging,omitempty"`
 	Enabled              bool                     `xml:"Enabled"`
 	PriceClass           string                   `xml:"PriceClass,omitempty"`
 	ViewerCertificate    *ViewerCertificateXML    `xml:"ViewerCertificate,omitempty"`

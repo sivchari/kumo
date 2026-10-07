@@ -1,0 +1,18 @@
+[
+  {
+    "name": "initial",
+    "dir": "initial"
+  },
+  {
+    "name": "update_prefix_and_cookies",
+    "dir": "update_prefix_and_cookies"
+  },
+  {
+    "name": "empty_prefix",
+    "dir": "empty_prefix"
+  },
+  {
+    "name": "remove_logging",
+    "dir": "remove_logging"
+  }
+]

@@ -1,8 +1,8 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/Edffa1322-02da",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/E8dd302a9-7f0c",
     "DistributionConfig": {
-      "CallerReference": "test-cf-cache-behaviors-dlwq2bb5qfwg",
+      "CallerReference": "test-cf-cache-behaviors-dlyyl7xty652",
       "Comment": "ordered cache behaviors",
       "DefaultCacheBehavior": {
         "TargetOriginId": "assets",
@@ -168,7 +168,12 @@
       "DefaultRootObject": null,
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
-      "Logging": null,
+      "Logging": {
+        "Bucket": "",
+        "Enabled": false,
+        "IncludeCookies": false,
+        "Prefix": ""
+      },
       "OriginGroups": {
         "Quantity": 0,
         "Items": null
@@ -189,10 +194,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "Edffa1322-02da.cloudfront.net",
-    "Id": "Edffa1322-02da",
+    "DomainName": "E8dd302a9-7f0c.cloudfront.net",
+    "Id": "E8dd302a9-7f0c",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-10-05T16:22:06+09:00",
+    "LastModifiedTime": "2026-10-08T07:28:16+09:00",
     "Status": "Deployed",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -206,6 +211,6 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "E01aee716-930f-47fc-911a-1851c0b2",
+  "ETag": "E88888740-cedb-4598-bc26-8e839017",
   "ResultMetadata": {}
 }

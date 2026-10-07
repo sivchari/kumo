@@ -1,12 +1,12 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/E8cfe6115-8a09",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/E9a8fea31-0fd5",
     "DistributionConfig": {
-      "CallerReference": "test-update-distribution",
-      "Comment": "Updated comment",
+      "CallerReference": "test-cf-logging-dlyyl7y0smbp",
+      "Comment": "distribution logging",
       "DefaultCacheBehavior": {
-        "TargetOriginId": "myS3Origin",
-        "ViewerProtocolPolicy": "allow-all",
+        "TargetOriginId": "assets",
+        "ViewerProtocolPolicy": "redirect-to-https",
         "AllowedMethods": {
           "Items": [
             "GET",
@@ -21,7 +21,7 @@
             "Quantity": 2
           }
         },
-        "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
         "Compress": null,
         "DefaultTTL": null,
         "FieldLevelEncryptionId": null,
@@ -56,20 +56,26 @@
       "Origins": {
         "Items": [
           {
-            "DomainName": "mybucket.s3.amazonaws.com",
-            "Id": "myS3Origin",
+            "DomainName": "assets.example.com",
+            "Id": "assets",
             "ConnectionAttempts": null,
             "ConnectionTimeout": null,
             "CustomHeaders": null,
-            "CustomOriginConfig": null,
+            "CustomOriginConfig": {
+              "HTTPPort": 80,
+              "HTTPSPort": 443,
+              "OriginProtocolPolicy": "https-only",
+              "IpAddressType": "",
+              "OriginKeepaliveTimeout": null,
+              "OriginMtlsConfig": null,
+              "OriginReadTimeout": null,
+              "OriginSslProtocols": null
+            },
             "OriginAccessControlId": null,
             "OriginPath": null,
             "OriginShield": null,
             "ResponseCompletionTimeout": null,
-            "S3OriginConfig": {
-              "OriginAccessIdentity": "",
-              "OriginReadTimeout": null
-            },
+            "S3OriginConfig": null,
             "VpcOriginConfig": null
           }
         ],
@@ -89,10 +95,10 @@
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
       "Logging": {
-        "Bucket": "",
-        "Enabled": false,
-        "IncludeCookies": false,
-        "Prefix": ""
+        "Bucket": "cf-logs-updated.s3.amazonaws.com",
+        "Enabled": true,
+        "IncludeCookies": true,
+        "Prefix": "updated/"
       },
       "OriginGroups": {
         "Quantity": 0,
@@ -114,10 +120,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "E8cfe6115-8a09.cloudfront.net",
-    "Id": "E8cfe6115-8a09",
+    "DomainName": "E9a8fea31-0fd5.cloudfront.net",
+    "Id": "E9a8fea31-0fd5",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-10-08T07:28:45+09:00",
+    "LastModifiedTime": "2026-10-08T07:28:16+09:00",
     "Status": "Deployed",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -131,6 +137,6 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "Ed5b68445-c6fa-4f02-87bc-17d93d9d",
+  "ETag": "Ee8a8e239-2291-499f-8db2-a789999a",
   "ResultMetadata": {}
 }

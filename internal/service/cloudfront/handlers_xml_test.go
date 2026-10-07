@@ -1,8 +1,10 @@
 package cloudfront
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -138,4 +140,60 @@ func TestBuildDistributionListXML_AlwaysEmitsMandatoryElements(t *testing.T) {
 	}
 
 	assertMandatoryElements(t, &summary.CacheBehaviors.Items[0].DefaultCacheBehaviorXML)
+}
+
+func TestBuildDistributionConfigXML_OmittedLoggingReadsBackDisabled(t *testing.T) {
+	t.Parallel()
+
+	data, err := xml.Marshal(buildDistributionConfigXML(newBareDistribution().DistributionConfig))
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+
+	want := "<Logging><Enabled>false</Enabled><IncludeCookies>false</IncludeCookies><Bucket></Bucket><Prefix></Prefix></Logging>"
+	if !strings.Contains(string(data), want) {
+		t.Errorf("config XML lacks %s:\n%s", want, data)
+	}
+}
+
+func TestNewDistributionConfig_DisabledLoggingDropsBucketAndPrefix(t *testing.T) {
+	t.Parallel()
+
+	got := newDistributionConfig(&CreateDistributionRequest{Logging: &LoggingConfigXML{
+		IncludeCookies: true,
+		Bucket:         "logs.s3.amazonaws.com",
+		Prefix:         "cf/",
+	}}).Logging
+
+	if want := (LoggingConfig{IncludeCookies: true}); got == nil || *got != want {
+		t.Errorf("Logging = %+v, want %+v", got, want)
+	}
+}
+
+func TestMemoryStorage_LoadsSnapshotWithoutLogging(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(map[string]any{"distributions": map[string]*Distribution{"EDFDVBD6EXAMPLE": newBareDistribution()}})
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+
+	legacy := strings.Replace(string(data), `,"Logging":null`, "", 1)
+	if strings.Contains(legacy, "Logging") {
+		t.Fatalf("snapshot still carries Logging: %s", legacy)
+	}
+
+	s := NewMemoryStorage()
+	if err := s.UnmarshalJSON([]byte(legacy)); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	dist, err := s.GetDistribution(t.Context(), "EDFDVBD6EXAMPLE")
+	if err != nil {
+		t.Fatalf("GetDistribution: %v", err)
+	}
+
+	if got := marshalRoundTrip(t, dist).DistributionConfig.Logging; got == nil || *got != (LoggingConfigXML{}) {
+		t.Errorf("Logging = %+v, want the disabled form", got)
+	}
 }

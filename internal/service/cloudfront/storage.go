@@ -338,6 +338,7 @@ func newDistributionConfig(config *CreateDistributionRequest) *DistributionConfi
 		CacheBehaviors:       convertCacheBehaviorsFromXML(config.CacheBehaviors),
 		Aliases:              convertAliasesFromXML(config.Aliases),
 		ViewerCertificate:    convertViewerCertificateFromXML(config.ViewerCertificate),
+		Logging:              convertLoggingFromXML(config.Logging),
 	}
 }
 
@@ -808,6 +809,22 @@ func convertViewerCertificateFromXML(cert *ViewerCertificateXML) *ViewerCertific
 		SSLSupportMethod:             cert.SSLSupportMethod,
 		MinimumProtocolVersion:       cert.MinimumProtocolVersion,
 	}
+}
+
+// convertLoggingFromXML drops Bucket and Prefix when logging is disabled, as
+// CloudFront does.
+func convertLoggingFromXML(logging *LoggingConfigXML) *LoggingConfig {
+	if logging == nil {
+		return nil
+	}
+
+	result := &LoggingConfig{Enabled: logging.Enabled, IncludeCookies: logging.IncludeCookies}
+	if logging.Enabled {
+		result.Bucket = logging.Bucket
+		result.Prefix = logging.Prefix
+	}
+
+	return result
 }
 
 func convertPathsFromXML(paths *PathsXML) *Paths {
