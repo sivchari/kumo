@@ -98,9 +98,6 @@ func TestDynamoDBStreams_GetShardIteratorAndGetRecords(t *testing.T) {
 		t.Fatalf("failed to put item: %v", err)
 	}
 
-	// Brief pause to allow stream record to propagate.
-	time.Sleep(100 * time.Millisecond)
-
 	// DescribeStream to get shard info.
 	describeOutput, err := streamsClient.DescribeStream(ctx, &dynamodbstreams.DescribeStreamInput{
 		StreamArn: aws.String(streamArn),
@@ -129,17 +126,19 @@ func TestDynamoDBStreams_GetShardIteratorAndGetRecords(t *testing.T) {
 		t.Fatal("expected shard iterator to be non-nil")
 	}
 
-	// GetRecords.
-	recordsOutput, err := streamsClient.GetRecords(ctx, &dynamodbstreams.GetRecordsInput{
-		ShardIterator: iteratorOutput.ShardIterator,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// GetRecords, polling until the stream record propagates.
+	var recordsOutput *dynamodbstreams.GetRecordsOutput
 
-	if len(recordsOutput.Records) == 0 {
-		t.Fatal("expected at least one record")
-	}
+	waitFor(t, 10*time.Second, "stream record propagated", func() bool {
+		recordsOutput, err = streamsClient.GetRecords(ctx, &dynamodbstreams.GetRecordsInput{
+			ShardIterator: iteratorOutput.ShardIterator,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return len(recordsOutput.Records) > 0
+	})
 
 	golden.New(t, golden.WithIgnoreFields(
 		"ResultMetadata", "NextShardIterator",
@@ -195,9 +194,6 @@ func TestDynamoDBStreams_MultipleOperations(t *testing.T) {
 		t.Fatalf("failed to delete item: %v", err)
 	}
 
-	// Brief pause to allow stream records to propagate.
-	time.Sleep(100 * time.Millisecond)
-
 	// DescribeStream to get shard info.
 	describeOutput, err := streamsClient.DescribeStream(ctx, &dynamodbstreams.DescribeStreamInput{
 		StreamArn: aws.String(streamArn),
@@ -222,17 +218,20 @@ func TestDynamoDBStreams_MultipleOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// GetRecords - should contain INSERT, MODIFY, REMOVE events.
-	recordsOutput, err := streamsClient.GetRecords(ctx, &dynamodbstreams.GetRecordsInput{
-		ShardIterator: iteratorOutput.ShardIterator,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// GetRecords - should contain INSERT, MODIFY, REMOVE events. Poll until
+	// all three records propagate.
+	var recordsOutput *dynamodbstreams.GetRecordsOutput
 
-	if len(recordsOutput.Records) < 3 {
-		t.Fatalf("expected at least 3 records (INSERT, MODIFY, REMOVE), got %d", len(recordsOutput.Records))
-	}
+	waitFor(t, 10*time.Second, "INSERT, MODIFY and REMOVE records propagated", func() bool {
+		recordsOutput, err = streamsClient.GetRecords(ctx, &dynamodbstreams.GetRecordsInput{
+			ShardIterator: iteratorOutput.ShardIterator,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return len(recordsOutput.Records) >= 3
+	})
 
 	golden.New(t, golden.WithIgnoreFields(
 		"ResultMetadata", "NextShardIterator",

@@ -502,20 +502,21 @@ func TestS3_PresignedURL_Expired(t *testing.T) {
 		t.Fatalf("failed to presign GetObject: %v", err)
 	}
 
-	// Wait for URL to expire
-	time.Sleep(2 * time.Second)
+	// Expiry is monotonic, so poll until the server rejects the URL instead
+	// of sleeping past the 1s expiration.
+	waitFor(t, 10*time.Second, "presigned URL rejected after expiry", func() bool {
+		resp, err := http.Get(presignedReq.URL)
+		if err != nil {
+			t.Fatalf("failed to GET presigned URL: %v", err)
+		}
+		defer resp.Body.Close()
 
-	// Use expired presigned URL
-	resp, err := http.Get(presignedReq.URL)
-	if err != nil {
-		t.Fatalf("failed to GET expired presigned URL: %v", err)
-	}
-	defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected status 200 (not yet expired) or 403 (expired), got %d", resp.StatusCode)
+		}
 
-	// Should return 403 Forbidden for expired URL
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("expected status 403 for expired URL, got %d", resp.StatusCode)
-	}
+		return resp.StatusCode == http.StatusForbidden
+	})
 }
 
 // Multipart Upload Tests
