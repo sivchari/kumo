@@ -66,9 +66,10 @@ func TestKMS_ListKeys(t *testing.T) {
 
 	keyID := *createOutput.KeyMetadata.KeyId
 
-	// List keys.
+	// List keys. Other tests leave keys behind, so request the KMS maximum
+	// to keep the lookup independent of test order.
 	listOutput, err := client.ListKeys(ctx, &kms.ListKeysInput{
-		Limit: aws.Int32(10),
+		Limit: aws.Int32(1000),
 	})
 	if err != nil {
 		t.Fatal(err)

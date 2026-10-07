@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"context"
+	"slices"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -91,7 +93,7 @@ func TestCodeGuruReviewer_ListRepositoryAssociations(t *testing.T) {
 	client := newCodeGuruReviewerClient(t)
 	ctx := t.Context()
 
-	_, err := client.AssociateRepository(ctx, &codegurureviewer.AssociateRepositoryInput{
+	assocResult, err := client.AssociateRepository(ctx, &codegurureviewer.AssociateRepositoryInput{
 		Repository: &types.Repository{
 			CodeCommit: &types.CodeCommitRepository{
 				Name: aws.String("list-repo"),
@@ -102,10 +104,23 @@ func TestCodeGuruReviewer_ListRepositoryAssociations(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Cleanup(func() {
+		_, _ = client.DisassociateRepository(context.Background(), &codegurureviewer.DisassociateRepositoryInput{
+			AssociationArn: assocResult.RepositoryAssociation.AssociationArn,
+		})
+	})
+
 	result, err := client.ListRepositoryAssociations(ctx, &codegurureviewer.ListRepositoryAssociationsInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Other tests' associations share the listing, so keep only this test's
+	// entry to stay independent of test order.
+	result.RepositoryAssociationSummaries = slices.DeleteFunc(result.RepositoryAssociationSummaries,
+		func(s types.RepositoryAssociationSummary) bool {
+			return aws.ToString(s.Name) != "list-repo"
+		})
 
 	golden.New(t, golden.WithIgnoreFields("AssociationArn", "AssociationId", "LastUpdatedTimeStamp", "ResultMetadata")).Assert(t.Name(), result)
 }
@@ -198,6 +213,12 @@ func TestCodeGuruReviewer_ListCodeReviews(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Cleanup(func() {
+		_, _ = client.DisassociateRepository(context.Background(), &codegurureviewer.DisassociateRepositoryInput{
+			AssociationArn: assocResult.RepositoryAssociation.AssociationArn,
+		})
+	})
+
 	_, err = client.CreateCodeReview(ctx, &codegurureviewer.CreateCodeReviewInput{
 		Name:                     aws.String("list-review"),
 		RepositoryAssociationArn: assocResult.RepositoryAssociation.AssociationArn,
@@ -220,7 +241,16 @@ func TestCodeGuruReviewer_ListCodeReviews(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("CodeReviewArn", "AssociationArn", "CreatedTimeStamp", "LastUpdatedTimeStamp", "ResultMetadata")).Assert(t.Name(), result)
+	// Reviews cannot be deleted and other tests' reviews share the listing,
+	// so pick this test's entry to stay independent of order and reruns.
+	idx := slices.IndexFunc(result.CodeReviewSummaries, func(s types.CodeReviewSummary) bool {
+		return aws.ToString(s.Name) == "list-review"
+	})
+	if idx < 0 {
+		t.Fatal("created code review not found in list")
+	}
+
+	golden.New(t, golden.WithIgnoreFields("CodeReviewArn", "AssociationArn", "CreatedTimeStamp", "LastUpdatedTimeStamp", "ResultMetadata")).Assert(t.Name(), result.CodeReviewSummaries[idx])
 }
 
 func TestCodeGuruReviewer_ListRecommendations(t *testing.T) {

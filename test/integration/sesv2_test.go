@@ -234,6 +234,12 @@ func TestSESv2_SendEmail(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Cleanup(func() {
+		_, _ = client.DeleteEmailIdentity(context.Background(), &sesv2.DeleteEmailIdentityInput{
+			EmailIdentity: aws.String(emailIdentity),
+		})
+	})
+
 	// Send email.
 	sendOutput, err := client.SendEmail(ctx, &sesv2.SendEmailInput{
 		FromEmailAddress: aws.String(emailIdentity),
