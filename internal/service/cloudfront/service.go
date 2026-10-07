@@ -76,6 +76,14 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("PUT", "/2020-05-31/origin-access-control/{id}/config", s.UpdateOriginAccessControl)
 	r.Handle("DELETE", "/2020-05-31/origin-access-control/{id}", s.DeleteOriginAccessControl)
 
+	// Cache policy — custom cache key and TTL settings referenced by cache behaviors.
+	r.Handle("POST", "/2020-05-31/cache-policy", s.CreateCachePolicy)
+	r.Handle("GET", "/2020-05-31/cache-policy", s.ListCachePolicies)
+	r.Handle("GET", "/2020-05-31/cache-policy/{id}", s.GetCachePolicy)
+	r.Handle("GET", "/2020-05-31/cache-policy/{id}/config", s.GetCachePolicyConfig)
+	r.Handle("PUT", "/2020-05-31/cache-policy/{id}", s.UpdateCachePolicy)
+	r.Handle("DELETE", "/2020-05-31/cache-policy/{id}", s.DeleteCachePolicy)
+
 	// Edge — proxies real requests through the cache layer.
 	for _, method := range []string{"GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"} {
 		r.Handle(method, "/kumo/cdn/{distributionId}/{path...}", s.Edge)
