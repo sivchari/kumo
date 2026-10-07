@@ -2,7 +2,6 @@ package sfn
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"testing/synctest"
@@ -126,25 +125,4 @@ func executionElapsed(t *testing.T, exec *Execution) time.Duration {
 	}
 
 	return exec.StopDate.Sub(exec.StartDate)
-}
-
-// requireTaskTimedOut checks that every task token API rejects token as
-// TaskTimedOut, i.e. the waiting state already released it.
-func requireTaskTimedOut(t *testing.T, store *MemoryStorage, token string) {
-	t.Helper()
-
-	ctx := context.Background()
-
-	calls := map[string]error{
-		"SendTaskSuccess":   store.SendTaskSuccess(ctx, token, `{}`),
-		"SendTaskFailure":   store.SendTaskFailure(ctx, token, "Late", "too late"),
-		"SendTaskHeartbeat": store.SendTaskHeartbeat(ctx, token),
-	}
-
-	for name, err := range calls {
-		var svcErr *ServiceError
-		if !errors.As(err, &svcErr) || svcErr.Code != tokenErrTimedOut {
-			t.Errorf("%s after release: got %v, want ServiceError code %q", name, err, tokenErrTimedOut)
-		}
-	}
 }

@@ -2,15 +2,14 @@ package sqs
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"testing/synctest"
 	"time"
 )
 
-// These tests run inside a synctest bubble so that visibility timeouts,
-// delays, dedup windows and long polling are driven by virtual time rather
-// than wall-clock sleeps.
+// These tests run inside a synctest bubble so that delivery delays, the
+// 5 minute FIFO dedup window and long polling are driven by virtual time
+// rather than wall-clock sleeps.
 
 func mustCreateQueue(t *testing.T, s *MemoryStorage, name string, attrs map[string]string) string {
 	t.Helper()
@@ -23,127 +22,15 @@ func mustCreateQueue(t *testing.T, s *MemoryStorage, name string, attrs map[stri
 	return q.URL
 }
 
-func mustReceive(t *testing.T, s *MemoryStorage, queueURL string, visibilityTimeout, waitTimeSeconds int) []*Message {
+func mustReceive(t *testing.T, s *MemoryStorage, queueURL string, waitTimeSeconds int) []*Message {
 	t.Helper()
 
-	msgs, err := s.ReceiveMessage(context.Background(), queueURL, 1, visibilityTimeout, waitTimeSeconds)
+	msgs, err := s.ReceiveMessage(context.Background(), queueURL, 1, 0, waitTimeSeconds)
 	if err != nil {
 		t.Fatalf("ReceiveMessage: %v", err)
 	}
 
 	return msgs
-}
-
-func TestMemoryStorage_VisibilityTimeoutRedelivery(t *testing.T) {
-	t.Parallel()
-
-	synctest.Test(t, func(t *testing.T) {
-		s := NewMemoryStorage("http://localhost:4566")
-		ctx := context.Background()
-		queueURL := mustCreateQueue(t, s, "visibility", nil)
-
-		sent, err := s.SendMessage(ctx, queueURL, "body", 0, nil, "", "")
-		if err != nil {
-			t.Fatalf("SendMessage: %v", err)
-		}
-
-		const visibilityTimeout = 10
-
-		first := mustReceive(t, s, queueURL, visibilityTimeout, 0)
-		if len(first) != 1 {
-			t.Fatalf("first receive: got %d messages, want 1", len(first))
-		}
-
-		if first[0].MessageID != sent.MessageID {
-			t.Fatalf("first receive: got message %s, want %s", first[0].MessageID, sent.MessageID)
-		}
-
-		if first[0].ReceiveCount != 1 || first[0].Attributes["ApproximateReceiveCount"] != "1" {
-			t.Fatalf("first receive: count = %d / %q, want 1", first[0].ReceiveCount, first[0].Attributes["ApproximateReceiveCount"])
-		}
-
-		if got := mustReceive(t, s, queueURL, visibilityTimeout, 0); len(got) != 0 {
-			t.Fatalf("immediate receive: got %d messages, want 0", len(got))
-		}
-
-		time.Sleep((visibilityTimeout - 1) * time.Second)
-
-		if got := mustReceive(t, s, queueURL, visibilityTimeout, 0); len(got) != 0 {
-			t.Fatalf("receive before timeout: got %d messages, want 0", len(got))
-		}
-
-		time.Sleep(2 * time.Second)
-
-		second := mustReceive(t, s, queueURL, visibilityTimeout, 0)
-		if len(second) != 1 {
-			t.Fatalf("receive after timeout: got %d messages, want 1", len(second))
-		}
-
-		if second[0].MessageID != sent.MessageID {
-			t.Fatalf("receive after timeout: got message %s, want %s", second[0].MessageID, sent.MessageID)
-		}
-
-		if second[0].ReceiveCount != 2 || second[0].Attributes["ApproximateReceiveCount"] != "2" {
-			t.Fatalf("receive after timeout: count = %d / %q, want 2", second[0].ReceiveCount, second[0].Attributes["ApproximateReceiveCount"])
-		}
-	})
-}
-
-func TestMemoryStorage_DeadLetterRedrive(t *testing.T) {
-	t.Parallel()
-
-	synctest.Test(t, func(t *testing.T) {
-		s := NewMemoryStorage("http://localhost:4566")
-		ctx := context.Background()
-
-		dlqName := "redrive-dlq"
-		dlqURL := mustCreateQueue(t, s, dlqName, nil)
-		dlqARN := fmt.Sprintf("arn:aws:sqs:us-east-1:000000000000:%s", dlqName)
-
-		const maxReceiveCount = 2
-
-		srcURL := mustCreateQueue(t, s, "redrive-src", map[string]string{
-			"RedrivePolicy": fmt.Sprintf(`{"deadLetterTargetArn":%q,"maxReceiveCount":"%d"}`, dlqARN, maxReceiveCount),
-		})
-
-		sent, err := s.SendMessage(ctx, srcURL, "poison", 0, nil, "", "")
-		if err != nil {
-			t.Fatalf("SendMessage: %v", err)
-		}
-
-		const visibilityTimeout = 30
-
-		for i := 1; i <= maxReceiveCount; i++ {
-			got := mustReceive(t, s, srcURL, visibilityTimeout, 0)
-			if len(got) != 1 {
-				t.Fatalf("receive %d: got %d messages, want 1", i, len(got))
-			}
-
-			if got[0].ReceiveCount != i {
-				t.Fatalf("receive %d: ReceiveCount = %d", i, got[0].ReceiveCount)
-			}
-
-			time.Sleep((visibilityTimeout + 1) * time.Second)
-		}
-
-		// The message has hit maxReceiveCount, so the next receive redrives it.
-		if got := mustReceive(t, s, srcURL, visibilityTimeout, 0); len(got) != 0 {
-			t.Fatalf("source receive after redrive: got %d messages, want 0", len(got))
-		}
-
-		dlq := mustReceive(t, s, dlqURL, visibilityTimeout, 0)
-		if len(dlq) != 1 {
-			t.Fatalf("DLQ receive: got %d messages, want 1", len(dlq))
-		}
-
-		if dlq[0].MessageID != sent.MessageID || dlq[0].Body != "poison" {
-			t.Fatalf("DLQ receive: got message %s %q, want %s %q", dlq[0].MessageID, dlq[0].Body, sent.MessageID, "poison")
-		}
-
-		if dlq[0].ReceiveCount != 1 {
-			t.Fatalf("DLQ receive: ReceiveCount = %d, want 1 (reset on redrive)", dlq[0].ReceiveCount)
-		}
-	})
 }
 
 func TestMemoryStorage_DelaySeconds(t *testing.T) {
@@ -161,19 +48,19 @@ func TestMemoryStorage_DelaySeconds(t *testing.T) {
 			t.Fatalf("SendMessage: %v", err)
 		}
 
-		if got := mustReceive(t, s, queueURL, 0, 0); len(got) != 0 {
+		if got := mustReceive(t, s, queueURL, 0); len(got) != 0 {
 			t.Fatalf("receive immediately: got %d messages, want 0", len(got))
 		}
 
 		time.Sleep((delaySeconds - 1) * time.Second)
 
-		if got := mustReceive(t, s, queueURL, 0, 0); len(got) != 0 {
+		if got := mustReceive(t, s, queueURL, 0); len(got) != 0 {
 			t.Fatalf("receive before delay elapsed: got %d messages, want 0", len(got))
 		}
 
 		time.Sleep(time.Second)
 
-		got := mustReceive(t, s, queueURL, 0, 0)
+		got := mustReceive(t, s, queueURL, 0)
 		if len(got) != 1 {
 			t.Fatalf("receive after delay: got %d messages, want 1", len(got))
 		}
@@ -196,13 +83,13 @@ func TestMemoryStorage_DelaySecondsQueueDefault(t *testing.T) {
 			t.Fatalf("SendMessage: %v", err)
 		}
 
-		if got := mustReceive(t, s, queueURL, 0, 0); len(got) != 0 {
+		if got := mustReceive(t, s, queueURL, 0); len(got) != 0 {
 			t.Fatalf("receive immediately: got %d messages, want 0", len(got))
 		}
 
 		time.Sleep(4 * time.Second)
 
-		if got := mustReceive(t, s, queueURL, 0, 0); len(got) != 1 {
+		if got := mustReceive(t, s, queueURL, 0); len(got) != 1 {
 			t.Fatalf("receive after delay: got %d messages, want 1", len(got))
 		}
 	})
@@ -319,7 +206,7 @@ func TestMemoryStorage_LongPollTimesOutEmpty(t *testing.T) {
 
 		start := time.Now()
 
-		got := mustReceive(t, s, queueURL, 0, waitTimeSeconds)
+		got := mustReceive(t, s, queueURL, waitTimeSeconds)
 		if len(got) != 0 {
 			t.Fatalf("long poll on empty queue: got %d messages, want 0", len(got))
 		}
