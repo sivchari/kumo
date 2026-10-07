@@ -1,0 +1,27 @@
+[
+  {
+    "name": "initial",
+    "dir": "initial"
+  },
+  {
+    "name": "update_description",
+    "dir": "update_description"
+  },
+  {
+    "name": "replace_in_use",
+    "dir": "update_description",
+    "replace": ["aws_cloudfront_origin_access_control.s3"],
+    "expect_error": "OriginAccessControlInUse"
+  },
+  {
+    "name": "create_before_destroy_same_name",
+    "dir": "cbd_same_name",
+    "replace": ["aws_cloudfront_origin_access_control.s3"],
+    "expect_error": "OriginAccessControlAlreadyExists"
+  },
+  {
+    "name": "create_before_destroy_new_name",
+    "dir": "cbd_new_name",
+    "replace": ["aws_cloudfront_origin_access_control.s3"]
+  }
+]
