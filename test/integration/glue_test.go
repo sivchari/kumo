@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -61,6 +62,12 @@ func TestGlue_GetDatabases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteDatabase(context.Background(), &glue.DeleteDatabaseInput{
+			Name: aws.String(dbName),
+		})
+	})
 
 	// Get databases.
 	listOutput, err := client.GetDatabases(ctx, &glue.GetDatabasesInput{
