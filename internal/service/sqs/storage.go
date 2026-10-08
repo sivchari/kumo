@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,7 +64,14 @@ const attrValueTrue = "true"
 // Common error codes shared across QueueError instances.
 const (
 	errCodeInvalidParameterValue = "InvalidParameterValue"
+	errCodeInvalidAttributeValue = "InvalidAttributeValue"
 	errCodeMissingParameter      = "MissingParameter"
+)
+
+// Bounds SQS accepts for WaitTimeSeconds and ReceiveMessageWaitTimeSeconds.
+const (
+	minReceiveWaitSeconds = 0
+	maxReceiveWaitSeconds = 20
 )
 
 // attrPolicy is the GetQueueAttributes/SetQueueAttributes attribute name for
@@ -240,11 +248,8 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !isValidQueueName(name) {
-		return nil, &QueueError{
-			Code:    errCodeInvalidParameterValue,
-			Message: "Queue name contains invalid characters",
-		}
+	if err := validateCreateQueue(name, attributes); err != nil {
+		return nil, err
 	}
 
 	queueURL := fmt.Sprintf("%s/000000000000/%s", s.baseURL, name)
@@ -296,6 +301,18 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 	s.saveLocked()
 
 	return queue, nil
+}
+
+// validateCreateQueue checks the queue name and attributes of a CreateQueue call.
+func validateCreateQueue(name string, attributes map[string]string) error {
+	if !isValidQueueName(name) {
+		return &QueueError{
+			Code:    errCodeInvalidParameterValue,
+			Message: "Queue name contains invalid characters",
+		}
+	}
+
+	return validateQueueAttributes(attributes)
 }
 
 func isValidQueueName(name string) bool {
@@ -643,6 +660,13 @@ func (s *MemoryStorage) ReceiveMessage(ctx context.Context, queueURL string, max
 // explicitly still gets an immediate return.
 func (s *MemoryStorage) receiveWaitTime(queueURL string, requested *int) (int, error) {
 	if requested != nil {
+		if *requested < minReceiveWaitSeconds || *requested > maxReceiveWaitSeconds {
+			return 0, &QueueError{
+				Code:    errCodeInvalidParameterValue,
+				Message: fmt.Sprintf("Value %d for parameter WaitTimeSeconds is invalid. Reason: Must be >= %d and <= %d, if provided.", *requested, minReceiveWaitSeconds, maxReceiveWaitSeconds),
+			}
+		}
+
 		return *requested, nil
 	}
 
@@ -860,6 +884,10 @@ func (s *MemoryStorage) SetQueueAttributes(_ context.Context, queueURL string, a
 		return err
 	}
 
+	if err := validateQueueAttributes(attributes); err != nil {
+		return err
+	}
+
 	applyQueueAttributes(qd.Queue, attributes)
 	qd.Queue.LastModifiedTimestamp = time.Now()
 
@@ -965,6 +993,25 @@ func (s *MemoryStorage) RemovePermission(_ context.Context, queueURL, label stri
 	qd.Queue.LastModifiedTimestamp = time.Now()
 
 	s.saveLocked()
+
+	return nil
+}
+
+// validateQueueAttributes rejects attribute values SQS refuses, before any of
+// them is applied, so a failed call leaves the queue unchanged.
+func validateQueueAttributes(attrs map[string]string) error {
+	val, ok := attrs["ReceiveMessageWaitTimeSeconds"]
+	if !ok {
+		return nil
+	}
+
+	wait, err := strconv.Atoi(val)
+	if err != nil || wait < minReceiveWaitSeconds || wait > maxReceiveWaitSeconds {
+		return &QueueError{
+			Code:    errCodeInvalidAttributeValue,
+			Message: fmt.Sprintf("Invalid value for the parameter ReceiveMessageWaitTimeSeconds. Reason: Must be between %d and %d, if provided.", minReceiveWaitSeconds, maxReceiveWaitSeconds),
+		}
+	}
 
 	return nil
 }

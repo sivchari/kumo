@@ -117,7 +117,7 @@ func TestMemoryStorage_ReceiveMessage_ReturnsImmediatelyForAnExplicitZeroWait(t 
 	s := NewMemoryStorage("http://localhost:4566")
 	ctx := t.Context()
 
-	queue, err := s.CreateQueue(ctx, "zero-wait-queue", map[string]string{receiveWaitAttribute: "30"}, nil)
+	queue, err := s.CreateQueue(ctx, "zero-wait-queue", map[string]string{receiveWaitAttribute: "20"}, nil)
 	if err != nil {
 		t.Fatalf("CreateQueue() error = %v", err)
 	}
