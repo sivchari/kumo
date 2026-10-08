@@ -25,7 +25,7 @@ func mustCreateQueue(t *testing.T, s *MemoryStorage, name string, attrs map[stri
 func mustReceive(t *testing.T, s *MemoryStorage, queueURL string, waitTimeSeconds int) []*Message {
 	t.Helper()
 
-	msgs, err := s.ReceiveMessage(context.Background(), queueURL, 1, 0, waitTimeSeconds)
+	msgs, err := s.ReceiveMessage(context.Background(), queueURL, 1, 0, &waitTimeSeconds)
 	if err != nil {
 		t.Fatalf("ReceiveMessage: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestMemoryStorage_LongPollReturnsOnSend(t *testing.T) {
 		done := make(chan result, 1)
 
 		go func() {
-			msgs, err := s.ReceiveMessage(ctx, queueURL, 1, 0, waitTimeSeconds)
+			msgs, err := s.ReceiveMessage(ctx, queueURL, 1, 0, intPtr(waitTimeSeconds))
 			done <- result{msgs: msgs, err: err, elapsed: time.Since(start)}
 		}()
 
