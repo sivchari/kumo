@@ -16,7 +16,7 @@ func newKafkaClient(t *testing.T) *kafka.Client {
 	t.Helper()
 
 	return kafka.NewFromConfig(awsConfig(t), func(o *kafka.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/kafka")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 

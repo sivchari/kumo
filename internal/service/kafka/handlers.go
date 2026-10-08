@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 )
@@ -73,7 +72,7 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 
 // DescribeCluster handles the DescribeCluster operation.
 func (s *Service) DescribeCluster(w http.ResponseWriter, r *http.Request) {
-	clusterArn := extractClusterArn(r.URL.Path)
+	clusterArn := extractClusterArn(r)
 	if clusterArn == "" {
 		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
@@ -92,7 +91,7 @@ func (s *Service) DescribeCluster(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCluster handles the DeleteCluster operation.
 func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
-	clusterArn := extractClusterArn(r.URL.Path)
+	clusterArn := extractClusterArn(r)
 	if clusterArn == "" {
 		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
@@ -111,7 +110,7 @@ func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 
 // GetBootstrapBrokers handles the GetBootstrapBrokers operation.
 func (s *Service) GetBootstrapBrokers(w http.ResponseWriter, r *http.Request) {
-	clusterArn := extractClusterArn(r.URL.Path)
+	clusterArn := extractClusterArn(r)
 	if clusterArn == "" {
 		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
@@ -130,7 +129,7 @@ func (s *Service) GetBootstrapBrokers(w http.ResponseWriter, r *http.Request) {
 
 // UpdateClusterConfiguration handles the UpdateClusterConfiguration operation.
 func (s *Service) UpdateClusterConfiguration(w http.ResponseWriter, r *http.Request) {
-	clusterArn := extractClusterArn(r.URL.Path)
+	clusterArn := extractClusterArn(r)
 	if clusterArn == "" {
 		writeError(w, errBadRequest, "Cluster ARN is required", http.StatusBadRequest)
 
@@ -154,28 +153,18 @@ func (s *Service) UpdateClusterConfiguration(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, resp)
 }
 
-// extractClusterArn extracts the cluster ARN from the URL path.
+// extractClusterArn extracts the cluster ARN from the {rest...} path value.
 // The ARN contains slashes (e.g., arn:aws:kafka:us-east-1:123456789012:cluster/name/uuid),
-// so we extract everything after /kafka/v1/clusters/ and strip known suffixes.
-func extractClusterArn(path string) string {
-	const prefix = "/kafka/v1/clusters/"
-
-	if !strings.HasPrefix(path, prefix) {
-		return ""
-	}
-
-	rest := path[len(prefix):]
+// so the routes capture it as a trailing wildcard and known suffixes are
+// stripped here.
+func extractClusterArn(r *http.Request) string {
+	rest := r.PathValue("rest")
 
 	// Strip known path suffixes.
 	rest = strings.TrimSuffix(rest, "/bootstrap-brokers")
 	rest = strings.TrimSuffix(rest, "/configuration")
 
-	decoded, err := url.PathUnescape(rest)
-	if err != nil {
-		return ""
-	}
-
-	return decoded
+	return rest
 }
 
 // writeJSON writes a JSON response.

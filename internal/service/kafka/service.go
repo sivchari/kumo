@@ -38,14 +38,19 @@ func (s *Service) Name() string {
 	return "kafka"
 }
 
-// RegisterRoutes registers the service routes.
+// SigningName returns the SigV4 credential scope service name for MSK.
+func (s *Service) SigningName() string {
+	return "kafka"
+}
+
+// RegisterRoutes registers the AWS-faithful MSK routes.
 func (s *Service) RegisterRoutes(r service.Router) {
-	r.Handle("POST", "/kafka/v1/clusters", s.CreateCluster)
-	r.Handle("GET", "/kafka/v1/clusters", s.ListClusters)
+	r.Handle("POST", "/v1/clusters", s.CreateCluster)
+	r.Handle("GET", "/v1/clusters", s.ListClusters)
 	// Cluster ARN contains slashes, so we use a catch-all and dispatch manually.
-	r.Handle("GET", "/kafka/v1/clusters/{rest...}", s.handleGetCluster)
-	r.Handle("DELETE", "/kafka/v1/clusters/{rest...}", s.DeleteCluster)
-	r.Handle("PUT", "/kafka/v1/clusters/{rest...}", s.UpdateClusterConfiguration)
+	r.Handle("GET", "/v1/clusters/{rest...}", s.handleGetCluster)
+	r.Handle("DELETE", "/v1/clusters/{rest...}", s.DeleteCluster)
+	r.Handle("PUT", "/v1/clusters/{rest...}", s.UpdateClusterConfiguration)
 }
 
 // handleGetCluster dispatches GET requests based on the path suffix.
