@@ -16,7 +16,7 @@ func newEKSClient(t *testing.T) *eks.Client {
 	t.Helper()
 
 	return eks.NewFromConfig(awsConfig(t), func(o *eks.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/eks")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
