@@ -55,7 +55,7 @@ func TestRouter_PrefixMatchRespectsBoundary(t *testing.T) {
 	}{
 		{"prefix exact", http.MethodGet, "/kumo/health", "kumo-health"},
 		{"bucket name shares prefix substring", http.MethodPut, "/kumo-audit-bad-bucket", resultBucketPut},
-		{"bucket name with longer admin prefix substring", http.MethodPut, "/lambda-deploy-bucket", resultBucketPut},
+		{"bucket name with longer admin prefix substring", http.MethodPut, "/tables-deploy-bucket", resultBucketPut},
 	}
 
 	for _, tc := range cases {
@@ -85,7 +85,7 @@ func TestExtractRoutePrefix_BoundaryGuard(t *testing.T) {
 		want    string
 	}{
 		{"/kumo/health", "/kumo"},
-		{"/lambda/2015-03-31/functions", "/lambda"},
+		{"/tables/{bucket}", "/tables"},
 		{"/{bucket}", ""},
 		{"/{bucket}/{key...}", ""},
 		{"/kumosomething", ""}, // no slash boundary → not a prefix
