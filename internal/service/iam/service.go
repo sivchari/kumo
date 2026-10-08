@@ -108,14 +108,16 @@ func (s *Service) Storage() Storage {
 	return s.storage
 }
 
-// RegisterRoutes registers the IAM routes.
+// SigningName returns the SigV4 credential scope service name for IAM.
+func (s *Service) SigningName() string {
+	return serviceName
+}
+
+// RegisterRoutes registers the AWS-faithful IAM endpoint: a single
+// Query endpoint at "/".
 func (s *Service) RegisterRoutes(r service.Router) {
-	// IAM uses a single endpoint with Action parameter.
-	// Register both with and without trailing slash for SDK compatibility.
-	r.HandleFunc("POST", "/iam/", s.DispatchAction)
-	r.HandleFunc("GET", "/iam/", s.DispatchAction)
-	r.HandleFunc("POST", "/iam", s.DispatchAction)
-	r.HandleFunc("GET", "/iam", s.DispatchAction)
+	r.HandleFunc("POST", "/{$}", s.DispatchAction)
+	r.HandleFunc("GET", "/{$}", s.DispatchAction)
 }
 
 // TargetPrefix returns the IAM target prefix.
