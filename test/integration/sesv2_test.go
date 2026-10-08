@@ -21,7 +21,7 @@ func newSESv2Client(t *testing.T) *sesv2.Client {
 	t.Helper()
 
 	return sesv2.NewFromConfig(awsConfig(t), func(o *sesv2.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/ses")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
