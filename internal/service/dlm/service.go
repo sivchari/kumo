@@ -36,13 +36,18 @@ func (s *Service) Name() string {
 	return "dlm"
 }
 
-// RegisterRoutes registers the service routes.
+// SigningName returns the SigV4 credential scope service name for DLM.
+func (s *Service) SigningName() string {
+	return "dlm"
+}
+
+// RegisterRoutes registers the AWS-faithful DLM routes.
 func (s *Service) RegisterRoutes(r service.Router) {
-	r.HandleFunc("POST", "/dlm/policies", s.CreateLifecyclePolicy)
-	r.HandleFunc("GET", "/dlm/policies", s.GetLifecyclePolicies)
-	r.HandleFunc("GET", "/dlm/policies/{policyId}", s.GetLifecyclePolicy)
-	r.HandleFunc("PATCH", "/dlm/policies/{policyId}", s.UpdateLifecyclePolicy)
-	r.HandleFunc("DELETE", "/dlm/policies/{policyId}", s.DeleteLifecyclePolicy)
+	r.HandleFunc("POST", "/policies", s.CreateLifecyclePolicy)
+	r.HandleFunc("GET", "/policies", s.GetLifecyclePolicies)
+	r.HandleFunc("GET", "/policies/{policyId}", s.GetLifecyclePolicy)
+	r.HandleFunc("PATCH", "/policies/{policyId}", s.UpdateLifecyclePolicy)
+	r.HandleFunc("DELETE", "/policies/{policyId}", s.DeleteLifecyclePolicy)
 }
 
 // Ensure Service implements service.Service.

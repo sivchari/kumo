@@ -16,7 +16,7 @@ func newDLMClient(t *testing.T) *dlm.Client {
 	t.Helper()
 
 	return dlm.NewFromConfig(awsConfig(t), func(o *dlm.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/dlm")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
