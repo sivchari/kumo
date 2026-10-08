@@ -40,17 +40,22 @@ type Describer interface {
 // Real AWS tells REST services apart by hostname, so on a single endpoint
 // several services share identical paths (e.g. GET /tags/{resourceArn});
 // the signing name in the credential scope is what still identifies the
-// service. Services implementing this interface register their
-// AWS-faithful routes here and keep any legacy prefixed routes in
-// RegisterRoutes for backward compatibility.
+// service. RegisterRoutes of a SigV4 service receives the scoped router
+// for its signing name, so the routes it registers are AWS-faithful paths
+// reached only by requests signed for that service.
 type SigV4Service interface {
 	// SigningName returns the service name used in the SigV4 credential
 	// scope, e.g. "ses" for SES v2.
 	SigningName() string
+}
 
-	// RegisterScopedRoutes registers the service's AWS-faithful routes
-	// (without kumo path prefixes) on r.
-	RegisterScopedRoutes(r Router)
+// UnsignedRouteService is an optional interface for SigV4 services that
+// also serve unsigned requests, which carry no credential scope and are
+// therefore dispatched by path (e.g. Lambda's Runtime API and internal
+// self-calls). The registered patterns must not collide across services.
+type UnsignedRouteService interface {
+	// RegisterUnsignedRoutes registers the service's path-routed routes on r.
+	RegisterUnsignedRoutes(r Router)
 }
 
 // Router is the interface for registering HTTP routes.
