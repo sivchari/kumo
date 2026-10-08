@@ -33,6 +33,8 @@ func newScopeTestRouter() (*Router, *string) {
 
 	r.ScopedRouter("scheduler").HandleFunc(http.MethodGet, "/tags/{arn}", record("scheduler-tags"))
 	r.ScopedRouter("kafka").HandleFunc(http.MethodGet, "/tags/{arn}", record("kafka-tags"))
+	r.ScopedRouter("kafka").HandleFunc(http.MethodGet, "/v1/clusters", record("kafka-clusters"))
+	r.ScopedRouter("iam").HandleFunc(http.MethodGet, "/{$}", record("iam-root"))
 	r.Handle(http.MethodGet, "/scheduler/schedules/{name}", record("scheduler-legacy"))
 
 	return r, called
@@ -74,11 +76,32 @@ var scopeDispatchCases = []struct {
 		wantStatus: http.StatusNotFound,
 	},
 	{
-		name:       "unsigned request falls back to path routing",
+		name:       "unsigned request on an ambiguous path falls back to path routing",
 		auth:       "",
 		path:       "/tags/arn",
 		want:       "",
 		wantStatus: http.StatusNotFound,
+	},
+	{
+		name:       "unsigned request on a unique path is served from its scope router",
+		auth:       "",
+		path:       "/v1/clusters",
+		want:       "kafka-clusters",
+		wantStatus: http.StatusOK,
+	},
+	{
+		name:       "unsigned root request stays with path routing",
+		auth:       "",
+		path:       "/",
+		want:       "",
+		wantStatus: http.StatusNotFound,
+	},
+	{
+		name:       "signed root request is served from its scope router",
+		auth:       authHeader("iam"),
+		path:       "/",
+		want:       "iam-root",
+		wantStatus: http.StatusOK,
 	},
 }
 

@@ -41,21 +41,13 @@ type Describer interface {
 // several services share identical paths (e.g. GET /tags/{resourceArn});
 // the signing name in the credential scope is what still identifies the
 // service. RegisterRoutes of a SigV4 service receives the scoped router
-// for its signing name, so the routes it registers are AWS-faithful paths
-// reached only by requests signed for that service.
+// for its signing name, so the routes it registers are AWS-faithful paths.
+// Signed requests reach them through the credential scope; an unsigned
+// request is served only when its path belongs to exactly one service.
 type SigV4Service interface {
 	// SigningName returns the service name used in the SigV4 credential
 	// scope, e.g. "ses" for SES v2.
 	SigningName() string
-}
-
-// UnsignedRouteService is an optional interface for SigV4 services that
-// also serve unsigned requests, which carry no credential scope and are
-// therefore dispatched by path (e.g. Lambda's Runtime API and internal
-// self-calls). The registered patterns must not collide across services.
-type UnsignedRouteService interface {
-	// RegisterUnsignedRoutes registers the service's path-routed routes on r.
-	RegisterUnsignedRoutes(r Router)
 }
 
 // Router is the interface for registering HTTP routes.

@@ -167,11 +167,6 @@ func (s *Server) RegisterService(svc service.Service) {
 	if sigSvc, ok := svc.(service.SigV4Service); ok {
 		svc.RegisterRoutes(s.router.ScopedRouter(sigSvc.SigningName()))
 		s.logger.Debug("registered SigV4 scoped routes", "name", svc.Name(), "signing_name", sigSvc.SigningName())
-
-		if unsignedSvc, ok := svc.(service.UnsignedRouteService); ok {
-			unsignedSvc.RegisterUnsignedRoutes(s.router)
-			s.logger.Debug("registered unsigned routes", "name", svc.Name())
-		}
 	} else {
 		svc.RegisterRoutes(s.router)
 	}
