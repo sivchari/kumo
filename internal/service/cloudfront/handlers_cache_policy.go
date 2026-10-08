@@ -1,9 +1,6 @@
 package cloudfront
 
 import (
-	"encoding/xml"
-	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -139,21 +136,7 @@ func (s *Service) ListCachePolicies(w http.ResponseWriter, r *http.Request) {
 // readCachePolicyConfig decodes the request body; on failure the error
 // response has been written.
 func readCachePolicyConfig(w http.ResponseWriter, r *http.Request) (*CachePolicyConfig, bool) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeCloudFrontError(w, errMissingBody, "Request body is missing", http.StatusBadRequest)
-
-		return nil, false
-	}
-
-	var cfg CachePolicyConfig
-	if err := xml.Unmarshal(body, &cfg); err != nil {
-		writeCloudFrontError(w, errInvalidArgument, "Invalid request body", http.StatusBadRequest)
-
-		return nil, false
-	}
-
-	return &cfg, true
+	return decodeXMLBody[CachePolicyConfig](w, r)
 }
 
 func buildCachePolicyXML(policy *CachePolicy, xmlns string) *CachePolicyXML {
@@ -167,28 +150,6 @@ func buildCachePolicyXML(policy *CachePolicy, xmlns string) *CachePolicyXML {
 	}
 }
 
-// handleCachePolicyStorageError maps cache policy errors to the statuses the
-// API reference documents: 404 for a missing policy, 409 for a duplicate name
-// or a policy still in use, 412 for a stale ETag and 400 for a missing
-// If-Match header, an invalid argument or inconsistent quantities.
 func handleCachePolicyStorageError(w http.ResponseWriter, err error) {
-	var cfErr *Error
-	if !errors.As(err, &cfErr) {
-		writeCloudFrontError(w, "InternalError", "Internal server error", http.StatusInternalServerError)
-
-		return
-	}
-
-	status := http.StatusBadRequest
-
-	switch cfErr.Code {
-	case errNoSuchCachePolicy:
-		status = http.StatusNotFound
-	case errCachePolicyAlreadyExists, errCachePolicyInUse:
-		status = http.StatusConflict
-	case errPreconditionFailed:
-		status = http.StatusPreconditionFailed
-	}
-
-	writeCloudFrontError(w, cfErr.Code, cfErr.Message, status)
+	writePolicyError(w, err, errNoSuchCachePolicy, errCachePolicyAlreadyExists, errCachePolicyInUse)
 }

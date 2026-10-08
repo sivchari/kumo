@@ -63,6 +63,13 @@ type Storage interface {
 	ListCachePolicies(ctx context.Context, policyType, marker string, maxItems int) ([]*CachePolicy, string, error)
 	UpdateCachePolicy(ctx context.Context, id string, cfg *CachePolicyConfig, ifMatch string) (*CachePolicy, error)
 	DeleteCachePolicy(ctx context.Context, id, ifMatch string) error
+
+	// Response headers policy.
+	CreateResponseHeadersPolicy(ctx context.Context, cfg *ResponseHeadersPolicyConfig) (*ResponseHeadersPolicy, error)
+	GetResponseHeadersPolicy(ctx context.Context, id string) (*ResponseHeadersPolicy, error)
+	ListResponseHeadersPolicies(ctx context.Context, policyType, marker string, maxItems int) ([]*ResponseHeadersPolicy, string, error)
+	UpdateResponseHeadersPolicy(ctx context.Context, id string, cfg *ResponseHeadersPolicyConfig, ifMatch string) (*ResponseHeadersPolicy, error)
+	DeleteResponseHeadersPolicy(ctx context.Context, id, ifMatch string) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -83,22 +90,24 @@ var (
 
 // MemoryStorage implements Storage with in-memory data.
 type MemoryStorage struct {
-	mu                   sync.RWMutex                        `json:"-"`
-	Distributions        map[string]*Distribution            `json:"distributions"`
-	Invalidations        map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
-	OriginAccessControls map[string]*OriginAccessControl     `json:"originAccessControls,omitempty"`
-	CachePolicies        map[string]*CachePolicy             `json:"cachePolicies,omitempty"`
-	signing              signingStore
-	dataDir              string
+	mu                      sync.RWMutex                        `json:"-"`
+	Distributions           map[string]*Distribution            `json:"distributions"`
+	Invalidations           map[string]map[string]*Invalidation `json:"invalidations"` // distributionID -> invalidationID -> Invalidation
+	OriginAccessControls    map[string]*OriginAccessControl     `json:"originAccessControls,omitempty"`
+	CachePolicies           map[string]*CachePolicy             `json:"cachePolicies,omitempty"`
+	ResponseHeadersPolicies map[string]*ResponseHeadersPolicy   `json:"responseHeadersPolicies,omitempty"`
+	signing                 signingStore
+	dataDir                 string
 }
 
 // NewMemoryStorage creates a new memory storage.
 func NewMemoryStorage(opts ...Option) *MemoryStorage {
 	s := &MemoryStorage{
-		Distributions:        make(map[string]*Distribution),
-		Invalidations:        make(map[string]map[string]*Invalidation),
-		OriginAccessControls: make(map[string]*OriginAccessControl),
-		CachePolicies:        make(map[string]*CachePolicy),
+		Distributions:           make(map[string]*Distribution),
+		Invalidations:           make(map[string]map[string]*Invalidation),
+		OriginAccessControls:    make(map[string]*OriginAccessControl),
+		CachePolicies:           make(map[string]*CachePolicy),
+		ResponseHeadersPolicies: make(map[string]*ResponseHeadersPolicy),
 		signing: signingStore{
 			PublicKeys: make(map[string]*PublicKey),
 			KeyGroups:  make(map[string]*KeyGroup),
@@ -154,6 +163,7 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	s.ensureSigningInit()
 	s.ensureOACInit()
 	s.ensureCachePolicyInit()
+	s.ensureResponseHeadersPolicyInit()
 
 	return nil
 }

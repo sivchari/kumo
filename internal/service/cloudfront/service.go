@@ -84,6 +84,14 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("PUT", "/2020-05-31/cache-policy/{id}", s.UpdateCachePolicy)
 	r.Handle("DELETE", "/2020-05-31/cache-policy/{id}", s.DeleteCachePolicy)
 
+	// Response headers policy — headers added to or removed from the responses of cache behaviors.
+	r.Handle("POST", "/2020-05-31/response-headers-policy", s.CreateResponseHeadersPolicy)
+	r.Handle("GET", "/2020-05-31/response-headers-policy", s.ListResponseHeadersPolicies)
+	r.Handle("GET", "/2020-05-31/response-headers-policy/{id}", s.GetResponseHeadersPolicy)
+	r.Handle("GET", "/2020-05-31/response-headers-policy/{id}/config", s.GetResponseHeadersPolicyConfig)
+	r.Handle("PUT", "/2020-05-31/response-headers-policy/{id}", s.UpdateResponseHeadersPolicy)
+	r.Handle("DELETE", "/2020-05-31/response-headers-policy/{id}", s.DeleteResponseHeadersPolicy)
+
 	// Edge — proxies real requests through the cache layer.
 	for _, method := range []string{"GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"} {
 		r.Handle(method, "/kumo/cdn/{distributionId}/{path...}", s.Edge)
