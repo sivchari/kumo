@@ -37,24 +37,27 @@ func (s *Service) Name() string {
 	return "appsync"
 }
 
-// RegisterRoutes registers the AppSync routes.
-// AppSync uses REST API protocol with /v1 prefix.
-// Note: Routes use /appsync prefix for internal routing to avoid S3 conflicts.
+// SigningName returns the SigV4 credential scope service name for AppSync.
+func (s *Service) SigningName() string {
+	return "appsync"
+}
+
+// RegisterRoutes registers the AWS-faithful AppSync routes.
 func (s *Service) RegisterRoutes(r service.Router) {
 	// GraphQL API operations.
-	r.HandleFunc("POST", "/appsync/v1/apis", s.CreateGraphqlAPI)
-	r.HandleFunc("DELETE", "/appsync/v1/apis/{apiId}", s.DeleteGraphqlAPI)
-	r.HandleFunc("GET", "/appsync/v1/apis/{apiId}", s.GetGraphqlAPI)
-	r.HandleFunc("GET", "/appsync/v1/apis", s.ListGraphqlAPIs)
+	r.HandleFunc("POST", "/v1/apis", s.CreateGraphqlAPI)
+	r.HandleFunc("DELETE", "/v1/apis/{apiId}", s.DeleteGraphqlAPI)
+	r.HandleFunc("GET", "/v1/apis/{apiId}", s.GetGraphqlAPI)
+	r.HandleFunc("GET", "/v1/apis", s.ListGraphqlAPIs)
 
 	// Data source operations.
-	r.HandleFunc("POST", "/appsync/v1/apis/{apiId}/datasources", s.CreateDataSource)
+	r.HandleFunc("POST", "/v1/apis/{apiId}/datasources", s.CreateDataSource)
 
 	// Resolver operations.
-	r.HandleFunc("POST", "/appsync/v1/apis/{apiId}/types/{typeName}/resolvers", s.CreateResolver)
+	r.HandleFunc("POST", "/v1/apis/{apiId}/types/{typeName}/resolvers", s.CreateResolver)
 
 	// Schema operations.
-	r.HandleFunc("POST", "/appsync/v1/apis/{apiId}/schemacreation", s.StartSchemaCreation)
+	r.HandleFunc("POST", "/v1/apis/{apiId}/schemacreation", s.StartSchemaCreation)
 }
 
 // Close saves the storage state if persistence is enabled.

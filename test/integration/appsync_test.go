@@ -375,6 +375,6 @@ func createAppSyncClient(t *testing.T) *appsync.Client {
 	t.Helper()
 
 	return appsync.NewFromConfig(awsConfig(t), func(o *appsync.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/appsync")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
