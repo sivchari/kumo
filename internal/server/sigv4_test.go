@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/sivchari/kumo/internal/awsauth"
 )
 
 // sesTargetPath is an arbitrary AWS-faithful SES v2 path used as the request
@@ -22,6 +24,12 @@ var sigV4SigningNameCases = []struct {
 		auth:   "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261007/us-east-1/ses/aws4_request, SignedHeaders=host;x-amz-date, Signature=abc",
 		target: sesTargetPath,
 		want:   "ses",
+	},
+	{
+		name:   "awsauth scope header",
+		auth:   awsauth.ScopeHeader("lambda"),
+		target: sesTargetPath,
+		want:   "lambda",
 	},
 	{
 		name:   "space separated credential",

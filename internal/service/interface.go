@@ -41,9 +41,10 @@ type Describer interface {
 // several services share identical paths (e.g. GET /tags/{resourceArn});
 // the signing name in the credential scope is what still identifies the
 // service. RegisterRoutes of a SigV4 service receives the scoped router
-// for its signing name, so the routes it registers are AWS-faithful paths.
-// Signed requests reach them through the credential scope; an unsigned
-// request is served only when its path belongs to exactly one service.
+// for its signing name: the routes it registers are AWS-faithful paths
+// reached by requests signed for that service. Patterns under kumo-native
+// namespaces (/kumo, /_runtime) are path-routed instead, since their clients
+// never sign. Unsigned requests to AWS paths are not served, matching AWS.
 type SigV4Service interface {
 	// SigningName returns the service name used in the SigV4 credential
 	// scope, e.g. "ses" for SES v2.
