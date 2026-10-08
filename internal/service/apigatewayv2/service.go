@@ -52,60 +52,65 @@ func (s *Service) Name() string {
 	return "apigatewayv2"
 }
 
-// RegisterRoutes registers the API Gateway v2 routes.
-//
-// Routes are registered under both the /apigatewayv2/... prefix (legacy
-// per-service BaseEndpoint) and the bare /v2/... prefix that
-// terraform-provider-aws and aws-sdk-go-v2 use against the unified endpoint.
+// RegisterRoutes registers the AWS-faithful API Gateway v2 routes.
 func (s *Service) RegisterRoutes(r service.Router) {
-	for _, prefix := range []string{"/apigatewayv2", ""} {
-		// API routes.
-		r.HandleFunc("POST", prefix+"/v2/apis", s.CreateAPI)
-		r.HandleFunc("GET", prefix+"/v2/apis", s.GetAPIs)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}", s.GetAPI)
-		r.HandleFunc("PATCH", prefix+"/v2/apis/{apiId}", s.UpdateAPI)
-		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}", s.DeleteAPI)
+	s.registerAPIRoutes(r)
+}
 
-		// Route routes.
-		r.HandleFunc("POST", prefix+"/v2/apis/{apiId}/routes", s.CreateRoute)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/routes", s.GetRoutes)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/routes/{routeId}", s.GetRoute)
-		r.HandleFunc("PATCH", prefix+"/v2/apis/{apiId}/routes/{routeId}", s.UpdateRoute)
-		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}/routes/{routeId}", s.DeleteRoute)
+// SigningName returns the SigV4 credential scope service name, shared with
+// API Gateway v1.
+func (s *Service) SigningName() string {
+	return "apigateway"
+}
 
-		// Authorizer routes.
-		r.HandleFunc("POST", prefix+"/v2/apis/{apiId}/authorizers", s.CreateAuthorizer)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/authorizers", s.GetAuthorizers)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/authorizers/{authorizerId}", s.GetAuthorizer)
-		r.HandleFunc("PATCH", prefix+"/v2/apis/{apiId}/authorizers/{authorizerId}", s.UpdateAuthorizer)
-		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}/authorizers/{authorizerId}", s.DeleteAuthorizer)
+// registerAPIRoutes registers the API Gateway v2 routes.
+func (s *Service) registerAPIRoutes(r service.Router) {
+	// API routes.
+	r.HandleFunc("POST", "/v2/apis", s.CreateAPI)
+	r.HandleFunc("GET", "/v2/apis", s.GetAPIs)
+	r.HandleFunc("GET", "/v2/apis/{apiId}", s.GetAPI)
+	r.HandleFunc("PATCH", "/v2/apis/{apiId}", s.UpdateAPI)
+	r.HandleFunc("DELETE", "/v2/apis/{apiId}", s.DeleteAPI)
 
-		// Integration routes.
-		r.HandleFunc("POST", prefix+"/v2/apis/{apiId}/integrations", s.CreateIntegration)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/integrations", s.GetIntegrations)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/integrations/{integrationId}", s.GetIntegration)
-		r.HandleFunc("PATCH", prefix+"/v2/apis/{apiId}/integrations/{integrationId}", s.UpdateIntegration)
-		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}/integrations/{integrationId}", s.DeleteIntegration)
+	// Route routes.
+	r.HandleFunc("POST", "/v2/apis/{apiId}/routes", s.CreateRoute)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/routes", s.GetRoutes)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/routes/{routeId}", s.GetRoute)
+	r.HandleFunc("PATCH", "/v2/apis/{apiId}/routes/{routeId}", s.UpdateRoute)
+	r.HandleFunc("DELETE", "/v2/apis/{apiId}/routes/{routeId}", s.DeleteRoute)
 
-		// Stage routes.
-		r.HandleFunc("POST", prefix+"/v2/apis/{apiId}/stages", s.CreateStage)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/stages", s.GetStages)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/stages/{stageName}", s.GetStage)
-		r.HandleFunc("PATCH", prefix+"/v2/apis/{apiId}/stages/{stageName}", s.UpdateStage)
-		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}/stages/{stageName}", s.DeleteStage)
+	// Authorizer routes.
+	r.HandleFunc("POST", "/v2/apis/{apiId}/authorizers", s.CreateAuthorizer)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/authorizers", s.GetAuthorizers)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/authorizers/{authorizerId}", s.GetAuthorizer)
+	r.HandleFunc("PATCH", "/v2/apis/{apiId}/authorizers/{authorizerId}", s.UpdateAuthorizer)
+	r.HandleFunc("DELETE", "/v2/apis/{apiId}/authorizers/{authorizerId}", s.DeleteAuthorizer)
 
-		// Deployment routes.
-		r.HandleFunc("POST", prefix+"/v2/apis/{apiId}/deployments", s.CreateDeployment)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/deployments", s.GetDeployments)
-		r.HandleFunc("GET", prefix+"/v2/apis/{apiId}/deployments/{deploymentId}", s.GetDeployment)
-		r.HandleFunc("DELETE", prefix+"/v2/apis/{apiId}/deployments/{deploymentId}", s.DeleteDeployment)
+	// Integration routes.
+	r.HandleFunc("POST", "/v2/apis/{apiId}/integrations", s.CreateIntegration)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/integrations", s.GetIntegrations)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/integrations/{integrationId}", s.GetIntegration)
+	r.HandleFunc("PATCH", "/v2/apis/{apiId}/integrations/{integrationId}", s.UpdateIntegration)
+	r.HandleFunc("DELETE", "/v2/apis/{apiId}/integrations/{integrationId}", s.DeleteIntegration)
 
-		// Tag routes. The resource ARN is captured as a trailing wildcard
-		// because it contains ':' and '/' characters.
-		r.HandleFunc("GET", prefix+"/v2/tags/{arn...}", s.GetTags)
-		r.HandleFunc("POST", prefix+"/v2/tags/{arn...}", s.TagResource)
-		r.HandleFunc("DELETE", prefix+"/v2/tags/{arn...}", s.UntagResource)
-	}
+	// Stage routes.
+	r.HandleFunc("POST", "/v2/apis/{apiId}/stages", s.CreateStage)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/stages", s.GetStages)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/stages/{stageName}", s.GetStage)
+	r.HandleFunc("PATCH", "/v2/apis/{apiId}/stages/{stageName}", s.UpdateStage)
+	r.HandleFunc("DELETE", "/v2/apis/{apiId}/stages/{stageName}", s.DeleteStage)
+
+	// Deployment routes.
+	r.HandleFunc("POST", "/v2/apis/{apiId}/deployments", s.CreateDeployment)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/deployments", s.GetDeployments)
+	r.HandleFunc("GET", "/v2/apis/{apiId}/deployments/{deploymentId}", s.GetDeployment)
+	r.HandleFunc("DELETE", "/v2/apis/{apiId}/deployments/{deploymentId}", s.DeleteDeployment)
+
+	// Tag routes. The resource ARN is captured as a trailing wildcard
+	// because it contains ':' and '/' characters.
+	r.HandleFunc("GET", "/v2/tags/{arn...}", s.GetTags)
+	r.HandleFunc("POST", "/v2/tags/{arn...}", s.TagResource)
+	r.HandleFunc("DELETE", "/v2/tags/{arn...}", s.UntagResource)
 }
 
 // Close saves the storage state if persistence is enabled.

@@ -15,7 +15,7 @@ func newAPIGatewayV2Client(t *testing.T) *apigatewayv2.Client {
 	t.Helper()
 
 	return apigatewayv2.NewFromConfig(awsConfig(t), func(o *apigatewayv2.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/apigatewayv2")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
