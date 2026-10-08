@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 )
 
 // Error codes.
@@ -14,13 +13,6 @@ const (
 	errResourceNotFound    = "ResourceNotFoundException"
 	errResourceInUse       = "ResourceInUseException"
 	errInternalServerError = "InternalServerError"
-)
-
-// Path components.
-const (
-	pathPrefixEKS      = "eks"
-	pathPrefixClusters = "clusters"
-	pathPrefixNodeGrps = "node-groups"
 )
 
 // CreateCluster handles the CreateCluster operation.
@@ -56,7 +48,7 @@ func (s *Service) CreateCluster(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCluster handles the DeleteCluster operation.
 func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
-	name := extractClusterName(r.URL.Path)
+	name := r.PathValue("name")
 	if name == "" {
 		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
@@ -75,7 +67,7 @@ func (s *Service) DeleteCluster(w http.ResponseWriter, r *http.Request) {
 
 // DescribeCluster handles the DescribeCluster operation.
 func (s *Service) DescribeCluster(w http.ResponseWriter, r *http.Request) {
-	name := extractClusterName(r.URL.Path)
+	name := r.PathValue("name")
 	if name == "" {
 		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
@@ -129,7 +121,7 @@ func (s *Service) ListClusters(w http.ResponseWriter, r *http.Request) {
 
 // CreateNodegroup handles the CreateNodegroup operation.
 func (s *Service) CreateNodegroup(w http.ResponseWriter, r *http.Request) {
-	clusterName := extractClusterName(r.URL.Path)
+	clusterName := r.PathValue("name")
 	if clusterName == "" {
 		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
@@ -175,7 +167,7 @@ func (s *Service) CreateNodegroup(w http.ResponseWriter, r *http.Request) {
 
 // DeleteNodegroup handles the DeleteNodegroup operation.
 func (s *Service) DeleteNodegroup(w http.ResponseWriter, r *http.Request) {
-	clusterName, nodegroupName := extractClusterAndNodegroupName(r.URL.Path)
+	clusterName, nodegroupName := r.PathValue("name"), r.PathValue("nodegroupName")
 	if clusterName == "" || nodegroupName == "" {
 		writeError(w, errInvalidParameter, "Cluster name and nodegroup name are required", http.StatusBadRequest)
 
@@ -194,7 +186,7 @@ func (s *Service) DeleteNodegroup(w http.ResponseWriter, r *http.Request) {
 
 // DescribeNodegroup handles the DescribeNodegroup operation.
 func (s *Service) DescribeNodegroup(w http.ResponseWriter, r *http.Request) {
-	clusterName, nodegroupName := extractClusterAndNodegroupName(r.URL.Path)
+	clusterName, nodegroupName := r.PathValue("name"), r.PathValue("nodegroupName")
 	if clusterName == "" || nodegroupName == "" {
 		writeError(w, errInvalidParameter, "Cluster name and nodegroup name are required", http.StatusBadRequest)
 
@@ -213,7 +205,7 @@ func (s *Service) DescribeNodegroup(w http.ResponseWriter, r *http.Request) {
 
 // ListNodegroups handles the ListNodegroups operation.
 func (s *Service) ListNodegroups(w http.ResponseWriter, r *http.Request) {
-	clusterName := extractClusterName(r.URL.Path)
+	clusterName := r.PathValue("name")
 	if clusterName == "" {
 		writeError(w, errInvalidParameter, "Cluster name is required", http.StatusBadRequest)
 
@@ -251,34 +243,6 @@ func (s *Service) ListNodegroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, resp)
-}
-
-// extractClusterName extracts the cluster name from the URL path.
-// Expected paths: /eks/clusters/{name} or /eks/clusters/{name}/node-groups...
-func extractClusterName(path string) string {
-	path = strings.TrimPrefix(path, "/")
-	parts := strings.Split(path, "/")
-
-	// Expected: eks/clusters/{name} or eks/clusters/{name}/node-groups...
-	if len(parts) >= 3 && parts[0] == pathPrefixEKS && parts[1] == pathPrefixClusters {
-		return parts[2]
-	}
-
-	return ""
-}
-
-// extractClusterAndNodegroupName extracts both cluster and nodegroup names from the URL path.
-// Expected path: /eks/clusters/{clusterName}/node-groups/{nodegroupName}.
-func extractClusterAndNodegroupName(path string) (string, string) {
-	path = strings.TrimPrefix(path, "/")
-	parts := strings.Split(path, "/")
-
-	// Expected: eks/clusters/{clusterName}/node-groups/{nodegroupName}
-	if len(parts) >= 5 && parts[0] == pathPrefixEKS && parts[1] == pathPrefixClusters && parts[3] == pathPrefixNodeGrps {
-		return parts[2], parts[4]
-	}
-
-	return "", ""
 }
 
 // writeJSON writes a JSON response.
