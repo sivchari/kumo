@@ -18,7 +18,7 @@ func newIAMClient(t *testing.T) *iam.Client {
 	t.Helper()
 
 	return iam.NewFromConfig(awsConfig(t), func(o *iam.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/iam")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
