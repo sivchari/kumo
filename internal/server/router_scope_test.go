@@ -33,8 +33,10 @@ func newScopeTestRouter() (*Router, *string) {
 
 	r.ScopedRouter("scheduler").HandleFunc(http.MethodGet, "/tags/{arn}", record("scheduler-tags"))
 	r.ScopedRouter("kafka").HandleFunc(http.MethodGet, "/tags/{arn}", record("kafka-tags"))
-	r.ScopedRouter("kafka").HandleFunc(http.MethodGet, "/v1/clusters", record("kafka-clusters"))
 	r.ScopedRouter("iam").HandleFunc(http.MethodGet, "/{$}", record("iam-root"))
+	r.ScopedRouter("lambda").HandleFunc(http.MethodGet,
+		"/_runtime/{functionName}/2018-06-01/runtime/invocation/next", record("lambda-runtime"))
+	r.ScopedRouter("ses").HandleFunc(http.MethodGet, "/kumo/ses/v2/sent-emails", record("ses-debug"))
 	r.Handle(http.MethodGet, "/scheduler/schedules/{name}", record("scheduler-legacy"))
 
 	return r, called
@@ -76,25 +78,25 @@ var scopeDispatchCases = []struct {
 		wantStatus: http.StatusNotFound,
 	},
 	{
-		name:       "unsigned request on an ambiguous path falls back to path routing",
+		name:       "unsigned request falls back to path routing",
 		auth:       "",
 		path:       "/tags/arn",
 		want:       "",
 		wantStatus: http.StatusNotFound,
 	},
 	{
-		name:       "unsigned request on a unique path is served from its scope router",
+		name:       "unsigned lambda runtime path is path-routed",
 		auth:       "",
-		path:       "/v1/clusters",
-		want:       "kafka-clusters",
+		path:       "/_runtime/fn/2018-06-01/runtime/invocation/next",
+		want:       "lambda-runtime",
 		wantStatus: http.StatusOK,
 	},
 	{
-		name:       "unsigned root request stays with path routing",
+		name:       "unsigned kumo debug path is path-routed",
 		auth:       "",
-		path:       "/",
-		want:       "",
-		wantStatus: http.StatusNotFound,
+		path:       "/kumo/ses/v2/sent-emails",
+		want:       "ses-debug",
+		wantStatus: http.StatusOK,
 	},
 	{
 		name:       "signed root request is served from its scope router",
