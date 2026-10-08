@@ -2,6 +2,7 @@ package sqs
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -213,6 +214,69 @@ func TestMemoryStorage_LongPollTimesOutEmpty(t *testing.T) {
 
 		if elapsed := time.Since(start); elapsed != waitTimeSeconds*time.Second {
 			t.Fatalf("long poll returned after %v, want %v", elapsed, waitTimeSeconds*time.Second)
+		}
+	})
+}
+
+func TestMemoryStorage_GetQueueAttributes_DelayedMessageBecomesVisible(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		s := NewMemoryStorage("http://localhost:4566")
+		ctx := context.Background()
+		queueURL := mustCreateQueue(t, s, "delayed-counts", nil)
+
+		const delaySeconds = 5
+
+		if _, err := s.SendMessage(ctx, queueURL, "later", delaySeconds, nil, "", ""); err != nil {
+			t.Fatalf("SendMessage: %v", err)
+		}
+
+		counts := func() (visible, delayed int) {
+			t.Helper()
+
+			attrs, err := s.GetQueueAttributes(ctx, queueURL, []string{
+				"ApproximateNumberOfMessages",
+				"ApproximateNumberOfMessagesDelayed",
+			})
+			if err != nil {
+				t.Fatalf("GetQueueAttributes: %v", err)
+			}
+
+			visible, err = strconv.Atoi(attrs["ApproximateNumberOfMessages"])
+			if err != nil {
+				t.Fatalf("ApproximateNumberOfMessages = %q: %v", attrs["ApproximateNumberOfMessages"], err)
+			}
+
+			delayed, err = strconv.Atoi(attrs["ApproximateNumberOfMessagesDelayed"])
+			if err != nil {
+				t.Fatalf("ApproximateNumberOfMessagesDelayed = %q: %v", attrs["ApproximateNumberOfMessagesDelayed"], err)
+			}
+
+			return visible, delayed
+		}
+
+		if visible, delayed := counts(); visible != 0 || delayed != 1 {
+			t.Fatalf("right after send: visible=%d delayed=%d, want 0 and 1", visible, delayed)
+		}
+
+		time.Sleep((delaySeconds - 1) * time.Second)
+
+		if visible, delayed := counts(); visible != 0 || delayed != 1 {
+			t.Fatalf("1s before the delay expires: visible=%d delayed=%d, want 0 and 1", visible, delayed)
+		}
+
+		// At exactly VisibleAt the message is no longer After(now), so it counts as visible.
+		time.Sleep(1 * time.Second)
+
+		if visible, delayed := counts(); visible != 1 || delayed != 0 {
+			t.Fatalf("exactly at expiry: visible=%d delayed=%d, want 1 and 0", visible, delayed)
+		}
+
+		time.Sleep(1 * time.Second)
+
+		if visible, delayed := counts(); visible != 1 || delayed != 0 {
+			t.Fatalf("after expiry: visible=%d delayed=%d, want 1 and 0", visible, delayed)
 		}
 	})
 }
