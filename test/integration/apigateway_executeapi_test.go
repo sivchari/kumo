@@ -65,8 +65,9 @@ func createLambdaWithEndpoint(t *testing.T, name, invokeEndpoint string) {
 	})
 
 	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		kumoEndpoint+"/lambda/2015-03-31/functions", bytes.NewReader(body))
+		kumoEndpoint+"/2015-03-31/functions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", lambdaScopeAuthorization)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -82,7 +83,8 @@ func createLambdaWithEndpoint(t *testing.T, name, invokeEndpoint string) {
 
 	t.Cleanup(func() {
 		delReq, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
-			kumoEndpoint+"/lambda/2015-03-31/functions/"+name, nil)
+			kumoEndpoint+"/2015-03-31/functions/"+name, nil)
+		delReq.Header.Set("Authorization", lambdaScopeAuthorization)
 
 		if dr, _ := http.DefaultClient.Do(delReq); dr != nil {
 			_ = dr.Body.Close()

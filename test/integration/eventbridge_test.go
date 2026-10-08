@@ -862,8 +862,9 @@ func TestEventBridge_PutEvents_LambdaDelivery(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		testEndpoint()+"/lambda/2015-03-31/functions", bytes.NewReader(createReq))
+		testEndpoint()+"/2015-03-31/functions", bytes.NewReader(createReq))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", lambdaScopeAuthorization)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -877,7 +878,8 @@ func TestEventBridge_PutEvents_LambdaDelivery(t *testing.T) {
 
 	t.Cleanup(func() {
 		delReq, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
-			testEndpoint()+"/lambda/2015-03-31/functions/"+functionName, nil)
+			testEndpoint()+"/2015-03-31/functions/"+functionName, nil)
+		delReq.Header.Set("Authorization", lambdaScopeAuthorization)
 
 		delResp, _ := http.DefaultClient.Do(delReq)
 		if delResp != nil {

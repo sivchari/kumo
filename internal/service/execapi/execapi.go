@@ -17,6 +17,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/awsauth"
 )
 
 // Integration types.
@@ -131,7 +133,7 @@ type invokeResult struct {
 
 // invokeFunction POSTs the event to kumo's own Lambda invoke endpoint.
 func invokeFunction(ctx context.Context, baseURL, name string, event []byte) (*invokeResult, error) {
-	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", baseURL, name)
+	endpoint := fmt.Sprintf("%s/2015-03-31/functions/%s/invocations", baseURL, name)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(event))
 	if err != nil {
@@ -140,6 +142,7 @@ func invokeFunction(ctx context.Context, baseURL, name string, event []byte) (*i
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Amz-Invocation-Type", "RequestResponse")
+	req.Header.Set("Authorization", awsauth.ScopeHeader("lambda"))
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

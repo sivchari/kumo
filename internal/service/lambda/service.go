@@ -53,40 +53,10 @@ func (s *Service) Name() string {
 // BaseURL returns the kumo server base URL the service self-calls against.
 func (s *Service) BaseURL() string { return s.baseURL }
 
-// RegisterRoutes registers the Lambda routes.
-// Routes are registered under both /lambda/... (for SDK BaseEndpoint) and /2015-03-31/... (for CLI).
+// RegisterRoutes registers the AWS-faithful Lambda routes and the
+// kumo-native Runtime API.
 func (s *Service) RegisterRoutes(r service.Router) {
-	for _, prefix := range []string{"/lambda", ""} {
-		r.Handle("POST", prefix+"/2015-03-31/functions", s.CreateFunction)
-		r.Handle("GET", prefix+"/2015-03-31/functions", s.ListFunctions)
-		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}", s.GetFunction)
-		r.Handle("DELETE", prefix+"/2015-03-31/functions/{functionName}", s.DeleteFunction)
-		r.Handle("PUT", prefix+"/2015-03-31/functions/{functionName}/code", s.UpdateFunctionCode)
-		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/configuration", s.GetFunctionConfiguration)
-		r.Handle("PUT", prefix+"/2015-03-31/functions/{functionName}/configuration", s.UpdateFunctionConfiguration)
-		r.Handle("POST", prefix+"/2015-03-31/functions/{functionName}/invocations", s.Invoke)
-		r.Handle("POST", prefix+"/2015-03-31/event-source-mappings", s.CreateEventSourceMapping)
-		r.Handle("GET", prefix+"/2015-03-31/event-source-mappings", s.ListEventSourceMappings)
-		r.Handle("GET", prefix+"/2015-03-31/event-source-mappings/{uuid}", s.GetEventSourceMapping)
-		r.Handle("PUT", prefix+"/2015-03-31/event-source-mappings/{uuid}", s.UpdateEventSourceMapping)
-		r.Handle("DELETE", prefix+"/2015-03-31/event-source-mappings/{uuid}", s.DeleteEventSourceMapping)
-
-		// terraform-provider-aws refresh endpoints. Required after
-		// CreateFunction; without these the apply errors immediately on
-		// the post-create read.
-		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/versions", s.ListVersionsByFunction)
-		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/aliases", s.ListAliases)
-		r.Handle("GET", prefix+"/2015-03-31/functions/{functionName}/policy", s.GetPolicy)
-		r.Handle("POST", prefix+"/2015-03-31/functions/{functionName}/policy", s.AddPermission)
-		r.Handle("DELETE", prefix+"/2015-03-31/functions/{functionName}/policy/{statementId}", s.RemovePermission)
-		r.Handle("GET", prefix+"/2020-06-30/functions/{functionName}/code-signing-config", s.GetFunctionCodeSigningConfig)
-		r.Handle("GET", prefix+"/2019-09-25/functions/{functionName}/event-invoke-config/list", s.ListFunctionEventInvokeConfigs)
-		r.Handle("GET", prefix+"/2017-03-31/tags/{arn...}", s.ListTags)
-		r.Handle("POST", prefix+"/2017-03-31/tags/{arn...}", s.TagResource)
-		r.Handle("DELETE", prefix+"/2017-03-31/tags/{arn...}", s.UntagResource)
-
-		s.registerFunctionURLRoutes(r, prefix)
-	}
+	s.registerAPIRoutes(r)
 
 	// kumo-native Lambda Runtime API. A handler built with lambda.Start
 	// connects here with AWS_LAMBDA_RUNTIME_API=<host>/_runtime/{functionName},
@@ -95,6 +65,44 @@ func (s *Service) RegisterRoutes(r service.Router) {
 	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/invocation/{requestId}/response", s.RuntimeResponse)
 	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/invocation/{requestId}/error", s.RuntimeError)
 	r.Handle("POST", "/_runtime/{functionName}/2018-06-01/runtime/init/error", s.RuntimeInitError)
+}
+
+// SigningName returns the SigV4 credential scope service name for Lambda.
+func (s *Service) SigningName() string {
+	return "lambda"
+}
+
+// registerAPIRoutes registers the Lambda API routes.
+func (s *Service) registerAPIRoutes(r service.Router) {
+	r.Handle("POST", "/2015-03-31/functions", s.CreateFunction)
+	r.Handle("GET", "/2015-03-31/functions", s.ListFunctions)
+	r.Handle("GET", "/2015-03-31/functions/{functionName}", s.GetFunction)
+	r.Handle("DELETE", "/2015-03-31/functions/{functionName}", s.DeleteFunction)
+	r.Handle("PUT", "/2015-03-31/functions/{functionName}/code", s.UpdateFunctionCode)
+	r.Handle("GET", "/2015-03-31/functions/{functionName}/configuration", s.GetFunctionConfiguration)
+	r.Handle("PUT", "/2015-03-31/functions/{functionName}/configuration", s.UpdateFunctionConfiguration)
+	r.Handle("POST", "/2015-03-31/functions/{functionName}/invocations", s.Invoke)
+	r.Handle("POST", "/2015-03-31/event-source-mappings", s.CreateEventSourceMapping)
+	r.Handle("GET", "/2015-03-31/event-source-mappings", s.ListEventSourceMappings)
+	r.Handle("GET", "/2015-03-31/event-source-mappings/{uuid}", s.GetEventSourceMapping)
+	r.Handle("PUT", "/2015-03-31/event-source-mappings/{uuid}", s.UpdateEventSourceMapping)
+	r.Handle("DELETE", "/2015-03-31/event-source-mappings/{uuid}", s.DeleteEventSourceMapping)
+
+	// terraform-provider-aws refresh endpoints. Required after
+	// CreateFunction; without these the apply errors immediately on
+	// the post-create read.
+	r.Handle("GET", "/2015-03-31/functions/{functionName}/versions", s.ListVersionsByFunction)
+	r.Handle("GET", "/2015-03-31/functions/{functionName}/aliases", s.ListAliases)
+	r.Handle("GET", "/2015-03-31/functions/{functionName}/policy", s.GetPolicy)
+	r.Handle("POST", "/2015-03-31/functions/{functionName}/policy", s.AddPermission)
+	r.Handle("DELETE", "/2015-03-31/functions/{functionName}/policy/{statementId}", s.RemovePermission)
+	r.Handle("GET", "/2020-06-30/functions/{functionName}/code-signing-config", s.GetFunctionCodeSigningConfig)
+	r.Handle("GET", "/2019-09-25/functions/{functionName}/event-invoke-config/list", s.ListFunctionEventInvokeConfigs)
+	r.Handle("GET", "/2017-03-31/tags/{arn...}", s.ListTags)
+	r.Handle("POST", "/2017-03-31/tags/{arn...}", s.TagResource)
+	r.Handle("DELETE", "/2017-03-31/tags/{arn...}", s.UntagResource)
+
+	s.registerFunctionURLRoutes(r)
 }
 
 // Close stops the async dispatcher and saves the storage state if

@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/sivchari/kumo/internal/awsauth"
 	"github.com/sivchari/kumo/internal/storage"
 )
 
@@ -959,7 +960,7 @@ func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
 	}
 
 	functionName := parts[6]
-	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", s.baseURL, functionName)
+	endpoint := fmt.Sprintf("%s/2015-03-31/functions/%s/invocations", s.baseURL, functionName)
 
 	req, err := http.NewRequestWithContext(s.deliveryCtx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
@@ -970,6 +971,7 @@ func (s *MemoryStorage) deliverToLambda(target *Target, payload []byte) {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Amz-Invocation-Type", "Event")
+	req.Header.Set("Authorization", awsauth.ScopeHeader("lambda"))
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
