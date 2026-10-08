@@ -617,7 +617,6 @@ func (s *MemoryStorage) ReceiveMessage(ctx context.Context, queueURL string, max
 	// Long polling: wait for messages or timeout.
 	timer := time.NewTimer(time.Duration(wait) * time.Second)
 	defer timer.Stop()
-	defer timer.Stop()
 
 	for {
 		select {
