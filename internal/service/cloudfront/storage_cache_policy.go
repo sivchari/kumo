@@ -76,20 +76,12 @@ func (s *MemoryStorage) ListCachePolicies(_ context.Context, policyType, marker 
 	all := make([]*CachePolicy, 0, len(s.CachePolicies))
 
 	for _, policy := range s.CachePolicies {
-		if policy.ID > marker {
-			all = append(all, policy.clone())
-		}
+		all = append(all, policy.clone())
 	}
 
-	sortByID(all, func(p *CachePolicy) string { return p.ID })
+	page, nextMarker := pageByID(all, func(p *CachePolicy) string { return p.ID }, marker, maxItems)
 
-	if len(all) <= maxItems {
-		return all, "", nil
-	}
-
-	page := all[:maxItems]
-
-	return page, page[len(page)-1].ID, nil
+	return page, nextMarker, nil
 }
 
 // UpdateCachePolicy replaces the configuration when ifMatch is the current
@@ -132,12 +124,8 @@ func (s *MemoryStorage) DeleteCachePolicy(_ context.Context, id, ifMatch string)
 		return err
 	}
 
-	for _, d := range s.Distributions {
-		for _, behavior := range d.DistributionConfig.behaviors() {
-			if behavior.CachePolicyID == id {
-				return &Error{Code: errCachePolicyInUse, Message: fmt.Sprintf("Cannot delete the cache policy because it is attached to one or more cache behaviors of distribution %s.", d.ID)}
-			}
-		}
+	if distID, ok := s.distributionReferencingLocked(func(b *DefaultCacheBehavior) bool { return b.CachePolicyID == id }); ok {
+		return &Error{Code: errCachePolicyInUse, Message: fmt.Sprintf("Cannot delete the cache policy because it is attached to one or more cache behaviors of distribution %s.", distID)}
 	}
 
 	delete(s.CachePolicies, id)
@@ -160,8 +148,8 @@ func (s *MemoryStorage) cachePolicyLocked(id string) (*CachePolicy, error) {
 // mandatory (InvalidIfMatchVersion) and must carry the current ETag
 // (PreconditionFailed).
 func (s *MemoryStorage) cachePolicyForWriteLocked(id, ifMatch string) (*CachePolicy, error) {
-	if ifMatch == "" {
-		return nil, &Error{Code: errInvalidIfMatchVersion, Message: "The If-Match version is missing or not valid for the resource."}
+	if err := requireIfMatch(ifMatch); err != nil {
+		return nil, err
 	}
 
 	policy, err := s.cachePolicyLocked(id)
@@ -169,8 +157,8 @@ func (s *MemoryStorage) cachePolicyForWriteLocked(id, ifMatch string) (*CachePol
 		return nil, err
 	}
 
-	if policy.ETag != ifMatch {
-		return nil, &Error{Code: errPreconditionFailed, Message: "The precondition in one or more of the request fields evaluated to false."}
+	if err := checkIfMatch(policy.ETag, ifMatch); err != nil {
+		return nil, err
 	}
 
 	return policy, nil
