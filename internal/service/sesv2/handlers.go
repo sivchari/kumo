@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/sivchari/kumo/internal/service"
 )
@@ -46,7 +45,7 @@ func (s *Service) CreateEmailIdentity(w http.ResponseWriter, r *http.Request) {
 
 // GetEmailIdentity handles the GetEmailIdentity operation.
 func (s *Service) GetEmailIdentity(w http.ResponseWriter, r *http.Request) {
-	emailIdentity := extractPathParam(r.URL.Path, "/ses/v2/email/identities/")
+	emailIdentity := r.PathValue("emailIdentity")
 	if emailIdentity == "" {
 		writeError(w, errInvalidParameter, "EmailIdentity is required", http.StatusBadRequest)
 
@@ -109,7 +108,7 @@ func (s *Service) ListEmailIdentities(w http.ResponseWriter, r *http.Request) {
 
 // DeleteEmailIdentity handles the DeleteEmailIdentity operation.
 func (s *Service) DeleteEmailIdentity(w http.ResponseWriter, r *http.Request) {
-	emailIdentity := extractPathParam(r.URL.Path, "/ses/v2/email/identities/")
+	emailIdentity := r.PathValue("emailIdentity")
 	if emailIdentity == "" {
 		writeError(w, errInvalidParameter, "EmailIdentity is required", http.StatusBadRequest)
 
@@ -170,7 +169,7 @@ func (s *Service) CreateConfigurationSet(w http.ResponseWriter, r *http.Request)
 
 // GetConfigurationSet handles the GetConfigurationSet operation.
 func (s *Service) GetConfigurationSet(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/ses/v2/email/configuration-sets/")
+	name := r.PathValue("configurationSetName")
 	if name == "" {
 		writeError(w, errInvalidParameter, "ConfigurationSetName is required", http.StatusBadRequest)
 
@@ -226,7 +225,7 @@ func (s *Service) ListConfigurationSets(w http.ResponseWriter, r *http.Request) 
 
 // DeleteConfigurationSet handles the DeleteConfigurationSet operation.
 func (s *Service) DeleteConfigurationSet(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/ses/v2/email/configuration-sets/")
+	name := r.PathValue("configurationSetName")
 	if name == "" {
 		writeError(w, errInvalidParameter, "ConfigurationSetName is required", http.StatusBadRequest)
 
@@ -287,7 +286,7 @@ func (s *Service) CreateEmailTemplate(w http.ResponseWriter, r *http.Request) {
 
 // GetEmailTemplate handles the GetEmailTemplate operation.
 func (s *Service) GetEmailTemplate(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/ses/v2/email/templates/")
+	name := r.PathValue("templateName")
 	if name == "" {
 		writeError(w, errInvalidParameter, "TemplateName is required", http.StatusBadRequest)
 
@@ -321,7 +320,7 @@ func (s *Service) GetEmailTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateEmailTemplate handles the UpdateEmailTemplate operation.
 func (s *Service) UpdateEmailTemplate(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/ses/v2/email/templates/")
+	name := r.PathValue("templateName")
 	if name == "" {
 		writeError(w, errInvalidParameter, "TemplateName is required", http.StatusBadRequest)
 
@@ -359,7 +358,7 @@ func (s *Service) UpdateEmailTemplate(w http.ResponseWriter, r *http.Request) {
 
 // DeleteEmailTemplate handles the DeleteEmailTemplate operation.
 func (s *Service) DeleteEmailTemplate(w http.ResponseWriter, r *http.Request) {
-	name := extractPathParam(r.URL.Path, "/ses/v2/email/templates/")
+	name := r.PathValue("templateName")
 	if name == "" {
 		writeError(w, errInvalidParameter, "TemplateName is required", http.StatusBadRequest)
 
@@ -496,20 +495,6 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeJSON, code, message, status)
-}
-
-// extractPathParam extracts a path parameter from the URL.
-func extractPathParam(path, prefix string) string {
-	param, found := strings.CutPrefix(path, prefix)
-	if !found {
-		return ""
-	}
-
-	if idx := strings.Index(param, "/"); idx != -1 {
-		param = param[:idx]
-	}
-
-	return param
 }
 
 // parsePageSize parses the page size from a string, returning 100 as default.

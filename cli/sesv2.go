@@ -31,12 +31,10 @@ func newSESv2Cmd() *cobra.Command {
 	return cmd
 }
 
-// newSESv2Client builds a SES v2 client. Kumo mounts SES v2 under the "/ses"
-// path prefix, but the AWS SDK serializes requests to "/v2/...", so the base
-// endpoint must include the "/ses" suffix.
+// newSESv2Client builds a SES v2 client.
 func newSESv2Client(cfg *aws.Config) *sesv2.Client {
 	return sesv2.NewFromConfig(*cfg, func(o *sesv2.Options) {
-		o.BaseEndpoint = aws.String(endpointURL + "/ses")
+		o.BaseEndpoint = aws.String(endpointURL)
 	})
 }
 

@@ -37,34 +37,38 @@ func (s *Service) Name() string {
 	return "sesv2"
 }
 
-// RegisterRoutes registers the SES v2 routes.
-// SES v2 uses REST API with path-based routing.
+// SigningName returns the SigV4 credential scope service name for SES.
+func (s *Service) SigningName() string {
+	return "ses"
+}
+
+// RegisterRoutes registers the AWS-faithful SES v2 routes and the
+// kumo-specific test endpoint.
 func (s *Service) RegisterRoutes(r service.Router) {
+	r.HandleFunc("GET", "/kumo/ses/v2/sent-emails", s.GetSentEmails)
+
 	// Email Identity routes.
-	r.HandleFunc("POST", "/ses/v2/email/identities", s.CreateEmailIdentity)
-	r.HandleFunc("GET", "/ses/v2/email/identities", s.ListEmailIdentities)
-	r.HandleFunc("GET", "/ses/v2/email/identities/{emailIdentity}", s.GetEmailIdentity)
-	r.HandleFunc("DELETE", "/ses/v2/email/identities/{emailIdentity}", s.DeleteEmailIdentity)
+	r.HandleFunc("POST", "/v2/email/identities", s.CreateEmailIdentity)
+	r.HandleFunc("GET", "/v2/email/identities", s.ListEmailIdentities)
+	r.HandleFunc("GET", "/v2/email/identities/{emailIdentity}", s.GetEmailIdentity)
+	r.HandleFunc("DELETE", "/v2/email/identities/{emailIdentity}", s.DeleteEmailIdentity)
 
 	// Configuration Set routes.
-	r.HandleFunc("POST", "/ses/v2/email/configuration-sets", s.CreateConfigurationSet)
-	r.HandleFunc("GET", "/ses/v2/email/configuration-sets", s.ListConfigurationSets)
-	r.HandleFunc("GET", "/ses/v2/email/configuration-sets/{configurationSetName}", s.GetConfigurationSet)
-	r.HandleFunc("DELETE", "/ses/v2/email/configuration-sets/{configurationSetName}", s.DeleteConfigurationSet)
+	r.HandleFunc("POST", "/v2/email/configuration-sets", s.CreateConfigurationSet)
+	r.HandleFunc("GET", "/v2/email/configuration-sets", s.ListConfigurationSets)
+	r.HandleFunc("GET", "/v2/email/configuration-sets/{configurationSetName}", s.GetConfigurationSet)
+	r.HandleFunc("DELETE", "/v2/email/configuration-sets/{configurationSetName}", s.DeleteConfigurationSet)
 
 	// Email Template routes.
-	r.HandleFunc("POST", "/ses/v2/email/templates", s.CreateEmailTemplate)
-	r.HandleFunc("GET", "/ses/v2/email/templates", s.ListEmailTemplates)
-	r.HandleFunc("GET", "/ses/v2/email/templates/{templateName}", s.GetEmailTemplate)
-	r.HandleFunc("PUT", "/ses/v2/email/templates/{templateName}", s.UpdateEmailTemplate)
-	r.HandleFunc("DELETE", "/ses/v2/email/templates/{templateName}", s.DeleteEmailTemplate)
+	r.HandleFunc("POST", "/v2/email/templates", s.CreateEmailTemplate)
+	r.HandleFunc("GET", "/v2/email/templates", s.ListEmailTemplates)
+	r.HandleFunc("GET", "/v2/email/templates/{templateName}", s.GetEmailTemplate)
+	r.HandleFunc("PUT", "/v2/email/templates/{templateName}", s.UpdateEmailTemplate)
+	r.HandleFunc("DELETE", "/v2/email/templates/{templateName}", s.DeleteEmailTemplate)
 
 	// Send Email routes.
-	r.HandleFunc("POST", "/ses/v2/email/outbound-emails", s.SendEmail)
-	r.HandleFunc("POST", "/ses/v2/email/outbound-bulk-emails", s.SendBulkEmail)
-
-	// kumo-specific endpoint for testing.
-	r.HandleFunc("GET", "/kumo/ses/v2/sent-emails", s.GetSentEmails)
+	r.HandleFunc("POST", "/v2/email/outbound-emails", s.SendEmail)
+	r.HandleFunc("POST", "/v2/email/outbound-bulk-emails", s.SendBulkEmail)
 }
 
 // Close saves the storage state if persistence is enabled.
