@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdaTypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/spf13/cobra"
+
+	"github.com/sivchari/kumo/internal/awsauth"
 )
 
 // newLambdaCmd builds the Lambda command tree. Lambda uses kumo's REST
@@ -67,6 +69,7 @@ func lambdaRawRequest(ctx context.Context, method, path string, body, out any) e
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", awsauth.ScopeHeader("lambda"))
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

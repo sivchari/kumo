@@ -163,34 +163,33 @@ func TestLambda_FunctionURLConfigConflictsAndNotFound(t *testing.T) {
 	assertLambdaAPIError(t, err, "InvalidParameterValueException", http.StatusBadRequest)
 }
 
-// TestLambda_FunctionURLConfigRejectsMalformedBodies exercises both route
-// prefixes (SDK BaseEndpoint style and CLI style) with raw HTTP.
+// TestLambda_FunctionURLConfigRejectsMalformedBodies exercises the
+// AWS-faithful route with raw HTTP.
 func TestLambda_FunctionURLConfigRejectsMalformedBodies(t *testing.T) {
 	client := newLambdaClient(t)
 	name := "test-function-url-malformed"
 	createURLTestFunction(t, client, name)
 
-	for _, prefix := range []string{"", "/lambda"} {
-		for _, body := range []string{`{not json`, `{}`, `{"AuthType":"MAYBE"}`} {
-			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-				testEndpoint()+prefix+"/2021-10-31/functions/"+name+"/url", bytes.NewReader([]byte(body)))
-			if err != nil {
-				t.Fatalf("build request: %v", err)
-			}
+	for _, body := range []string{`{not json`, `{}`, `{"AuthType":"MAYBE"}`} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+			testEndpoint()+"/2021-10-31/functions/"+name+"/url", bytes.NewReader([]byte(body)))
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
 
-			req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", lambdaScopeAuthorization)
 
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				t.Fatalf("POST %s: %v", prefix, err)
-			}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
 
-			payload, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
+		payload, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 
-			if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("X-Amzn-Errortype") != "InvalidParameterValueException" {
-				t.Errorf("prefix %q body %s: got %d %s %s", prefix, body, resp.StatusCode, resp.Header.Get("X-Amzn-Errortype"), payload)
-			}
+		if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("X-Amzn-Errortype") != "InvalidParameterValueException" {
+			t.Errorf("body %s: got %d %s %s", body, resp.StatusCode, resp.Header.Get("X-Amzn-Errortype"), payload)
 		}
 	}
 }

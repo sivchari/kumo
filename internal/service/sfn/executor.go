@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sivchari/kumo/internal/awsauth"
 )
 
 // stateMachineDefinition represents a parsed Step Functions state machine definition.
@@ -803,7 +805,7 @@ func (e *executionEngine) executeLambdaFunctionTask(ctx context.Context, name, r
 // callLambda performs the HTTP call to invoke a Lambda function and returns
 // the raw response body.
 func (e *executionEngine) callLambda(ctx context.Context, functionName string, payload []byte) ([]byte, error) {
-	invokeURL := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", e.baseURL, functionName)
+	invokeURL := fmt.Sprintf("%s/2015-03-31/functions/%s/invocations", e.baseURL, functionName)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invokeURL, bytes.NewReader(payload))
 	if err != nil {
@@ -811,6 +813,7 @@ func (e *executionEngine) callLambda(ctx context.Context, functionName string, p
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", awsauth.ScopeHeader("lambda"))
 
 	resp, err := e.client.Do(req)
 	if err != nil {

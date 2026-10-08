@@ -19,11 +19,17 @@ import (
 	"github.com/sivchari/golden"
 )
 
+// lambdaScopeAuthorization is the Authorization header raw HTTP tests attach
+// so kumo routes the request to the Lambda scope router. It mirrors
+// internal/awsauth.ScopeHeader("lambda"); this module cannot import it
+// without pulling kumo's dependency graph into test/go.mod.
+const lambdaScopeAuthorization = "AWS4-HMAC-SHA256 Credential=kumo/19700101/us-east-1/lambda/aws4_request, SignedHeaders=host, Signature=internal"
+
 func newLambdaClient(t *testing.T) *lambda.Client {
 	t.Helper()
 
 	return lambda.NewFromConfig(awsConfig(t), func(o *lambda.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/lambda")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
@@ -208,8 +214,9 @@ func TestLambda_InvokeWithEndpoint(t *testing.T) {
 	createBody, _ := json.Marshal(createReq)
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		testEndpoint()+"/lambda/2015-03-31/functions", bytes.NewReader(createBody))
+		testEndpoint()+"/2015-03-31/functions", bytes.NewReader(createBody))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", lambdaScopeAuthorization)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -223,7 +230,8 @@ func TestLambda_InvokeWithEndpoint(t *testing.T) {
 
 	t.Cleanup(func() {
 		delReq, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
-			testEndpoint()+"/lambda/2015-03-31/functions/"+functionName, nil)
+			testEndpoint()+"/2015-03-31/functions/"+functionName, nil)
+		delReq.Header.Set("Authorization", lambdaScopeAuthorization)
 		delResp, _ := http.DefaultClient.Do(delReq)
 		if delResp != nil {
 			delResp.Body.Close()
@@ -233,9 +241,10 @@ func TestLambda_InvokeWithEndpoint(t *testing.T) {
 	// Invoke function.
 	payload := []byte(`{"key": "value"}`)
 	invokeReq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		testEndpoint()+"/lambda/2015-03-31/functions/"+functionName+"/invocations",
+		testEndpoint()+"/2015-03-31/functions/"+functionName+"/invocations",
 		bytes.NewReader(payload))
 	invokeReq.Header.Set("Content-Type", "application/json")
+	invokeReq.Header.Set("Authorization", lambdaScopeAuthorization)
 
 	invokeResp, err := http.DefaultClient.Do(invokeReq)
 	if err != nil {
@@ -285,8 +294,9 @@ func TestLambda_FunctionNameAsARN(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-		testEndpoint()+"/lambda/2015-03-31/functions", bytes.NewReader(createBody))
+		testEndpoint()+"/2015-03-31/functions", bytes.NewReader(createBody))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", lambdaScopeAuthorization)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

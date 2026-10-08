@@ -24,13 +24,13 @@ const (
 	pathSegmentURLs = "urls"
 )
 
-// registerFunctionURLRoutes registers the FunctionUrlConfig operations under prefix.
-func (s *Service) registerFunctionURLRoutes(r service.Router, prefix string) {
-	r.Handle("POST", prefix+"/2021-10-31/functions/{functionName}/url", s.CreateFunctionURLConfig)
-	r.Handle("GET", prefix+"/2021-10-31/functions/{functionName}/url", s.GetFunctionURLConfig)
-	r.Handle("PUT", prefix+"/2021-10-31/functions/{functionName}/url", s.UpdateFunctionURLConfig)
-	r.Handle("DELETE", prefix+"/2021-10-31/functions/{functionName}/url", s.DeleteFunctionURLConfig)
-	r.Handle("GET", prefix+"/2021-10-31/functions/{functionName}/urls", s.ListFunctionURLConfigs)
+// registerFunctionURLRoutes registers the FunctionUrlConfig operations.
+func (s *Service) registerFunctionURLRoutes(r service.Router) {
+	r.Handle("POST", "/2021-10-31/functions/{functionName}/url", s.CreateFunctionURLConfig)
+	r.Handle("GET", "/2021-10-31/functions/{functionName}/url", s.GetFunctionURLConfig)
+	r.Handle("PUT", "/2021-10-31/functions/{functionName}/url", s.UpdateFunctionURLConfig)
+	r.Handle("DELETE", "/2021-10-31/functions/{functionName}/url", s.DeleteFunctionURLConfig)
+	r.Handle("GET", "/2021-10-31/functions/{functionName}/urls", s.ListFunctionURLConfigs)
 }
 
 // CreateFunctionURLConfig handles CreateFunctionUrlConfig.

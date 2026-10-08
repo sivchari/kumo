@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sivchari/kumo/internal/awsauth"
 	"github.com/sivchari/kumo/internal/service"
 	"github.com/sivchari/kumo/internal/service/lambda"
 	"github.com/sivchari/kumo/internal/service/s3"
@@ -288,7 +289,7 @@ func newLambdaAsyncInvoker(baseURL string) *lambdaAsyncInvoker {
 func (inv *lambdaAsyncInvoker) InvokeAsync(ctx context.Context, functionArn string, payload []byte) error {
 	functionName := lambdaFunctionNameFromArn(functionArn)
 
-	endpoint := fmt.Sprintf("%s/lambda/2015-03-31/functions/%s/invocations", inv.baseURL, functionName)
+	endpoint := fmt.Sprintf("%s/2015-03-31/functions/%s/invocations", inv.baseURL, functionName)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
@@ -297,6 +298,7 @@ func (inv *lambdaAsyncInvoker) InvokeAsync(ctx context.Context, functionArn stri
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Amz-Invocation-Type", "Event")
+	req.Header.Set("Authorization", awsauth.ScopeHeader("lambda"))
 
 	resp, err := inv.httpClient.Do(req)
 	if err != nil {

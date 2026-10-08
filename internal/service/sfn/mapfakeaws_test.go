@@ -55,7 +55,7 @@ func newFakeAWSServer(t *testing.T) *fakeAWSServer {
 // back verbatim as its response, so a Task processor's output reflects
 // exactly what it sent.
 func (s *fakeAWSServer) withEchoLambda() *fakeAWSServer {
-	s.mux.HandleFunc("POST /lambda/2015-03-31/functions/{name}/invocations", func(w http.ResponseWriter, r *http.Request) {
+	s.mux.HandleFunc("POST /2015-03-31/functions/{name}/invocations", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 
 		w.Header().Set("Content-Type", "application/json")
