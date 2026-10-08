@@ -25,7 +25,7 @@ func executeAPIClient(t *testing.T) *apigateway.Client {
 	t.Helper()
 
 	return apigateway.NewFromConfig(awsConfig(t), func(o *apigateway.Options) {
-		o.BaseEndpoint = aws.String(kumoEndpoint + "/apigateway")
+		o.BaseEndpoint = aws.String(kumoEndpoint)
 	})
 }
 
