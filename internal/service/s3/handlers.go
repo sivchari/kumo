@@ -44,6 +44,7 @@ const (
 	errCodeNoSuchUpload          = "NoSuchUpload"
 	errCodeInvalidPart           = "InvalidPart"
 	errCodeMalformedXML          = "MalformedXML"
+	errCodeInvalidTag            = "InvalidTag"
 	errCodePreconditionFailed    = "PreconditionFailed"
 	errCodeAuthQueryParamsError  = "AuthorizationQueryParametersError"
 	errCodeInvalidPolicyDocument = "InvalidPolicyDocument"
@@ -2713,7 +2714,14 @@ func (s *Service) PutBucketTagging(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tags := make(map[string]string, len(tagging.TagSet.Tags))
+
 	for _, tag := range tagging.TagSet.Tags {
+		if _, duplicate := tags[tag.Key]; duplicate {
+			writeS3Error(w, r, errCodeInvalidTag, "Cannot provide multiple Tags with the same key", http.StatusBadRequest)
+
+			return
+		}
+
 		tags[tag.Key] = tag.Value
 	}
 

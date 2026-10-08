@@ -167,6 +167,44 @@ func TestBucketTaggingRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPutBucketTaggingRejectsDuplicateKeys(t *testing.T) {
+	t.Parallel()
+
+	store, svc := newBucketTaggingFixture(t)
+
+	w := issueBucketSubresourceRequest(t, svc, http.MethodPut, testTaggedBucket,
+		bucketTaggingXML(testTagKeyOwner, testTagValueOwner))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PutBucketTagging status = %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	w = issueBucketSubresourceRequest(t, svc, http.MethodPut, testTaggedBucket,
+		bucketTaggingXML(testTagKeyEnv, "dev", testTagKeyEnv, "prod"))
+	assertS3ErrorCode(t, w, http.StatusBadRequest, errCodeInvalidTag)
+
+	tags, err := store.GetBucketTagging(context.Background(), testTaggedBucket)
+	if err != nil {
+		t.Fatalf("GetBucketTagging: %v", err)
+	}
+
+	if len(tags) != 1 || tags[testTagKeyOwner] != testTagValueOwner {
+		t.Errorf("tags = %v after a rejected PutBucketTagging, want the previous set kept", tags)
+	}
+}
+
+func TestPutBucketTaggingAcceptsDistinctKeys(t *testing.T) {
+	t.Parallel()
+
+	_, svc := newBucketTaggingFixture(t)
+
+	w := issueBucketSubresourceRequest(t, svc, http.MethodPut, testTaggedBucket,
+		bucketTaggingXML(testTagKeyEnv, testTagValueEnv, "environment", "prod"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PutBucketTagging status = %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
 func TestPutBucketTaggingReplacesPreviousTagSet(t *testing.T) {
 	t.Parallel()
 
