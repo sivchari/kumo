@@ -16,7 +16,7 @@ func newSchedulerClient(t *testing.T) *scheduler.Client {
 	t.Helper()
 
 	return scheduler.NewFromConfig(awsConfig(t), func(o *scheduler.Options) {
-		o.BaseEndpoint = aws.String(testEndpoint() + "/scheduler")
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
