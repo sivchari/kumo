@@ -337,13 +337,12 @@ func (r *Router) servePrefixed(w http.ResponseWriter, req *http.Request) bool {
 // The signing name is the only request attribute that disambiguates REST
 // services sharing identical paths (e.g. GET /tags/{arn}) on a single
 // endpoint, where real AWS uses per-service hostnames. A false return
-// (unsigned request, unmigrated service, or a path the scope router does
-// not know, such as a legacy prefixed one) keeps the request on path-based
-// routing.
+// (unmigrated service, or a path the scope router does not know) keeps the
+// request on path-based routing.
 func (r *Router) serveScoped(w http.ResponseWriter, req *http.Request) bool {
 	name := sigV4SigningName(req)
 	if name == "" {
-		return false
+		return r.serveUniqueScope(w, req)
 	}
 
 	mux, ok := r.scopeRouters[name]
@@ -356,6 +355,42 @@ func (r *Router) serveScoped(w http.ResponseWriter, req *http.Request) bool {
 	}
 
 	mux.ServeHTTP(w, req)
+
+	return true
+}
+
+// serveUniqueScope serves an unsigned request when exactly one scope router
+// knows its path, reporting whether it did.
+//
+// Without a credential scope the signing name cannot disambiguate services,
+// but a path registered by a single service still identifies it; internal
+// self-calls, the Lambda Runtime API and kumo-native endpoints all arrive
+// unsigned. The root path stays with the unified protocol dispatcher, and
+// an ambiguous path falls through to path-based routing.
+func (r *Router) serveUniqueScope(w http.ResponseWriter, req *http.Request) bool {
+	if req.URL.Path == "/" {
+		return false
+	}
+
+	var match *http.ServeMux
+
+	for _, mux := range r.scopeRouters {
+		if _, pattern := mux.Handler(req); pattern == "" {
+			continue
+		}
+
+		if match != nil {
+			return false
+		}
+
+		match = mux
+	}
+
+	if match == nil {
+		return false
+	}
+
+	match.ServeHTTP(w, req)
 
 	return true
 }
