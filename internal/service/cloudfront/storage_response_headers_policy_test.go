@@ -16,21 +16,21 @@ func validResponseHeadersPolicy(name string) *ResponseHeadersPolicyConfig {
 	return &ResponseHeadersPolicyConfig{
 		Name: name,
 		CorsConfig: &ResponseHeadersPolicyCorsConfig{
-			AccessControlAllowCredentials: ptr(false),
-			AccessControlAllowHeaders:     &ResponseHeadersPolicyHeaderList{Quantity: ptr(1), Items: &ResponseHeadersPolicyHeaders{Header: []string{"*"}}},
-			AccessControlAllowMethods:     &ResponseHeadersPolicyMethodList{Quantity: ptr(2), Items: &ResponseHeadersPolicyMethods{Method: []string{methodGet, methodHead}}},
-			AccessControlAllowOrigins:     &ResponseHeadersPolicyOriginList{Quantity: ptr(1), Items: &ResponseHeadersPolicyOrigins{Origin: []string{"https://example.com"}}},
-			AccessControlMaxAgeSec:        ptr(int32(0)),
-			OriginOverride:                ptr(true),
+			AccessControlAllowCredentials: new(false),
+			AccessControlAllowHeaders:     &ResponseHeadersPolicyHeaderList{Quantity: new(1), Items: &ResponseHeadersPolicyHeaders{Header: []string{"*"}}},
+			AccessControlAllowMethods:     &ResponseHeadersPolicyMethodList{Quantity: new(2), Items: &ResponseHeadersPolicyMethods{Method: []string{methodGet, methodHead}}},
+			AccessControlAllowOrigins:     &ResponseHeadersPolicyOriginList{Quantity: new(1), Items: &ResponseHeadersPolicyOrigins{Origin: []string{"https://example.com"}}},
+			AccessControlMaxAgeSec:        new(int32(0)),
+			OriginOverride:                new(true),
 		},
-		CustomHeadersConfig: &ResponseHeadersPolicyCustomHeadersConfig{Quantity: ptr(1), Items: &ResponseHeadersPolicyCustomHeaderList{ResponseHeadersPolicyCustomHeader: []ResponseHeadersPolicyCustomHeader{
-			{Header: ptr(responseHeadersPolicyTestHeader), Override: ptr(false), Value: ptr("1")},
+		CustomHeadersConfig: &ResponseHeadersPolicyCustomHeadersConfig{Quantity: new(1), Items: &ResponseHeadersPolicyCustomHeaderList{ResponseHeadersPolicyCustomHeader: []ResponseHeadersPolicyCustomHeader{
+			{Header: new(responseHeadersPolicyTestHeader), Override: new(false), Value: new("1")},
 		}}},
 		SecurityHeadersConfig: &ResponseHeadersPolicySecurityHeadersConfig{
-			FrameOptions:  &ResponseHeadersPolicyFrameOptions{FrameOption: "DENY", Override: ptr(true)},
-			XSSProtection: &ResponseHeadersPolicyXSSProtection{Override: ptr(false), Protection: ptr(true), ModeBlock: ptr(false), ReportURI: ptr("https://example.com/report")},
+			FrameOptions:  &ResponseHeadersPolicyFrameOptions{FrameOption: "DENY", Override: new(true)},
+			XSSProtection: &ResponseHeadersPolicyXSSProtection{Override: new(false), Protection: new(true), ModeBlock: new(false), ReportURI: new("https://example.com/report")},
 		},
-		ServerTimingHeadersConfig: &ResponseHeadersPolicyServerTimingHeadersConfig{Enabled: ptr(false), SamplingRate: ptr(12.3456)},
+		ServerTimingHeadersConfig: &ResponseHeadersPolicyServerTimingHeadersConfig{Enabled: new(false), SamplingRate: new(12.3456)},
 	}
 }
 
@@ -59,31 +59,31 @@ func TestValidateResponseHeadersPolicyConfig(t *testing.T) {
 		"bad method": {mutate(func(c *ResponseHeadersPolicyConfig) {
 			c.CorsConfig.AccessControlAllowMethods.Items.Method[0] = "CONNECT"
 		}), errInvalidArgument},
-		"method quantity": {mutate(func(c *ResponseHeadersPolicyConfig) { c.CorsConfig.AccessControlAllowMethods.Quantity = ptr(3) }), errInconsistentQuantities},
+		"method quantity": {mutate(func(c *ResponseHeadersPolicyConfig) { c.CorsConfig.AccessControlAllowMethods.Quantity = new(3) }), errInconsistentQuantities},
 		"expose quantity": {mutate(func(c *ResponseHeadersPolicyConfig) {
-			c.CorsConfig.AccessControlExposeHeaders = &ResponseHeadersPolicyHeaderList{Quantity: ptr(1)}
+			c.CorsConfig.AccessControlExposeHeaders = &ResponseHeadersPolicyHeaderList{Quantity: new(1)}
 		}), errInconsistentQuantities},
 		"custom no value": {mutate(func(c *ResponseHeadersPolicyConfig) {
 			c.CustomHeadersConfig.Items.ResponseHeadersPolicyCustomHeader[0].Value = nil
 		}), errInvalidArgument},
-		"custom quantity":    {mutate(func(c *ResponseHeadersPolicyConfig) { c.CustomHeadersConfig.Quantity = ptr(0) }), errInconsistentQuantities},
+		"custom quantity":    {mutate(func(c *ResponseHeadersPolicyConfig) { c.CustomHeadersConfig.Quantity = new(0) }), errInconsistentQuantities},
 		"custom no quantity": {mutate(func(c *ResponseHeadersPolicyConfig) { c.CustomHeadersConfig.Quantity = nil }), errInvalidArgument},
 		"remove no header": {mutate(func(c *ResponseHeadersPolicyConfig) {
-			c.RemoveHeadersConfig = &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: ptr(1), Items: &ResponseHeadersPolicyRemoveHeaderList{ResponseHeadersPolicyRemoveHeader: []ResponseHeadersPolicyRemoveHeader{{}}}}
+			c.RemoveHeadersConfig = &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: new(1), Items: &ResponseHeadersPolicyRemoveHeaderList{ResponseHeadersPolicyRemoveHeader: []ResponseHeadersPolicyRemoveHeader{{}}}}
 		}), errInvalidArgument},
 		"bad frame option": {mutate(func(c *ResponseHeadersPolicyConfig) { c.SecurityHeadersConfig.FrameOptions.FrameOption = "ALLOW-FROM" }), errInvalidArgument},
 		"bad referrer policy": {mutate(func(c *ResponseHeadersPolicyConfig) {
-			c.SecurityHeadersConfig.ReferrerPolicy = &ResponseHeadersPolicyReferrerPolicy{Override: ptr(true), ReferrerPolicy: "never"}
+			c.SecurityHeadersConfig.ReferrerPolicy = &ResponseHeadersPolicyReferrerPolicy{Override: new(true), ReferrerPolicy: "never"}
 		}), errInvalidArgument},
 		"hsts no max age": {mutate(func(c *ResponseHeadersPolicyConfig) {
-			c.SecurityHeadersConfig.StrictTransportSecurity = &ResponseHeadersPolicyStrictTransportSecurity{Override: ptr(true)}
+			c.SecurityHeadersConfig.StrictTransportSecurity = &ResponseHeadersPolicyStrictTransportSecurity{Override: new(true)}
 		}), errInvalidArgument},
 		"xss no protection":   {mutate(func(c *ResponseHeadersPolicyConfig) { c.SecurityHeadersConfig.XSSProtection.Protection = nil }), errInvalidArgument},
-		"xss block reporting": {mutate(func(c *ResponseHeadersPolicyConfig) { c.SecurityHeadersConfig.XSSProtection.ModeBlock = ptr(true) }), errInvalidArgument},
+		"xss block reporting": {mutate(func(c *ResponseHeadersPolicyConfig) { c.SecurityHeadersConfig.XSSProtection.ModeBlock = new(true) }), errInvalidArgument},
 		"timing no enabled":   {mutate(func(c *ResponseHeadersPolicyConfig) { c.ServerTimingHeadersConfig.Enabled = nil }), errInvalidArgument},
-		"timing above 100":    {mutate(func(c *ResponseHeadersPolicyConfig) { c.ServerTimingHeadersConfig.SamplingRate = ptr(100.5) }), errInvalidArgument},
-		"timing negative":     {mutate(func(c *ResponseHeadersPolicyConfig) { c.ServerTimingHeadersConfig.SamplingRate = ptr(-1.0) }), errInvalidArgument},
-		"timing precision":    {mutate(func(c *ResponseHeadersPolicyConfig) { c.ServerTimingHeadersConfig.SamplingRate = ptr(0.12345) }), errInvalidArgument},
+		"timing above 100":    {mutate(func(c *ResponseHeadersPolicyConfig) { c.ServerTimingHeadersConfig.SamplingRate = new(100.5) }), errInvalidArgument},
+		"timing negative":     {mutate(func(c *ResponseHeadersPolicyConfig) { c.ServerTimingHeadersConfig.SamplingRate = new(-1.0) }), errInvalidArgument},
+		"timing precision":    {mutate(func(c *ResponseHeadersPolicyConfig) { c.ServerTimingHeadersConfig.SamplingRate = new(0.12345) }), errInvalidArgument},
 	}
 
 	for name, tc := range cases {
@@ -97,12 +97,12 @@ func TestValidateResponseHeadersPolicyConfig_Accepts(t *testing.T) {
 	t.Parallel()
 
 	maxRate := validResponseHeadersPolicy("n")
-	maxRate.ServerTimingHeadersConfig.SamplingRate = ptr(100.0)
+	maxRate.ServerTimingHeadersConfig.SamplingRate = new(100.0)
 
 	for name, cfg := range map[string]*ResponseHeadersPolicyConfig{
 		"name only":      {Name: "n"},
 		"full":           validResponseHeadersPolicy("n"),
-		"empty lists":    {Name: "n", CustomHeadersConfig: &ResponseHeadersPolicyCustomHeadersConfig{Quantity: ptr(0)}, RemoveHeadersConfig: &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: ptr(0)}},
+		"empty lists":    {Name: "n", CustomHeadersConfig: &ResponseHeadersPolicyCustomHeadersConfig{Quantity: new(0)}, RemoveHeadersConfig: &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: new(0)}},
 		"sampling rates": maxRate,
 	} {
 		if err := validateResponseHeadersPolicyConfig(cfg); err != nil {
@@ -179,7 +179,7 @@ func TestResponseHeadersPolicy_WriteProtocol(t *testing.T) {
 	}
 
 	invalid := validResponseHeadersPolicy("second")
-	invalid.CustomHeadersConfig.Quantity = ptr(5)
+	invalid.CustomHeadersConfig.Quantity = new(5)
 
 	if _, err := store.UpdateResponseHeadersPolicy(ctx, second.ID, invalid, second.ETag); errorCode(t, err) != errInconsistentQuantities {
 		t.Errorf("invalid update: %v", err)
@@ -417,9 +417,9 @@ func TestResponseHeadersPolicyXML_OmittedItems(t *testing.T) {
 	t.Parallel()
 
 	cfg := validResponseHeadersPolicy("n")
-	cfg.CorsConfig.AccessControlExposeHeaders = &ResponseHeadersPolicyHeaderList{Quantity: ptr(0)}
-	cfg.CustomHeadersConfig = &ResponseHeadersPolicyCustomHeadersConfig{Quantity: ptr(0)}
-	cfg.RemoveHeadersConfig = &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: ptr(0)}
+	cfg.CorsConfig.AccessControlExposeHeaders = &ResponseHeadersPolicyHeaderList{Quantity: new(0)}
+	cfg.CustomHeadersConfig = &ResponseHeadersPolicyCustomHeadersConfig{Quantity: new(0)}
+	cfg.RemoveHeadersConfig = &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: new(0)}
 
 	out, err := xml.Marshal(cfg)
 	if err != nil {
@@ -514,8 +514,8 @@ func TestListResponseHeadersPolicies_EmptyOmitsItems(t *testing.T) {
 
 func withRemoveHeader(name, header string) *ResponseHeadersPolicyConfig {
 	cfg := validResponseHeadersPolicy(name)
-	cfg.RemoveHeadersConfig = &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: ptr(1), Items: &ResponseHeadersPolicyRemoveHeaderList{
-		ResponseHeadersPolicyRemoveHeader: []ResponseHeadersPolicyRemoveHeader{{Header: ptr(header)}},
+	cfg.RemoveHeadersConfig = &ResponseHeadersPolicyRemoveHeadersConfig{Quantity: new(1), Items: &ResponseHeadersPolicyRemoveHeaderList{
+		ResponseHeadersPolicyRemoveHeader: []ResponseHeadersPolicyRemoveHeader{{Header: new(header)}},
 	}}
 
 	return cfg
@@ -574,7 +574,7 @@ func TestResponseHeadersPolicy_CSPLength(t *testing.T) {
 
 	withCSP := func(name, csp string) *ResponseHeadersPolicyConfig {
 		cfg := validResponseHeadersPolicy(name)
-		cfg.SecurityHeadersConfig.ContentSecurityPolicy = &ResponseHeadersPolicyContentSecurityPolicy{ContentSecurityPolicy: ptr(csp), Override: ptr(true)}
+		cfg.SecurityHeadersConfig.ContentSecurityPolicy = &ResponseHeadersPolicyContentSecurityPolicy{ContentSecurityPolicy: new(csp), Override: new(true)}
 
 		return cfg
 	}
