@@ -56,6 +56,45 @@ func (s *MemoryStorage) distributionReferencingLocked(refers func(*DefaultCacheB
 	return "", false
 }
 
+// validatePolicyReferencesLocked rejects a distribution whose default or
+// ordered cache behavior names a cache policy or response headers policy that
+// is neither stored nor AWS-managed, as CloudFront does (NoSuchCachePolicy,
+// NoSuchResponseHeadersPolicy). The caller holds the lock the policy APIs'
+// in-use scan shares, so a policy cannot be deleted between check and write.
+func (s *MemoryStorage) validatePolicyReferencesLocked(config *DistributionConfig) error {
+	for _, b := range config.behaviors() {
+		if id := b.CachePolicyID; id != "" && !s.cachePolicyExistsLocked(id) {
+			return &Error{Code: errNoSuchCachePolicy, Message: "The cache policy does not exist."}
+		}
+
+		if id := b.ResponseHeadersPolicyID; id != "" && !s.responseHeadersPolicyExistsLocked(id) {
+			return &Error{Code: errNoSuchResponseHeadersPolicy, Message: "The response headers policy does not exist."}
+		}
+	}
+
+	return nil
+}
+
+func (s *MemoryStorage) cachePolicyExistsLocked(id string) bool {
+	if _, ok := s.CachePolicies[id]; ok {
+		return true
+	}
+
+	_, managed := managedCachePolicies[id]
+
+	return managed
+}
+
+func (s *MemoryStorage) responseHeadersPolicyExistsLocked(id string) bool {
+	if _, ok := s.ResponseHeadersPolicies[id]; ok {
+		return true
+	}
+
+	_, managed := managedResponseHeadersPolicies[id]
+
+	return managed
+}
+
 // decodeXMLBody decodes the request body; on failure the error response has
 // been written.
 func decodeXMLBody[T any](w http.ResponseWriter, r *http.Request) (*T, bool) {

@@ -291,7 +291,7 @@ func handleStorageError(w http.ResponseWriter, err error) {
 		status := http.StatusBadRequest
 
 		switch cfErr.Code {
-		case errDistributionNotFound, errNoSuchInvalidation, errNoSuchOrigin, errNoSuchResource:
+		case errDistributionNotFound, errNoSuchInvalidation, errNoSuchOrigin, errNoSuchResource, errNoSuchCachePolicy, errNoSuchResponseHeadersPolicy:
 			status = http.StatusNotFound
 		case errPreconditionFailed, errInvalidIfMatchVersion:
 			status = http.StatusPreconditionFailed

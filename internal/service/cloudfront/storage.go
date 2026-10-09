@@ -220,6 +220,10 @@ func (s *MemoryStorage) CreateDistribution(_ context.Context, config *CreateDist
 		return nil, err
 	}
 
+	if err := s.validatePolicyReferencesLocked(distConfig); err != nil {
+		return nil, err
+	}
+
 	id := generateDistributionID()
 	etag := generateETag()
 	now := time.Now()
@@ -329,6 +333,10 @@ func (s *MemoryStorage) UpdateDistribution(_ context.Context, id string, config 
 	}
 
 	if err := s.validateOriginAccessLocked(distConfig); err != nil {
+		return nil, err
+	}
+
+	if err := s.validatePolicyReferencesLocked(distConfig); err != nil {
 		return nil, err
 	}
 
