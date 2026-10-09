@@ -1,5 +1,33 @@
 # Changelog
 
+## [v0.32.1](https://github.com/sivchari/kumo/compare/v0.32.0...v0.32.1) - 2026-10-09
+- test: eliminate flaky timing in integration tests and add synctest coverage by @sivchari in https://github.com/sivchari/kumo/pull/981
+- feat(server): route signed requests by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/977
+- feat(sesv2): serve AWS-faithful paths via SigV4 scope routing by @sivchari in https://github.com/sivchari/kumo/pull/978
+- feat(lambda): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/979
+- feat(iam): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/980
+- feat(eks): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/982
+- feat(appsync): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/985
+- feat(kafka): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/986
+- feat(scheduler): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/987
+- feat(dlm): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/988
+- feat(apigateway): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/983
+- feat(apigatewayv2): route by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/984
+- chore(server): drop dead route prefixes for scope-routed services by @sivchari in https://github.com/sivchari/kumo/pull/996
+- test(terraform): support multi-step lifecycle fixtures and fail on destroy errors by @wakame1367 in https://github.com/sivchari/kumo/pull/992
+- fix(cloudfront): round-trip distribution logging config by @wakame1367 in https://github.com/sivchari/kumo/pull/993
+- feat(cloudfront): add cache policy API by @wakame1367 in https://github.com/sivchari/kumo/pull/994
+- fix(s3): persist and serve bucket tags by @shiaho777 in https://github.com/sivchari/kumo/pull/973
+- fix(sqs): honor the queue ReceiveMessageWaitTimeSeconds by @shiaho777 in https://github.com/sivchari/kumo/pull/975
+- fix(sqs): report delayed messages separately in GetQueueAttributes by @shiaho777 in https://github.com/sivchari/kumo/pull/974
+- test(sqs): pass WaitTimeSeconds as a pointer in the synctest helpers by @sivchari in https://github.com/sivchari/kumo/pull/997
+- fix(sqs): validate wait time ranges and cover the delayed transition by @sivchari in https://github.com/sivchari/kumo/pull/998
+- fix(s3): reject duplicate tag keys in PutBucketTagging by @sivchari in https://github.com/sivchari/kumo/pull/999
+- fix(s3): reject duplicate tag keys in object tagging and tag-on-create by @sivchari in https://github.com/sivchari/kumo/pull/1000
+- refactor: replace local pointer helpers with new(expr) by @sivchari in https://github.com/sivchari/kumo/pull/1001
+- feat(cloudfront): add response headers policy API by @wakame1367 in https://github.com/sivchari/kumo/pull/995
+- fix(cloudfront): validate policy references on distribution create and update by @sivchari in https://github.com/sivchari/kumo/pull/1002
+
 ## [v0.32.0](https://github.com/sivchari/kumo/compare/v0.31.0...v0.32.0) - 2026-10-05
 - feat(httptest): Support Go 1.27 httptest.NewTestServer by @thomasf in https://github.com/sivchari/kumo/pull/953
 - feat(dynamodb): add DescribeLimits support by @alecoletti in https://github.com/sivchari/kumo/pull/960
