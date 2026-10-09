@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 const (
 	testTableAccounts       = "accounts"
 	testTableUsers          = "users"
@@ -59,9 +57,9 @@ func TestConditionThroughStorage(t *testing.T) {
 
 	// PutItem with attribute_not_exists should succeed on new item.
 	_, err = s.PutItem(ctx, "test", Item{
-		"pk":            {S: ptr("1")},
-		testAttrVersion: {N: ptr("1")},
-		testAttrStatus:  {S: ptr("active")},
+		"pk":            {S: new("1")},
+		testAttrVersion: {N: new("1")},
+		testAttrStatus:  {S: new("active")},
 	}, false, ConditionInput{Expression: testCondAttrNotExistsPK})
 	if err != nil {
 		t.Fatalf("first put should succeed: %v", err)
@@ -69,8 +67,8 @@ func TestConditionThroughStorage(t *testing.T) {
 
 	// PutItem with attribute_not_exists should fail on existing item.
 	_, err = s.PutItem(ctx, "test", Item{
-		"pk":            {S: ptr("1")},
-		testAttrVersion: {N: ptr("99")},
+		"pk":            {S: new("1")},
+		testAttrVersion: {N: new("99")},
 	}, false, ConditionInput{Expression: testCondAttrNotExistsPK})
 	if err == nil {
 		t.Fatal("second put should fail")
@@ -82,7 +80,7 @@ func TestConditionThroughStorage(t *testing.T) {
 	}
 
 	// Verify original item preserved.
-	item, err := s.GetItem(ctx, "test", Item{"pk": {S: ptr("1")}})
+	item, err := s.GetItem(ctx, "test", Item{"pk": {S: new("1")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,16 +90,16 @@ func TestConditionThroughStorage(t *testing.T) {
 	}
 
 	// UpdateItem with version check (optimistic locking).
-	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: ptr("1")}},
+	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: new("1")}},
 		"SET version = :new", nil,
 		map[string]AttributeValue{
-			testExprCur: {N: ptr("1")},
-			testExprNew: {N: ptr("2")},
+			testExprCur: {N: new("1")},
+			testExprNew: {N: new("2")},
 		},
 		ReturnValuesAllNew,
 		ConditionInput{
 			Expression: "version = :cur",
-			ExprValues: map[string]AttributeValue{testExprCur: {N: ptr("1")}},
+			ExprValues: map[string]AttributeValue{testExprCur: {N: new("1")}},
 		},
 	)
 	if err != nil {
@@ -109,16 +107,16 @@ func TestConditionThroughStorage(t *testing.T) {
 	}
 
 	// UpdateItem with stale version should fail.
-	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: ptr("1")}},
+	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: new("1")}},
 		"SET version = :new", nil,
 		map[string]AttributeValue{
-			testExprCur: {N: ptr("1")},
-			testExprNew: {N: ptr("3")},
+			testExprCur: {N: new("1")},
+			testExprNew: {N: new("3")},
 		},
 		"",
 		ConditionInput{
 			Expression: "version = :cur",
-			ExprValues: map[string]AttributeValue{testExprCur: {N: ptr("1")}},
+			ExprValues: map[string]AttributeValue{testExprCur: {N: new("1")}},
 		},
 	)
 	if err == nil {
@@ -126,15 +124,15 @@ func TestConditionThroughStorage(t *testing.T) {
 	}
 
 	// Comparison operators: version >= 2 should pass.
-	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: ptr("1")}},
+	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: new("1")}},
 		"SET version = :new", nil,
 		map[string]AttributeValue{
-			testExprNew: {N: ptr("3")},
+			testExprNew: {N: new("3")},
 		},
 		ReturnValuesAllNew,
 		ConditionInput{
 			Expression: "version >= :min",
-			ExprValues: map[string]AttributeValue{testExprMin: {N: ptr("2")}},
+			ExprValues: map[string]AttributeValue{testExprMin: {N: new("2")}},
 		},
 	)
 	if err != nil {
@@ -142,13 +140,13 @@ func TestConditionThroughStorage(t *testing.T) {
 	}
 
 	// Comparison: version < 2 should fail (version is now 3).
-	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: ptr("1")}},
+	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: new("1")}},
 		"SET version = :new", nil,
-		map[string]AttributeValue{testExprNew: {N: ptr("4")}},
+		map[string]AttributeValue{testExprNew: {N: new("4")}},
 		"",
 		ConditionInput{
 			Expression: "version < :max",
-			ExprValues: map[string]AttributeValue{":max": {N: ptr("2")}},
+			ExprValues: map[string]AttributeValue{":max": {N: new("2")}},
 		},
 	)
 	if err == nil {
@@ -156,16 +154,16 @@ func TestConditionThroughStorage(t *testing.T) {
 	}
 
 	// String comparison: status = "active" AND version > 1.
-	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: ptr("1")}},
+	_, err = s.UpdateItem(ctx, "test", Item{"pk": {S: new("1")}},
 		"SET #s = :new_status", map[string]string{"#s": testAttrStatus},
-		map[string]AttributeValue{":new_status": {S: ptr("done")}},
+		map[string]AttributeValue{":new_status": {S: new("done")}},
 		ReturnValuesAllNew,
 		ConditionInput{
 			Expression: "#s = :expected AND version > :min_ver",
 			ExprNames:  map[string]string{"#s": testAttrStatus},
 			ExprValues: map[string]AttributeValue{
-				testExprExpected: {S: ptr("active")},
-				":min_ver":       {N: ptr("1")},
+				testExprExpected: {S: new("active")},
+				":min_ver":       {N: new("1")},
 			},
 		},
 	)
@@ -174,25 +172,25 @@ func TestConditionThroughStorage(t *testing.T) {
 	}
 
 	// DeleteItem with wrong condition should fail.
-	_, err = s.DeleteItem(ctx, "test", Item{"pk": {S: ptr("1")}}, false, ConditionInput{
+	_, err = s.DeleteItem(ctx, "test", Item{"pk": {S: new("1")}}, false, ConditionInput{
 		Expression: "status = :expected",
-		ExprValues: map[string]AttributeValue{testExprExpected: {S: ptr("active")}},
+		ExprValues: map[string]AttributeValue{testExprExpected: {S: new("active")}},
 	})
 	if err == nil {
 		t.Fatal("delete with wrong status should fail (status=done)")
 	}
 
 	// DeleteItem with correct condition should succeed.
-	_, err = s.DeleteItem(ctx, "test", Item{"pk": {S: ptr("1")}}, false, ConditionInput{
+	_, err = s.DeleteItem(ctx, "test", Item{"pk": {S: new("1")}}, false, ConditionInput{
 		Expression: "status = :expected",
-		ExprValues: map[string]AttributeValue{testExprExpected: {S: ptr("done")}},
+		ExprValues: map[string]AttributeValue{testExprExpected: {S: new("done")}},
 	})
 	if err != nil {
 		t.Fatalf("delete with correct status should succeed: %v", err)
 	}
 
 	// Verify deleted.
-	item, err = s.GetItem(ctx, "test", Item{"pk": {S: ptr("1")}})
+	item, err = s.GetItem(ctx, "test", Item{"pk": {S: new("1")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,12 +220,12 @@ func TestTransactWriteItems(t *testing.T) {
 	reasons, err := s.TransactWriteItems(ctx, []TransactWriteItem{
 		{Put: &TransactPut{
 			TableName:           testTableAccounts,
-			Item:                Item{"id": {S: ptr("acc-1")}, testAttrBalance: {N: ptr("100")}},
+			Item:                Item{"id": {S: new("acc-1")}, testAttrBalance: {N: new("100")}},
 			ConditionExpression: testCondAttrNotExistsID,
 		}},
 		{Put: &TransactPut{
 			TableName:           testTableAccounts,
-			Item:                Item{"id": {S: ptr("acc-2")}, testAttrBalance: {N: ptr("200")}},
+			Item:                Item{"id": {S: new("acc-2")}, testAttrBalance: {N: new("200")}},
 			ConditionExpression: testCondAttrNotExistsID,
 		}},
 	})
@@ -240,8 +238,8 @@ func TestTransactWriteItems(t *testing.T) {
 	}
 
 	// Verify both items exist.
-	item1, _ := s.GetItem(ctx, testTableAccounts, Item{"id": {S: ptr("acc-1")}})
-	item2, _ := s.GetItem(ctx, testTableAccounts, Item{"id": {S: ptr("acc-2")}})
+	item1, _ := s.GetItem(ctx, testTableAccounts, Item{"id": {S: new("acc-1")}})
+	item2, _ := s.GetItem(ctx, testTableAccounts, Item{"id": {S: new("acc-2")}})
 
 	if item1 == nil || item2 == nil {
 		t.Fatal("both items should exist after transaction")
@@ -251,12 +249,12 @@ func TestTransactWriteItems(t *testing.T) {
 	reasons, err = s.TransactWriteItems(ctx, []TransactWriteItem{
 		{Put: &TransactPut{
 			TableName:           testTableAccounts,
-			Item:                Item{"id": {S: ptr("acc-3")}, testAttrBalance: {N: ptr("300")}},
+			Item:                Item{"id": {S: new("acc-3")}, testAttrBalance: {N: new("300")}},
 			ConditionExpression: testCondAttrNotExistsID,
 		}},
 		{Put: &TransactPut{
 			TableName:           testTableAccounts,
-			Item:                Item{"id": {S: ptr("acc-1")}, testAttrBalance: {N: ptr("999")}},
+			Item:                Item{"id": {S: new("acc-1")}, testAttrBalance: {N: new("999")}},
 			ConditionExpression: testCondAttrNotExistsID, // Fails: acc-1 already exists.
 		}},
 	})
@@ -276,7 +274,7 @@ func TestTransactWriteItems(t *testing.T) {
 	}
 
 	// Verify acc-3 was NOT created (all-or-nothing).
-	item3, _ := s.GetItem(ctx, testTableAccounts, Item{"id": {S: ptr("acc-3")}})
+	item3, _ := s.GetItem(ctx, testTableAccounts, Item{"id": {S: new("acc-3")}})
 	if item3 != nil {
 		t.Fatal("acc-3 should not exist after failed transaction")
 	}
@@ -285,15 +283,15 @@ func TestTransactWriteItems(t *testing.T) {
 	_, err = s.TransactWriteItems(ctx, []TransactWriteItem{
 		{Update: &TransactUpdate{
 			TableName:        testTableAccounts,
-			Key:              Item{"id": {S: ptr("acc-1")}},
+			Key:              Item{"id": {S: new("acc-1")}},
 			UpdateExpression: "SET balance = :new",
 			ExpressionAttributeValues: map[string]AttributeValue{
-				testExprNew: {N: ptr("150")},
+				testExprNew: {N: new("150")},
 			},
 		}},
 		{ConditionCheck: &TransactConditionCheck{
 			TableName:           testTableAccounts,
-			Key:                 Item{"id": {S: ptr("acc-2")}},
+			Key:                 Item{"id": {S: new("acc-2")}},
 			ConditionExpression: "attribute_exists(id)",
 		}},
 	})
@@ -302,7 +300,7 @@ func TestTransactWriteItems(t *testing.T) {
 	}
 
 	// Verify acc-1 balance updated.
-	item1, _ = s.GetItem(ctx, testTableAccounts, Item{"id": {S: ptr("acc-1")}})
+	item1, _ = s.GetItem(ctx, testTableAccounts, Item{"id": {S: new("acc-1")}})
 	if item1[testAttrBalance].N == nil || *item1[testAttrBalance].N != "150" {
 		t.Fatalf("acc-1 balance should be 150, got: %v", item1[testAttrBalance])
 	}
@@ -311,14 +309,14 @@ func TestTransactWriteItems(t *testing.T) {
 	_, err = s.TransactWriteItems(ctx, []TransactWriteItem{
 		{Delete: &TransactDelete{
 			TableName: testTableAccounts,
-			Key:       Item{"id": {S: ptr("acc-2")}},
+			Key:       Item{"id": {S: new("acc-2")}},
 		}},
 	})
 	if err != nil {
 		t.Fatalf("delete transaction should succeed: %v", err)
 	}
 
-	item2, _ = s.GetItem(ctx, testTableAccounts, Item{"id": {S: ptr("acc-2")}})
+	item2, _ = s.GetItem(ctx, testTableAccounts, Item{"id": {S: new("acc-2")}})
 	if item2 != nil {
 		t.Fatal("acc-2 should be deleted")
 	}
@@ -341,7 +339,7 @@ func TestTransactGetItems(t *testing.T) {
 
 	// Insert items.
 	for _, id := range []string{"u1", "u2", "u3"} {
-		_, err = s.PutItem(ctx, testTableUsers, Item{"pk": {S: ptr(id)}, testAttrName: {S: ptr("User-" + id)}}, false, ConditionInput{})
+		_, err = s.PutItem(ctx, testTableUsers, Item{"pk": {S: new(id)}, testAttrName: {S: new("User-" + id)}}, false, ConditionInput{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -349,9 +347,9 @@ func TestTransactGetItems(t *testing.T) {
 
 	// TransactGetItems: get u1 and u3 (skip u2).
 	items, err := s.TransactGetItems(ctx, []TransactGetItem{
-		{Get: &TransactGet{TableName: testTableUsers, Key: Item{"pk": {S: ptr("u1")}}}},
-		{Get: &TransactGet{TableName: testTableUsers, Key: Item{"pk": {S: ptr("u3")}}}},
-		{Get: &TransactGet{TableName: testTableUsers, Key: Item{"pk": {S: ptr("missing")}}}},
+		{Get: &TransactGet{TableName: testTableUsers, Key: Item{"pk": {S: new("u1")}}}},
+		{Get: &TransactGet{TableName: testTableUsers, Key: Item{"pk": {S: new("u3")}}}},
+		{Get: &TransactGet{TableName: testTableUsers, Key: Item{"pk": {S: new("missing")}}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -387,13 +385,13 @@ func TestEvaluateCondition(t *testing.T) {
 	}{
 		{
 			name: "empty expression returns true",
-			item: Item{"pk": {S: ptr("1")}},
+			item: Item{"pk": {S: new("1")}},
 			cond: ConditionInput{},
 			want: true,
 		},
 		{
 			name: "attribute_exists succeeds when attribute present",
-			item: Item{"pk": {S: ptr("1")}, testAttrName: {S: ptr("Alice")}},
+			item: Item{"pk": {S: new("1")}, testAttrName: {S: new("Alice")}},
 			cond: ConditionInput{
 				Expression: "attribute_exists(name)",
 			},
@@ -401,7 +399,7 @@ func TestEvaluateCondition(t *testing.T) {
 		},
 		{
 			name: "attribute_exists fails when attribute missing",
-			item: Item{"pk": {S: ptr("1")}},
+			item: Item{"pk": {S: new("1")}},
 			cond: ConditionInput{
 				Expression: "attribute_exists(name)",
 			},
@@ -409,7 +407,7 @@ func TestEvaluateCondition(t *testing.T) {
 		},
 		{
 			name: "attribute_not_exists succeeds when attribute missing",
-			item: Item{"pk": {S: ptr("1")}},
+			item: Item{"pk": {S: new("1")}},
 			cond: ConditionInput{
 				Expression: "attribute_not_exists(name)",
 			},
@@ -425,7 +423,7 @@ func TestEvaluateCondition(t *testing.T) {
 		},
 		{
 			name: "attribute_not_exists fails when attribute present",
-			item: Item{"pk": {S: ptr("1")}, testAttrName: {S: ptr("Alice")}},
+			item: Item{"pk": {S: new("1")}, testAttrName: {S: new("Alice")}},
 			cond: ConditionInput{
 				Expression: "attribute_not_exists(name)",
 			},
@@ -433,199 +431,199 @@ func TestEvaluateCondition(t *testing.T) {
 		},
 		{
 			name: "string equality",
-			item: Item{"pk": {S: ptr("1")}, testAttrStatus: {S: ptr("active")}},
+			item: Item{"pk": {S: new("1")}, testAttrStatus: {S: new("active")}},
 			cond: ConditionInput{
 				Expression: "status = :val",
 				ExprValues: map[string]AttributeValue{
-					testExprVal: {S: ptr("active")},
+					testExprVal: {S: new("active")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "string inequality",
-			item: Item{"pk": {S: ptr("1")}, testAttrStatus: {S: ptr("active")}},
+			item: Item{"pk": {S: new("1")}, testAttrStatus: {S: new("active")}},
 			cond: ConditionInput{
 				Expression: "status <> :val",
 				ExprValues: map[string]AttributeValue{
-					testExprVal: {S: ptr("inactive")},
+					testExprVal: {S: new("inactive")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "number comparison less than",
-			item: Item{"pk": {S: ptr("1")}, testAttrAge: {N: ptr("25")}},
+			item: Item{"pk": {S: new("1")}, testAttrAge: {N: new("25")}},
 			cond: ConditionInput{
 				Expression: "age < :val",
 				ExprValues: map[string]AttributeValue{
-					testExprVal: {N: ptr("30")},
+					testExprVal: {N: new("30")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "number comparison greater equal",
-			item: Item{"pk": {S: ptr("1")}, testAttrAge: {N: ptr("25")}},
+			item: Item{"pk": {S: new("1")}, testAttrAge: {N: new("25")}},
 			cond: ConditionInput{
 				Expression: "age >= :val",
 				ExprValues: map[string]AttributeValue{
-					testExprVal: {N: ptr("25")},
+					testExprVal: {N: new("25")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "AND both true",
-			item: Item{"pk": {S: ptr("1")}, testAttrStatus: {S: ptr("active")}, testAttrAge: {N: ptr("25")}},
+			item: Item{"pk": {S: new("1")}, testAttrStatus: {S: new("active")}, testAttrAge: {N: new("25")}},
 			cond: ConditionInput{
 				Expression: "status = :status AND age >= :age",
 				ExprValues: map[string]AttributeValue{
-					":status": {S: ptr("active")},
-					":age":    {N: ptr("20")},
+					":status": {S: new("active")},
+					":age":    {N: new("20")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "AND left false",
-			item: Item{"pk": {S: ptr("1")}, testAttrStatus: {S: ptr("inactive")}, testAttrAge: {N: ptr("25")}},
+			item: Item{"pk": {S: new("1")}, testAttrStatus: {S: new("inactive")}, testAttrAge: {N: new("25")}},
 			cond: ConditionInput{
 				Expression: "status = :status AND age >= :age",
 				ExprValues: map[string]AttributeValue{
-					":status": {S: ptr("active")},
-					":age":    {N: ptr("20")},
+					":status": {S: new("active")},
+					":age":    {N: new("20")},
 				},
 			},
 			want: false,
 		},
 		{
 			name: "OR one true",
-			item: Item{"pk": {S: ptr("1")}, testAttrStatus: {S: ptr("inactive")}},
+			item: Item{"pk": {S: new("1")}, testAttrStatus: {S: new("inactive")}},
 			cond: ConditionInput{
 				Expression: "status = :s1 OR status = :s2",
 				ExprValues: map[string]AttributeValue{
-					":s1": {S: ptr("active")},
-					":s2": {S: ptr("inactive")},
+					":s1": {S: new("active")},
+					":s2": {S: new("inactive")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "NOT expression",
-			item: Item{"pk": {S: ptr("1")}, testAttrStatus: {S: ptr("active")}},
+			item: Item{"pk": {S: new("1")}, testAttrStatus: {S: new("active")}},
 			cond: ConditionInput{
 				Expression: "NOT status = :val",
 				ExprValues: map[string]AttributeValue{
-					testExprVal: {S: ptr("inactive")},
+					testExprVal: {S: new("inactive")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "expression attribute names",
-			item: Item{"pk": {S: ptr("1")}, testAttrStatus: {S: ptr("active")}},
+			item: Item{"pk": {S: new("1")}, testAttrStatus: {S: new("active")}},
 			cond: ConditionInput{
 				Expression: "#s = :val",
 				ExprNames:  map[string]string{"#s": testAttrStatus},
 				ExprValues: map[string]AttributeValue{
-					testExprVal: {S: ptr("active")},
+					testExprVal: {S: new("active")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "begins_with true",
-			item: Item{"pk": {S: ptr("1")}, "email": {S: ptr("alice@example.com")}},
+			item: Item{"pk": {S: new("1")}, "email": {S: new("alice@example.com")}},
 			cond: ConditionInput{
 				Expression: "begins_with(email, :prefix)",
 				ExprValues: map[string]AttributeValue{
-					":prefix": {S: ptr("alice@")},
+					":prefix": {S: new("alice@")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "begins_with false",
-			item: Item{"pk": {S: ptr("1")}, "email": {S: ptr("bob@example.com")}},
+			item: Item{"pk": {S: new("1")}, "email": {S: new("bob@example.com")}},
 			cond: ConditionInput{
 				Expression: "begins_with(email, :prefix)",
 				ExprValues: map[string]AttributeValue{
-					":prefix": {S: ptr("alice@")},
+					":prefix": {S: new("alice@")},
 				},
 			},
 			want: false,
 		},
 		{
 			name: "contains string",
-			item: Item{"pk": {S: ptr("1")}, testAttrName: {S: ptr("Alice Smith")}},
+			item: Item{"pk": {S: new("1")}, testAttrName: {S: new("Alice Smith")}},
 			cond: ConditionInput{
 				Expression: "contains(name, :sub)",
 				ExprValues: map[string]AttributeValue{
-					":sub": {S: ptr("Smith")},
+					":sub": {S: new("Smith")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "contains string set",
-			item: Item{"pk": {S: ptr("1")}, testAttrTags: {SS: []string{"golang", "rust", "python"}}},
+			item: Item{"pk": {S: new("1")}, testAttrTags: {SS: []string{"golang", "rust", "python"}}},
 			cond: ConditionInput{
 				Expression: "contains(tags, :tag)",
 				ExprValues: map[string]AttributeValue{
-					":tag": {S: ptr("rust")},
+					":tag": {S: new("rust")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "contains string set missing",
-			item: Item{"pk": {S: ptr("1")}, testAttrTags: {SS: []string{"golang", "rust"}}},
+			item: Item{"pk": {S: new("1")}, testAttrTags: {SS: []string{"golang", "rust"}}},
 			cond: ConditionInput{
 				Expression: "contains(tags, :tag)",
 				ExprValues: map[string]AttributeValue{
-					":tag": {S: ptr("java")},
+					":tag": {S: new("java")},
 				},
 			},
 			want: false,
 		},
 		{
 			name: "size comparison",
-			item: Item{"pk": {S: ptr("1")}, testAttrItems: {L: []*AttributeValue{{S: ptr("a")}, {S: ptr("b")}, {S: ptr("c")}}}},
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{S: new("a")}, {S: new("b")}, {S: new("c")}}}},
 			cond: ConditionInput{
 				Expression: testCondSizeItemsGTMin,
 				ExprValues: map[string]AttributeValue{
-					testExprMin: {N: ptr("2")},
+					testExprMin: {N: new("2")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "size comparison fails",
-			item: Item{"pk": {S: ptr("1")}, testAttrItems: {L: []*AttributeValue{{S: ptr("a")}}}},
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{S: new("a")}}}},
 			cond: ConditionInput{
 				Expression: testCondSizeItemsGTMin,
 				ExprValues: map[string]AttributeValue{
-					testExprMin: {N: ptr("2")},
+					testExprMin: {N: new("2")},
 				},
 			},
 			want: false,
 		},
 		{
 			name: "parenthesized expression",
-			item: Item{"pk": {S: ptr("1")}, "a": {N: ptr("1")}, "b": {N: ptr("2")}},
+			item: Item{"pk": {S: new("1")}, "a": {N: new("1")}, "b": {N: new("2")}},
 			cond: ConditionInput{
 				Expression: "(a = :v1) AND (b = :v2)",
 				ExprValues: map[string]AttributeValue{
-					":v1": {N: ptr("1")},
-					":v2": {N: ptr("2")},
+					":v1": {N: new("1")},
+					":v2": {N: new("2")},
 				},
 			},
 			want: true,
 		},
 		{
 			name: "idempotency pattern: attribute_not_exists on pk",
-			item: Item{"pk": {S: ptr("existing-id")}, "data": {S: ptr("value")}},
+			item: Item{"pk": {S: new("existing-id")}, "data": {S: new("value")}},
 			cond: ConditionInput{
 				Expression: testCondAttrNotExistsPK,
 			},
@@ -633,7 +631,7 @@ func TestEvaluateCondition(t *testing.T) {
 		},
 		{
 			name: "nested path attribute_exists",
-			item: Item{"pk": {S: ptr("1")}, "meta": {M: map[string]*AttributeValue{testAttrVersion: {N: ptr("1")}}}},
+			item: Item{"pk": {S: new("1")}, "meta": {M: map[string]*AttributeValue{testAttrVersion: {N: new("1")}}}},
 			cond: ConditionInput{
 				Expression: "attribute_exists(meta.version)",
 			},
@@ -641,61 +639,61 @@ func TestEvaluateCondition(t *testing.T) {
 		},
 		{
 			name: "attribute_type matches string",
-			item: Item{"pk": {S: ptr("1")}, testAttrName: {S: ptr("Alice")}},
+			item: Item{"pk": {S: new("1")}, testAttrName: {S: new("Alice")}},
 			cond: ConditionInput{
 				Expression: testCondAttrTypeNameT,
-				ExprValues: map[string]AttributeValue{":t": {S: ptr("S")}},
+				ExprValues: map[string]AttributeValue{":t": {S: new("S")}},
 			},
 			want: true,
 		},
 		{
 			name: "attribute_type mismatch returns false",
-			item: Item{"pk": {S: ptr("1")}, testAttrName: {S: ptr("Alice")}},
+			item: Item{"pk": {S: new("1")}, testAttrName: {S: new("Alice")}},
 			cond: ConditionInput{
 				Expression: testCondAttrTypeNameT,
-				ExprValues: map[string]AttributeValue{":t": {S: ptr("N")}},
+				ExprValues: map[string]AttributeValue{":t": {S: new("N")}},
 			},
 			want: false,
 		},
 		{
 			name: "attribute_type on list",
-			item: Item{"pk": {S: ptr("1")}, testAttrTags: {L: []*AttributeValue{{S: ptr("a")}}}},
+			item: Item{"pk": {S: new("1")}, testAttrTags: {L: []*AttributeValue{{S: new("a")}}}},
 			cond: ConditionInput{
 				Expression: "attribute_type(tags, :t)",
-				ExprValues: map[string]AttributeValue{":t": {S: ptr("L")}},
+				ExprValues: map[string]AttributeValue{":t": {S: new("L")}},
 			},
 			want: true,
 		},
 		{
 			name: "attribute_type on missing attribute returns false (no error)",
-			item: Item{"pk": {S: ptr("1")}},
+			item: Item{"pk": {S: new("1")}},
 			cond: ConditionInput{
 				Expression: testCondAttrTypeNameT,
-				ExprValues: map[string]AttributeValue{":t": {S: ptr("S")}},
+				ExprValues: map[string]AttributeValue{":t": {S: new("S")}},
 			},
 			want: false,
 		},
 		{
 			name: "attribute_type with non-string type operand errors",
-			item: Item{"pk": {S: ptr("1")}, testAttrName: {S: ptr("Alice")}},
+			item: Item{"pk": {S: new("1")}, testAttrName: {S: new("Alice")}},
 			cond: ConditionInput{
 				Expression: testCondAttrTypeNameT,
-				ExprValues: map[string]AttributeValue{":t": {N: ptr("1")}},
+				ExprValues: map[string]AttributeValue{":t": {N: new("1")}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "size on missing attribute returns false (no error)",
-			item: Item{"pk": {S: ptr("1")}},
+			item: Item{"pk": {S: new("1")}},
 			cond: ConditionInput{
 				Expression: testCondSizeItemsGTMin,
-				ExprValues: map[string]AttributeValue{testExprMin: {N: ptr("2")}},
+				ExprValues: map[string]AttributeValue{testExprMin: {N: new("2")}},
 			},
 			want: false,
 		},
 		{
 			name: "size compared to attribute operand matches",
-			item: Item{"pk": {S: ptr("1")}, testAttrItems: {L: []*AttributeValue{{S: ptr("a")}, {S: ptr("b")}}}, "minLen": {N: ptr("1")}},
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{S: new("a")}, {S: new("b")}}}, "minLen": {N: new("1")}},
 			cond: ConditionInput{
 				Expression: "size(items) > minLen",
 			},
@@ -726,10 +724,10 @@ func TestEvaluateConditionIn(t *testing.T) {
 	t.Parallel()
 
 	item := Item{
-		"pk":           {S: ptr("1")},
-		testAttrStatus: {S: ptr("running")},
-		"count":        {N: ptr("5")},
-		testAttrOther:  {S: ptr("running")},
+		"pk":           {S: new("1")},
+		testAttrStatus: {S: new("running")},
+		"count":        {N: new("5")},
+		testAttrOther:  {S: new("running")},
 	}
 
 	tests := []struct {
@@ -742,19 +740,19 @@ func TestEvaluateConditionIn(t *testing.T) {
 		{
 			name:   "IN matches first operand",
 			expr:   "status IN (:a, :b)",
-			values: map[string]AttributeValue{":a": {S: ptr("running")}, ":b": {S: ptr("pending")}},
+			values: map[string]AttributeValue{":a": {S: new("running")}, ":b": {S: new("pending")}},
 			want:   true,
 		},
 		{
 			name:   "IN matches later operand",
 			expr:   "status IN (:a, :b, :c)",
-			values: map[string]AttributeValue{":a": {S: ptr("pending")}, ":b": {S: ptr("done")}, ":c": {S: ptr("running")}},
+			values: map[string]AttributeValue{":a": {S: new("pending")}, ":b": {S: new("done")}, ":c": {S: new("running")}},
 			want:   true,
 		},
 		{
 			name:   "IN with no matching operand",
 			expr:   "status IN (:a, :b)",
-			values: map[string]AttributeValue{":a": {S: ptr("pending")}, ":b": {S: ptr("done")}},
+			values: map[string]AttributeValue{":a": {S: new("pending")}, ":b": {S: new("done")}},
 			want:   false,
 		},
 		{
@@ -766,37 +764,37 @@ func TestEvaluateConditionIn(t *testing.T) {
 		{
 			name:   "IN with numeric operands",
 			expr:   "count IN (:a, :b)",
-			values: map[string]AttributeValue{":a": {N: ptr("3")}, ":b": {N: ptr("5")}},
+			values: map[string]AttributeValue{":a": {N: new("3")}, ":b": {N: new("5")}},
 			want:   true,
 		},
 		{
 			name:   "lowercase in keyword",
 			expr:   "status in (:a)",
-			values: map[string]AttributeValue{":a": {S: ptr("running")}},
+			values: map[string]AttributeValue{":a": {S: new("running")}},
 			want:   true,
 		},
 		{
 			name:   "NOT IN composition",
 			expr:   "NOT status IN (:a, :b)",
-			values: map[string]AttributeValue{":a": {S: ptr("pending")}, ":b": {S: ptr("done")}},
+			values: map[string]AttributeValue{":a": {S: new("pending")}, ":b": {S: new("done")}},
 			want:   true,
 		},
 		{
 			name:   "IN combined with AND",
 			expr:   "pk = :pk AND status IN (:a, :b)",
-			values: map[string]AttributeValue{testExprPK: {S: ptr("1")}, ":a": {S: ptr("running")}, ":b": {S: ptr("done")}},
+			values: map[string]AttributeValue{testExprPK: {S: new("1")}, ":a": {S: new("running")}, ":b": {S: new("done")}},
 			want:   true,
 		},
 		{
 			name:   "parenthesized IN in OR chain",
 			expr:   "(status IN (:a)) OR count = :n",
-			values: map[string]AttributeValue{":a": {S: ptr("done")}, ":n": {N: ptr("5")}},
+			values: map[string]AttributeValue{":a": {S: new("done")}, ":n": {N: new("5")}},
 			want:   true,
 		},
 		{
 			name:    "IN without parenthesized list",
 			expr:    "status IN :a",
-			values:  map[string]AttributeValue{":a": {S: ptr("running")}},
+			values:  map[string]AttributeValue{":a": {S: new("running")}},
 			wantErr: true,
 		},
 		{
@@ -837,7 +835,7 @@ func TestEvaluateConditionIn(t *testing.T) {
 func TestEvaluateConditionInOperandLimit(t *testing.T) {
 	t.Parallel()
 
-	item := Item{testAttrStatus: {S: ptr("running")}}
+	item := Item{testAttrStatus: {S: new("running")}}
 
 	// Build an IN list with one operand over the DynamoDB limit.
 	operands := make([]string, 0, maxInOperands+1)
@@ -846,7 +844,7 @@ func TestEvaluateConditionInOperandLimit(t *testing.T) {
 	for i := range maxInOperands + 1 {
 		ph := fmt.Sprintf(":v%d", i)
 		operands = append(operands, ph)
-		values[ph] = AttributeValue{S: ptr(fmt.Sprintf("state%d", i))}
+		values[ph] = AttributeValue{S: new(fmt.Sprintf("state%d", i))}
 	}
 
 	_, err := evaluateCondition(item, ConditionInput{
@@ -884,8 +882,8 @@ func TestFilterExpressionFailsClosed(t *testing.T) {
 
 	for i, status := range []string{"pending", "running", "done"} {
 		_, err := s.PutItem(ctx, "filter-test", Item{
-			"pk":           {S: ptr(fmt.Sprintf("%d", i))},
-			testAttrStatus: {S: ptr(status)},
+			"pk":           {S: new(fmt.Sprintf("%d", i))},
+			testAttrStatus: {S: new(status)},
 		}, false, ConditionInput{})
 		if err != nil {
 			t.Fatal(err)
@@ -895,7 +893,7 @@ func TestFilterExpressionFailsClosed(t *testing.T) {
 	// IN now filters correctly on Scan.
 	items, _, scanned, err := s.Scan(ctx, "filter-test", "#s IN (:a, :b)",
 		map[string]string{"#s": testAttrStatus},
-		map[string]AttributeValue{":a": {S: ptr("pending")}, ":b": {S: ptr("running")}},
+		map[string]AttributeValue{":a": {S: new("pending")}, ":b": {S: new("running")}},
 		0, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("scan with IN filter: %v", err)
@@ -920,7 +918,7 @@ func TestFilterExpressionFailsClosed(t *testing.T) {
 
 	// Query takes the same path.
 	queryItems, _, queryScanned, err := s.Query(ctx, "filter-test", "", "pk = :pk", "complete garbage !!!",
-		nil, map[string]AttributeValue{testExprPK: {S: ptr("0")}}, 0, nil, true)
+		nil, map[string]AttributeValue{testExprPK: {S: new("0")}}, 0, nil, true)
 
 	if !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
 		t.Fatalf("expected ValidationException for invalid query filter, got: %v", err)
@@ -959,19 +957,19 @@ func TestExpressionValidationEdgeCases(t *testing.T) {
 	}
 
 	if _, _, _, err := s.Query(ctx, "edge", "", "pk = :pk", "complete garbage !!!", nil,
-		map[string]AttributeValue{testExprPK: {S: ptr("missing")}}, 0, nil, true); !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
+		map[string]AttributeValue{testExprPK: {S: new("missing")}}, 0, nil, true); !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
 		t.Fatalf("empty-table query with invalid filter: expected ValidationException, got: %v", err)
 	}
 
 	// Unparseable KeyConditionExpression must be a ValidationException, not a
 	// silent empty result.
-	_, err = s.PutItem(ctx, "edge", Item{"pk": {S: ptr("1")}}, false, ConditionInput{})
+	_, err = s.PutItem(ctx, "edge", Item{"pk": {S: new("1")}}, false, ConditionInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if _, _, _, err := s.Query(ctx, "edge", "", "complete garbage !!!", "", nil,
-		map[string]AttributeValue{testExprPK: {S: ptr("1")}}, 0, nil, true); !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
+		map[string]AttributeValue{testExprPK: {S: new("1")}}, 0, nil, true); !errors.As(err, &tErr) || tErr.Code != errCodeValidation {
 		t.Fatalf("query with invalid KeyConditionExpression: expected ValidationException, got: %v", err)
 	}
 }

@@ -34,12 +34,6 @@ const (
 	testTimestampJun2020 = "2020-06-01T00:00:00Z"
 )
 
-func float64Ptr(v float64) *float64 { return &v }
-
-func strPtr(v string) *string { return &v }
-
-func boolPtr(v bool) *bool { return &v }
-
 // choiceRuleTests exercises the individual comparison operators via
 // evaluateChoiceRule. Kept as a package-level var so the driving test
 // function itself stays short.
@@ -51,157 +45,157 @@ var choiceRuleTests = []struct {
 }{
 	{
 		name:  "StringEquals match",
-		rule:  choiceRule{Variable: pathMode, StringEquals: strPtr(valueFast)},
+		rule:  choiceRule{Variable: pathMode, StringEquals: new(valueFast)},
 		input: map[string]any{fieldMode: valueFast},
 		want:  true,
 	},
 	{
 		name:  "StringEquals no match",
-		rule:  choiceRule{Variable: pathMode, StringEquals: strPtr(valueFast)},
+		rule:  choiceRule{Variable: pathMode, StringEquals: new(valueFast)},
 		input: map[string]any{fieldMode: valueSlow},
 		want:  false,
 	},
 	{
 		name:  "StringLessThan",
-		rule:  choiceRule{Variable: pathName, StringLessThan: strPtr("m")},
+		rule:  choiceRule{Variable: pathName, StringLessThan: new("m")},
 		input: map[string]any{fieldName: testNameAlice},
 		want:  true,
 	},
 	{
 		name:  "StringGreaterThan",
-		rule:  choiceRule{Variable: pathName, StringGreaterThan: strPtr("m")},
+		rule:  choiceRule{Variable: pathName, StringGreaterThan: new("m")},
 		input: map[string]any{fieldName: "zeke"},
 		want:  true,
 	},
 	{
 		name:  "StringLessThanEquals equal",
-		rule:  choiceRule{Variable: pathName, StringLessThanEquals: strPtr(fieldMode)},
+		rule:  choiceRule{Variable: pathName, StringLessThanEquals: new(fieldMode)},
 		input: map[string]any{fieldName: fieldMode},
 		want:  true,
 	},
 	{
 		name:  "StringGreaterThanEquals equal",
-		rule:  choiceRule{Variable: pathName, StringGreaterThanEquals: strPtr(fieldMode)},
+		rule:  choiceRule{Variable: pathName, StringGreaterThanEquals: new(fieldMode)},
 		input: map[string]any{fieldName: fieldMode},
 		want:  true,
 	},
 	{
 		name:  "NumericEquals match",
-		rule:  choiceRule{Variable: pathValue, NumericEquals: float64Ptr(20)},
+		rule:  choiceRule{Variable: pathValue, NumericEquals: new(float64(20))},
 		input: map[string]any{fieldValue: float64(20)},
 		want:  true,
 	},
 	{
 		name:  "NumericLessThan match",
-		rule:  choiceRule{Variable: pathValue, NumericLessThan: float64Ptr(30)},
+		rule:  choiceRule{Variable: pathValue, NumericLessThan: new(float64(30))},
 		input: map[string]any{fieldValue: float64(20)},
 		want:  true,
 	},
 	{
 		name:  "NumericGreaterThan match",
-		rule:  choiceRule{Variable: pathValue, NumericGreaterThan: float64Ptr(10)},
+		rule:  choiceRule{Variable: pathValue, NumericGreaterThan: new(float64(10))},
 		input: map[string]any{fieldValue: float64(20)},
 		want:  true,
 	},
 	{
 		name:  "NumericLessThanEquals equal",
-		rule:  choiceRule{Variable: pathValue, NumericLessThanEquals: float64Ptr(20)},
+		rule:  choiceRule{Variable: pathValue, NumericLessThanEquals: new(float64(20))},
 		input: map[string]any{fieldValue: float64(20)},
 		want:  true,
 	},
 	{
 		name:  "NumericGreaterThanEquals equal",
-		rule:  choiceRule{Variable: pathValue, NumericGreaterThanEquals: float64Ptr(20)},
+		rule:  choiceRule{Variable: pathValue, NumericGreaterThanEquals: new(float64(20))},
 		input: map[string]any{fieldValue: float64(20)},
 		want:  true,
 	},
 	{
 		name:  "NumericGreaterThanEquals no match",
-		rule:  choiceRule{Variable: pathValue, NumericGreaterThanEquals: float64Ptr(21)},
+		rule:  choiceRule{Variable: pathValue, NumericGreaterThanEquals: new(float64(21))},
 		input: map[string]any{fieldValue: float64(20)},
 		want:  false,
 	},
 	{
 		name:  "BooleanEquals match",
-		rule:  choiceRule{Variable: pathEnabled, BooleanEquals: boolPtr(true)},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEquals: new(true)},
 		input: map[string]any{fieldEnabled: true},
 		want:  true,
 	},
 	{
 		name:  "BooleanEquals no match",
-		rule:  choiceRule{Variable: pathEnabled, BooleanEquals: boolPtr(true)},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEquals: new(true)},
 		input: map[string]any{fieldEnabled: false},
 		want:  false,
 	},
 	{
 		name:  "TimestampEquals match",
-		rule:  choiceRule{Variable: pathTS, TimestampEquals: strPtr(testTimestampJan2020)},
+		rule:  choiceRule{Variable: pathTS, TimestampEquals: new(testTimestampJan2020)},
 		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampLessThan match",
-		rule:  choiceRule{Variable: pathTS, TimestampLessThan: strPtr(testTimestampJun2020)},
+		rule:  choiceRule{Variable: pathTS, TimestampLessThan: new(testTimestampJun2020)},
 		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThan match",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: strPtr(testTimestampJan2020)},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: new(testTimestampJan2020)},
 		input: map[string]any{"ts": testTimestampJun2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThan malformed value does not match",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: strPtr(testTimestampJan2020)},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThan: new(testTimestampJan2020)},
 		input: map[string]any{"ts": "not-a-timestamp"},
 		want:  false,
 	},
 	{
 		name:  "TimestampLessThanEquals equal",
-		rule:  choiceRule{Variable: pathTS, TimestampLessThanEquals: strPtr(testTimestampJan2020)},
+		rule:  choiceRule{Variable: pathTS, TimestampLessThanEquals: new(testTimestampJan2020)},
 		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThanEquals equal",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEquals: strPtr(testTimestampJan2020)},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEquals: new(testTimestampJan2020)},
 		input: map[string]any{"ts": testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "StringEqualsPath match",
-		rule:  choiceRule{Variable: pathMode, StringEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathMode, StringEqualsPath: new(pathOther)},
 		input: map[string]any{fieldMode: valueFast, fieldOther: valueFast},
 		want:  true,
 	},
 	{
 		name:  "StringEqualsPath no match",
-		rule:  choiceRule{Variable: pathMode, StringEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathMode, StringEqualsPath: new(pathOther)},
 		input: map[string]any{fieldMode: valueFast, fieldOther: valueSlow},
 		want:  false,
 	},
 	{
 		name:  "StringLessThanPath match",
-		rule:  choiceRule{Variable: pathName, StringLessThanPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathName, StringLessThanPath: new(pathOther)},
 		input: map[string]any{fieldName: testNameAlice, fieldOther: "m"},
 		want:  true,
 	},
 	{
 		name:  "StringGreaterThanPath match",
-		rule:  choiceRule{Variable: pathName, StringGreaterThanPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathName, StringGreaterThanPath: new(pathOther)},
 		input: map[string]any{fieldName: "zeke", fieldOther: "m"},
 		want:  true,
 	},
 	{
 		name:  "StringLessThanEqualsPath equal",
-		rule:  choiceRule{Variable: pathName, StringLessThanEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathName, StringLessThanEqualsPath: new(pathOther)},
 		input: map[string]any{fieldName: fieldMode, fieldOther: fieldMode},
 		want:  true,
 	},
 	{
 		name:  "StringGreaterThanEqualsPath equal",
-		rule:  choiceRule{Variable: pathName, StringGreaterThanEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathName, StringGreaterThanEqualsPath: new(pathOther)},
 		input: map[string]any{fieldName: fieldMode, fieldOther: fieldMode},
 		want:  true,
 	},
@@ -209,220 +203,220 @@ var choiceRuleTests = []struct {
 		// Mirrors the ASL spec's own worked example: {"Variable": "$.rating",
 		// "NumericGreaterThanPath": "$.auditThreshold"}.
 		name:  "NumericGreaterThanPath match",
-		rule:  choiceRule{Variable: "$.rating", NumericGreaterThanPath: strPtr("$.auditThreshold")},
+		rule:  choiceRule{Variable: "$.rating", NumericGreaterThanPath: new("$.auditThreshold")},
 		input: map[string]any{"rating": float64(30), "auditThreshold": float64(20)},
 		want:  true,
 	},
 	{
 		name:  "NumericEqualsPath no match",
-		rule:  choiceRule{Variable: pathValue, NumericEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathValue, NumericEqualsPath: new(pathOther)},
 		input: map[string]any{fieldValue: float64(20), fieldOther: float64(21)},
 		want:  false,
 	},
 	{
 		name:  "NumericLessThanPath match",
-		rule:  choiceRule{Variable: pathValue, NumericLessThanPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathValue, NumericLessThanPath: new(pathOther)},
 		input: map[string]any{fieldValue: float64(20), fieldOther: float64(30)},
 		want:  true,
 	},
 	{
 		name:  "NumericGreaterThanEqualsPath equal",
-		rule:  choiceRule{Variable: pathValue, NumericGreaterThanEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathValue, NumericGreaterThanEqualsPath: new(pathOther)},
 		input: map[string]any{fieldValue: float64(20), fieldOther: float64(20)},
 		want:  true,
 	},
 	{
 		name:  "NumericLessThanEqualsPath equal",
-		rule:  choiceRule{Variable: pathValue, NumericLessThanEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathValue, NumericLessThanEqualsPath: new(pathOther)},
 		input: map[string]any{fieldValue: float64(20), fieldOther: float64(20)},
 		want:  true,
 	},
 	{
 		name:  "BooleanEqualsPath match",
-		rule:  choiceRule{Variable: pathEnabled, BooleanEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEqualsPath: new(pathOther)},
 		input: map[string]any{fieldEnabled: true, fieldOther: true},
 		want:  true,
 	},
 	{
 		name:  "BooleanEqualsPath type mismatch does not match",
-		rule:  choiceRule{Variable: pathEnabled, BooleanEqualsPath: strPtr(pathOther)},
+		rule:  choiceRule{Variable: pathEnabled, BooleanEqualsPath: new(pathOther)},
 		input: map[string]any{fieldEnabled: true, fieldOther: "not-a-bool"},
 		want:  false,
 	},
 	{
 		name:  "TimestampEqualsPath match",
-		rule:  choiceRule{Variable: pathTS, TimestampEqualsPath: strPtr(pathTSOther)},
+		rule:  choiceRule{Variable: pathTS, TimestampEqualsPath: new(pathTSOther)},
 		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampLessThanPath match",
-		rule:  choiceRule{Variable: pathTS, TimestampLessThanPath: strPtr(pathTSOther)},
+		rule:  choiceRule{Variable: pathTS, TimestampLessThanPath: new(pathTSOther)},
 		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJun2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThanPath match",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanPath: strPtr(pathTSOther)},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanPath: new(pathTSOther)},
 		input: map[string]any{"ts": testTimestampJun2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampLessThanEqualsPath equal",
-		rule:  choiceRule{Variable: pathTS, TimestampLessThanEqualsPath: strPtr(pathTSOther)},
+		rule:  choiceRule{Variable: pathTS, TimestampLessThanEqualsPath: new(pathTSOther)},
 		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "TimestampGreaterThanEqualsPath equal",
-		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEqualsPath: strPtr(pathTSOther)},
+		rule:  choiceRule{Variable: pathTS, TimestampGreaterThanEqualsPath: new(pathTSOther)},
 		input: map[string]any{"ts": testTimestampJan2020, fieldTSOther: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "IsPresent true for present field",
-		rule:  choiceRule{Variable: pathMode, IsPresent: boolPtr(true)},
+		rule:  choiceRule{Variable: pathMode, IsPresent: new(true)},
 		input: map[string]any{fieldMode: valueFast},
 		want:  true,
 	},
 	{
 		name:  "IsPresent false for missing field",
-		rule:  choiceRule{Variable: pathMissing, IsPresent: boolPtr(false)},
+		rule:  choiceRule{Variable: pathMissing, IsPresent: new(false)},
 		input: map[string]any{fieldMode: valueFast},
 		want:  true,
 	},
 	{
 		name:  "IsPresent true expectation fails for missing field",
-		rule:  choiceRule{Variable: pathMissing, IsPresent: boolPtr(true)},
+		rule:  choiceRule{Variable: pathMissing, IsPresent: new(true)},
 		input: map[string]any{fieldMode: valueFast},
 		want:  false,
 	},
 	{
 		name:  "IsNull true for null field",
-		rule:  choiceRule{Variable: pathValue, IsNull: boolPtr(true)},
+		rule:  choiceRule{Variable: pathValue, IsNull: new(true)},
 		input: map[string]any{fieldValue: nil},
 		want:  true,
 	},
 	{
 		name:  "IsNull false for non-null field",
-		rule:  choiceRule{Variable: pathValue, IsNull: boolPtr(false)},
+		rule:  choiceRule{Variable: pathValue, IsNull: new(false)},
 		input: map[string]any{fieldValue: "x"},
 		want:  true,
 	},
 	{
 		name:  "IsNumeric true for numeric field",
-		rule:  choiceRule{Variable: pathValue, IsNumeric: boolPtr(true)},
+		rule:  choiceRule{Variable: pathValue, IsNumeric: new(true)},
 		input: map[string]any{fieldValue: float64(1)},
 		want:  true,
 	},
 	{
 		name:  "IsNumeric false for non-numeric field",
-		rule:  choiceRule{Variable: pathValue, IsNumeric: boolPtr(false)},
+		rule:  choiceRule{Variable: pathValue, IsNumeric: new(false)},
 		input: map[string]any{fieldValue: valueFast},
 		want:  true,
 	},
 	{
 		name:  "IsNumeric true expectation fails for non-numeric field",
-		rule:  choiceRule{Variable: pathValue, IsNumeric: boolPtr(true)},
+		rule:  choiceRule{Variable: pathValue, IsNumeric: new(true)},
 		input: map[string]any{fieldValue: valueFast},
 		want:  false,
 	},
 	{
 		name:  "IsString true for string field",
-		rule:  choiceRule{Variable: pathValue, IsString: boolPtr(true)},
+		rule:  choiceRule{Variable: pathValue, IsString: new(true)},
 		input: map[string]any{fieldValue: valueFast},
 		want:  true,
 	},
 	{
 		name:  "IsString false for non-string field",
-		rule:  choiceRule{Variable: pathValue, IsString: boolPtr(false)},
+		rule:  choiceRule{Variable: pathValue, IsString: new(false)},
 		input: map[string]any{fieldValue: float64(1)},
 		want:  true,
 	},
 	{
 		name:  "IsBoolean true for boolean field",
-		rule:  choiceRule{Variable: pathValue, IsBoolean: boolPtr(true)},
+		rule:  choiceRule{Variable: pathValue, IsBoolean: new(true)},
 		input: map[string]any{fieldValue: true},
 		want:  true,
 	},
 	{
 		name:  "IsBoolean false for non-boolean field",
-		rule:  choiceRule{Variable: pathValue, IsBoolean: boolPtr(false)},
+		rule:  choiceRule{Variable: pathValue, IsBoolean: new(false)},
 		input: map[string]any{fieldValue: valueFast},
 		want:  true,
 	},
 	{
 		name:  "IsTimestamp true for RFC3339 string field",
-		rule:  choiceRule{Variable: pathValue, IsTimestamp: boolPtr(true)},
+		rule:  choiceRule{Variable: pathValue, IsTimestamp: new(true)},
 		input: map[string]any{fieldValue: testTimestampJan2020},
 		want:  true,
 	},
 	{
 		name:  "IsTimestamp false for non-timestamp string field",
-		rule:  choiceRule{Variable: pathValue, IsTimestamp: boolPtr(true)},
+		rule:  choiceRule{Variable: pathValue, IsTimestamp: new(true)},
 		input: map[string]any{fieldValue: valueFast},
 		want:  false,
 	},
 	{
 		name:  "StringMatches exact match with no wildcard",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(testNameAlice)},
+		rule:  choiceRule{Variable: pathName, StringMatches: new(testNameAlice)},
 		input: map[string]any{fieldName: testNameAlice},
 		want:  true,
 	},
 	{
 		name:  "StringMatches leading wildcard",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("*.log")},
+		rule:  choiceRule{Variable: pathName, StringMatches: new("*.log")},
 		input: map[string]any{fieldName: "zebra.log"},
 		want:  true,
 	},
 	{
 		name:  "StringMatches trailing wildcard",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("foo*")},
+		rule:  choiceRule{Variable: pathName, StringMatches: new("foo*")},
 		input: map[string]any{fieldName: "foo23.log"},
 		want:  true,
 	},
 	{
 		name:  "StringMatches wildcard on both ends",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("foo*.*")},
+		rule:  choiceRule{Variable: pathName, StringMatches: new("foo*.*")},
 		input: map[string]any{fieldName: "foobar.zebra"},
 		want:  true,
 	},
 	{
 		name:  "StringMatches no match",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr("log-*.txt")},
+		rule:  choiceRule{Variable: pathName, StringMatches: new("log-*.txt")},
 		input: map[string]any{fieldName: "log-1.csv"},
 		want:  false,
 	},
 	{
 		name:  "StringMatches escaped wildcard is literal",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(`a\*b`)},
+		rule:  choiceRule{Variable: pathName, StringMatches: new(`a\*b`)},
 		input: map[string]any{fieldName: "a*b"},
 		want:  true,
 	},
 	{
 		name:  "StringMatches escaped wildcard does not act as wildcard",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(`a\*b`)},
+		rule:  choiceRule{Variable: pathName, StringMatches: new(`a\*b`)},
 		input: map[string]any{fieldName: "aXb"},
 		want:  false,
 	},
 	{
 		name:  "StringMatches escaped backslash is literal",
-		rule:  choiceRule{Variable: pathName, StringMatches: strPtr(`a\\b`)},
+		rule:  choiceRule{Variable: pathName, StringMatches: new(`a\\b`)},
 		input: map[string]any{fieldName: `a\b`},
 		want:  true,
 	},
 	{
 		name:  "StringMatches against non-string value does not match",
-		rule:  choiceRule{Variable: pathValue, StringMatches: strPtr("*")},
+		rule:  choiceRule{Variable: pathValue, StringMatches: new("*")},
 		input: map[string]any{fieldValue: float64(1)},
 		want:  false,
 	},
 	{
 		name: "And all match",
 		rule: choiceRule{And: []choiceRule{
-			{Variable: pathValue, IsPresent: boolPtr(true)},
-			{Variable: pathValue, NumericGreaterThanEquals: float64Ptr(20)},
-			{Variable: pathValue, NumericLessThan: float64Ptr(30)},
+			{Variable: pathValue, IsPresent: new(true)},
+			{Variable: pathValue, NumericGreaterThanEquals: new(float64(20))},
+			{Variable: pathValue, NumericLessThan: new(float64(30))},
 		}},
 		input: map[string]any{fieldValue: float64(22)},
 		want:  true,
@@ -430,8 +424,8 @@ var choiceRuleTests = []struct {
 	{
 		name: "And one mismatch",
 		rule: choiceRule{And: []choiceRule{
-			{Variable: pathValue, NumericGreaterThanEquals: float64Ptr(20)},
-			{Variable: pathValue, NumericLessThan: float64Ptr(21)},
+			{Variable: pathValue, NumericGreaterThanEquals: new(float64(20))},
+			{Variable: pathValue, NumericLessThan: new(float64(21))},
 		}},
 		input: map[string]any{fieldValue: float64(22)},
 		want:  false,
@@ -439,21 +433,21 @@ var choiceRuleTests = []struct {
 	{
 		name: "Or one match",
 		rule: choiceRule{Or: []choiceRule{
-			{Variable: pathMode, StringEquals: strPtr(valueFast)},
-			{Variable: pathMode, StringEquals: strPtr(valueSlow)},
+			{Variable: pathMode, StringEquals: new(valueFast)},
+			{Variable: pathMode, StringEquals: new(valueSlow)},
 		}},
 		input: map[string]any{fieldMode: valueSlow},
 		want:  true,
 	},
 	{
 		name:  "Not negates match",
-		rule:  choiceRule{Not: &choiceRule{Variable: pathMode, StringEquals: strPtr(valueFast)}},
+		rule:  choiceRule{Not: &choiceRule{Variable: pathMode, StringEquals: new(valueFast)}},
 		input: map[string]any{fieldMode: valueSlow},
 		want:  true,
 	},
 	{
 		name:  "Not negates non-match",
-		rule:  choiceRule{Not: &choiceRule{Variable: pathMode, StringEquals: strPtr(valueFast)}},
+		rule:  choiceRule{Not: &choiceRule{Variable: pathMode, StringEquals: new(valueFast)}},
 		input: map[string]any{fieldMode: valueFast},
 		want:  false,
 	},
@@ -481,7 +475,7 @@ func TestEvaluateChoiceRule(t *testing.T) {
 func TestEvaluateChoiceRuleMissingVariableErrors(t *testing.T) {
 	t.Parallel()
 
-	rule := choiceRule{Variable: pathMissing, StringEquals: strPtr(valueFast)}
+	rule := choiceRule{Variable: pathMissing, StringEquals: new(valueFast)}
 
 	_, err := evaluateChoiceRule(&rule, map[string]any{fieldMode: valueFast})
 	if err == nil {
@@ -495,7 +489,7 @@ func TestEvaluateChoiceRulePathComparatorUnresolvableOperandErrors(t *testing.T)
 	// The "*Path" comparator's own Path -- as opposed to Variable -- fails
 	// to resolve here, which must also surface as an error rather than a
 	// silent non-match.
-	rule := choiceRule{Variable: pathMode, StringEqualsPath: strPtr(pathMissing)}
+	rule := choiceRule{Variable: pathMode, StringEqualsPath: new(pathMissing)}
 
 	_, err := evaluateChoiceRule(&rule, map[string]any{fieldMode: valueFast})
 	if err == nil {
@@ -506,7 +500,7 @@ func TestEvaluateChoiceRulePathComparatorUnresolvableOperandErrors(t *testing.T)
 func TestEvaluateChoiceRuleStringMatchesDanglingBackslashErrors(t *testing.T) {
 	t.Parallel()
 
-	rule := choiceRule{Variable: pathName, StringMatches: strPtr(`a\`)}
+	rule := choiceRule{Variable: pathName, StringMatches: new(`a\`)}
 
 	_, err := evaluateChoiceRule(&rule, map[string]any{fieldName: "a"})
 	if err == nil {
@@ -517,7 +511,7 @@ func TestEvaluateChoiceRuleStringMatchesDanglingBackslashErrors(t *testing.T) {
 func TestEvaluateChoiceRuleStringMatchesInvalidEscapeErrors(t *testing.T) {
 	t.Parallel()
 
-	rule := choiceRule{Variable: pathName, StringMatches: strPtr(`a\bc`)}
+	rule := choiceRule{Variable: pathName, StringMatches: new(`a\bc`)}
 
 	_, err := evaluateChoiceRule(&rule, map[string]any{fieldName: "abc"})
 	if err == nil {

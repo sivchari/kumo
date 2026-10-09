@@ -31,8 +31,8 @@ func TestScanPartitionsItemsAcrossSegments(t *testing.T) {
 
 	for i := range itemCount {
 		item := Item{
-			"pk":    {S: ptr(fmt.Sprintf("item-%02d", i))},
-			"value": {S: ptr("payload")},
+			"pk":    {S: new(fmt.Sprintf("item-%02d", i))},
+			"value": {S: new("payload")},
 		}
 
 		if _, err := store.PutItem(t.Context(), "parallel-scan-test", item, false, ConditionInput{}); err != nil {

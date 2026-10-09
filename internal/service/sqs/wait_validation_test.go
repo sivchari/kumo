@@ -35,7 +35,7 @@ func TestMemoryStorage_receiveWaitTime_Range(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := s.receiveWaitTime(queue.URL, intPtr(tt.wait))
+			got, err := s.receiveWaitTime(queue.URL, new(tt.wait))
 
 			if !tt.wantErr {
 				if err != nil {

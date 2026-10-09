@@ -31,18 +31,18 @@ func TestReadAPIsApplyProjectionExpression(t *testing.T) {
 
 	for _, item := range []Item{
 		{
-			"pk":           {S: ptr("tenant-a")},
-			"sk":           {S: ptr("001")},
-			testAttrName:   {S: ptr("first")},
-			testAttrStatus: {S: ptr("active")},
-			"secret":       {S: ptr("hidden")},
+			"pk":           {S: new("tenant-a")},
+			"sk":           {S: new("001")},
+			testAttrName:   {S: new("first")},
+			testAttrStatus: {S: new("active")},
+			"secret":       {S: new("hidden")},
 		},
 		{
-			"pk":           {S: ptr("tenant-a")},
-			"sk":           {S: ptr("002")},
-			testAttrName:   {S: ptr("second")},
-			testAttrStatus: {S: ptr("active")},
-			"secret":       {S: ptr("hidden")},
+			"pk":           {S: new("tenant-a")},
+			"sk":           {S: new("002")},
+			testAttrName:   {S: new("second")},
+			testAttrStatus: {S: new("active")},
+			"secret":       {S: new("hidden")},
 		},
 	} {
 		if _, err := store.PutItem(t.Context(), "projection-test", item, false, ConditionInput{}); err != nil {
