@@ -510,7 +510,14 @@ func (s *Service) CreateBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.storage.CreateBucket(r.Context(), bucket)
+	tags, err := cfg.bucketTags()
+	if err != nil {
+		writeS3Error(w, r, errCodeInvalidTag, msgDuplicateTagKey, http.StatusBadRequest)
+
+		return
+	}
+
+	err = s.storage.CreateBucket(r.Context(), bucket)
 	if err != nil {
 		var bucketErr *BucketError
 		if errors.As(err, &bucketErr) {
@@ -529,7 +536,7 @@ func (s *Service) CreateBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if tags := cfg.bucketTags(); len(tags) > 0 {
+	if len(tags) > 0 {
 		if err := s.storage.PutBucketTagging(r.Context(), bucket, tags); err != nil {
 			writeBucketErrorOrInternal(w, r, err)
 
@@ -568,19 +575,16 @@ func decodeCreateBucketConfiguration(w http.ResponseWriter, r *http.Request) (*C
 }
 
 // bucketTags returns the TagSet of a decoded CreateBucket request body as a tag
-// map, or nil when no configuration or no tags were sent. kumo ignores the
-// body's LocationConstraint, as it serves every region from one endpoint.
-func (c *CreateBucketConfiguration) bucketTags() map[string]string {
-	if c == nil || len(c.Tags.Tags) == 0 {
-		return nil
+// map, empty when no configuration or no tags were sent. It returns
+// errDuplicateTagKey when a key repeats. kumo ignores the body's
+// LocationConstraint, as it serves every region from one endpoint.
+func (c *CreateBucketConfiguration) bucketTags() (map[string]string, error) {
+	var tagList []Tag
+	if c != nil {
+		tagList = c.Tags.Tags
 	}
 
-	tags := make(map[string]string, len(c.Tags.Tags))
-	for _, tag := range c.Tags.Tags {
-		tags[tag.Key] = tag.Value
-	}
-
-	return tags
+	return tagMap(tagList)
 }
 
 // DeleteBucket handles DELETE /{bucket} - delete a bucket.
@@ -882,6 +886,15 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A malformed x-amz-tagging value is ignored, but repeated keys are
+	// rejected before the object is stored, as S3 does.
+	tags, err := parseTaggingHeader(r.Header.Get("X-Amz-Tagging"))
+	if errors.Is(err, errDuplicateTagKey) {
+		writeS3Error(w, r, errCodeInvalidTag, msgDuplicateTagKey, http.StatusBadRequest)
+
+		return
+	}
+
 	metadata := extractObjectMetadata(r.Header)
 	s.resolveEncryptionMetadata(r.Context(), r.Header, bucket, metadata)
 
@@ -892,11 +905,8 @@ func (s *Service) PutObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if header := r.Header.Get("X-Amz-Tagging"); header != "" {
-		tags, err := parseTaggingHeader(header)
-		if err == nil && len(tags) > 0 {
-			_ = s.storage.PutObjectTagging(r.Context(), bucket, key, tags)
-		}
+	if len(tags) > 0 {
+		_ = s.storage.PutObjectTagging(r.Context(), bucket, key, tags)
 	}
 
 	w.Header().Set("ETag", obj.ETag)
@@ -954,6 +964,12 @@ func (s *Service) CopyObject(w http.ResponseWriter, r *http.Request) {
 
 	tags, err := s.copyObjectTags(r.Context(), r.Header, srcBucket, srcKey)
 	if err != nil {
+		if errors.Is(err, errDuplicateTagKey) {
+			writeS3Error(w, r, errCodeInvalidTag, msgDuplicateTagKey, http.StatusBadRequest)
+
+			return
+		}
+
 		writeS3Error(w, r, "InvalidArgument", err.Error(), http.StatusBadRequest)
 
 		return
@@ -2689,7 +2705,34 @@ func parseTaggingHeader(raw string) (map[string]string, error) {
 			continue
 		}
 
+		if len(value) > 1 {
+			return nil, errDuplicateTagKey
+		}
+
 		tags[key] = value[0]
+	}
+
+	return tags, nil
+}
+
+// errDuplicateTagKey reports a tag set that names the same key more than once,
+// which S3 rejects with InvalidTag instead of keeping one of the values.
+var errDuplicateTagKey = errors.New("duplicate tag key")
+
+// msgDuplicateTagKey is the InvalidTag message S3 returns for a repeated key.
+const msgDuplicateTagKey = "Cannot provide multiple Tags with the same key"
+
+// tagMap converts a decoded TagSet into a tag map, returning errDuplicateTagKey
+// when a key repeats.
+func tagMap(tagList []Tag) (map[string]string, error) {
+	tags := make(map[string]string, len(tagList))
+
+	for _, tag := range tagList {
+		if _, duplicate := tags[tag.Key]; duplicate {
+			return nil, errDuplicateTagKey
+		}
+
+		tags[tag.Key] = tag.Value
 	}
 
 	return tags, nil
@@ -2713,16 +2756,11 @@ func (s *Service) PutBucketTagging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tags := make(map[string]string, len(tagging.TagSet.Tags))
+	tags, err := tagMap(tagging.TagSet.Tags)
+	if err != nil {
+		writeS3Error(w, r, errCodeInvalidTag, msgDuplicateTagKey, http.StatusBadRequest)
 
-	for _, tag := range tagging.TagSet.Tags {
-		if _, duplicate := tags[tag.Key]; duplicate {
-			writeS3Error(w, r, errCodeInvalidTag, "Cannot provide multiple Tags with the same key", http.StatusBadRequest)
-
-			return
-		}
-
-		tags[tag.Key] = tag.Value
+		return
 	}
 
 	if err := s.storage.PutBucketTagging(r.Context(), bucket, tags); err != nil {
@@ -2800,9 +2838,11 @@ func (s *Service) PutObjectTagging(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tags := make(map[string]string, len(tagging.TagSet.Tags))
-	for _, tag := range tagging.TagSet.Tags {
-		tags[tag.Key] = tag.Value
+	tags, err := tagMap(tagging.TagSet.Tags)
+	if err != nil {
+		writeS3Error(w, r, errCodeInvalidTag, msgDuplicateTagKey, http.StatusBadRequest)
+
+		return
 	}
 
 	if err := s.storage.PutObjectTagging(r.Context(), bucket, key, tags); err != nil {

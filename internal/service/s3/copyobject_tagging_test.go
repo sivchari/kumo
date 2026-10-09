@@ -50,7 +50,7 @@ func TestCopyObjectReplacesTagsWhenDirectiveIsReplace(t *testing.T) {
 		t.Fatalf("tag color: got %q, want red", got)
 	}
 
-	if got := tags["env"]; got != "prod" {
+	if got := tags["env"]; got != testTagValueProd {
 		t.Fatalf("tag env: got %q, want prod", got)
 	}
 }
