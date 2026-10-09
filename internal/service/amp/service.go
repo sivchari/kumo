@@ -124,19 +124,17 @@ func backendURL(backend string) (*url.URL, error) {
 }
 
 func newDataPlaneProxy(target *url.URL) *httputil.ReverseProxy {
-	rp := httputil.NewSingleHostReverseProxy(target)
-	originalDirector := rp.Director
+	return &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.SetXForwarded()
 
-	rp.Director = func(req *http.Request) {
-		originalDirector(req)
+			backendPath, _ := pr.In.Context().Value(backendPathContextKey{}).(string)
+			if backendPath != "" {
+				pr.Out.URL.Path = strings.TrimRight(target.Path, "/") + backendPath
+			}
 
-		backendPath, _ := req.Context().Value(backendPathContextKey{}).(string)
-		if backendPath != "" {
-			req.URL.Path = strings.TrimRight(target.Path, "/") + backendPath
-		}
-
-		req.Host = target.Host
+			pr.Out.Host = target.Host
+		},
 	}
-
-	return rp
 }
