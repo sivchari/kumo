@@ -29,8 +29,14 @@ func newLogsCmd() *cobra.Command {
 		newLogsDescribeLogStreamsCmd(),
 		newLogsFilterLogEventsCmd(),
 		newLogsGetLogEventsCmd(),
+		newLogsListTagsForResourceCmd(),
+		newLogsListTagsLogGroupCmd(),
 		newLogsPutLogEventsCmd(),
 		newLogsPutRetentionPolicyCmd(),
+		newLogsTagLogGroupCmd(),
+		newLogsTagResourceCmd(),
+		newLogsUntagLogGroupCmd(),
+		newLogsUntagResourceCmd(),
 	)
 
 	return cmd
@@ -662,6 +668,90 @@ func newLogsGetLogEventsCmd() *cobra.Command {
 	return cmd
 }
 
+func newLogsListTagsForResourceCmd() *cobra.Command {
+	var resourceArn string
+
+	cmd := &cobra.Command{
+		Use:   "list-tags-for-resource",
+		Short: "ListTagsForResource",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := cloudwatchlogs.NewFromConfig(cfg, func(o *cloudwatchlogs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &cloudwatchlogs.ListTagsForResourceInput{}
+
+			if resourceArn != "" {
+				input.ResourceArn = aws.String(resourceArn)
+			}
+
+			out, err := client.ListTagsForResource(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("list-tags-for-resource failed: %w", err)
+			}
+
+			if err := writeOutput(out); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&resourceArn, "resource-arn", "", "Resource arn")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newLogsListTagsLogGroupCmd() *cobra.Command {
+	var logGroupName string
+
+	cmd := &cobra.Command{
+		Use:   "list-tags-log-group",
+		Short: "ListTagsLogGroup",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := cloudwatchlogs.NewFromConfig(cfg, func(o *cloudwatchlogs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &cloudwatchlogs.ListTagsLogGroupInput{}
+
+			if logGroupName != "" {
+				input.LogGroupName = aws.String(logGroupName)
+			}
+
+			out, err := client.ListTagsLogGroup(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("list-tags-log-group failed: %w", err)
+			}
+
+			if err := writeOutput(out); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&logGroupName, "log-group-name", "", "Log group name")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
 func newLogsPutLogEventsCmd() *cobra.Command {
 	var logEvents []string
 	var logGroupName string
@@ -777,6 +867,190 @@ func newLogsPutRetentionPolicyCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logGroupName, "log-group-name", "", "Log group name")
 
 	cmd.Flags().Int32Var(&retentionInDays, "retention-in-days", 0, "Retention in days")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newLogsTagLogGroupCmd() *cobra.Command {
+	var logGroupName string
+	var tags string
+
+	cmd := &cobra.Command{
+		Use:   "tag-log-group",
+		Short: "TagLogGroup",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := cloudwatchlogs.NewFromConfig(cfg, func(o *cloudwatchlogs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &cloudwatchlogs.TagLogGroupInput{}
+
+			if logGroupName != "" {
+				input.LogGroupName = aws.String(logGroupName)
+			}
+
+			if tags != "" {
+				if err := json.Unmarshal([]byte(tags), &input.Tags); err != nil {
+					return fmt.Errorf("tag-log-group: parse --tags: %w", err)
+				}
+			}
+
+			_, err = client.TagLogGroup(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("tag-log-group failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&logGroupName, "log-group-name", "", "Log group name")
+
+	cmd.Flags().StringVar(&tags, "tags", "", "Tags (JSON)")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newLogsTagResourceCmd() *cobra.Command {
+	var resourceArn string
+	var tags string
+
+	cmd := &cobra.Command{
+		Use:   "tag-resource",
+		Short: "TagResource",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := cloudwatchlogs.NewFromConfig(cfg, func(o *cloudwatchlogs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &cloudwatchlogs.TagResourceInput{}
+
+			if resourceArn != "" {
+				input.ResourceArn = aws.String(resourceArn)
+			}
+
+			if tags != "" {
+				if err := json.Unmarshal([]byte(tags), &input.Tags); err != nil {
+					return fmt.Errorf("tag-resource: parse --tags: %w", err)
+				}
+			}
+
+			_, err = client.TagResource(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("tag-resource failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&resourceArn, "resource-arn", "", "Resource arn")
+
+	cmd.Flags().StringVar(&tags, "tags", "", "Tags (JSON)")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newLogsUntagLogGroupCmd() *cobra.Command {
+	var logGroupName string
+	var tags []string
+
+	cmd := &cobra.Command{
+		Use:   "untag-log-group",
+		Short: "UntagLogGroup",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := cloudwatchlogs.NewFromConfig(cfg, func(o *cloudwatchlogs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &cloudwatchlogs.UntagLogGroupInput{}
+
+			if logGroupName != "" {
+				input.LogGroupName = aws.String(logGroupName)
+			}
+
+			if len(tags) > 0 {
+				input.Tags = tags
+			}
+
+			_, err = client.UntagLogGroup(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("untag-log-group failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&logGroupName, "log-group-name", "", "Log group name")
+
+	cmd.Flags().StringArrayVar(&tags, "tags", nil, "Tags")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newLogsUntagResourceCmd() *cobra.Command {
+	var resourceArn string
+	var tagKeys []string
+
+	cmd := &cobra.Command{
+		Use:   "untag-resource",
+		Short: "UntagResource",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := cloudwatchlogs.NewFromConfig(cfg, func(o *cloudwatchlogs.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &cloudwatchlogs.UntagResourceInput{}
+
+			if resourceArn != "" {
+				input.ResourceArn = aws.String(resourceArn)
+			}
+
+			if len(tagKeys) > 0 {
+				input.TagKeys = tagKeys
+			}
+
+			_, err = client.UntagResource(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("untag-resource failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&resourceArn, "resource-arn", "", "Resource arn")
+
+	cmd.Flags().StringArrayVar(&tagKeys, "tag-keys", nil, "Tag keys")
 
 	cmd.Flags().String("region", "", "Region override (ignored)")
 
