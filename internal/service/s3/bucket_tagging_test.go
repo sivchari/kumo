@@ -15,6 +15,7 @@ const (
 	testTagValueOwner = "team-a"
 	testTagKeyEnv     = "Environment"
 	testTagValueEnv   = "dev"
+	testTagValueProd  = "prod"
 )
 
 // bucketTaggingXML renders a Tagging document from alternating key/value
@@ -396,5 +397,25 @@ func TestCreateBucketRejectsMalformedConfigurationBody(t *testing.T) {
 
 	if exists {
 		t.Error("bucket was created despite a malformed CreateBucketConfiguration body")
+	}
+}
+
+func TestCreateBucketRejectsDuplicateTagKeys(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	svc := New(store, "")
+
+	w := issueCreateBucket(t, svc, "dup-tag-bucket",
+		createBucketConfigurationXML(testTagKeyEnv, testTagValueEnv, testTagKeyEnv, testTagValueProd))
+	assertS3ErrorCode(t, w, http.StatusBadRequest, errCodeInvalidTag)
+
+	exists, err := store.BucketExists(context.Background(), "dup-tag-bucket")
+	if err != nil {
+		t.Fatalf("BucketExists: %v", err)
+	}
+
+	if exists {
+		t.Error("bucket was created despite duplicate tag keys in CreateBucketConfiguration")
 	}
 }
