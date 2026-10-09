@@ -17,6 +17,16 @@ const (
 	errInvalidAction        = "UnrecognizedClientException"
 )
 
+// Tag action names.
+const (
+	actionListTagsForResource = "ListTagsForResource"
+	actionListTagsLogGroup    = "ListTagsLogGroup"
+	actionTagResource         = "TagResource"
+	actionTagLogGroup         = "TagLogGroup"
+	actionUntagResource       = "UntagResource"
+	actionUntagLogGroup       = "UntagLogGroup"
+)
+
 // CreateLogGroup handles the CreateLogGroup action.
 func (s *Service) CreateLogGroup(w http.ResponseWriter, r *http.Request) {
 	var req CreateLogGroupRequest
@@ -420,23 +430,23 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
 	return map[string]func(http.ResponseWriter, *http.Request){
-		"CreateLogGroup":        s.CreateLogGroup,
-		"DeleteLogGroup":        s.DeleteLogGroup,
-		"CreateLogStream":       s.CreateLogStream,
-		"DeleteLogStream":       s.DeleteLogStream,
-		"PutLogEvents":          s.PutLogEvents,
-		"GetLogEvents":          s.GetLogEvents,
-		"FilterLogEvents":       s.FilterLogEvents,
-		"DescribeLogGroups":     s.DescribeLogGroups,
-		"DescribeLogStreams":    s.DescribeLogStreams,
-		"PutRetentionPolicy":    s.PutRetentionPolicy,
-		"DeleteRetentionPolicy": s.DeleteRetentionPolicy,
-		"ListTagsForResource":   s.ListTagsForResource,
-		"ListTagsLogGroup":      s.ListTagsLogGroup,
-		"TagResource":           s.TagResource,
-		"UntagResource":         s.UntagResource,
-		"TagLogGroup":           s.TagLogGroup,
-		"UntagLogGroup":         s.UntagLogGroup,
+		"CreateLogGroup":          s.CreateLogGroup,
+		"DeleteLogGroup":          s.DeleteLogGroup,
+		"CreateLogStream":         s.CreateLogStream,
+		"DeleteLogStream":         s.DeleteLogStream,
+		"PutLogEvents":            s.PutLogEvents,
+		"GetLogEvents":            s.GetLogEvents,
+		"FilterLogEvents":         s.FilterLogEvents,
+		"DescribeLogGroups":       s.DescribeLogGroups,
+		"DescribeLogStreams":      s.DescribeLogStreams,
+		"PutRetentionPolicy":      s.PutRetentionPolicy,
+		"DeleteRetentionPolicy":   s.DeleteRetentionPolicy,
+		actionListTagsForResource: s.ListTagsForResource,
+		actionListTagsLogGroup:    s.ListTagsLogGroup,
+		actionTagResource:         s.TagResource,
+		actionUntagResource:       s.UntagResource,
+		actionTagLogGroup:         s.TagLogGroup,
+		actionUntagLogGroup:       s.UntagLogGroup,
 	}
 }
 

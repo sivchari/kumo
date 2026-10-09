@@ -21,9 +21,14 @@ const (
 	defaultAccountID = "000000000000"
 	defaultLimit     = 50
 	maxLimit         = 10000
+
+	maxTagsPerResource = 50
 )
 
-const errResourceNotFoundException = "ResourceNotFoundException"
+const (
+	errResourceNotFoundException = "ResourceNotFoundException"
+	errTooManyTagsException      = "TooManyTagsException"
+)
 
 // Storage defines the CloudWatch Logs storage interface.
 type Storage interface {
@@ -172,6 +177,10 @@ func (m *MemoryStorage) CreateLogGroup(_ context.Context, req *CreateLogGroupReq
 		}
 	}
 
+	if len(req.Tags) > maxTagsPerResource {
+		return newTooManyTagsError()
+	}
+
 	now := time.Now().UnixMilli()
 	logGroup := &LogGroup{
 		LogGroupName:  req.LogGroupName,
@@ -219,9 +228,23 @@ func (m *MemoryStorage) Tag(_ context.Context, groupNameOrArn string, tags map[s
 		group.Tags = make(map[string]string)
 	}
 
+	added := 0
+
+	for key := range tags {
+		if _, exists := group.Tags[key]; !exists {
+			added++
+		}
+	}
+
+	if len(group.Tags)+added > maxTagsPerResource {
+		return newTooManyTagsError()
+	}
+
 	for key, value := range tags {
 		group.Tags[key] = value
 	}
+
+	m.saveLocked()
 
 	return nil
 }
@@ -239,6 +262,8 @@ func (m *MemoryStorage) Untag(_ context.Context, groupNameOrArn string, keys []s
 	for _, key := range keys {
 		delete(group.Tags, key)
 	}
+
+	m.saveLocked()
 
 	return nil
 }
@@ -635,8 +660,15 @@ func (m *MemoryStorage) lookupLogGroupByNameOrArn(groupNameOrArn string) (*LogGr
 	}
 
 	return nil, &LogsError{
-		Code:    "ResourceNotFoundException",
+		Code:    errResourceNotFoundException,
 		Message: fmt.Sprintf("The specified log group does not exist: %s", groupNameOrArn),
+	}
+}
+
+func newTooManyTagsError() *LogsError {
+	return &LogsError{
+		Code:    errTooManyTagsException,
+		Message: fmt.Sprintf("A resource can have no more than %d tags", maxTagsPerResource),
 	}
 }
 
