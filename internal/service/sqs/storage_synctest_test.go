@@ -165,7 +165,7 @@ func TestMemoryStorage_LongPollReturnsOnSend(t *testing.T) {
 		done := make(chan result, 1)
 
 		go func() {
-			msgs, err := s.ReceiveMessage(ctx, queueURL, 1, 0, intPtr(waitTimeSeconds))
+			msgs, err := s.ReceiveMessage(ctx, queueURL, 1, 0, new(waitTimeSeconds))
 			done <- result{msgs: msgs, err: err, elapsed: time.Since(start)}
 		}()
 

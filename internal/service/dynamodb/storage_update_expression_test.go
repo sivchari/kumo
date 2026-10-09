@@ -30,5 +30,5 @@ func TestUpdateItemInvalidUTF8ExpressionDoesNotPanic(t *testing.T) {
 		}
 	}()
 
-	_, _ = store.UpdateItem(ctx, "invalid-utf8-update-test", Item{"pk": {S: ptr("seed")}}, "\x98 REMOVE", nil, nil, ReturnValuesAllNew, ConditionInput{})
+	_, _ = store.UpdateItem(ctx, "invalid-utf8-update-test", Item{"pk": {S: new("seed")}}, "\x98 REMOVE", nil, nil, ReturnValuesAllNew, ConditionInput{})
 }

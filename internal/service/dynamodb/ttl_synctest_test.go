@@ -40,8 +40,8 @@ func putTTLItem(t *testing.T, store *MemoryStorage, pk string, expiresAt int64) 
 	t.Helper()
 
 	_, err := store.PutItem(context.Background(), ttlTestTable, Item{
-		ttlTestPK:   {S: ptr(pk)},
-		ttlTestAttr: {N: ptr(strconv.FormatInt(expiresAt, 10))},
+		ttlTestPK:   {S: new(pk)},
+		ttlTestAttr: {N: new(strconv.FormatInt(expiresAt, 10))},
 	}, false, ConditionInput{})
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func putTTLItem(t *testing.T, store *MemoryStorage, pk string, expiresAt int64) 
 func hasTTLItem(t *testing.T, store *MemoryStorage, pk string) bool {
 	t.Helper()
 
-	item, err := store.GetItem(context.Background(), ttlTestTable, Item{ttlTestPK: {S: ptr(pk)}})
+	item, err := store.GetItem(context.Background(), ttlTestTable, Item{ttlTestPK: {S: new(pk)}})
 	if err != nil {
 		t.Fatal(err)
 	}

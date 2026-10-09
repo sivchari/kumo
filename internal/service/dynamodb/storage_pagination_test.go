@@ -67,15 +67,15 @@ func TestScanLimitAppliedBeforeFilter(t *testing.T) {
 
 	for _, pk := range []string{"a", "b"} {
 		if _, err := s.PutItem(ctx, "scan-limit-before-filter", Item{
-			"pk":       {S: ptr(pk)},
-			"category": {S: ptr(testAttrOther)},
+			"pk":       {S: new(pk)},
+			"category": {S: new(testAttrOther)},
 		}, false, ConditionInput{}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	filterExpr := "category = :want"
-	filterValues := map[string]AttributeValue{":want": {S: ptr("target")}}
+	filterValues := map[string]AttributeValue{":want": {S: new("target")}}
 
 	items, lastKey, scanned, err := s.Scan(ctx, "scan-limit-before-filter", filterExpr, nil, filterValues, 1, nil, nil, nil)
 	if err != nil {
@@ -128,9 +128,9 @@ func TestQueryLimitAppliedBeforeFilter(t *testing.T) {
 	categories := map[string]string{"1": testAttrOther, "2": testAttrOther, "3": "target", "4": "target"}
 	for _, sk := range []string{"1", "2", "3", "4"} {
 		if _, err := s.PutItem(ctx, "query-limit-before-filter", Item{
-			"PK":       {S: ptr("tenant1")},
-			"SK":       {S: ptr(sk)},
-			"category": {S: ptr(categories[sk])},
+			"PK":       {S: new("tenant1")},
+			"SK":       {S: new(sk)},
+			"category": {S: new(categories[sk])},
 		}, false, ConditionInput{}); err != nil {
 			t.Fatal(err)
 		}
@@ -139,8 +139,8 @@ func TestQueryLimitAppliedBeforeFilter(t *testing.T) {
 	keyCondExpr := "PK = :pk"
 	filterExpr := "category = :want"
 	exprValues := map[string]AttributeValue{
-		testExprPK: {S: ptr("tenant1")},
-		":want":    {S: ptr("target")},
+		testExprPK: {S: new("tenant1")},
+		":want":    {S: new("target")},
 	}
 
 	items, lastKey, scanned, err := s.Query(ctx, "query-limit-before-filter", "", keyCondExpr, filterExpr,

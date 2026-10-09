@@ -28,12 +28,12 @@ func TestSetArithmetic(t *testing.T) {
 	t.Run("SET path = path + :val", func(t *testing.T) {
 		t.Parallel()
 
-		key := Item{"pk": {S: ptr("arith-add")}}
+		key := Item{"pk": {S: new("arith-add")}}
 
 		// Insert initial item with Counter=5.
 		_, err := s.PutItem(ctx, "test-arithmetic", Item{
-			"pk":            {S: ptr("arith-add")},
-			testAttrCounter: {N: ptr("5")},
+			"pk":            {S: new("arith-add")},
+			testAttrCounter: {N: new("5")},
 		}, false, ConditionInput{})
 		if err != nil {
 			t.Fatal(err)
@@ -43,7 +43,7 @@ func TestSetArithmetic(t *testing.T) {
 		result, err := s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET Counter = Counter + :incr",
 			nil,
-			map[string]AttributeValue{testExprIncr: {N: ptr("3")}},
+			map[string]AttributeValue{testExprIncr: {N: new("3")}},
 			ReturnValuesAllNew,
 			ConditionInput{},
 		)
@@ -59,11 +59,11 @@ func TestSetArithmetic(t *testing.T) {
 	t.Run("SET path = path - :val", func(t *testing.T) {
 		t.Parallel()
 
-		key := Item{"pk": {S: ptr("arith-sub")}}
+		key := Item{"pk": {S: new("arith-sub")}}
 
 		_, err := s.PutItem(ctx, "test-arithmetic", Item{
-			"pk":            {S: ptr("arith-sub")},
-			testAttrCounter: {N: ptr("10")},
+			"pk":            {S: new("arith-sub")},
+			testAttrCounter: {N: new("10")},
 		}, false, ConditionInput{})
 		if err != nil {
 			t.Fatal(err)
@@ -72,7 +72,7 @@ func TestSetArithmetic(t *testing.T) {
 		result, err := s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET Counter = Counter - :decr",
 			nil,
-			map[string]AttributeValue{":decr": {N: ptr("4")}},
+			map[string]AttributeValue{":decr": {N: new("4")}},
 			ReturnValuesAllNew,
 			ConditionInput{},
 		)
@@ -88,14 +88,14 @@ func TestSetArithmetic(t *testing.T) {
 	t.Run("SET path = if_not_exists(path, :default) + :incr (new item)", func(t *testing.T) {
 		t.Parallel()
 
-		key := Item{"pk": {S: ptr("arith-ifne-new")}}
+		key := Item{"pk": {S: new("arith-ifne-new")}}
 
 		result, err := s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET #count = if_not_exists(#count, :zero) + :incr",
 			map[string]string{testExprHashCount: testAttrCounter},
 			map[string]AttributeValue{
-				testExprZero: {N: ptr("0")},
-				testExprIncr: {N: ptr("1")},
+				testExprZero: {N: new("0")},
+				testExprIncr: {N: new("1")},
 			},
 			ReturnValuesAllNew,
 			ConditionInput{},
@@ -113,8 +113,8 @@ func TestSetArithmetic(t *testing.T) {
 			"SET #count = if_not_exists(#count, :zero) + :incr",
 			map[string]string{testExprHashCount: testAttrCounter},
 			map[string]AttributeValue{
-				testExprZero: {N: ptr("0")},
-				testExprIncr: {N: ptr("1")},
+				testExprZero: {N: new("0")},
+				testExprIncr: {N: new("1")},
 			},
 			ReturnValuesAllNew,
 			ConditionInput{},
@@ -131,15 +131,15 @@ func TestSetArithmetic(t *testing.T) {
 	t.Run("SET with multiple assignments including if_not_exists + arithmetic", func(t *testing.T) {
 		t.Parallel()
 
-		key := Item{"pk": {S: ptr("arith-multi")}}
+		key := Item{"pk": {S: new("arith-multi")}}
 
 		result, err := s.UpdateItem(ctx, "test-arithmetic", key,
 			"SET #count = if_not_exists(#count, :zero) + :incr, ExpiresAt = :exp",
 			map[string]string{testExprHashCount: testAttrCounter},
 			map[string]AttributeValue{
-				testExprZero: {N: ptr("0")},
-				testExprIncr: {N: ptr("1")},
-				":exp":       {N: ptr("9999")},
+				testExprZero: {N: new("0")},
+				testExprIncr: {N: new("1")},
+				":exp":       {N: new("9999")},
 			},
 			ReturnValuesAllNew,
 			ConditionInput{},

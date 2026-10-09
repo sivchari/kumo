@@ -17,7 +17,7 @@ func TestPutItemRejectsMissingHashKey(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := s.PutItem(ctx, "test-missing-hash-key", Item{
-		testAttrName: {S: ptr("missing key")},
+		testAttrName: {S: new("missing key")},
 	}, false, ConditionInput{})
 	expectValidationException(t, err)
 }
@@ -33,7 +33,7 @@ func TestPutItemRejectsWrongHashKeyType(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := s.PutItem(ctx, "test-wrong-hash-key-type", Item{
-		"pk": {BOOL: ptr(true)},
+		"pk": {BOOL: new(true)},
 	}, false, ConditionInput{})
 	expectValidationException(t, err)
 }
@@ -50,7 +50,7 @@ func TestGetItemRejectsIncompleteCompositeKey(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := s.GetItem(ctx, "test-incomplete-composite-key", Item{
-		"pk": {S: ptr("p1")},
+		"pk": {S: new("p1")},
 	})
 	expectValidationException(t, err)
 }
@@ -97,7 +97,7 @@ func TestBatchGetItemRejectsIncompleteKey(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := s.BatchGetItem(ctx, map[string]KeysAndAttributes{
-		"test-batch-incomplete-key": {Keys: []Item{{"pk": {S: ptr("p1")}}}},
+		"test-batch-incomplete-key": {Keys: []Item{{"pk": {S: new("p1")}}}},
 	})
 	expectValidationException(t, err)
 }

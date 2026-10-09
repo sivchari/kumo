@@ -12,17 +12,15 @@ import (
 
 const cachePolicyTestHeader = "Origin"
 
-func ptr[T any](v T) *T { return &v }
-
 func validCachePolicy(name string) *CachePolicyConfig {
 	return &CachePolicyConfig{
 		Name:       name,
-		DefaultTTL: ptr(int64(60)),
-		MaxTTL:     ptr(int64(120)),
-		MinTTL:     ptr(int64(0)),
+		DefaultTTL: new(int64(60)),
+		MaxTTL:     new(int64(120)),
+		MinTTL:     new(int64(0)),
 		Parameters: &CachePolicyParameters{
-			EnableAcceptEncodingGzip: ptr(false),
-			HeadersConfig:            &CachePolicyHeadersConfig{HeaderBehavior: cachePolicyBehaviorWhitelist, Headers: &CachePolicyNames{Quantity: ptr(1), Items: &CachePolicyNameItems{Name: []string{cachePolicyTestHeader}}}},
+			EnableAcceptEncodingGzip: new(false),
+			HeadersConfig:            &CachePolicyHeadersConfig{HeaderBehavior: cachePolicyBehaviorWhitelist, Headers: &CachePolicyNames{Quantity: new(1), Items: &CachePolicyNameItems{Name: []string{cachePolicyTestHeader}}}},
 			CookiesConfig:            &CachePolicyCookiesConfig{CookieBehavior: cachePolicyBehaviorNone},
 			QueryStringsConfig:       &CachePolicyQueryStrings{QueryStringBehavior: cachePolicyBehaviorAll},
 		},
@@ -51,9 +49,9 @@ func TestValidateCachePolicyConfig(t *testing.T) {
 		"bad header mode":   {mutate(func(c *CachePolicyConfig) { c.Parameters.HeadersConfig.HeaderBehavior = cachePolicyBehaviorAll }), errInvalidArgument},
 		"bad query mode":    {mutate(func(c *CachePolicyConfig) { c.Parameters.QueryStringsConfig.QueryStringBehavior = "some" }), errInvalidArgument},
 		"missing quantity":  {mutate(func(c *CachePolicyConfig) { c.Parameters.HeadersConfig.Headers.Quantity = nil }), errInvalidArgument},
-		"quantity mismatch": {mutate(func(c *CachePolicyConfig) { c.Parameters.HeadersConfig.Headers.Quantity = ptr(2) }), errInconsistentQuantities},
+		"quantity mismatch": {mutate(func(c *CachePolicyConfig) { c.Parameters.HeadersConfig.Headers.Quantity = new(2) }), errInconsistentQuantities},
 		"cookie items extra": {mutate(func(c *CachePolicyConfig) {
-			c.Parameters.CookiesConfig.Cookies = &CachePolicyNames{Quantity: ptr(0), Items: &CachePolicyNameItems{Name: []string{"a"}}}
+			c.Parameters.CookiesConfig.Cookies = &CachePolicyNames{Quantity: new(0), Items: &CachePolicyNameItems{Name: []string{"a"}}}
 		}), errInconsistentQuantities},
 	}
 
@@ -63,7 +61,7 @@ func TestValidateCachePolicyConfig(t *testing.T) {
 		}
 	}
 
-	if err := validateCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: ptr(int64(0))}); err != nil {
+	if err := validateCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: new(int64(0))}); err != nil {
 		t.Errorf("parameters are optional: %v", err)
 	}
 }
@@ -80,7 +78,7 @@ func TestNormalizeCachePolicyConfig_Defaults(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got, err := normalizeCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: ptr(tc.min)})
+		got, err := normalizeCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: new(tc.min)})
 		if err != nil {
 			t.Fatalf("normalize: %v", err)
 		}
@@ -90,7 +88,7 @@ func TestNormalizeCachePolicyConfig_Defaults(t *testing.T) {
 		}
 	}
 
-	explicit, err := normalizeCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: ptr(int64(0)), DefaultTTL: ptr(int64(0)), MaxTTL: ptr(int64(0))})
+	explicit, err := normalizeCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: new(int64(0)), DefaultTTL: new(int64(0)), MaxTTL: new(int64(0))})
 	if err != nil || *explicit.DefaultTTL != 0 || *explicit.MaxTTL != 0 {
 		t.Errorf("explicit zero TTLs must be kept: %+v, %v", explicit, err)
 	}
@@ -355,7 +353,7 @@ func TestCachePolicyXML_ItemsPresence(t *testing.T) {
 	t.Parallel()
 
 	cfg := validCachePolicy("n")
-	cfg.Parameters.HeadersConfig.Headers = &CachePolicyNames{Quantity: ptr(0)}
+	cfg.Parameters.HeadersConfig.Headers = &CachePolicyNames{Quantity: new(0)}
 
 	out, err := xml.Marshal(cfg)
 	if err != nil {

@@ -29,11 +29,11 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 
 	// Insert items with different SK values.
 	items := []Item{
-		{"PK": {S: ptr("tenant1")}, "SK": {S: ptr("100")}},
-		{"PK": {S: ptr("tenant1")}, "SK": {S: ptr("200")}},
-		{"PK": {S: ptr("tenant1")}, "SK": {S: ptr("300")}},
-		{"PK": {S: ptr("tenant1")}, "SK": {S: ptr("400")}},
-		{"PK": {S: ptr("tenant2")}, "SK": {S: ptr("100")}},
+		{"PK": {S: new("tenant1")}, "SK": {S: new("100")}},
+		{"PK": {S: new("tenant1")}, "SK": {S: new("200")}},
+		{"PK": {S: new("tenant1")}, "SK": {S: new("300")}},
+		{"PK": {S: new("tenant1")}, "SK": {S: new("400")}},
+		{"PK": {S: new("tenant2")}, "SK": {S: new("100")}},
 	}
 	for _, item := range items {
 		if _, err := s.PutItem(ctx, "test-query-keycond", item, false, ConditionInput{}); err != nil {
@@ -49,8 +49,8 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				testExprPK: {S: ptr("tenant1")},
-				":sk":      {S: ptr("200")},
+				testExprPK: {S: new("tenant1")},
+				":sk":      {S: new("200")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -70,8 +70,8 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				testExprPK: {S: ptr("tenant1")},
-				":sk":      {S: ptr("200")},
+				testExprPK: {S: new("tenant1")},
+				":sk":      {S: new("200")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -91,9 +91,9 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				testExprPK: {S: ptr("tenant1")},
-				":lo":      {S: ptr("200")},
-				":hi":      {S: ptr("300")},
+				testExprPK: {S: new("tenant1")},
+				":lo":      {S: new("200")},
+				":hi":      {S: new("300")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -113,7 +113,7 @@ func TestQueryKeyConditionExpression(t *testing.T) {
 			"",
 			nil,
 			map[string]AttributeValue{
-				testExprPK: {S: ptr("tenant1")},
+				testExprPK: {S: new("tenant1")},
 			},
 			0, nil, true)
 		if err != nil {
@@ -150,9 +150,9 @@ func TestDeleteItemReturnValues(t *testing.T) {
 
 	// Insert an item.
 	_, err = s.PutItem(ctx, "test-delete-return", Item{
-		"PK":   {S: ptr("pk1")},
-		"SK":   {S: ptr("sk1")},
-		"Data": {S: ptr("value")},
+		"PK":   {S: new("pk1")},
+		"SK":   {S: new("sk1")},
+		"Data": {S: new("value")},
 	}, false, ConditionInput{})
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestDeleteItemReturnValues(t *testing.T) {
 		t.Parallel()
 
 		oldItem, err := s.DeleteItem(ctx, "test-delete-return",
-			Item{"PK": {S: ptr("pk1")}, "SK": {S: ptr("sk1")}},
+			Item{"PK": {S: new("pk1")}, "SK": {S: new("sk1")}},
 			true, // returnOld = true (ALL_OLD)
 			ConditionInput{},
 		)
@@ -183,7 +183,7 @@ func TestDeleteItemReturnValues(t *testing.T) {
 		t.Parallel()
 
 		oldItem, err := s.DeleteItem(ctx, "test-delete-return",
-			Item{"PK": {S: ptr("pk1")}, "SK": {S: ptr("sk-nonexist")}},
+			Item{"PK": {S: new("pk1")}, "SK": {S: new("sk-nonexist")}},
 			true,
 			ConditionInput{},
 		)

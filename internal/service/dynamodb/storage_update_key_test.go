@@ -23,7 +23,7 @@ func TestUpdateItemRejectsKeyAttributeUpdates(t *testing.T) {
 			name:       "set range key through expression attribute name",
 			expr:       "SET #sk = :new",
 			exprNames:  map[string]string{"#sk": "sk"},
-			exprValues: map[string]AttributeValue{testExprNew: {S: ptr("changed")}},
+			exprValues: map[string]AttributeValue{testExprNew: {S: new("changed")}},
 		},
 	}
 
@@ -32,7 +32,7 @@ func TestUpdateItemRejectsKeyAttributeUpdates(t *testing.T) {
 			t.Parallel()
 
 			store := newKeyUpdateTestStorage(t)
-			key := Item{"pk": {S: ptr("seed")}, "sk": {S: ptr("sort")}}
+			key := Item{"pk": {S: new("seed")}, "sk": {S: new("sort")}}
 
 			_, err := store.UpdateItem(context.Background(), "key-update-test", key, tt.expr, tt.exprNames, tt.exprValues, ReturnValuesAllNew, ConditionInput{})
 			if err == nil {
@@ -64,7 +64,7 @@ func TestTransactWriteItemsRejectsKeyAttributeUpdates(t *testing.T) {
 	t.Parallel()
 
 	store := newKeyUpdateTestStorage(t)
-	key := Item{"pk": {S: ptr("seed")}, "sk": {S: ptr("sort")}}
+	key := Item{"pk": {S: new("seed")}, "sk": {S: new("sort")}}
 
 	_, err := store.TransactWriteItems(context.Background(), []TransactWriteItem{{
 		Update: &TransactUpdate{
@@ -114,9 +114,9 @@ func newKeyUpdateTestStorage(t *testing.T) *MemoryStorage {
 	}
 
 	_, err = store.PutItem(ctx, "key-update-test", Item{
-		"pk":           {S: ptr("seed")},
-		"sk":           {S: ptr("sort")},
-		testAttrStatus: {S: ptr("active")},
+		"pk":           {S: new("seed")},
+		"sk":           {S: new("sort")},
+		testAttrStatus: {S: new("active")},
 	}, false, ConditionInput{})
 	if err != nil {
 		t.Fatal(err)

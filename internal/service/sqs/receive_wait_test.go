@@ -10,11 +10,6 @@ import (
 // duration a receive uses when it does not send WaitTimeSeconds itself.
 const receiveWaitAttribute = "ReceiveMessageWaitTimeSeconds"
 
-// intPtr returns a pointer to v, for the receive parameters a caller sends.
-func intPtr(v int) *int {
-	return &v
-}
-
 func TestMemoryStorage_receiveWaitTime(t *testing.T) {
 	t.Parallel()
 
@@ -31,8 +26,8 @@ func TestMemoryStorage_receiveWaitTime(t *testing.T) {
 		want      int
 	}{
 		{name: "omitted falls back to the queue attribute", requested: nil, want: 7},
-		{name: "explicit zero short polls", requested: intPtr(0), want: 0},
-		{name: "explicit value wins", requested: intPtr(3), want: 3},
+		{name: "explicit zero short polls", requested: new(0), want: 0},
+		{name: "explicit value wins", requested: new(3), want: 3},
 	}
 
 	for _, tt := range tests {
@@ -124,7 +119,7 @@ func TestMemoryStorage_ReceiveMessage_ReturnsImmediatelyForAnExplicitZeroWait(t 
 
 	start := time.Now()
 
-	messages, err := s.ReceiveMessage(ctx, queue.URL, 1, 30, intPtr(0))
+	messages, err := s.ReceiveMessage(ctx, queue.URL, 1, 30, new(0))
 	if err != nil {
 		t.Fatalf("ReceiveMessage() error = %v", err)
 	}

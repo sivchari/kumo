@@ -39,8 +39,8 @@ func TestBatchGetItemResponseShape(t *testing.T) {
 	}
 
 	if _, err := store.PutItem(t.Context(), "batch-get-hit", Item{
-		"pk":         {S: ptr("existing")},
-		testAttrName: {S: ptr("value")},
+		"pk":         {S: new("existing")},
+		testAttrName: {S: new("value")},
 	}, false, ConditionInput{}); err != nil {
 		t.Fatalf("PutItem: %v", err)
 	}

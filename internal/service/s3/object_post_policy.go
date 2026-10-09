@@ -358,20 +358,16 @@ func (c *postCondition) checkRange(fileSize int64) error {
 	case fileSize < c.minBytes:
 		return &postPolicyError{
 			Code: errCodeEntityTooSmall, Message: msgEntityTooSmall, Status: http.StatusBadRequest,
-			ProposedSize: int64Ptr(fileSize), MinSizeAllowed: int64Ptr(c.minBytes),
+			ProposedSize: new(fileSize), MinSizeAllowed: new(c.minBytes),
 		}
 	case fileSize > c.maxBytes:
 		return &postPolicyError{
 			Code: errCodeEntityTooLarge, Message: msgEntityTooLarge, Status: http.StatusBadRequest,
-			ProposedSize: int64Ptr(fileSize), MaxSizeAllowed: int64Ptr(c.maxBytes),
+			ProposedSize: new(fileSize), MaxSizeAllowed: new(c.maxBytes),
 		}
 	default:
 		return nil
 	}
-}
-
-func int64Ptr(v int64) *int64 {
-	return &v
 }
 
 // matchesPrefix applies starts-with. A Content-Type value is a comma-separated
