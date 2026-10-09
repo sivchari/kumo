@@ -16,8 +16,8 @@ func TestCreateListenerParsesDefaultActionsFromQueryForm(t *testing.T) {
 	ctx := context.TODO()
 
 	lb, err := storage.CreateLoadBalancer(ctx, &CreateLoadBalancerRequest{
-		Name:           "kumo-local",
-		Type:           "application",
+		Name:           testResourceName,
+		Type:           lbTypeApplication,
 		Scheme:         "internal",
 		SecurityGroups: []string{"sg-kumo"},
 		Subnets:        []string{"subnet-kumo-a"},
@@ -29,7 +29,7 @@ func TestCreateListenerParsesDefaultActionsFromQueryForm(t *testing.T) {
 	tg, err := storage.CreateTargetGroup(ctx, &CreateTargetGroupRequest{
 		Name:       "kumo-local-kumo",
 		Port:       4566,
-		Protocol:   "HTTP",
+		Protocol:   protocolHTTP,
 		TargetType: "ip",
 		VpcID:      "vpc-kumo",
 	})
@@ -43,7 +43,7 @@ func TestCreateListenerParsesDefaultActionsFromQueryForm(t *testing.T) {
 		"&Protocol=HTTP" +
 		"&DefaultActions.member.1.Type=forward" +
 		"&DefaultActions.member.1.TargetGroupArn=" + tg.TargetGroupArn
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rec := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestCreateTargetGroupParsesMatcherFromQueryForm(t *testing.T) {
 		"&TargetType=ip" +
 		"&VpcId=vpc-kumo" +
 		"&Matcher.HttpCode=200"
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rec := httptest.NewRecorder()

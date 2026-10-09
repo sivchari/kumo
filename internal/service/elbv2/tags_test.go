@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+const testResourceName = "kumo-local"
+
 func TestAddTagsAreReturnedByDescribeTags(t *testing.T) {
 	t.Parallel()
 
@@ -16,8 +18,8 @@ func TestAddTagsAreReturnedByDescribeTags(t *testing.T) {
 	ctx := context.TODO()
 
 	lb, err := storage.CreateLoadBalancer(ctx, &CreateLoadBalancerRequest{
-		Name:    "kumo-local",
-		Type:    "application",
+		Name:    testResourceName,
+		Type:    lbTypeApplication,
 		Scheme:  "internal",
 		Subnets: []string{"subnet-kumo-a"},
 	})
@@ -29,7 +31,7 @@ func TestAddTagsAreReturnedByDescribeTags(t *testing.T) {
 		"&ResourceArns.member.1=" + lb.LoadBalancerArn +
 		"&Tags.member.1.Key=Project" +
 		"&Tags.member.1.Value=kumo-local"
-	addReq := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(addBody))
+	addReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(addBody))
 	addReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	addRec := httptest.NewRecorder()
@@ -41,7 +43,7 @@ func TestAddTagsAreReturnedByDescribeTags(t *testing.T) {
 	}
 
 	describeBody := "Action=DescribeTags&ResourceArns.member.1=" + lb.LoadBalancerArn
-	describeReq := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(describeBody))
+	describeReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(describeBody))
 	describeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	describeRec := httptest.NewRecorder()
@@ -77,7 +79,7 @@ func TestCreateLoadBalancerStoresQueryTags(t *testing.T) {
 		"&Subnets.member.1=subnet-kumo-a" +
 		"&Tags.member.1.Key=Project" +
 		"&Tags.member.1.Value=kumo-local"
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rec := httptest.NewRecorder()
@@ -88,12 +90,12 @@ func TestCreateLoadBalancerStoresQueryTags(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	lbs, err := storage.DescribeLoadBalancers(ctx, nil, []string{"kumo-local"})
+	lbs, err := storage.DescribeLoadBalancers(ctx, nil, []string{testResourceName})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	assertStoredTag(t, storage, lbs[0].LoadBalancerArn, "Project", "kumo-local")
+	assertStoredTag(t, storage, lbs[0].LoadBalancerArn, "Project", testResourceName)
 }
 
 func TestCreateTargetGroupStoresQueryTags(t *testing.T) {
@@ -110,7 +112,7 @@ func TestCreateTargetGroupStoresQueryTags(t *testing.T) {
 		"&VpcId=vpc-kumo" +
 		"&Tags.member.1.Key=Project" +
 		"&Tags.member.1.Value=kumo-local"
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rec := httptest.NewRecorder()
@@ -126,7 +128,7 @@ func TestCreateTargetGroupStoresQueryTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertStoredTag(t, storage, tgs[0].TargetGroupArn, "Project", "kumo-local")
+	assertStoredTag(t, storage, tgs[0].TargetGroupArn, "Project", testResourceName)
 }
 
 func assertStoredTag(t *testing.T, storage *MemoryStorage, arn, key, want string) {

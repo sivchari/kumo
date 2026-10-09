@@ -20,12 +20,19 @@ const (
 	defaultAccountID = "000000000000"
 )
 
+const (
+	lbTypeApplication = "application"
+	protocolHTTP      = "HTTP"
+	protocolHTTPS     = "HTTPS"
+)
+
 // Error codes.
 const (
 	errLoadBalancerNotFound = "LoadBalancerNotFound"
 	errTargetGroupNotFound  = "TargetGroupNotFound"
 	errListenerNotFound     = "ListenerNotFound"
 	errRuleNotFound         = "RuleNotFound"
+	errTooManyTags          = "TooManyTags"
 )
 
 // Stringly-typed boolean attribute values, as ELBv2's attribute maps
@@ -208,7 +215,7 @@ func getLoadBalancerDefaults(req *CreateLoadBalancerRequest) loadBalancerDefault
 	}
 
 	if defaults.lbType == "" {
-		defaults.lbType = "application"
+		defaults.lbType = lbTypeApplication
 	}
 
 	if defaults.scheme == "" {
@@ -387,11 +394,11 @@ func getTargetGroupDefaults(req *CreateTargetGroupRequest) targetGroupDefaults {
 	if defaults.healthCheckProtocol == "" {
 		defaults.healthCheckProtocol = req.Protocol
 		if defaults.healthCheckProtocol == "" {
-			defaults.healthCheckProtocol = "HTTP"
+			defaults.healthCheckProtocol = protocolHTTP
 		}
 	}
 
-	if defaults.healthCheckPath == "" && (defaults.healthCheckProtocol == "HTTP" || defaults.healthCheckProtocol == "HTTPS") {
+	if defaults.healthCheckPath == "" && (defaults.healthCheckProtocol == protocolHTTP || defaults.healthCheckProtocol == protocolHTTPS) {
 		defaults.healthCheckPath = "/"
 	}
 
@@ -459,7 +466,7 @@ func (m *MemoryStorage) buildTargetGroup(req *CreateTargetGroupRequest, defaults
 		Protocol:                   req.Protocol,
 		Port:                       req.Port,
 		VpcID:                      req.VpcID,
-		HealthCheckEnabled:         true,
+		HealthCheckEnabled:         healthCheckEnabled(req, defaults.targetType),
 		HealthCheckIntervalSeconds: defaults.healthCheckInterval,
 		HealthCheckPath:            defaults.healthCheckPath,
 		HealthCheckPort:            defaults.healthCheckPort,
@@ -474,12 +481,28 @@ func (m *MemoryStorage) buildTargetGroup(req *CreateTargetGroupRequest, defaults
 	}
 }
 
-func matcherFromRequest(req *CreateTargetGroupRequest) string {
-	if req.Matcher == nil {
-		return ""
+// healthCheckEnabled applies the AWS defaults: lambda target groups start
+// with health checks disabled, every other target type always has them on.
+func healthCheckEnabled(req *CreateTargetGroupRequest, targetType string) bool {
+	if targetType == "lambda" {
+		return req.HealthCheckEnabled
 	}
 
-	return req.Matcher.HTTPCode
+	return true
+}
+
+// matcherFromRequest returns the success codes, defaulting to 200 for HTTP
+// and HTTPS target groups.
+func matcherFromRequest(req *CreateTargetGroupRequest) string {
+	if req.Matcher != nil && req.Matcher.HTTPCode != "" {
+		return req.Matcher.HTTPCode
+	}
+
+	if req.Protocol == protocolHTTP || req.Protocol == protocolHTTPS {
+		return "200"
+	}
+
+	return ""
 }
 
 // DeleteTargetGroup deletes a target group.
@@ -642,7 +665,7 @@ func (m *MemoryStorage) CreateListener(_ context.Context, req *CreateListenerReq
 		Port:            req.Port,
 		Protocol:        req.Protocol,
 		DefaultActions:  req.DefaultActions,
-		Tags:            map[string]string{},
+		Tags:            cloneAttributes(req.Tags),
 	}
 
 	m.Listeners[arn] = listener
@@ -970,6 +993,9 @@ func cloneAttributes(in map[string]string) map[string]string {
 	return out
 }
 
+// maxTagsPerResource is the ELBv2 limit on tags attached to one resource.
+const maxTagsPerResource = 50
+
 // DescribeTags returns tags for the requested ELBv2 resources.
 func (m *MemoryStorage) DescribeTags(_ context.Context, arns []string) (map[string]map[string]string, error) {
 	m.mu.RLock()
@@ -978,7 +1004,7 @@ func (m *MemoryStorage) DescribeTags(_ context.Context, arns []string) (map[stri
 	out := make(map[string]map[string]string, len(arns))
 
 	for _, arn := range arns {
-		tags, err := m.lookupTagsLocked(arn)
+		tags, err := m.tagMapLocked(arn, false)
 		if err != nil {
 			return nil, err
 		}
@@ -990,16 +1016,26 @@ func (m *MemoryStorage) DescribeTags(_ context.Context, arns []string) (map[stri
 }
 
 // AddTags adds or updates tags for the requested ELBv2 resources.
+// Nothing is modified unless every resource exists and stays within the tag limit.
 func (m *MemoryStorage) AddTags(_ context.Context, arns []string, tags map[string]string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, arn := range arns {
-		current, err := m.lookupTagsLocked(arn)
-		if err != nil {
-			return err
-		}
+	targets, err := m.tagMapsLocked(arns)
+	if err != nil {
+		return err
+	}
 
+	for arn, current := range targets {
+		if countTagsAfterAdd(current, tags) > maxTagsPerResource {
+			return &Error{
+				Code:    errTooManyTags,
+				Message: fmt.Sprintf("Cannot exceed %d tags per resource: '%s'", maxTagsPerResource, arn),
+			}
+		}
+	}
+
+	for _, current := range targets {
 		for key, value := range tags {
 			current[key] = value
 		}
@@ -1015,12 +1051,12 @@ func (m *MemoryStorage) RemoveTags(_ context.Context, arns, keys []string) error
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, arn := range arns {
-		current, err := m.lookupTagsLocked(arn)
-		if err != nil {
-			return err
-		}
+	targets, err := m.tagMapsLocked(arns)
+	if err != nil {
+		return err
+	}
 
+	for _, current := range targets {
 		for _, key := range keys {
 			delete(current, key)
 		}
@@ -1031,32 +1067,109 @@ func (m *MemoryStorage) RemoveTags(_ context.Context, arns, keys []string) error
 	return nil
 }
 
-func (m *MemoryStorage) lookupTagsLocked(arn string) (map[string]string, error) {
+func countTagsAfterAdd(current, added map[string]string) int {
+	total := len(current)
+
+	for key := range added {
+		if _, exists := current[key]; !exists {
+			total++
+		}
+	}
+
+	return total
+}
+
+// tagMapsLocked resolves every ARN before any is modified. The caller must
+// hold the write lock.
+func (m *MemoryStorage) tagMapsLocked(arns []string) (map[string]map[string]string, error) {
+	targets := make(map[string]map[string]string, len(arns))
+
+	for _, arn := range arns {
+		current, err := m.tagMapLocked(arn, true)
+		if err != nil {
+			return nil, err
+		}
+
+		targets[arn] = current
+	}
+
+	return targets, nil
+}
+
+// tagMapLocked returns the tag map of the load balancer, target group,
+// listener or rule identified by arn. With allocate set it creates a missing
+// map, which requires the write lock.
+func (m *MemoryStorage) tagMapLocked(arn string, allocate bool) (map[string]string, error) {
 	if lb, ok := m.LoadBalancers[arn]; ok {
-		if lb.Tags == nil {
-			lb.Tags = make(map[string]string)
+		if allocate {
+			lb.Tags = tagsOrNew(lb.Tags)
 		}
 
 		return lb.Tags, nil
 	}
 
 	if tg, ok := m.TargetGroups[arn]; ok {
-		if tg.Tags == nil {
-			tg.Tags = make(map[string]string)
+		if allocate {
+			tg.Tags = tagsOrNew(tg.Tags)
 		}
 
 		return tg.Tags, nil
 	}
 
 	if listener, ok := m.Listeners[arn]; ok {
-		if listener.Tags == nil {
-			listener.Tags = make(map[string]string)
+		if allocate {
+			listener.Tags = tagsOrNew(listener.Tags)
 		}
 
 		return listener.Tags, nil
 	}
 
-	return nil, &Error{Code: "ResourceNotFound", Message: "resource '" + arn + "' not found"}
+	if rule := m.findRuleLocked(arn); rule != nil {
+		if allocate {
+			rule.Tags = tagsOrNew(rule.Tags)
+		}
+
+		return rule.Tags, nil
+	}
+
+	return nil, taggedResourceNotFound(arn)
+}
+
+func tagsOrNew(tags map[string]string) map[string]string {
+	if tags == nil {
+		return make(map[string]string)
+	}
+
+	return tags
+}
+
+func (m *MemoryStorage) findRuleLocked(ruleArn string) *Rule {
+	for _, listener := range m.Listeners {
+		for i := range listener.Rules {
+			if listener.Rules[i].RuleArn == ruleArn {
+				return &listener.Rules[i]
+			}
+		}
+	}
+
+	return nil
+}
+
+// taggedResourceNotFound builds the resource-specific not-found error for an
+// ARN, as AddTags, RemoveTags and DescribeTags document one per resource type.
+func taggedResourceNotFound(arn string) *Error {
+	switch {
+	case strings.Contains(arn, ":loadbalancer/"):
+		return &Error{Code: errLoadBalancerNotFound, Message: "Load balancer '" + arn + "' not found"}
+	case strings.Contains(arn, ":targetgroup/"):
+		return &Error{Code: errTargetGroupNotFound, Message: "Target group '" + arn + "' not found"}
+	case strings.Contains(arn, ":listener-rule/"):
+		return &Error{Code: errRuleNotFound, Message: "Rule '" + arn + "' not found"}
+	case strings.Contains(arn, ":listener/"):
+		return &Error{Code: errListenerNotFound, Message: "Listener '" + arn + "' not found"}
+	default:
+		return &Error{Code: errInvalidParameter, Message: "'" + arn + "' is not a valid ELBv2 resource ARN"}
+	}
 }
 
 // DescribeListeners returns listeners by ARN list or by parent load balancer.

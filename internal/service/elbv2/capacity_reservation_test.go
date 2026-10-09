@@ -1,6 +1,7 @@
 package elbv2
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +12,7 @@ func TestDescribeCapacityReservationReturnsEmptyResult(t *testing.T) {
 	t.Parallel()
 
 	service := New(NewMemoryStorage())
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"LoadBalancerArn":"arn:aws:elasticloadbalancing:us-east-1:000000000000:loadbalancer/app/kumo-local/123"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader(`{"LoadBalancerArn":"arn:aws:elasticloadbalancing:us-east-1:000000000000:loadbalancer/app/kumo-local/123"}`))
 	rec := httptest.NewRecorder()
 
 	service.DescribeCapacityReservation(rec, req)

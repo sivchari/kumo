@@ -1,6 +1,7 @@
 package elbv2
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +12,7 @@ func TestDescribeListenerAttributesReturnsEmptyAttributes(t *testing.T) {
 	t.Parallel()
 
 	service := New(NewMemoryStorage())
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("Action=DescribeListenerAttributes&ListenerArn=arn-listener"))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader("Action=DescribeListenerAttributes&ListenerArn=arn-listener"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rec := httptest.NewRecorder()

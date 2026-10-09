@@ -125,6 +125,7 @@ type Rule struct {
 	Conditions []RuleCondition
 	Actions    []Action
 	IsDefault  bool
+	Tags       map[string]string
 }
 
 // RuleCondition represents one condition on a rule (host-header,
@@ -159,7 +160,7 @@ type CreateLoadBalancerRequest struct {
 	Scheme         string            `json:"Scheme,omitempty"`
 	Type           string            `json:"Type,omitempty"`
 	IPAddressType  string            `json:"IpAddressType,omitempty"`
-	Tags           map[string]string `json:"Tags,omitempty"`
+	Tags           map[string]string `json:"-"`
 }
 
 // DeleteLoadBalancerRequest represents a DeleteLoadBalancer request.
@@ -189,7 +190,7 @@ type CreateTargetGroupRequest struct {
 	UnhealthyThresholdCount    int               `json:"UnhealthyThresholdCount,omitempty"`
 	Matcher                    *Matcher          `json:"Matcher,omitempty"`
 	TargetType                 string            `json:"TargetType,omitempty"`
-	Tags                       map[string]string `json:"Tags,omitempty"`
+	Tags                       map[string]string `json:"-"`
 }
 
 // Matcher represents target group health check matcher settings.
@@ -227,6 +228,33 @@ type CreateListenerRequest struct {
 	Port            int      `json:"Port"`
 	Protocol        string   `json:"Protocol"`
 	DefaultActions  []Action `json:"DefaultActions"`
+	// Tags is filled from the Query form: the form-to-JSON conversion turns
+	// Tags.member.N into objects whose numeric-looking values lose their
+	// string type.
+	Tags map[string]string `json:"-"`
+}
+
+// describeTagsJSONRequest represents a DescribeTags request.
+type describeTagsJSONRequest struct {
+	ResourceArns []string `json:"ResourceArns"`
+}
+
+// addTagsJSONRequest represents an AddTags request.
+type addTagsJSONRequest struct {
+	ResourceArns []string      `json:"ResourceArns"`
+	Tags         []tagJSONPair `json:"Tags"`
+}
+
+// removeTagsJSONRequest represents a RemoveTags request.
+type removeTagsJSONRequest struct {
+	ResourceArns []string `json:"ResourceArns"`
+	TagKeys      []string `json:"TagKeys"`
+}
+
+// tagJSONPair is a single tag in a JSON request.
+type tagJSONPair struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
 }
 
 // DeleteListenerRequest represents a DeleteListener request.

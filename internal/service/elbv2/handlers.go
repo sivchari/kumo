@@ -24,6 +24,7 @@ const (
 	errInvalidParameter = "InvalidParameterValue"
 	errInternalError    = "InternalError"
 	errInvalidAction    = "InvalidAction"
+	errDuplicateTagKeys = "DuplicateTagKeys"
 )
 
 // CreateLoadBalancer handles the CreateLoadBalancer action.
@@ -208,6 +209,7 @@ func applyCreateTargetGroupForm(form map[string][]string, req *CreateTargetGroup
 	req.VpcID = firstELBFormValue(form, "VpcId")
 	req.HealthCheckProtocol = firstELBFormValue(form, "HealthCheckProtocol")
 	req.HealthCheckPort = firstELBFormValue(form, "HealthCheckPort")
+	req.HealthCheckEnabled = parseELBFormBool(firstELBFormValue(form, "HealthCheckEnabled"))
 	req.HealthCheckPath = firstELBFormValue(form, "HealthCheckPath")
 	req.HealthCheckIntervalSeconds = parseELBFormInt(firstELBFormValue(form, "HealthCheckIntervalSeconds"))
 	req.HealthCheckTimeoutSeconds = parseELBFormInt(firstELBFormValue(form, "HealthCheckTimeoutSeconds"))
@@ -244,6 +246,12 @@ func firstELBFormValue(form map[string][]string, key string) string {
 	}
 
 	return values[0]
+}
+
+func parseELBFormBool(value string) bool {
+	b, err := strconv.ParseBool(value)
+
+	return err == nil && b
 }
 
 func parseELBFormInt(value string) int {
@@ -473,6 +481,7 @@ func readCreateListenerRequest(r *http.Request, req *CreateListenerRequest) erro
 		req.Protocol = r.Form.Get("Protocol")
 		req.Port = parseELBFormInt(r.Form.Get("Port"))
 		req.DefaultActions = parseELBActionsFromForm(r.Form, "DefaultActions")
+		req.Tags = parseELBTagPairsFromForm(r.Form)
 
 		return nil
 	}
@@ -492,6 +501,8 @@ func readCreateListenerRequest(r *http.Request, req *CreateListenerRequest) erro
 		if acts := parseELBActionsFromForm(r.Form, "DefaultActions"); len(acts) > 0 {
 			req.DefaultActions = acts
 		}
+
+		req.Tags = parseELBTagPairsFromForm(r.Form)
 	}
 
 	return nil
@@ -549,6 +560,14 @@ func (s *Service) CreateRule(w http.ResponseWriter, r *http.Request) {
 		handleELBError(w, err)
 
 		return
+	}
+
+	if tags := parseELBTagPairsFromForm(r.Form); len(tags) > 0 {
+		if err := s.storage.AddTags(r.Context(), []string{rule.RuleArn}, tags); err != nil {
+			handleELBError(w, err)
+
+			return
+		}
 	}
 
 	writeELBXMLResponse(w, XMLCreateRuleResponse{
@@ -1190,14 +1209,20 @@ func (s *Service) DescribeListenerAttributes(w http.ResponseWriter, _ *http.Requ
 
 // AddTags attaches or updates tags on ELBv2 resources.
 func (s *Service) AddTags(w http.ResponseWriter, r *http.Request) {
-	arns, tags, err := readAddTagsRequest(r)
+	arns, pairs, err := readAddTagsRequest(r)
 	if err != nil {
 		writeELBError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return
 	}
 
-	if err := s.storage.AddTags(r.Context(), arns, tags); err != nil {
+	if key, dup := duplicateTagKey(pairs); dup {
+		writeELBError(w, errDuplicateTagKeys, "Duplicate tag key '"+key+"'", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AddTags(r.Context(), arns, jsonTagsToMap(pairs)); err != nil {
 		handleELBError(w, err)
 
 		return
@@ -1230,10 +1255,10 @@ func (s *Service) RemoveTags(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func readAddTagsRequest(r *http.Request) ([]string, map[string]string, error) {
+func readAddTagsRequest(r *http.Request) ([]string, []tagJSONPair, error) {
 	if err := r.ParseForm(); err == nil {
 		arns := parseELBMemberListFromForm(r.Form, "ResourceArns")
-		tags := parseELBTagPairsFromForm(r.Form)
+		tags := parseELBTagsFromForm(r.Form)
 
 		if len(arns) > 0 || len(tags) > 0 {
 			return arns, tags, nil
@@ -1245,7 +1270,26 @@ func readAddTagsRequest(r *http.Request) ([]string, map[string]string, error) {
 		return nil, nil, err
 	}
 
-	return req.ResourceArns, jsonTagsToMap(req.Tags), nil
+	return req.ResourceArns, req.Tags, nil
+}
+
+// duplicateTagKey reports the first key that appears more than once.
+func duplicateTagKey(tags []tagJSONPair) (string, bool) {
+	seen := make(map[string]struct{}, len(tags))
+
+	for _, tag := range tags {
+		if tag.Key == "" {
+			continue
+		}
+
+		if _, ok := seen[tag.Key]; ok {
+			return tag.Key, true
+		}
+
+		seen[tag.Key] = struct{}{}
+	}
+
+	return "", false
 }
 
 func readRemoveTagsRequest(r *http.Request) ([]string, []string, error) {
@@ -1266,46 +1310,40 @@ func readRemoveTagsRequest(r *http.Request) ([]string, []string, error) {
 	return req.ResourceArns, req.TagKeys, nil
 }
 
-type describeTagsJSONRequest struct {
-	ResourceArns []string `json:"ResourceArns"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
-}
-
-type addTagsJSONRequest struct {
-	ResourceArns []string      `json:"ResourceArns"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
-	Tags         []tagJSONPair `json:"Tags"`         //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
-}
-
-type removeTagsJSONRequest struct {
-	ResourceArns []string `json:"ResourceArns"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
-	TagKeys      []string `json:"TagKeys"`      //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
-}
-
-type tagJSONPair struct {
-	Key   string `json:"Key"`   //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
-	Value string `json:"Value"` //nolint:tagliatelle // ELBv2 query-compatible JSON uses PascalCase names.
-}
-
 type tagPairAcc struct {
 	key   string
 	value string
 }
 
-func parseELBTagPairsFromForm(form map[string][]string) map[string]string {
+// parseELBTagsFromForm returns the Tags.member.N pairs in index order,
+// skipping entries without a key.
+func parseELBTagsFromForm(form map[string][]string) []tagJSONPair {
 	byIdx := make(map[int]*tagPairAcc)
 
 	for key, values := range form {
 		applyELBTagPairFormEntry(byIdx, key, values)
 	}
 
-	out := make(map[string]string)
+	indices := make([]int, 0, len(byIdx))
+	for idx := range byIdx {
+		indices = append(indices, idx)
+	}
 
-	for _, entry := range byIdx {
-		if entry.key != "" {
-			out[entry.key] = entry.value
+	sort.Ints(indices)
+
+	out := make([]tagJSONPair, 0, len(indices))
+
+	for _, idx := range indices {
+		if entry := byIdx[idx]; entry.key != "" {
+			out = append(out, tagJSONPair{Key: entry.key, Value: entry.value})
 		}
 	}
 
 	return out
+}
+
+func parseELBTagPairsFromForm(form map[string][]string) map[string]string {
+	return jsonTagsToMap(parseELBTagsFromForm(form))
 }
 
 func applyELBTagPairFormEntry(byIdx map[int]*tagPairAcc, key string, values []string) {
