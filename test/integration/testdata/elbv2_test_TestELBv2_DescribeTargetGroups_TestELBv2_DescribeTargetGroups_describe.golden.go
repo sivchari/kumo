@@ -11,12 +11,15 @@
       "HealthyThresholdCount": 5,
       "IpAddressType": "",
       "LoadBalancerArns": [],
-      "Matcher": null,
+      "Matcher": {
+        "GrpcCode": null,
+        "HttpCode": "200"
+      },
       "Port": 80,
       "Protocol": "HTTP",
       "ProtocolVersion": null,
       "TargetControlPort": null,
-      "TargetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:000000000000:targetgroup/test-describe-tg/8945f3a1-49b5-458",
+      "TargetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:000000000000:targetgroup/test-describe-tg/4e7cadf9-54af-432",
       "TargetGroupName": "test-describe-tg",
       "TargetType": "instance",
       "UnhealthyThresholdCount": 2,
