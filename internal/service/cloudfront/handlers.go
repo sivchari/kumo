@@ -297,6 +297,8 @@ func handleStorageError(w http.ResponseWriter, err error) {
 			status = http.StatusPreconditionFailed
 		case errAccessDenied:
 			status = http.StatusForbidden
+		case errDistributionAlreadyExists:
+			status = http.StatusConflict
 		}
 
 		writeCloudFrontError(w, cfErr.Code, cfErr.Message, status)
