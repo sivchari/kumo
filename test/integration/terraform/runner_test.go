@@ -117,6 +117,15 @@ func providerTF() string {
 // fixtures otherwise apply/plan/destroy in parallel.
 var initMu sync.Mutex
 
+// distributionApplyMu serializes the apply of fixtures that declare an
+// aws_cloudfront_distribution. The provider's CallerReference is unique across
+// processes only by a 0.1ms timestamp (its counter restarts at 1 in every
+// terraform process), so two fixtures creating distributions within the same
+// tick send the same CallerReference and the loser gets
+// DistributionAlreadyExists, exactly as it would on AWS. Serializing the
+// applies removes the collision instead of making kumo deviate from AWS.
+var distributionApplyMu sync.Mutex
+
 // TestTerraformFixtures discovers every directory under fixtures/ and runs
 // it through init -> apply -> plan (idempotency check) -> destroy, applying
 // each step in turn for fixtures with a stepsFile.
@@ -340,7 +349,17 @@ func applyStep(t *testing.T, tf *tfexec.Terraform, workDir, configDir string, st
 		opts = append(opts, tfexec.Replace(address))
 	}
 
+	serialize := declaresDistribution(t, configDir)
+
+	if serialize {
+		distributionApplyMu.Lock()
+	}
+
 	err := tf.Apply(t.Context(), opts...)
+
+	if serialize {
+		distributionApplyMu.Unlock()
+	}
 
 	if step.ExpectError != "" {
 		assertApplyError(t, err, step.ExpectError)
@@ -354,6 +373,34 @@ func applyStep(t *testing.T, tf *tfexec.Terraform, workDir, configDir string, st
 
 	assertPlanHasNoChanges(t, tf, workDir)
 	assertExpectedOutputs(t, tf, configDir)
+}
+
+// declaresDistribution reports whether any .tf file directly in dir declares an
+// aws_cloudfront_distribution.
+func declaresDistribution(t *testing.T, dir string) bool {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read fixture dir %s: %v", dir, err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".tf" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Clean(filepath.Join(dir, entry.Name())))
+		if err != nil {
+			t.Fatalf("read fixture file %s: %v", entry.Name(), err)
+		}
+
+		if bytes.Contains(data, []byte("aws_cloudfront_distribution")) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // assertApplyError fails unless the apply failed with an error matching
