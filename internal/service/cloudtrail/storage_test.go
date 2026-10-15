@@ -12,6 +12,7 @@ const (
 	tagKeyEnv      = "env"
 	tagValLocal    = "local"
 	tagKeyTeam     = "team"
+	tagValIDP      = "idp"
 	tagTrailName   = "authz-trail"
 	tagBucket      = "audit-bucket"
 	absentTrailARN = "arn:aws:cloudtrail:us-east-1:123456789012:trail/absent"
@@ -25,8 +26,8 @@ func TestNormalizeTrailName(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"short name unchanged", "authz-trail", "authz-trail"},
-		{"full arn to short name", "arn:aws:cloudtrail:us-east-1:123456789012:trail/authz-trail", "authz-trail"},
+		{"short name unchanged", tagTrailName, tagTrailName},
+		{"full arn to short name", "arn:aws:cloudtrail:us-east-1:123456789012:trail/" + tagTrailName, tagTrailName},
 		{"arn with different region and account", "arn:aws:cloudtrail:ap-northeast-1:000000000000:trail/my-trail", "my-trail"},
 		{"unrelated string unchanged", "some-random-value", "some-random-value"},
 		{"empty string unchanged", "", ""},
@@ -52,7 +53,7 @@ func TestCreateTrail_ARNAlias(t *testing.T) {
 	store := NewMemoryStorage()
 	ctx := t.Context()
 
-	const trailName = "authz-trail"
+	const trailName = tagTrailName
 
 	created, err := store.CreateTrail(ctx, &CreateTrailRequest{
 		Name:         trailName,
@@ -110,8 +111,8 @@ func TestCreateTrail_NoDoubleARN(t *testing.T) {
 		t.Fatalf("CreateTrail with ARN name: unexpected error: %v", err)
 	}
 
-	if created.Name != "authz-trail" {
-		t.Fatalf("Trail.Name: got %q, want %q", created.Name, "authz-trail")
+	if created.Name != tagTrailName {
+		t.Fatalf("Trail.Name: got %q, want %q", created.Name, tagTrailName)
 	}
 
 	if strings.Count(created.TrailARN, ":trail/") != 1 {
@@ -185,14 +186,14 @@ func TestTrailTags(t *testing.T) {
 		{
 			name:       "add merges and sorts by key",
 			createTags: []Tag{{Key: tagKeyEnv, Value: tagValLocal}},
-			add:        []Tag{{Key: tagKeyTeam, Value: "idp"}},
-			want:       []Tag{{Key: tagKeyEnv, Value: tagValLocal}, {Key: tagKeyTeam, Value: "idp"}},
+			add:        []Tag{{Key: tagKeyTeam, Value: tagValIDP}},
+			want:       []Tag{{Key: tagKeyEnv, Value: tagValLocal}, {Key: tagKeyTeam, Value: tagValIDP}},
 		},
 		{
 			name:       "remove deletes by key",
-			createTags: []Tag{{Key: tagKeyEnv, Value: tagValLocal}, {Key: tagKeyTeam, Value: "idp"}},
+			createTags: []Tag{{Key: tagKeyEnv, Value: tagValLocal}, {Key: tagKeyTeam, Value: tagValIDP}},
 			remove:     []Tag{{Key: tagKeyEnv}},
-			want:       []Tag{{Key: tagKeyTeam, Value: "idp"}},
+			want:       []Tag{{Key: tagKeyTeam, Value: tagValIDP}},
 		},
 	})
 }

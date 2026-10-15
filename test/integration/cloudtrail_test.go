@@ -4,10 +4,13 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
+	cloudtrailtypes "github.com/aws/aws-sdk-go-v2/service/cloudtrail/types"
+	"github.com/aws/smithy-go"
 	"github.com/sivchari/golden"
 )
 
@@ -375,4 +378,161 @@ func TestCloudTrail_CreateTrailWithOptions(t *testing.T) {
 	})
 
 	golden.New(t, golden.WithIgnoreFields("TrailARN", "ResultMetadata")).Assert(t.Name(), createOutput)
+}
+
+// createTaggedTrail creates a trail with the given tags and returns its ARN,
+// registering deletion for cleanup.
+func createTaggedTrail(t *testing.T, client *cloudtrail.Client, trailName string, tags []cloudtrailtypes.Tag) string {
+	t.Helper()
+
+	createOutput, err := client.CreateTrail(t.Context(), &cloudtrail.CreateTrailInput{
+		Name:         aws.String(trailName),
+		S3BucketName: aws.String("test-bucket"),
+		TagsList:     tags,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTrail(context.Background(), &cloudtrail.DeleteTrailInput{
+			Name: aws.String(trailName),
+		})
+	})
+
+	return aws.ToString(createOutput.TrailARN)
+}
+
+// assertTrailTags lists the tags of trailARN and golden-asserts them. ResourceId
+// is checked here rather than in the golden because the ARN embeds the
+// configured region and account.
+func assertTrailTags(t *testing.T, client *cloudtrail.Client, trailARN string) {
+	t.Helper()
+
+	output, err := client.ListTags(t.Context(), &cloudtrail.ListTagsInput{
+		ResourceIdList: []string{trailARN},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(output.ResourceTagList) != 1 {
+		t.Fatalf("ResourceTagList length: got %d, want 1", len(output.ResourceTagList))
+	}
+
+	if got := aws.ToString(output.ResourceTagList[0].ResourceId); got != trailARN {
+		t.Errorf("ResourceId: got %q, want %q", got, trailARN)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResourceId", "ResultMetadata")).Assert(t.Name(), output)
+}
+
+func TestCloudTrail_ListTags(t *testing.T) {
+	client := newCloudTrailClient(t)
+
+	// Terraform supplies tags on create, then reads them back with ListTags.
+	trailARN := createTaggedTrail(t, client, "test-trail-list-tags", []cloudtrailtypes.Tag{
+		{Key: aws.String("env"), Value: aws.String("local")},
+		{Key: aws.String("app"), Value: aws.String("idp")},
+	})
+
+	assertTrailTags(t, client, trailARN)
+}
+
+func TestCloudTrail_AddTags(t *testing.T) {
+	client := newCloudTrailClient(t)
+	ctx := t.Context()
+
+	trailARN := createTaggedTrail(t, client, "test-trail-add-tags", nil)
+
+	_, err := client.AddTags(ctx, &cloudtrail.AddTagsInput{
+		ResourceId: aws.String(trailARN),
+		TagsList: []cloudtrailtypes.Tag{
+			{Key: aws.String("env"), Value: aws.String("local")},
+			{Key: aws.String("team"), Value: aws.String("sec")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertTrailTags(t, client, trailARN)
+}
+
+func TestCloudTrail_RemoveTags(t *testing.T) {
+	client := newCloudTrailClient(t)
+	ctx := t.Context()
+
+	trailARN := createTaggedTrail(t, client, "test-trail-remove-tags", []cloudtrailtypes.Tag{
+		{Key: aws.String("env"), Value: aws.String("local")},
+		{Key: aws.String("team"), Value: aws.String("sec")},
+	})
+
+	// RemoveTags matches on key, so the value is irrelevant.
+	_, err := client.RemoveTags(ctx, &cloudtrail.RemoveTagsInput{
+		ResourceId: aws.String(trailARN),
+		TagsList:   []cloudtrailtypes.Tag{{Key: aws.String("team")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertTrailTags(t, client, trailARN)
+}
+
+// TestCloudTrail_ListTagsUnknownResource pins kumo's deliberate divergence from
+// AWS: ListTags on an unknown ARN yields an empty tag list instead of
+// ResourceNotFoundException, so a Terraform refresh over a trail that no longer
+// exists does not fail.
+func TestCloudTrail_ListTagsUnknownResource(t *testing.T) {
+	client := newCloudTrailClient(t)
+
+	output, err := client.ListTags(t.Context(), &cloudtrail.ListTagsInput{
+		ResourceIdList: []string{"arn:aws:cloudtrail:us-east-1:123456789012:trail/absent-trail"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), output)
+}
+
+// TestCloudTrail_TagsListRequired covers the AddTags / RemoveTags guard: AWS
+// marks TagsList required, so an empty list must be rejected rather than
+// silently succeeding as a no-op.
+func TestCloudTrail_TagsListRequired(t *testing.T) {
+	client := newCloudTrailClient(t)
+	ctx := t.Context()
+
+	trailARN := createTaggedTrail(t, client, "test-trail-empty-tags", nil)
+
+	_, err := client.AddTags(ctx, &cloudtrail.AddTagsInput{
+		ResourceId: aws.String(trailARN),
+		TagsList:   []cloudtrailtypes.Tag{},
+	})
+	assertAPIErrorCode(t, err, "ValidationException")
+
+	_, err = client.RemoveTags(ctx, &cloudtrail.RemoveTagsInput{
+		ResourceId: aws.String(trailARN),
+		TagsList:   []cloudtrailtypes.Tag{},
+	})
+	assertAPIErrorCode(t, err, "ValidationException")
+}
+
+// assertAPIErrorCode fails unless err is an API error carrying wantCode.
+func assertAPIErrorCode(t *testing.T, err error, wantCode string) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatalf("expected error with code %q, got nil", wantCode)
+	}
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected smithy.APIError, got %T: %v", err, err)
+	}
+
+	if apiErr.ErrorCode() != wantCode {
+		t.Errorf("error code: got %q, want %q", apiErr.ErrorCode(), wantCode)
+	}
 }
