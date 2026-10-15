@@ -276,7 +276,7 @@ func (s *Service) ListTagsForDeliveryStream(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tags, err := s.storage.ListTagsForDeliveryStream(r.Context(), req.DeliveryStreamName)
+	tags, hasMore, err := s.storage.ListTagsForDeliveryStream(r.Context(), req.DeliveryStreamName, req.ExclusiveStartTagKey, req.Limit)
 	if err != nil {
 		handleError(w, err)
 
@@ -285,7 +285,7 @@ func (s *Service) ListTagsForDeliveryStream(w http.ResponseWriter, r *http.Reque
 
 	writeResponse(w, &ListTagsForDeliveryStreamOutput{
 		Tags:        tags,
-		HasMoreTags: false,
+		HasMoreTags: hasMore,
 	})
 }
 

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -395,6 +396,68 @@ func TestFirehose_UntagDeliveryStream(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestFirehose_ListTagsForDeliveryStreamPagination walks a 3-tag stream one tag
+// at a time. Limit caps the page and HasMoreTags reports whether further tags
+// remain, so the final page must come back with HasMoreTags false.
+func TestFirehose_ListTagsForDeliveryStreamPagination(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	client := createFirehoseClient(t)
+
+	streamName := "list-tags-paging-stream"
+
+	_, err := client.CreateDeliveryStream(ctx, &firehose.CreateDeliveryStreamInput{
+		DeliveryStreamName: aws.String(streamName),
+		DeliveryStreamType: types.DeliveryStreamTypeDirectPut,
+		Tags: []types.Tag{
+			{Key: aws.String("app"), Value: aws.String("idp")},
+			{Key: aws.String("env"), Value: aws.String("local")},
+			{Key: aws.String("team"), Value: aws.String("sec")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteDeliveryStream(context.Background(), &firehose.DeleteDeliveryStreamInput{
+			DeliveryStreamName: aws.String(streamName),
+		})
+	})
+
+	// Tags are returned key-sorted, so paging with Limit 1 yields app, env, team.
+	wantKeys := []string{"app", "env", "team"}
+
+	var exclusiveStartTagKey *string
+
+	for i, wantKey := range wantKeys {
+		result, err := client.ListTagsForDeliveryStream(ctx, &firehose.ListTagsForDeliveryStreamInput{
+			DeliveryStreamName:   aws.String(streamName),
+			Limit:                aws.Int32(1),
+			ExclusiveStartTagKey: exclusiveStartTagKey,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(result.Tags) != 1 {
+			t.Fatalf("page %d: Tags length: got %d, want 1", i, len(result.Tags))
+		}
+
+		if got := aws.ToString(result.Tags[0].Key); got != wantKey {
+			t.Errorf("page %d: tag key: got %q, want %q", i, got, wantKey)
+		}
+
+		wantHasMore := i < len(wantKeys)-1
+		if aws.ToBool(result.HasMoreTags) != wantHasMore {
+			t.Errorf("page %d: HasMoreTags: got %v, want %v", i, aws.ToBool(result.HasMoreTags), wantHasMore)
+		}
+
+		exclusiveStartTagKey = result.Tags[0].Key
 	}
 }
 

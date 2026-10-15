@@ -23,7 +23,7 @@ type Storage interface {
 	PutRecord(ctx context.Context, streamName string, record Record) (string, error)
 	PutRecordBatch(ctx context.Context, streamName string, records []Record) ([]PutRecordBatchResponseEntry, int32, error)
 	UpdateDestination(ctx context.Context, input *UpdateDestinationInput) error
-	ListTagsForDeliveryStream(ctx context.Context, name string) ([]Tag, error)
+	ListTagsForDeliveryStream(ctx context.Context, name, exclusiveStartTagKey string, limit int32) ([]Tag, bool, error)
 	TagDeliveryStream(ctx context.Context, name string, tags []Tag) error
 	UntagDeliveryStream(ctx context.Context, name string, tagKeys []string) error
 }
@@ -555,17 +555,31 @@ func (s *MemoryStorage) applyExtendedS3Update(desc *ExtendedS3DestinationDescrip
 	}
 }
 
-// ListTagsForDeliveryStream returns the tags of a delivery stream, sorted by key.
-func (s *MemoryStorage) ListTagsForDeliveryStream(_ context.Context, name string) ([]Tag, error) {
+// maxDeliveryStreamTags bounds both the Limit parameter and the Tags array of
+// ListTagsForDeliveryStream, and is also the per-stream tag ceiling.
+const maxDeliveryStreamTags = 50
+
+// ListTagsForDeliveryStream returns one page of a delivery stream's tags, sorted
+// by key, and reports whether further tags remain beyond the page.
+//
+// The page starts at the first key strictly after exclusiveStartTagKey and holds
+// at most limit entries; a limit outside 1..maxDeliveryStreamTags is clamped to
+// maxDeliveryStreamTags. AWS documents no ordering, so keys are sorted to keep
+// paging deterministic across calls.
+func (s *MemoryStorage) ListTagsForDeliveryStream(_ context.Context, name, exclusiveStartTagKey string, limit int32) ([]Tag, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	data, exists := s.Streams[name]
 	if !exists {
-		return nil, &Error{
+		return nil, false, &Error{
 			Code:    errResourceNotFound,
 			Message: fmt.Sprintf("Delivery stream %s not found", name),
 		}
+	}
+
+	if limit <= 0 || limit > maxDeliveryStreamTags {
+		limit = maxDeliveryStreamTags
 	}
 
 	keys := make([]string, 0, len(data.Tags))
@@ -575,12 +589,28 @@ func (s *MemoryStorage) ListTagsForDeliveryStream(_ context.Context, name string
 
 	sort.Strings(keys)
 
-	tags := make([]Tag, 0, len(keys))
-	for _, k := range keys {
+	startIdx := s.findStartIndex(keys, exclusiveStartTagKey)
+	if startIdx >= len(keys) {
+		return []Tag{}, false, nil
+	}
+
+	endIdx := startIdx + int(limit)
+	hasMore := false
+
+	if endIdx > len(keys) {
+		endIdx = len(keys)
+	} else {
+		hasMore = endIdx < len(keys)
+	}
+
+	page := keys[startIdx:endIdx]
+
+	tags := make([]Tag, 0, len(page))
+	for _, k := range page {
 		tags = append(tags, Tag{Key: k, Value: data.Tags[k]})
 	}
 
-	return tags, nil
+	return tags, hasMore, nil
 }
 
 // TagDeliveryStream adds or overwrites tags on a delivery stream by key.

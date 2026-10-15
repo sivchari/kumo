@@ -11,6 +11,13 @@ import (
 
 const tagTargetPrefix = "Firehose_20150804."
 
+// Tag keys reused across the Firehose tag tests.
+const (
+	tagKeyApp  = "app"
+	tagKeyEnv  = "env"
+	tagKeyTeam = "team"
+)
+
 // newTagTestService builds a Firehose service backed by in-memory storage.
 func newTagTestService(t *testing.T) *Service {
 	t.Helper()
@@ -86,7 +93,7 @@ func TestFirehose_TagDeliveryStreamLifecycle(t *testing.T) {
 	createStreamWithTags(t, svc, name, `[{"Key":"env","Value":"local"},{"Key":"app","Value":"idp"}]`)
 
 	gotSorted := listTags(t, svc, name)
-	wantSorted := []Tag{{Key: "app", Value: "idp"}, {Key: "env", Value: "local"}}
+	wantSorted := []Tag{{Key: tagKeyApp, Value: "idp"}, {Key: tagKeyEnv, Value: "local"}}
 
 	if !reflect.DeepEqual(gotSorted, wantSorted) {
 		t.Fatalf("ListTags after create: got %v, want %v", gotSorted, wantSorted)
@@ -100,7 +107,7 @@ func TestFirehose_TagDeliveryStreamLifecycle(t *testing.T) {
 	}
 
 	got := tagsToMapForTest(listTags(t, svc, name))
-	want := map[string]string{"app": "idp", "env": "prod", "team": "sec"}
+	want := map[string]string{tagKeyApp: "idp", tagKeyEnv: "prod", tagKeyTeam: "sec"}
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListTags after tag: got %v, want %v", got, want)
@@ -114,7 +121,7 @@ func TestFirehose_TagDeliveryStreamLifecycle(t *testing.T) {
 	}
 
 	got = tagsToMapForTest(listTags(t, svc, name))
-	want = map[string]string{"env": "prod"}
+	want = map[string]string{tagKeyEnv: "prod"}
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListTags after untag: got %v, want %v", got, want)
@@ -152,6 +159,105 @@ func TestFirehose_TagActionsResourceNotFound(t *testing.T) {
 
 			if errResp.Type != errResourceNotFound {
 				t.Errorf("error type: got %q, want %q", errResp.Type, errResourceNotFound)
+			}
+		})
+	}
+}
+
+// pagingCase is one row of the ListTagsForDeliveryStream paging table.
+type pagingCase struct {
+	name        string
+	body        string
+	wantKeys    []string
+	wantHasMore bool
+}
+
+// listTagsPagingCases enumerates the paging table for a stream tagged with the
+// keys app, env and team.
+func listTagsPagingCases(streamName string) []pagingCase {
+	allKeys := []string{tagKeyApp, tagKeyEnv, tagKeyTeam}
+	req := func(extra string) string {
+		return `{"DeliveryStreamName":"` + streamName + `"` + extra + `}`
+	}
+
+	return []pagingCase{
+		{
+			name:     "no limit returns every tag",
+			body:     req(""),
+			wantKeys: allKeys,
+		},
+		{
+			name:        "limit caps the page and flags more",
+			body:        req(`,"Limit":1`),
+			wantKeys:    []string{tagKeyApp},
+			wantHasMore: true,
+		},
+		{
+			name:     "limit equal to the tag count has no more",
+			body:     req(`,"Limit":3`),
+			wantKeys: allKeys,
+		},
+		{
+			name:        "exclusive start key is excluded",
+			body:        req(`,"ExclusiveStartTagKey":"` + tagKeyApp + `","Limit":1`),
+			wantKeys:    []string{tagKeyEnv},
+			wantHasMore: true,
+		},
+		{
+			name:     "last page reports no more",
+			body:     req(`,"ExclusiveStartTagKey":"` + tagKeyEnv + `"`),
+			wantKeys: []string{tagKeyTeam},
+		},
+		{
+			name:     "limit above the maximum is clamped, not an error",
+			body:     req(`,"Limit":9999`),
+			wantKeys: allKeys,
+		},
+		{
+			name:     "unknown exclusive start key restarts from the first tag",
+			body:     req(`,"ExclusiveStartTagKey":"absent"`),
+			wantKeys: allKeys,
+		},
+	}
+}
+
+// TestFirehose_ListTagsPagination covers the Limit / ExclusiveStartTagKey
+// combinations the AWS SDK cannot express (an out-of-range Limit, a key that is
+// not on the stream), alongside the ordinary paging cases.
+func TestFirehose_ListTagsPagination(t *testing.T) {
+	t.Parallel()
+
+	const streamName = "paging-stream"
+
+	svc := newTagTestService(t)
+	createStreamWithTags(t, svc, streamName,
+		`[{"Key":"app","Value":"idp"},{"Key":"env","Value":"local"},{"Key":"team","Value":"sec"}]`)
+
+	for _, tc := range listTagsPagingCases(streamName) {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := dispatchTag(t, svc, "ListTagsForDeliveryStream", tc.body)
+			if w.Code != http.StatusOK {
+				t.Fatalf("got %d, want 200 (body=%s)", w.Code, w.Body.String())
+			}
+
+			var out ListTagsForDeliveryStreamOutput
+			if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+				t.Fatalf("failed to unmarshal: %v", err)
+			}
+
+			gotKeys := make([]string, 0, len(out.Tags))
+			for _, tag := range out.Tags {
+				gotKeys = append(gotKeys, tag.Key)
+			}
+
+			if !reflect.DeepEqual(gotKeys, tc.wantKeys) {
+				t.Errorf("tag keys: got %v, want %v", gotKeys, tc.wantKeys)
+			}
+
+			if out.HasMoreTags != tc.wantHasMore {
+				t.Errorf("HasMoreTags: got %v, want %v", out.HasMoreTags, tc.wantHasMore)
 			}
 		})
 	}
