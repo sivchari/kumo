@@ -133,3 +133,49 @@ func TestVerifiedPermissions_IsAuthorized(t *testing.T) {
 		})
 	}
 }
+
+// TestVerifiedPermissions_IdentitySource registers a Cognito identity source
+// and reads it back, asserting that GetIdentitySource returns the configuration
+// block (userPoolArn / clientIds) the Terraform AWS provider requires for a
+// consistent apply (docs/idp-parity 12).
+func TestVerifiedPermissions_IdentitySource(t *testing.T) {
+	client := newVerifiedPermissionsClient(t)
+	ctx := t.Context()
+
+	store, err := client.CreatePolicyStore(ctx, &verifiedpermissions.CreatePolicyStoreInput{
+		ValidationSettings: &types.ValidationSettings{Mode: types.ValidationModeOff},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := client.CreateIdentitySource(ctx, &verifiedpermissions.CreateIdentitySourceInput{
+		PolicyStoreId:       store.PolicyStoreId,
+		PrincipalEntityType: aws.String("Issuer::User"),
+		Configuration: &types.ConfigurationMemberCognitoUserPoolConfiguration{
+			Value: types.CognitoUserPoolConfiguration{
+				UserPoolArn: aws.String("arn:aws:cognito-idp:us-east-1:000000000000:userpool/us-east-1_abc"),
+				ClientIds:   []string{"client-1"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := client.GetIdentitySource(ctx, &verifiedpermissions.GetIdentitySourceInput{
+		PolicyStoreId:    store.PolicyStoreId,
+		IdentitySourceId: created.IdentitySourceId,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"ResultMetadata",
+		"PolicyStoreId",
+		"IdentitySourceId",
+		"CreatedDate",
+		"LastUpdatedDate",
+	)).Assert(t.Name(), got)
+}

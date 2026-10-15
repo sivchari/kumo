@@ -356,13 +356,24 @@ func (s *Service) GetIdentitySource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSONResponse(w, GetIdentitySourceResponse{
+	resp := GetIdentitySourceResponse{
 		PolicyStoreID:       src.PolicyStoreID,
 		IdentitySourceID:    src.ID,
 		PrincipalEntityType: src.PrincipalEntityType,
 		CreatedDate:         formatTime(src.CreatedDate),
 		LastUpdatedDate:     formatTime(src.LastUpdatedDate),
-	})
+	}
+
+	if src.UserPoolARN != "" {
+		resp.Configuration = &IdentitySourceConfiguration{
+			CognitoUserPoolConfiguration: &CognitoUserPoolConfiguration{
+				UserPoolARN: src.UserPoolARN,
+				ClientIDs:   src.ClientIDs,
+			},
+		}
+	}
+
+	writeJSONResponse(w, resp)
 }
 
 // ListIdentitySources handles the ListIdentitySources action.

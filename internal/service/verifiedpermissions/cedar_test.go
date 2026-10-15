@@ -51,6 +51,8 @@ const (
 	caseMissingResourceARN = "missing resourceArn"
 	tagKeyEnv              = "env"
 	tagValueLocal          = "local"
+
+	cognitoClientID = "client-1"
 )
 
 func ptr[T any](v T) *T {

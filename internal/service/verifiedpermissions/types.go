@@ -292,11 +292,12 @@ type GetIdentitySourceRequest struct {
 
 // GetIdentitySourceResponse is the output for GetIdentitySource.
 type GetIdentitySourceResponse struct {
-	PolicyStoreID       string `json:"policyStoreId"`
-	IdentitySourceID    string `json:"identitySourceId"`
-	PrincipalEntityType string `json:"principalEntityType,omitempty"`
-	CreatedDate         string `json:"createdDate"`
-	LastUpdatedDate     string `json:"lastUpdatedDate"`
+	PolicyStoreID       string                       `json:"policyStoreId"`
+	IdentitySourceID    string                       `json:"identitySourceId"`
+	PrincipalEntityType string                       `json:"principalEntityType,omitempty"`
+	CreatedDate         string                       `json:"createdDate"`
+	LastUpdatedDate     string                       `json:"lastUpdatedDate"`
+	Configuration       *IdentitySourceConfiguration `json:"configuration,omitempty"`
 }
 
 // ListIdentitySourcesRequest is the input for ListIdentitySources.
