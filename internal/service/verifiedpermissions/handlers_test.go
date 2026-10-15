@@ -126,6 +126,14 @@ func putSchemaState(svc *Service, storeID string) {
 	_, _ = svc.storage.PutSchema(storeID, idpSchema)
 }
 
+// newTaggedStore creates a policy store, tags it, and returns its ARN.
+func newTaggedStore(svc *Service, tags map[string]string) string {
+	store := svc.storage.CreatePolicyStore("OFF", "")
+	svc.storage.TagResource(store.ARN, tags)
+
+	return store.ARN
+}
+
 // isAuthBody builds an IsAuthorized request body for the IdP entities with the
 // given action and permission level.
 func isAuthBody(storeID, action, level string) string {
@@ -199,9 +207,19 @@ func TestCreatePolicyStore(t *testing.T) {
 		}
 	}
 
+	verifyTagged := func(t *testing.T, svc *Service, w *httptest.ResponseRecorder) {
+		t.Helper()
+		verifyIDs(t, svc, w)
+
+		if len(svc.storage.Tags) != 1 {
+			t.Fatalf("tagged resources: got %d, want 1", len(svc.storage.Tags))
+		}
+	}
+
 	runHandlerCases(t, "CreatePolicyStore", []handlerCase{
 		{name: "with validation settings", body: `{"validationSettings":{"mode":"OFF"}}`, wantStatus: http.StatusOK, verify: verifyIDs},
 		{name: "empty body defaults", body: "", wantStatus: http.StatusOK, verify: verifyIDs},
+		{name: "with tags", body: `{"tags":{"env":"local"}}`, wantStatus: http.StatusOK, verify: verifyTagged},
 	})
 }
 
@@ -691,6 +709,113 @@ func TestDeleteIdentitySource(t *testing.T) {
 	})
 }
 
+func TestListTagsForResource(t *testing.T) {
+	t.Parallel()
+
+	wantTags := func(want map[string]string) func(t *testing.T, _ *Service, w *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *Service, w *httptest.ResponseRecorder) {
+			t.Helper()
+
+			var resp ListTagsForResourceResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+
+			if len(resp.Tags) != len(want) {
+				t.Fatalf("tags: got %v, want %v", resp.Tags, want)
+			}
+
+			for k, v := range want {
+				if resp.Tags[k] != v {
+					t.Errorf("tag %q: got %q, want %q", k, resp.Tags[k], v)
+				}
+			}
+		}
+	}
+
+	runHandlerCases(t, "ListTagsForResource", []handlerCase{
+		{
+			name: "tagged store",
+			arrange: func(svc *Service) string {
+				return jsonBody(ListTagsForResourceRequest{ResourceARN: newTaggedStore(svc, map[string]string{tagKeyEnv: tagValueLocal})})
+			},
+			wantStatus: http.StatusOK,
+			verify:     wantTags(map[string]string{tagKeyEnv: tagValueLocal}),
+		},
+		{
+			name:       "untagged arn returns empty",
+			body:       `{"resourceArn":"arn:aws:verifiedpermissions::000000000000:policy-store/PS-none"}`,
+			wantStatus: http.StatusOK,
+			verify:     wantTags(map[string]string{}),
+		},
+		{name: caseMissingResourceARN, body: `{}`, wantStatus: http.StatusBadRequest, wantType: errValidation},
+	})
+}
+
+func TestTagResource(t *testing.T) {
+	t.Parallel()
+
+	verifyTagged := func(t *testing.T, svc *Service, _ *httptest.ResponseRecorder) {
+		t.Helper()
+
+		if len(svc.storage.Tags) != 1 {
+			t.Fatalf("tagged resources: got %d, want 1", len(svc.storage.Tags))
+		}
+
+		for _, tags := range svc.storage.Tags {
+			if tags[tagKeyEnv] != tagValueLocal {
+				t.Errorf("env tag: got %q, want local", tags[tagKeyEnv])
+			}
+		}
+	}
+
+	runHandlerCases(t, "TagResource", []handlerCase{
+		{
+			name: "tags a store",
+			arrange: func(svc *Service) string {
+				store := svc.storage.CreatePolicyStore("OFF", "")
+
+				return jsonBody(TagResourceRequest{ResourceARN: store.ARN, Tags: map[string]string{tagKeyEnv: tagValueLocal}})
+			},
+			wantStatus: http.StatusOK,
+			verify:     verifyTagged,
+		},
+		{name: caseMissingResourceARN, body: `{"tags":{"a":"b"}}`, wantStatus: http.StatusBadRequest, wantType: errValidation},
+	})
+}
+
+func TestUntagResource(t *testing.T) {
+	t.Parallel()
+
+	verifyUntagged := func(t *testing.T, svc *Service, _ *httptest.ResponseRecorder) {
+		t.Helper()
+
+		for _, tags := range svc.storage.Tags {
+			if _, ok := tags[tagKeyEnv]; ok {
+				t.Error("env tag not removed")
+			}
+
+			if tags["team"] != "idp" {
+				t.Errorf("team tag: got %q, want idp", tags["team"])
+			}
+		}
+	}
+
+	runHandlerCases(t, "UntagResource", []handlerCase{
+		{
+			name: "removes a tag",
+			arrange: func(svc *Service) string {
+				arn := newTaggedStore(svc, map[string]string{tagKeyEnv: tagValueLocal, "team": "idp"})
+
+				return jsonBody(UntagResourceRequest{ResourceARN: arn, TagKeys: []string{tagKeyEnv}})
+			},
+			wantStatus: http.StatusOK,
+			verify:     verifyUntagged,
+		},
+		{name: caseMissingResourceARN, body: `{"tagKeys":["x"]}`, wantStatus: http.StatusBadRequest, wantType: errValidation},
+	})
+}
+
 func TestIsAuthorized(t *testing.T) {
 	t.Parallel()
 
@@ -789,6 +914,7 @@ func TestHandlers_MalformedBody(t *testing.T) {
 		"PutSchema", "GetSchema", "CreatePolicy", "GetPolicy", "ListPolicies",
 		"UpdatePolicy", "DeletePolicy", "CreateIdentitySource", "GetIdentitySource",
 		"ListIdentitySources", "DeleteIdentitySource", "IsAuthorized",
+		"ListTagsForResource", "TagResource", "UntagResource",
 	}
 
 	svc := New(NewMemoryStorage())

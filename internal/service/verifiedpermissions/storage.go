@@ -39,6 +39,7 @@ type MemoryStorage struct {
 	Schemas         map[string]*Schema                    `json:"schemas"`
 	Policies        map[string]map[string]*Policy         `json:"policies"`
 	IdentitySources map[string]map[string]*IdentitySource `json:"identitySources"`
+	Tags            map[string]map[string]string          `json:"tags"`
 	dataDir         string
 }
 
@@ -50,6 +51,7 @@ func NewMemoryStorage(opts ...Option) *MemoryStorage {
 		Schemas:         make(map[string]*Schema),
 		Policies:        make(map[string]map[string]*Policy),
 		IdentitySources: make(map[string]map[string]*IdentitySource),
+		Tags:            make(map[string]map[string]string),
 	}
 
 	for _, o := range opts {
@@ -104,6 +106,10 @@ func (m *MemoryStorage) UnmarshalJSON(data []byte) error {
 
 	if m.IdentitySources == nil {
 		m.IdentitySources = make(map[string]map[string]*IdentitySource)
+	}
+
+	if m.Tags == nil {
+		m.Tags = make(map[string]map[string]string)
 	}
 
 	return nil
@@ -417,6 +423,49 @@ func (m *MemoryStorage) DeleteIdentitySource(storeID, sourceID string) error {
 	m.saveLocked()
 
 	return nil
+}
+
+// ListTags returns a copy of the tags registered for a resource ARN. An unknown
+// ARN yields an empty (non-nil) map so the Terraform provider's read-time
+// ListTagsForResource stays stable even when no tags were ever set.
+func (m *MemoryStorage) ListTags(resourceARN string) map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make(map[string]string, len(m.Tags[resourceARN]))
+	maps.Copy(out, m.Tags[resourceARN])
+
+	return out
+}
+
+// TagResource merges the given tags into a resource ARN's tag set.
+func (m *MemoryStorage) TagResource(resourceARN string, tags map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(tags) == 0 {
+		return
+	}
+
+	if m.Tags[resourceARN] == nil {
+		m.Tags[resourceARN] = make(map[string]string, len(tags))
+	}
+
+	maps.Copy(m.Tags[resourceARN], tags)
+
+	m.saveLocked()
+}
+
+// UntagResource removes the given tag keys from a resource ARN's tag set.
+func (m *MemoryStorage) UntagResource(resourceARN string, keys []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, k := range keys {
+		delete(m.Tags[resourceARN], k)
+	}
+
+	m.saveLocked()
 }
 
 // policyLocked resolves a policy. Callers must hold the lock.

@@ -94,6 +94,7 @@ type CreatePolicyStoreRequest struct {
 	ValidationSettings *ValidationSettings `json:"validationSettings,omitempty"`
 	Description        string              `json:"description,omitempty"`
 	ClientToken        string              `json:"clientToken,omitempty"`
+	Tags               map[string]string   `json:"tags,omitempty"`
 }
 
 // CreatePolicyStoreResponse is the output for CreatePolicyStore.
@@ -350,4 +351,27 @@ type IsAuthorizedResponse struct {
 	Decision            string                  `json:"decision"`
 	DeterminingPolicies []DeterminingPolicyItem `json:"determiningPolicies"`
 	Errors              []EvaluationErrorItem   `json:"errors"`
+}
+
+// ListTagsForResourceRequest is the input for ListTagsForResource.
+type ListTagsForResourceRequest struct {
+	ResourceARN string `json:"resourceArn"`
+}
+
+// ListTagsForResourceResponse is the output for ListTagsForResource. Verified
+// Permissions models tags as a map, not a key/value list.
+type ListTagsForResourceResponse struct {
+	Tags map[string]string `json:"tags"`
+}
+
+// TagResourceRequest is the input for TagResource.
+type TagResourceRequest struct {
+	ResourceARN string            `json:"resourceArn"`
+	Tags        map[string]string `json:"tags"`
+}
+
+// UntagResourceRequest is the input for UntagResource.
+type UntagResourceRequest struct {
+	ResourceARN string   `json:"resourceArn"`
+	TagKeys     []string `json:"tagKeys"`
 }

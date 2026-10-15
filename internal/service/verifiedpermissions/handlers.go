@@ -47,6 +47,9 @@ func (s *Service) getActionHandlers() map[string]handlerFunc {
 		"ListIdentitySources":  s.ListIdentitySources,
 		"DeleteIdentitySource": s.DeleteIdentitySource,
 		"IsAuthorized":         s.IsAuthorized,
+		"ListTagsForResource":  s.ListTagsForResource,
+		"TagResource":          s.TagResource,
+		"UntagResource":        s.UntagResource,
 	}
 }
 
@@ -80,6 +83,10 @@ func (s *Service) CreatePolicyStore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := s.storage.CreatePolicyStore(mode, req.Description)
+
+	if len(req.Tags) > 0 {
+		s.storage.TagResource(store.ARN, req.Tags)
+	}
 
 	writeJSONResponse(w, CreatePolicyStoreResponse{
 		PolicyStoreID:   store.ID,
@@ -443,6 +450,66 @@ func (s *Service) IsAuthorized(w http.ResponseWriter, r *http.Request) {
 		DeterminingPolicies: determining,
 		Errors:              errs,
 	})
+}
+
+// ListTagsForResource handles the ListTagsForResource action. An unknown ARN
+// returns an empty tag map rather than an error, so the Terraform provider's
+// read-time tag fetch stays stable even when no tags were ever set.
+func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeVPError(w, errValidation, "failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeVPError(w, errValidation, "resourceArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	writeJSONResponse(w, ListTagsForResourceResponse{Tags: s.storage.ListTags(req.ResourceARN)})
+}
+
+// TagResource handles the TagResource action.
+func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
+	var req TagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeVPError(w, errValidation, "failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeVPError(w, errValidation, "resourceArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	s.storage.TagResource(req.ResourceARN, req.Tags)
+
+	writeJSONResponse(w, struct{}{})
+}
+
+// UntagResource handles the UntagResource action.
+func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
+	var req UntagResourceRequest
+	if err := readJSONRequest(r, &req); err != nil {
+		writeVPError(w, errValidation, "failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.ResourceARN == "" {
+		writeVPError(w, errValidation, "resourceArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	s.storage.UntagResource(req.ResourceARN, req.TagKeys)
+
+	writeJSONResponse(w, struct{}{})
 }
 
 // notFound builds a ResourceNotFoundException service error.

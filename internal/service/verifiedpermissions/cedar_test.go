@@ -47,6 +47,10 @@ const (
 
 	caseMissingStore = "missing store"
 	bodyMissingStore = `{"policyStoreId":"PS-missing"}`
+
+	caseMissingResourceARN = "missing resourceArn"
+	tagKeyEnv              = "env"
+	tagValueLocal          = "local"
 )
 
 func ptr[T any](v T) *T {
