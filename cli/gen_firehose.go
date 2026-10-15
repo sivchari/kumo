@@ -24,8 +24,11 @@ func newFirehoseCmd() *cobra.Command {
 		newFirehoseDeleteDeliveryStreamCmd(),
 		newFirehoseDescribeDeliveryStreamCmd(),
 		newFirehoseListDeliveryStreamsCmd(),
+		newFirehoseListTagsForDeliveryStreamCmd(),
 		newFirehosePutRecordCmd(),
 		newFirehosePutRecordBatchCmd(),
+		newFirehoseTagDeliveryStreamCmd(),
+		newFirehoseUntagDeliveryStreamCmd(),
 		newFirehoseUpdateDestinationCmd(),
 	)
 
@@ -390,6 +393,62 @@ func newFirehoseListDeliveryStreamsCmd() *cobra.Command {
 	return cmd
 }
 
+func newFirehoseListTagsForDeliveryStreamCmd() *cobra.Command {
+	var deliveryStreamName string
+	var exclusiveStartTagKey string
+	var limit int32
+
+	cmd := &cobra.Command{
+		Use:   "list-tags-for-delivery-stream",
+		Short: "ListTagsForDeliveryStream",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := firehose.NewFromConfig(cfg, func(o *firehose.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &firehose.ListTagsForDeliveryStreamInput{}
+
+			if deliveryStreamName != "" {
+				input.DeliveryStreamName = aws.String(deliveryStreamName)
+			}
+
+			if exclusiveStartTagKey != "" {
+				input.ExclusiveStartTagKey = aws.String(exclusiveStartTagKey)
+			}
+
+			if limit != 0 {
+				input.Limit = aws.Int32(limit)
+			}
+
+			out, err := client.ListTagsForDeliveryStream(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("list-tags-for-delivery-stream failed: %w", err)
+			}
+
+			if err := writeOutput(out); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&deliveryStreamName, "delivery-stream-name", "", "Delivery stream name")
+
+	cmd.Flags().StringVar(&exclusiveStartTagKey, "exclusive-start-tag-key", "", "Exclusive start tag key")
+
+	cmd.Flags().Int32Var(&limit, "limit", 0, "Limit")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
 func newFirehosePutRecordCmd() *cobra.Command {
 	var deliveryStreamName string
 	var record string
@@ -490,6 +549,100 @@ func newFirehosePutRecordBatchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&deliveryStreamName, "delivery-stream-name", "", "Delivery stream name")
 
 	cmd.Flags().StringArrayVar(&records, "records", nil, "Records (key=value,key2=value2, repeatable)")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newFirehoseTagDeliveryStreamCmd() *cobra.Command {
+	var deliveryStreamName string
+	var tags []string
+
+	cmd := &cobra.Command{
+		Use:   "tag-delivery-stream",
+		Short: "TagDeliveryStream",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := firehose.NewFromConfig(cfg, func(o *firehose.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &firehose.TagDeliveryStreamInput{}
+
+			if deliveryStreamName != "" {
+				input.DeliveryStreamName = aws.String(deliveryStreamName)
+			}
+
+			for _, raw := range tags {
+				var val types.Tag
+				if err := cligen.SetFieldsFromKV(reflect.ValueOf(&val).Elem(), raw); err != nil {
+					return fmt.Errorf("tag-delivery-stream: parse --tags: %w", err)
+				}
+				input.Tags = append(input.Tags, val)
+			}
+
+			_, err = client.TagDeliveryStream(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("tag-delivery-stream failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&deliveryStreamName, "delivery-stream-name", "", "Delivery stream name")
+
+	cmd.Flags().StringArrayVar(&tags, "tags", nil, "Tags (key=value,key2=value2, repeatable)")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newFirehoseUntagDeliveryStreamCmd() *cobra.Command {
+	var deliveryStreamName string
+	var tagKeys []string
+
+	cmd := &cobra.Command{
+		Use:   "untag-delivery-stream",
+		Short: "UntagDeliveryStream",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := firehose.NewFromConfig(cfg, func(o *firehose.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &firehose.UntagDeliveryStreamInput{}
+
+			if deliveryStreamName != "" {
+				input.DeliveryStreamName = aws.String(deliveryStreamName)
+			}
+
+			if len(tagKeys) > 0 {
+				input.TagKeys = tagKeys
+			}
+
+			_, err = client.UntagDeliveryStream(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("untag-delivery-stream failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&deliveryStreamName, "delivery-stream-name", "", "Delivery stream name")
+
+	cmd.Flags().StringArrayVar(&tagKeys, "tag-keys", nil, "Tag keys")
 
 	cmd.Flags().String("region", "", "Region override (ignored)")
 
