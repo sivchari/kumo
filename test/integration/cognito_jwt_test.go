@@ -20,8 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 )
 
-const kumoBaseURL = "http://localhost:4566"
-
 // TestCognito_AdminInitiateAuth_JWTAndJWKS exercises the end-to-end path an IdP
 // Lambda Authorizer relies on: AdminInitiateAuth must return an RS256-signed ID
 // token, and the published JWKS must verify that token's signature and expiry.
@@ -133,7 +131,7 @@ func signUpAndConfirm(t *testing.T, client *cognitoidentityprovider.Client, clie
 func fetchJWKS(t *testing.T, userPoolID string) (*rsa.PublicKey, string) {
 	t.Helper()
 
-	url := kumoBaseURL + "/" + userPoolID + "/.well-known/jwks.json"
+	url := testEndpoint() + "/" + userPoolID + "/.well-known/jwks.json"
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, http.NoBody)
 	if err != nil {
