@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
 	"github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
 	"github.com/sivchari/golden"
@@ -40,18 +38,8 @@ when {
 func newVerifiedPermissionsClient(t *testing.T) *verifiedpermissions.Client {
 	t.Helper()
 
-	cfg, err := config.LoadDefaultConfig(t.Context(),
-		config.WithRegion("us-east-1"),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"test", "test", "",
-		)),
-	)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	return verifiedpermissions.NewFromConfig(cfg, func(o *verifiedpermissions.Options) {
-		o.BaseEndpoint = aws.String("http://localhost:4566")
+	return verifiedpermissions.NewFromConfig(awsConfig(t), func(o *verifiedpermissions.Options) {
+		o.BaseEndpoint = aws.String(testEndpoint())
 	})
 }
 
