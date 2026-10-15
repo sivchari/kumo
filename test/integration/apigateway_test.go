@@ -195,6 +195,54 @@ func TestAPIGateway_PutMethodAndIntegration(t *testing.T) {
 	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_integration", integrationOutput)
 }
 
+func TestAPIGateway_CreateAndGetAuthorizer(t *testing.T) {
+	client := newAPIGatewayClient(t)
+	ctx := t.Context()
+
+	apiOutput, err := client.CreateRestApi(ctx, &apigateway.CreateRestApiInput{
+		Name: aws.String("test-authorizer-api"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	authorizerURI := "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/" +
+		"arn:aws:lambda:us-east-1:000000000000:function:test-authorizer-fn/invocations"
+
+	createOutput, err := client.CreateAuthorizer(ctx, &apigateway.CreateAuthorizerInput{
+		RestApiId:                    apiOutput.Id,
+		Name:                         aws.String("test-request-authorizer"),
+		Type:                         types.AuthorizerTypeRequest,
+		AuthorizerUri:                aws.String(authorizerURI),
+		IdentitySource:               aws.String("method.request.header.Authorization"),
+		AuthorizerResultTtlInSeconds: aws.Int32(300),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("Id", "ResultMetadata")).Assert(t.Name()+"_create", createOutput)
+
+	getOutput, err := client.GetAuthorizer(ctx, &apigateway.GetAuthorizerInput{
+		RestApiId:    apiOutput.Id,
+		AuthorizerId: createOutput.Id,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("Id", "ResultMetadata")).Assert(t.Name()+"_get", getOutput)
+
+	listOutput, err := client.GetAuthorizers(ctx, &apigateway.GetAuthorizersInput{
+		RestApiId: apiOutput.Id,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("Id", "ResultMetadata")).Assert(t.Name()+"_list", listOutput)
+}
+
 func TestAPIGateway_CreateDeploymentAndStage(t *testing.T) {
 	client := newAPIGatewayClient(t)
 	ctx := t.Context()
