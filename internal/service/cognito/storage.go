@@ -268,7 +268,7 @@ func (s *MemoryStorage) UpdateUserPool(_ context.Context, req *UpdateUserPoolReq
 
 	pool, ok := s.UserPools[req.UserPoolID]
 	if !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	if req.Policies != nil && req.Policies.PasswordPolicy != nil {
@@ -574,7 +574,7 @@ func (s *MemoryStorage) AdminSetUserPassword(_ context.Context, req *AdminSetUse
 
 	users, ok := s.Users[req.UserPoolID]
 	if !ok {
-		return &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	user, ok := users[req.Username]
@@ -743,7 +743,7 @@ func (s *MemoryStorage) Authenticate(_ context.Context, clientID, username, pass
 
 	pool, ok := s.UserPools[client.UserPoolID]
 	if !ok {
-		return nil, &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	user, ok := s.Users[client.UserPoolID][username]
@@ -797,7 +797,7 @@ func (s *MemoryStorage) SigningPublicKey(_ context.Context, userPoolID string) (
 
 	pool, ok := s.UserPools[userPoolID]
 	if !ok {
-		return nil, "", &ServiceError{Code: errUserPoolNotFound, Message: "User pool not found"}
+		return nil, "", &ServiceError{Code: errUserPoolNotFound, Message: msgUserPoolNotFound}
 	}
 
 	if err := ensureSigningKey(pool); err != nil {

@@ -337,7 +337,7 @@ func TestAdminGetUser_ReturnsSubAttribute(t *testing.T) {
 	sub := ""
 
 	for _, a := range resp.UserAttributes {
-		if a.Name == "sub" {
+		if a.Name == attrNameSub {
 			sub = a.Value
 		}
 	}

@@ -107,13 +107,13 @@ func TestIssueTokens_Claims(t *testing.T) {
 		key    string
 		want   string
 	}{
-		{"id sub", idClaims, "sub", testSub},
+		{"id sub", idClaims, attrNameSub, testSub},
 		{"id aud", idClaims, "aud", testClientID},
 		{"id iss", idClaims, "iss", testIssuer},
 		{"id token_use", idClaims, "token_use", idTokenUse},
 		{"id username", idClaims, "cognito:username", testUsername},
 		{"id email", idClaims, "email", testEmail},
-		{"access sub", accessClaims, "sub", testSub},
+		{"access sub", accessClaims, attrNameSub, testSub},
 		{"access iss", accessClaims, "iss", testIssuer},
 		{"access token_use", accessClaims, "token_use", accessTokenUse},
 		{"access client_id", accessClaims, "client_id", testClientID},
