@@ -29,6 +29,9 @@ func init() {
 type Service struct {
 	storage Storage
 	baseURL string
+	// authorizerResults caches REQUEST authorizer responses for their
+	// authorizerResultTtlInSeconds.
+	authorizerResults authorizerCache
 }
 
 // New creates a new API Gateway service.
@@ -88,6 +91,12 @@ func (s *Service) registerAPIRoutes(r service.Router) {
 	r.HandleFunc("GET", "/restapis/{restApiId}/stages", s.GetStages)
 	r.HandleFunc("GET", "/restapis/{restApiId}/stages/{stageName}", s.GetStage)
 	r.HandleFunc("DELETE", "/restapis/{restApiId}/stages/{stageName}", s.DeleteStage)
+
+	// Authorizer routes.
+	r.HandleFunc("POST", "/restapis/{restApiId}/authorizers", s.CreateAuthorizer)
+	r.HandleFunc("GET", "/restapis/{restApiId}/authorizers", s.GetAuthorizers)
+	r.HandleFunc("GET", "/restapis/{restApiId}/authorizers/{authorizerId}", s.GetAuthorizer)
+	r.HandleFunc("DELETE", "/restapis/{restApiId}/authorizers/{authorizerId}", s.DeleteAuthorizer)
 }
 
 // Close saves the storage state if persistence is enabled.

@@ -3,6 +3,7 @@ package apigateway
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -402,6 +403,89 @@ func (s *Service) DeleteStage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// CreateAuthorizer handles the CreateAuthorizer API.
+func (s *Service) CreateAuthorizer(w http.ResponseWriter, r *http.Request) {
+	restAPIID := extractAuthorizerRestAPIID(r.URL.Path)
+
+	var req CreateAuthorizerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "BadRequestException", "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.Name == "" || req.Type == "" {
+		writeError(w, "BadRequestException", "Name and type are required", http.StatusBadRequest)
+
+		return
+	}
+
+	if msg := validateAuthorizer(&req); msg != "" {
+		writeError(w, errBadRequest, msg, http.StatusBadRequest)
+
+		return
+	}
+
+	authorizer, err := s.storage.CreateAuthorizer(r.Context(), restAPIID, &req)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	resp := toAuthorizerResponse(authorizer)
+	writeResponse(w, resp, http.StatusCreated)
+}
+
+// GetAuthorizer handles the GetAuthorizer API.
+func (s *Service) GetAuthorizer(w http.ResponseWriter, r *http.Request) {
+	restAPIID, authorizerID := extractRestAPIAndAuthorizerID(r.URL.Path)
+
+	authorizer, err := s.storage.GetAuthorizer(r.Context(), restAPIID, authorizerID)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	resp := toAuthorizerResponse(authorizer)
+	writeResponse(w, resp, http.StatusOK)
+}
+
+// GetAuthorizers handles the GetAuthorizers API.
+func (s *Service) GetAuthorizers(w http.ResponseWriter, r *http.Request) {
+	restAPIID := extractAuthorizerRestAPIID(r.URL.Path)
+
+	authorizers, err := s.storage.GetAuthorizers(r.Context(), restAPIID)
+	if err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	items := make([]AuthorizerResponse, len(authorizers))
+
+	for i, a := range authorizers {
+		items[i] = *toAuthorizerResponse(a)
+	}
+
+	resp := &GetAuthorizersResponse{Items: items}
+	writeResponse(w, resp, http.StatusOK)
+}
+
+// DeleteAuthorizer handles the DeleteAuthorizer API.
+func (s *Service) DeleteAuthorizer(w http.ResponseWriter, r *http.Request) {
+	restAPIID, authorizerID := extractRestAPIAndAuthorizerID(r.URL.Path)
+
+	if err := s.storage.DeleteAuthorizer(r.Context(), restAPIID, authorizerID); err != nil {
+		handleError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
 // toRestAPIResponse converts a RestAPI to CreateRestAPIResponse.
 func toRestAPIResponse(api *RestAPI) *CreateRestAPIResponse {
 	return &CreateRestAPIResponse{
@@ -440,6 +524,7 @@ func toMethodOutput(m *Method) *MethodOutput {
 	output := &MethodOutput{
 		HTTPMethod:        m.HTTPMethod,
 		AuthorizationType: m.AuthorizationType,
+		AuthorizerID:      m.AuthorizerID,
 		APIKeyRequired:    m.APIKeyRequired,
 		OperationName:     m.OperationName,
 	}
@@ -490,6 +575,40 @@ func toStageResponse(s *Stage) *StageResponse {
 		LastUpdatedDate:     float64(s.LastUpdatedDate.Unix()),
 		Tags:                s.Tags,
 		Variables:           s.Variables,
+	}
+}
+
+// validateAuthorizer reports why a CreateAuthorizer request is invalid, or ""
+// when it is accepted. An identity source is mandatory for a REQUEST authorizer
+// with caching enabled because its values derive the cache key.
+func validateAuthorizer(req *CreateAuthorizerRequest) string {
+	switch req.Type {
+	case authorizerTypeRequest, authorizerTypeToken, authorizerTypeCognito:
+	default:
+		return "Invalid authorizer type specified: " + req.Type
+	}
+
+	ttl := req.resolvedTTL()
+	if ttl < 0 || ttl > maxAuthorizerResultTTL {
+		return fmt.Sprintf("Authorizer result TTL must be between 0 and %d seconds", maxAuthorizerResultTTL)
+	}
+
+	if req.Type == authorizerTypeRequest && ttl > 0 && strings.TrimSpace(req.IdentitySource) == "" {
+		return "Identity source is required for a REQUEST authorizer with caching enabled"
+	}
+
+	return ""
+}
+
+// toAuthorizerResponse converts an Authorizer to AuthorizerResponse.
+func toAuthorizerResponse(a *Authorizer) *AuthorizerResponse {
+	return &AuthorizerResponse{
+		ID:                           a.ID,
+		Name:                         a.Name,
+		Type:                         a.Type,
+		AuthorizerURI:                a.AuthorizerURI,
+		IdentitySource:               a.IdentitySource,
+		AuthorizerResultTTLInSeconds: a.AuthorizerResultTTLInSeconds,
 	}
 }
 
@@ -597,6 +716,28 @@ func extractStageRestAPIID(path string) string {
 // extractRestAPIAndStageName extracts restApiId and stageName from
 // /restapis/{restApiId}/stages/{stageName}.
 func extractRestAPIAndStageName(path string) (restAPIID, stageName string) {
+	parts := pathSegmentsAfterRestapis(path)
+	if len(parts) >= 3 {
+		return parts[0], parts[2]
+	}
+
+	return "", ""
+}
+
+// extractAuthorizerRestAPIID extracts restApiId from
+// /restapis/{restApiId}/authorizers.
+func extractAuthorizerRestAPIID(path string) string {
+	parts := pathSegmentsAfterRestapis(path)
+	if len(parts) >= 1 {
+		return parts[0]
+	}
+
+	return ""
+}
+
+// extractRestAPIAndAuthorizerID extracts restApiId and authorizerId from
+// /restapis/{restApiId}/authorizers/{authorizerId}.
+func extractRestAPIAndAuthorizerID(path string) (restAPIID, authorizerID string) {
 	parts := pathSegmentsAfterRestapis(path)
 	if len(parts) >= 3 {
 		return parts[0], parts[2]
