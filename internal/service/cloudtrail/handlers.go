@@ -310,6 +310,12 @@ func (s *Service) AddTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.TagsList) == 0 {
+		writeError(w, "ValidationException", "TagsList is required", http.StatusBadRequest)
+
+		return
+	}
+
 	if err := s.storage.AddTrailTags(r.Context(), req.ResourceID, req.TagsList); err != nil {
 		handleError(w, err)
 
@@ -330,6 +336,12 @@ func (s *Service) RemoveTags(w http.ResponseWriter, r *http.Request) {
 
 	if req.ResourceID == "" {
 		writeError(w, "ValidationException", "ResourceId is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.TagsList) == 0 {
+		writeError(w, "ValidationException", "TagsList is required", http.StatusBadRequest)
 
 		return
 	}
