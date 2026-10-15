@@ -346,9 +346,18 @@ func generateTrailARN(region, accountID, trailName string) string {
 }
 
 // ListTrailTags returns the tags of the trail named by a short name or ARN.
-// A missing trail (or one without tags) yields an empty list rather than an
-// error, so the Terraform provider's read-time ListTags stays stable even when
-// no tags were ever set.
+//
+// This deliberately diverges from AWS: an unknown ARN yields an empty list
+// instead of an error, where real CloudTrail ListTags raises
+// ResourceNotFoundException and every other API in this file returns
+// TrailNotFoundException for an unknown trail. The Terraform provider reads tags
+// on every refresh, including for trails it is about to create or has just
+// destroyed, and failing those reads makes plans flap. Returning an empty list
+// keeps refresh stable, and a caller that needs existence checked has already
+// learned it from GetTrail or DescribeTrails. Tag writes (AddTrailTags,
+// RemoveTrailTags) still reject an unknown trail, so the divergence is confined
+// to the read path.
+// https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_ListTags.html
 func (m *MemoryStorage) ListTrailTags(_ context.Context, name string) []Tag {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
