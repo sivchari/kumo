@@ -499,7 +499,9 @@ func TestCloudTrail_ListTagsUnknownResource(t *testing.T) {
 
 // TestCloudTrail_TagsListRequired covers the AddTags / RemoveTags guard: AWS
 // marks TagsList required, so an empty list must be rejected rather than
-// silently succeeding as a no-op.
+// silently succeeding as a no-op. Both operations document
+// InvalidTagParameterException (HTTP 400) for a bad tag parameter and neither
+// lists ValidationException.
 func TestCloudTrail_TagsListRequired(t *testing.T) {
 	client := newCloudTrailClient(t)
 	ctx := t.Context()
@@ -510,13 +512,13 @@ func TestCloudTrail_TagsListRequired(t *testing.T) {
 		ResourceId: aws.String(trailARN),
 		TagsList:   []cloudtrailtypes.Tag{},
 	})
-	assertAPIErrorCode(t, err, "ValidationException")
+	assertAPIErrorCode(t, err, "InvalidTagParameterException")
 
 	_, err = client.RemoveTags(ctx, &cloudtrail.RemoveTagsInput{
 		ResourceId: aws.String(trailARN),
 		TagsList:   []cloudtrailtypes.Tag{},
 	})
-	assertAPIErrorCode(t, err, "ValidationException")
+	assertAPIErrorCode(t, err, "InvalidTagParameterException")
 }
 
 // assertAPIErrorCode fails unless err is an API error carrying wantCode.

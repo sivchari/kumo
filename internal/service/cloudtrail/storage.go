@@ -19,6 +19,10 @@ const (
 	errTrailAlreadyExists = "TrailAlreadyExistsException"
 	errValidationError    = "ValidationException"
 
+	// errInvalidTagParameter is what AWS documents for a bad tag parameter on
+	// AddTags / RemoveTags; neither operation lists ValidationException.
+	errInvalidTagParameter = "InvalidTagParameterException"
+
 	msgTrailNotFound = "Trail not found"
 )
 

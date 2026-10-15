@@ -311,7 +311,7 @@ func (s *Service) AddTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.TagsList) == 0 {
-		writeError(w, "ValidationException", "TagsList is required", http.StatusBadRequest)
+		writeError(w, errInvalidTagParameter, "TagsList must contain at least one tag", http.StatusBadRequest)
 
 		return
 	}
@@ -341,7 +341,7 @@ func (s *Service) RemoveTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.TagsList) == 0 {
-		writeError(w, "ValidationException", "TagsList is required", http.StatusBadRequest)
+		writeError(w, errInvalidTagParameter, "TagsList must contain at least one tag", http.StatusBadRequest)
 
 		return
 	}
