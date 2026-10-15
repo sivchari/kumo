@@ -314,17 +314,17 @@ func TestInvokeFunction_ReportsFunctionErrors(t *testing.T) {
 	}))
 	t.Cleanup(lambda.Close)
 
-	ok, err := invokeFunction(t.Context(), lambda.URL, "fine", []byte(`{}`))
-	if err != nil || ok.FunctionError != "" || string(ok.Body) != `{"ok":true}` {
+	ok, err := InvokeFunctionSync(t.Context(), lambda.URL, "fine", []byte(`{}`))
+	if err != nil || ok.FunctionError != "" || string(ok.Payload) != `{"ok":true}` {
 		t.Fatalf("fine = %+v, %v", ok, err)
 	}
 
-	failed, err := invokeFunction(t.Context(), lambda.URL, "boom", []byte(`{}`))
+	failed, err := InvokeFunctionSync(t.Context(), lambda.URL, "boom", []byte(`{}`))
 	if err != nil || failed.FunctionError != "Unhandled" {
 		t.Fatalf("boom = %+v, %v", failed, err)
 	}
 
-	if _, err := invokeFunction(t.Context(), lambda.URL, "down", []byte(`{}`)); err == nil {
+	if _, err := InvokeFunctionSync(t.Context(), lambda.URL, "down", []byte(`{}`)); err == nil {
 		t.Fatal("a non-200 invoke response must be an error")
 	}
 }

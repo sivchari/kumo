@@ -116,7 +116,7 @@ func ServeFunctionURL(w http.ResponseWriter, r *http.Request, baseURL, functionN
 		return
 	}
 
-	result, err := invokeFunction(r.Context(), baseURL, functionName, event)
+	result, err := InvokeFunctionSync(r.Context(), baseURL, functionName, event)
 	if err != nil || result.FunctionError != "" {
 		slog.Error("function url: invocation failed", "function", functionName, "urlId", req.URLID, "error", err)
 		writeFunctionURLError(w)
@@ -124,7 +124,7 @@ func ServeFunctionURL(w http.ResponseWriter, r *http.Request, baseURL, functionN
 		return
 	}
 
-	writeFunctionURLResponse(w, result.Body)
+	writeFunctionURLResponse(w, result.Payload)
 }
 
 // buildFunctionURLEvent renders the payload format 2.0 event for a function

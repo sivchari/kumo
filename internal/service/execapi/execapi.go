@@ -74,7 +74,7 @@ func Dispatch(w http.ResponseWriter, r *http.Request, t Target, req *Request) {
 // invokeLambda builds the proxy event, invokes the Lambda, and writes the
 // unwrapped response.
 func invokeLambda(w http.ResponseWriter, r *http.Request, t Target, req *Request) {
-	name := lambdaFunctionNameFromURI(t.URI)
+	name := LambdaFunctionNameFromURI(t.URI)
 	if name == "" {
 		writeError(w, http.StatusInternalServerError)
 
@@ -116,28 +116,35 @@ func invokeLambda(w http.ResponseWriter, r *http.Request, t Target, req *Request
 // function's response body. A function error still comes back as its JSON
 // error document, which is what the execute-api proxy path expects.
 func invoke(r *http.Request, baseURL, name string, event []byte) ([]byte, error) {
-	result, err := invokeFunction(r.Context(), baseURL, name, event)
+	result, err := InvokeFunctionSync(r.Context(), baseURL, name, event)
 	if err != nil {
 		return nil, err
 	}
 
-	return result.Body, nil
+	return result.Payload, nil
 }
 
-// invokeResult is a synchronous invocation's outcome: the payload and, when
-// the function failed, the X-Amz-Function-Error header value.
-type invokeResult struct {
-	Body          []byte
+// InvokeResult is a synchronous invocation's outcome: the response payload and,
+// when the function failed, the X-Amz-Function-Error header value. A failing
+// function still yields a payload — its error envelope — so the caller decides
+// how to interpret it.
+type InvokeResult struct {
+	Payload       []byte
 	FunctionError string
 }
 
-// invokeFunction POSTs the event to kumo's own Lambda invoke endpoint.
-func invokeFunction(ctx context.Context, baseURL, name string, event []byte) (*invokeResult, error) {
+// InvokeFunctionSync POSTs the event to kumo's own Lambda invoke endpoint and
+// returns the function's response.
+//
+// Going through the HTTP endpoint rather than the lambda package keeps the
+// execute-api data plane free of a dependency on it, and means every execution
+// backend (Runtime API handler, InvokeEndpoint) is reached the same way.
+func InvokeFunctionSync(ctx context.Context, baseURL, name string, event []byte) (InvokeResult, error) {
 	endpoint := fmt.Sprintf("%s/2015-03-31/functions/%s/invocations", baseURL, name)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(event))
 	if err != nil {
-		return nil, fmt.Errorf("build invoke request: %w", err)
+		return InvokeResult{}, fmt.Errorf("execapi: build invoke request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -146,21 +153,21 @@ func invokeFunction(ctx context.Context, baseURL, name string, event []byte) (*i
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("invoke lambda: %w", err)
+		return InvokeResult{}, fmt.Errorf("execapi: invoke lambda: %w", err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read invoke response: %w", err)
+		return InvokeResult{}, fmt.Errorf("execapi: read invoke response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("lambda invoke returned status %d", resp.StatusCode)
+		return InvokeResult{}, fmt.Errorf("execapi: lambda invoke returned status %d", resp.StatusCode)
 	}
 
-	return &invokeResult{Body: respBody, FunctionError: resp.Header.Get("X-Amz-Function-Error")}, nil
+	return InvokeResult{Payload: respBody, FunctionError: resp.Header.Get("X-Amz-Function-Error")}, nil
 }
 
 // proxyResponseEnvelope is the response a Lambda proxy integration returns.
@@ -271,7 +278,7 @@ func forwardHTTP(w http.ResponseWriter, r *http.Request, uri string) {
 	_, _ = w.Write(body)
 }
 
-// lambdaFunctionNameFromURI extracts the Lambda function name from an
+// LambdaFunctionNameFromURI extracts the Lambda function name from an
 // AWS_PROXY integration URI. It accepts both the v1 REST form
 //
 //	arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambdaArn}/invocations
@@ -279,7 +286,10 @@ func forwardHTTP(w http.ResponseWriter, r *http.Request, uri string) {
 // and the v2 HTTP API form, which is the bare Lambda function ARN
 //
 //	arn:aws:lambda:{region}:{account}:function:{name}[:qualifier]
-func lambdaFunctionNameFromURI(uri string) string {
+//
+// The same URI shape is used by API Gateway authorizerUri, so the API Gateway
+// service reuses this to resolve a REQUEST authorizer's target function.
+func LambdaFunctionNameFromURI(uri string) string {
 	const (
 		marker = "/functions/"
 		suffix = "/invocations"
