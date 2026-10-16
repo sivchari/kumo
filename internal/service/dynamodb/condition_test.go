@@ -588,6 +588,87 @@ func TestEvaluateCondition(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "contains list of maps",
+			item: Item{"pk": {S: new("1")}, "filters": {L: []*AttributeValue{
+				{M: map[string]*AttributeValue{"k": {S: new("dest")}, "v": {S: new("d-1")}}},
+			}}},
+			cond: ConditionInput{
+				Expression: "contains(filters, :f)",
+				ExprValues: map[string]AttributeValue{
+					":f": {M: map[string]*AttributeValue{"k": {S: new("dest")}, "v": {S: new("d-1")}}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "contains list of lists",
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{
+				{L: []*AttributeValue{{S: new("a")}, {N: new("1")}}},
+			}}},
+			cond: ConditionInput{
+				Expression: "contains(items, :l)",
+				ExprValues: map[string]AttributeValue{
+					":l": {L: []*AttributeValue{{S: new("a")}, {N: new("1")}}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "contains number compares by value",
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{N: new("1")}}}},
+			cond: ConditionInput{
+				Expression: "contains(items, :n)",
+				ExprValues: map[string]AttributeValue{
+					":n": {N: new("1.0")},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "equal maps",
+			item: Item{"pk": {S: new("1")}, "m": {M: map[string]*AttributeValue{"a": {N: new("1")}, "b": {SS: []string{"x", "y"}}}}},
+			cond: ConditionInput{
+				Expression: "m = :m",
+				ExprValues: map[string]AttributeValue{
+					":m": {M: map[string]*AttributeValue{"a": {N: new("1")}, "b": {SS: []string{"y", "x"}}}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "not equal on equal maps",
+			item: Item{"pk": {S: new("1")}, "m": {M: map[string]*AttributeValue{"a": {N: new("1")}}}},
+			cond: ConditionInput{
+				Expression: "m <> :m",
+				ExprValues: map[string]AttributeValue{
+					":m": {M: map[string]*AttributeValue{"a": {N: new("1")}}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "map subset is not equal",
+			item: Item{"pk": {S: new("1")}, "m": {M: map[string]*AttributeValue{"a": {N: new("1")}}}},
+			cond: ConditionInput{
+				Expression: "m = :m",
+				ExprValues: map[string]AttributeValue{
+					":m": {M: map[string]*AttributeValue{"a": {N: new("1")}, "b": {N: new("2")}}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "list order matters",
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{S: new("a")}, {S: new("b")}}}},
+			cond: ConditionInput{
+				Expression: "items = :l",
+				ExprValues: map[string]AttributeValue{
+					":l": {L: []*AttributeValue{{S: new("b")}, {S: new("a")}}},
+				},
+			},
+			want: false,
+		},
+		{
 			name: "size comparison",
 			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{S: new("a")}, {S: new("b")}, {S: new("c")}}}},
 			cond: ConditionInput{
