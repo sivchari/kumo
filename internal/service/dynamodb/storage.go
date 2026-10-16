@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -744,11 +745,16 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		return nil, nil, 0, err
 	}
 
-	m.orderQueryCandidates(candidates, keyAttrName(keySchema, keyTypeRange), scanForward)
+	m.orderQueryCandidates(td.Table, candidates, keyAttrName(keySchema, keyTypeRange), scanForward)
 
 	startIdx := m.startIndexAfterKey(td.Table, candidates, exclusiveStartKey)
 
-	items, lastKey, scannedCount, err := m.evaluatePage(td.Table, candidates[startIdx:], filterExpr, exprNames, exprValues, limit)
+	lastKeySchema := td.Table.KeySchema
+	if indexName != "" {
+		lastKeySchema = slices.Concat(td.Table.KeySchema, keySchema)
+	}
+
+	items, lastKey, scannedCount, err := m.evaluatePage(lastKeySchema, candidates[startIdx:], filterExpr, exprNames, exprValues, limit)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -816,22 +822,41 @@ func (m *MemoryStorage) queryMatchingItems(items map[string]Item, partitionKeyNa
 
 // orderQueryCandidates sorts query candidates by sort key (DynamoDB Query
 // always returns items in sort-key order) and reverses them in place when
-// scanForward is false. A table/index without a sort key is left in its
-// original (arbitrary map iteration) order.
-func (m *MemoryStorage) orderQueryCandidates(candidates []Item, sortKeyName string, scanForward bool) {
-	if sortKeyName != "" {
-		sort.Slice(candidates, func(i, j int) bool {
-			vi := candidates[i][sortKeyName]
-			vj := candidates[j][sortKeyName]
+// scanForward is false. Ties, including every item of an index without a sort
+// key, are broken by the table's primary key so the order is identical across
+// paginated calls and ExclusiveStartKey resumes at the right position.
+func (m *MemoryStorage) orderQueryCandidates(table *Table, candidates []Item, sortKeyName string, scanForward bool) {
+	type keyedItem struct {
+		key  string
+		item Item
+	}
 
-			return m.compareForSort(&vi, &vj)
-		})
+	pairs := make([]keyedItem, len(candidates))
+	for i, it := range candidates {
+		pairs[i] = keyedItem{key: m.serializeKey(table, it), item: it}
+	}
+
+	sort.Slice(pairs, func(i, j int) bool {
+		if sortKeyName != "" {
+			vi, vj := pairs[i].item[sortKeyName], pairs[j].item[sortKeyName]
+			if m.compareForSort(&vi, &vj) {
+				return true
+			}
+
+			if m.compareForSort(&vj, &vi) {
+				return false
+			}
+		}
+
+		return pairs[i].key < pairs[j].key
+	})
+
+	for i, p := range pairs {
+		candidates[i] = p.item
 	}
 
 	if !scanForward {
-		for i, j := 0, len(candidates)-1; i < j; i, j = i+1, j-1 {
-			candidates[i], candidates[j] = candidates[j], candidates[i]
-		}
+		slices.Reverse(candidates)
 	}
 }
 
@@ -862,8 +887,9 @@ func (m *MemoryStorage) startIndexAfterKey(table *Table, ordered []Item, exclusi
 // ones that also pass the filter. lastEvaluatedKey is set to the last
 // evaluated item's key when evaluation stopped early because Limit was
 // reached while candidates remained, and is nil once candidates are
-// exhausted (even if that happens to coincide with Limit).
-func (m *MemoryStorage) evaluatePage(table *Table, candidates []Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
+// exhausted (even if that happens to coincide with Limit). lastEvaluatedKey
+// holds the attributes named in lastKeySchema.
+func (m *MemoryStorage) evaluatePage(lastKeySchema []KeySchemaElement, candidates []Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
 	items := []Item{}
 
 	for i, item := range candidates {
@@ -881,7 +907,7 @@ func (m *MemoryStorage) evaluatePage(table *Table, candidates []Item, filterExpr
 			var lastEvaluatedKey Item
 
 			if i+1 < len(candidates) {
-				lastEvaluatedKey = m.extractKey(table, item)
+				lastEvaluatedKey = keyAttributes(lastKeySchema, item)
 			}
 
 			return items, lastEvaluatedKey, scannedCount, nil
@@ -966,7 +992,7 @@ func (m *MemoryStorage) sortByKeyAndEvaluate(table *Table, candidates []Item, ex
 		return []Item{}, nil, 0, nil
 	}
 
-	return m.evaluatePage(table, ordered[startIdx:], filterExpr, exprNames, exprValues, limit)
+	return m.evaluatePage(table.KeySchema, ordered[startIdx:], filterExpr, exprNames, exprValues, limit)
 }
 
 // scanCandidateItems walks every item and applies parallel-scan segment
@@ -1220,9 +1246,14 @@ func (m *MemoryStorage) copyAttributeValue(av AttributeValue) AttributeValue {
 
 // extractKey extracts the primary key from an item.
 func (m *MemoryStorage) extractKey(table *Table, item Item) Item {
-	key := make(Item)
+	return keyAttributes(table.KeySchema, item)
+}
 
-	for _, ks := range table.KeySchema {
+// keyAttributes returns the item's attributes named in keySchema.
+func keyAttributes(keySchema []KeySchemaElement, item Item) Item {
+	key := make(Item, len(keySchema))
+
+	for _, ks := range keySchema {
 		if val, ok := item[ks.AttributeName]; ok {
 			key[ks.AttributeName] = val
 		}
