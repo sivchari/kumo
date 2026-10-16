@@ -1257,7 +1257,7 @@ func writePartialObjectResponse(w http.ResponseWriter, obj *Object, start, end i
 
 	for k, v := range obj.Metadata {
 		if k != contentTypeHeader {
-			w.Header().Set("x-amz-meta-"+k, v)
+			w.Header()["x-amz-meta-"+k] = []string{v}
 		}
 	}
 
@@ -1383,7 +1383,7 @@ func writeObjectResponse(w http.ResponseWriter, obj *Object) {
 
 	for k, v := range obj.Metadata {
 		if k != contentTypeHeader {
-			w.Header().Set("x-amz-meta-"+k, v)
+			w.Header()["x-amz-meta-"+k] = []string{v}
 		}
 	}
 
@@ -1572,7 +1572,7 @@ func (s *Service) HeadObject(w http.ResponseWriter, r *http.Request) {
 
 	for k, v := range obj.Metadata {
 		if k != contentTypeHeader {
-			w.Header().Set("x-amz-meta-"+k, v)
+			w.Header()["x-amz-meta-"+k] = []string{v}
 		}
 	}
 
