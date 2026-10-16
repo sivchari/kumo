@@ -2,6 +2,11 @@
 package cloudwatch
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/sivchari/kumo/internal/service"
@@ -16,6 +21,44 @@ type CBORTime struct {
 // ToRFC3339 returns the time as an RFC3339 string.
 func (t CBORTime) ToRFC3339() string {
 	return t.Format(time.RFC3339)
+}
+
+type jsonTimestamp string
+
+func (t *jsonTimestamp) UnmarshalJSON(data []byte) error {
+	if bytes.HasPrefix(data, []byte(`"`)) {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return fmt.Errorf("invalid timestamp string: %w", err)
+		}
+
+		*t = jsonTimestamp(s)
+
+		return nil
+	}
+
+	seconds, err := strconv.ParseFloat(string(data), 64)
+	if err != nil {
+		return fmt.Errorf("invalid epoch timestamp: %w", err)
+	}
+
+	*t = jsonTimestamp(time.UnixMilli(int64(math.Round(seconds * 1000))).UTC().Format(time.RFC3339Nano))
+
+	return nil
+}
+
+func (t jsonTimestamp) MarshalJSON() ([]byte, error) {
+	parsed, err := parseTimestamp(string(t))
+	if err != nil {
+		raw, err := json.Marshal(string(t))
+		if err != nil {
+			return nil, fmt.Errorf("marshal timestamp: %w", err)
+		}
+
+		return raw, nil
+	}
+
+	return strconv.AppendFloat(nil, float64(parsed.UnixMilli())/1000, 'f', -1, 64), nil
 }
 
 // Metric represents a CloudWatch metric.
@@ -35,7 +78,7 @@ type Dimension struct {
 type MetricDatum struct {
 	MetricName        string        `json:"MetricName"`
 	Dimensions        []Dimension   `json:"Dimensions,omitempty"`
-	Timestamp         string        `json:"Timestamp,omitempty"`
+	Timestamp         jsonTimestamp `json:"Timestamp,omitempty"`
 	Value             *float64      `json:"Value,omitempty"`
 	StatisticValues   *StatisticSet `json:"StatisticValues,omitempty"`
 	Values            []float64     `json:"Values,omitempty"`
@@ -90,8 +133,8 @@ type PutMetricDataRequest struct {
 // GetMetricDataRequest is the request for GetMetricData.
 type GetMetricDataRequest struct {
 	MetricDataQueries []MetricDataQuery `json:"MetricDataQueries"`
-	StartTime         string            `json:"StartTime"`
-	EndTime           string            `json:"EndTime"`
+	StartTime         jsonTimestamp     `json:"StartTime"`
+	EndTime           jsonTimestamp     `json:"EndTime"`
 	NextToken         string            `json:"NextToken,omitempty"`
 	MaxDatapoints     *int32            `json:"MaxDatapoints,omitempty"`
 }
@@ -116,14 +159,14 @@ type MetricStat struct {
 
 // GetMetricStatisticsRequest is the request for GetMetricStatistics.
 type GetMetricStatisticsRequest struct {
-	Namespace  string      `json:"Namespace"`
-	MetricName string      `json:"MetricName"`
-	Dimensions []Dimension `json:"Dimensions,omitempty"`
-	StartTime  string      `json:"StartTime"`
-	EndTime    string      `json:"EndTime"`
-	Period     int32       `json:"Period"`
-	Statistics []string    `json:"Statistics,omitempty"`
-	Unit       string      `json:"Unit,omitempty"`
+	Namespace  string        `json:"Namespace"`
+	MetricName string        `json:"MetricName"`
+	Dimensions []Dimension   `json:"Dimensions,omitempty"`
+	StartTime  jsonTimestamp `json:"StartTime"`
+	EndTime    jsonTimestamp `json:"EndTime"`
+	Period     int32         `json:"Period"`
+	Statistics []string      `json:"Statistics,omitempty"`
+	Unit       string        `json:"Unit,omitempty"`
 }
 
 // ListMetricsRequest is the request for ListMetrics.
@@ -199,11 +242,11 @@ type GetMetricDataResponse struct {
 
 // MetricDataResult represents a single metric data result.
 type MetricDataResult struct {
-	ID         string    `json:"Id"`
-	Label      string    `json:"Label"`
-	Timestamps []string  `json:"Timestamps"`
-	Values     []float64 `json:"Values"`
-	StatusCode string    `json:"StatusCode"`
+	ID         string          `json:"Id"`
+	Label      string          `json:"Label"`
+	Timestamps []jsonTimestamp `json:"Timestamps"`
+	Values     []float64       `json:"Values"`
+	StatusCode string          `json:"StatusCode"`
 }
 
 // GetMetricStatisticsResponse is the response for GetMetricStatistics.
@@ -214,13 +257,13 @@ type GetMetricStatisticsResponse struct {
 
 // Datapoint represents a single datapoint.
 type Datapoint struct {
-	Timestamp   string   `json:"Timestamp"`
-	SampleCount *float64 `json:"SampleCount,omitempty"`
-	Average     *float64 `json:"Average,omitempty"`
-	Sum         *float64 `json:"Sum,omitempty"`
-	Minimum     *float64 `json:"Minimum,omitempty"`
-	Maximum     *float64 `json:"Maximum,omitempty"`
-	Unit        string   `json:"Unit,omitempty"`
+	Timestamp   jsonTimestamp `json:"Timestamp"`
+	SampleCount *float64      `json:"SampleCount,omitempty"`
+	Average     *float64      `json:"Average,omitempty"`
+	Sum         *float64      `json:"Sum,omitempty"`
+	Minimum     *float64      `json:"Minimum,omitempty"`
+	Maximum     *float64      `json:"Maximum,omitempty"`
+	Unit        string        `json:"Unit,omitempty"`
 }
 
 // ListMetricsResponse is the response for ListMetrics.
