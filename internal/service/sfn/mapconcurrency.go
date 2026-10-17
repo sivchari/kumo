@@ -49,13 +49,9 @@ func runMapUnits(ctx context.Context, e *executionEngine, processor *stateMachin
 	var wg sync.WaitGroup
 
 	for i := range units {
-		wg.Add(1)
-
-		go func(i int) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			r.runOne(ctx, i)
-		}(i)
+		})
 	}
 
 	wg.Wait()

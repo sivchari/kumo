@@ -207,16 +207,12 @@ func TestEdge_StaleWhileRevalidateRaceFree(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := 0; i < 64; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			w := callEdge(t, svc, http.MethodGet, "/race", nil)
 			if w.Code != http.StatusOK {
 				t.Errorf("stale serve status = %d, want 200", w.Code)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

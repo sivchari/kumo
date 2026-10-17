@@ -144,9 +144,9 @@ func (d *asyncDispatcher) enqueue(functionName string, deliverer asyncDeliverer,
 		q = make(chan *asyncEvent, asyncQueueCapacity)
 		d.queues[functionName] = q
 
-		d.wg.Add(1)
-
-		go d.drain(functionName, q)
+		d.wg.Go(func() {
+			d.drain(functionName, q)
+		})
 	}
 	d.mu.Unlock()
 
@@ -167,8 +167,6 @@ func (d *asyncDispatcher) close() {
 // drain delivers queued events one at a time. Head-of-line blocking is
 // deliberate: it preserves per-function delivery order.
 func (d *asyncDispatcher) drain(functionName string, q chan *asyncEvent) {
-	defer d.wg.Done()
-
 	// Lifecycle context for this goroutine's deliveries, canceled when the
 	// dispatcher closes so in-flight requests are aborted. Created here and
 	// passed down instead of being stored on the dispatcher.

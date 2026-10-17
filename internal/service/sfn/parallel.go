@@ -60,11 +60,7 @@ func runBranches(ctx context.Context, e *executionEngine, branches []stateMachin
 	)
 
 	for i := range branches {
-		wg.Add(1)
-
-		go func(i int) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			out, err := e.execute(ctx, &branches[i], input)
 			if err != nil {
 				once.Do(func() {
@@ -77,7 +73,7 @@ func runBranches(ctx context.Context, e *executionEngine, branches []stateMachin
 			}
 
 			outputs[i] = json.RawMessage(out)
-		}(i)
+		})
 	}
 
 	wg.Wait()

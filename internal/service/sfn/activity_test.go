@@ -119,11 +119,7 @@ func TestGetActivityTaskDeliversExactlyOneTaskToOneOfTwoPollers(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for range 2 {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			token, _, err := store.GetActivityTask(ctx, activity.ActivityArn, "")
 			if err != nil {
 				t.Errorf("GetActivityTask: %v", err)
@@ -132,7 +128,7 @@ func TestGetActivityTaskDeliversExactlyOneTaskToOneOfTwoPollers(t *testing.T) {
 			}
 
 			results <- token
-		}()
+		})
 	}
 
 	// Give both pollers time to register as waiters before scheduling the

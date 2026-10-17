@@ -571,26 +571,20 @@ func TestInvoke_SyncAndAsyncSerializedPerFunction(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(2)
-
 	syncRec := httptest.NewRecorder()
 
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		svc.Invoke(syncRec, invokeRequest(t, "fn", "RequestResponse"))
-	}()
+	})
 
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		asyncRec := httptest.NewRecorder()
 		svc.Invoke(asyncRec, invokeRequest(t, "fn", "Event"))
 
 		if asyncRec.Code != http.StatusAccepted {
 			t.Errorf("async invoke status = %d, want %d", asyncRec.Code, http.StatusAccepted)
 		}
-	}()
+	})
 
 	wg.Wait()
 
@@ -627,12 +621,9 @@ func newTrackedServer(t *testing.T, started chan struct{}, release <-chan struct
 }
 
 // invokeSyncAndAssertOK fires a RequestResponse invoke for fn and records a
-// t.Errorf if it doesn't come back 200 OK. Intended to run as `go
-// invokeSyncAndAssertOK(...)`; it calls wg.Done itself.
-func invokeSyncAndAssertOK(t *testing.T, wg *sync.WaitGroup, svc *Service, fn string) {
+// t.Errorf if it doesn't come back 200 OK.
+func invokeSyncAndAssertOK(t *testing.T, svc *Service, fn string) {
 	t.Helper()
-
-	defer wg.Done()
 
 	rec := httptest.NewRecorder()
 	svc.Invoke(rec, invokeRequest(t, fn, "RequestResponse"))
@@ -662,10 +653,8 @@ func TestInvoke_DifferentFunctionsNotSerialized(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(2)
-
-	go invokeSyncAndAssertOK(t, &wg, svc, "fn-a")
-	go invokeSyncAndAssertOK(t, &wg, svc, "fn-b")
+	wg.Go(func() { invokeSyncAndAssertOK(t, svc, "fn-a") })
+	wg.Go(func() { invokeSyncAndAssertOK(t, svc, "fn-b") })
 
 	// Both handlers must be able to start concurrently: neither is gated
 	// against the other, so both reach their <-release wait without one
