@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -162,4 +163,161 @@ func TestQueryLimitAppliedBeforeFilter(t *testing.T) {
 
 	assertPageCounts(t, "second Query", items, scanned, 1, 1)
 	assertLastEvaluatedKey(t, "second Query", lastKey, false)
+}
+
+const (
+	testIndexTable    = "index-pagination"
+	testIndexName     = "account_index"
+	testIndexHashKey  = "account"
+	testIndexRangeKey = "created"
+	testIndexAccount  = "acc"
+	testIndexItems    = 25
+	testIndexLimit    = 10
+)
+
+// TestQueryIndexPagination follows LastEvaluatedKey through a GSI query whose
+// items share the index partition key (and, with a range key, have duplicate
+// range values). Every item must be returned exactly once, in index order,
+// and LastEvaluatedKey must carry the index key attributes.
+func TestQueryIndexPagination(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		rangeKey    string
+		scanForward bool
+	}{
+		{name: "hash only", scanForward: true},
+		{name: "hash only descending", scanForward: false},
+		{name: "hash and range", rangeKey: testIndexRangeKey, scanForward: true},
+		{name: "hash and range descending", rangeKey: testIndexRangeKey, scanForward: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			indexKeySchema := []KeySchemaElement{{AttributeName: testIndexHashKey, KeyType: keyTypeHash}}
+			if tt.rangeKey != "" {
+				indexKeySchema = append(indexKeySchema, KeySchemaElement{AttributeName: tt.rangeKey, KeyType: keyTypeRange})
+			}
+
+			s := setupIndexPaginationTable(t, indexKeySchema, testIndexItems)
+			items := queryIndexAllPages(t, s, indexKeySchema, testIndexLimit, tt.scanForward)
+
+			seen := make(map[string]struct{}, len(items))
+
+			for _, item := range items {
+				pk := *item["pk"].S
+				if _, dup := seen[pk]; dup {
+					t.Errorf("item %s returned more than once", pk)
+				}
+
+				seen[pk] = struct{}{}
+			}
+
+			if len(seen) != testIndexItems {
+				t.Errorf("distinct items = %d, want %d", len(seen), testIndexItems)
+			}
+
+			if tt.rangeKey != "" {
+				assertIndexRangeOrder(t, items, tt.scanForward)
+			}
+		})
+	}
+}
+
+// setupIndexPaginationTable creates a table with a GSI using indexKeySchema
+// and puts n items that all share the same index partition key. Range values
+// repeat every three items so pagination must break ties on the table key.
+func setupIndexPaginationTable(t *testing.T, indexKeySchema []KeySchemaElement, n int) *MemoryStorage {
+	t.Helper()
+
+	s := NewMemoryStorage("http://localhost:4566")
+
+	_, err := s.CreateTable(t.Context(), &CreateTableRequest{
+		TableName: testIndexTable,
+		KeySchema: []KeySchemaElement{{AttributeName: "pk", KeyType: keyTypeHash}},
+		AttributeDefinitions: []AttributeDefinition{
+			{AttributeName: "pk", AttributeType: "S"},
+			{AttributeName: testIndexHashKey, AttributeType: "S"},
+			{AttributeName: testIndexRangeKey, AttributeType: "S"},
+		},
+		GlobalSecondaryIndexes: []GlobalSecondaryIndex{{
+			IndexName:  testIndexName,
+			KeySchema:  indexKeySchema,
+			Projection: Projection{ProjectionType: "ALL"},
+		}},
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range n {
+		if _, err := s.PutItem(t.Context(), testIndexTable, Item{
+			"pk":              {S: new(fmt.Sprintf("item_%02d", i))},
+			testIndexHashKey:  {S: new(testIndexAccount)},
+			testIndexRangeKey: {S: new(fmt.Sprintf("2024-01-%02d", i%3))},
+		}, false, ConditionInput{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return s
+}
+
+// queryIndexAllPages follows LastEvaluatedKey until it is absent and returns
+// all items, checking that every LastEvaluatedKey carries the index key.
+func queryIndexAllPages(t *testing.T, s *MemoryStorage, indexKeySchema []KeySchemaElement, limit int, scanForward bool) []Item {
+	t.Helper()
+
+	keyCondExpr := testIndexHashKey + " = :a"
+	exprValues := map[string]AttributeValue{":a": {S: new(testIndexAccount)}}
+	maxPages := testIndexItems/limit + 2
+
+	var (
+		all      []Item
+		startKey Item
+	)
+
+	for page := 1; page <= maxPages; page++ {
+		items, lastKey, _, err := s.Query(t.Context(), testIndexTable, testIndexName, keyCondExpr, "",
+			nil, exprValues, limit, startKey, scanForward)
+
+		if err != nil {
+			t.Fatalf("page %d Query: %v", page, err)
+		}
+
+		all = append(all, items...)
+
+		if lastKey == nil {
+			return all
+		}
+
+		for _, ks := range indexKeySchema {
+			if _, ok := lastKey[ks.AttributeName]; !ok {
+				t.Fatalf("page %d LastEvaluatedKey = %v, missing index key %q", page, lastKey, ks.AttributeName)
+			}
+		}
+
+		startKey = lastKey
+	}
+
+	t.Fatalf("pagination did not terminate after %d pages, got %d items", maxPages, len(all))
+
+	return nil
+}
+
+// assertIndexRangeOrder checks that items are sorted by the index range key
+// in the requested direction. Equal neighbours are allowed.
+func assertIndexRangeOrder(t *testing.T, items []Item, scanForward bool) {
+	t.Helper()
+
+	for i := 1; i < len(items); i++ {
+		prev, cur := *items[i-1][testIndexRangeKey].S, *items[i][testIndexRangeKey].S
+		if prev != cur && (prev < cur) != scanForward {
+			t.Errorf("items[%d] %s = %q out of order after %q", i, testIndexRangeKey, cur, prev)
+		}
+	}
 }
