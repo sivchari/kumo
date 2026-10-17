@@ -444,8 +444,8 @@ func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 
 	storageReq := &GetMetricDataRequest{
 		MetricDataQueries: req.MetricDataQueries,
-		StartTime:         req.StartTime.Format(time.RFC3339),
-		EndTime:           req.EndTime.Format(time.RFC3339),
+		StartTime:         jsonTimestamp(req.StartTime.Format(time.RFC3339)),
+		EndTime:           jsonTimestamp(req.EndTime.Format(time.RFC3339)),
 		NextToken:         req.NextToken,
 		MaxDatapoints:     req.MaxDatapoints,
 	}
@@ -464,7 +464,7 @@ func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 		timestamps := make([]time.Time, len(r.Timestamps))
 
 		for j := range r.Timestamps {
-			t, _ := parseTimestamp(r.Timestamps[j])
+			t, _ := parseTimestamp(string(r.Timestamps[j]))
 			timestamps[j] = t
 		}
 
@@ -502,8 +502,8 @@ func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request
 		Namespace:  req.Namespace,
 		MetricName: req.MetricName,
 		Dimensions: req.Dimensions,
-		StartTime:  req.StartTime.Format(time.RFC3339),
-		EndTime:    req.EndTime.Format(time.RFC3339),
+		StartTime:  jsonTimestamp(req.StartTime.Format(time.RFC3339)),
+		EndTime:    jsonTimestamp(req.EndTime.Format(time.RFC3339)),
 		Period:     req.Period,
 		Statistics: req.Statistics,
 		Unit:       req.Unit,
@@ -520,7 +520,7 @@ func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request
 
 	for i := range result.Datapoints {
 		dp := result.Datapoints[i]
-		t, _ := parseTimestamp(dp.Timestamp)
+		t, _ := parseTimestamp(string(dp.Timestamp))
 		cborDatapoints[i] = CBORDatapoint{
 			Timestamp:   t,
 			SampleCount: dp.SampleCount,

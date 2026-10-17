@@ -236,7 +236,7 @@ func (s *MemoryStorage) PutMetricData(_ context.Context, namespace string, metri
 			s.Metrics[key] = metric
 		}
 
-		timestamp := datum.Timestamp
+		timestamp := string(datum.Timestamp)
 		if timestamp == "" {
 			timestamp = time.Now().UTC().Format(time.RFC3339)
 		}
@@ -304,12 +304,12 @@ func (s *MemoryStorage) GetMetricData(_ context.Context, req *GetMetricDataReque
 			continue
 		}
 
-		timestamps := make([]string, 0)
+		timestamps := make([]jsonTimestamp, 0)
 		values := make([]float64, 0)
 
 		for _, dp := range metric.Datapoints {
-			if s.isInTimeRange(dp.Timestamp, req.StartTime, req.EndTime) {
-				timestamps = append(timestamps, dp.Timestamp)
+			if s.isInTimeRange(dp.Timestamp, string(req.StartTime), string(req.EndTime)) {
+				timestamps = append(timestamps, jsonTimestamp(dp.Timestamp))
 				values = append(values, dp.Value)
 			}
 		}
@@ -351,7 +351,7 @@ func (s *MemoryStorage) GetMetricStatistics(_ context.Context, req *GetMetricSta
 	var filteredPoints []MetricDatapoint
 
 	for _, dp := range metric.Datapoints {
-		if s.isInTimeRange(dp.Timestamp, req.StartTime, req.EndTime) {
+		if s.isInTimeRange(dp.Timestamp, string(req.StartTime), string(req.EndTime)) {
 			filteredPoints = append(filteredPoints, dp)
 		}
 	}
@@ -775,7 +775,7 @@ func (s *MemoryStorage) calculateStatistics(points []MetricDatapoint, statistics
 	average := sum / count
 
 	dp := Datapoint{
-		Timestamp: timestamp,
+		Timestamp: jsonTimestamp(timestamp),
 		Unit:      unit,
 	}
 

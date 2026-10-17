@@ -94,6 +94,10 @@ func (s *Service) Actions() []string {
 // through the unified Query→JSON dispatcher in addition to CBOR.
 func (s *Service) QueryProtocol() {}
 
+// JSONProtocol is a marker method that indicates CloudWatch accepts AWS JSON 1.0
+// requests, which aws-sdk-js-v3 sends by default since 3.1105.
+func (s *Service) JSONProtocol() {}
+
 // DispatchCBORAction handles RPC v2 CBOR protocol requests.
 func (s *Service) DispatchCBORAction(w http.ResponseWriter, r *http.Request, operation string) {
 	switch operation {
