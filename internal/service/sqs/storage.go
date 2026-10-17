@@ -117,7 +117,20 @@ type QueueData struct {
 	Inflight           map[string]*Message           `json:"-"`               // receiptHandle -> message
 	DeduplicationCache map[string]DeduplicationEntry `json:"-"`               // deduplicationID -> entry (FIFO only)
 	SequenceCounter    uint64                        `json:"sequenceCounter"` // Per-queue sequence number (FIFO only)
-	notify             chan struct{}                 // signals new message arrival for long polling
+	notify             chan struct{}                 // closed and replaced on every state change that may make messages receivable; see broadcastLocked
+}
+
+// broadcastLocked wakes every receiver currently long polling on the queue.
+// It closes the current notify channel and installs a fresh one for the next
+// state change, so all waiters that captured the old channel are released at
+// once (a send on a buffered channel would wake only one of them).
+// The caller must hold MemoryStorage.mu for writing.
+func (qd *QueueData) broadcastLocked() {
+	if qd.notify != nil {
+		close(qd.notify)
+	}
+
+	qd.notify = make(chan struct{})
 }
 
 // NewMemoryStorage creates a new in-memory SQS storage.
@@ -181,7 +194,7 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		}
 
 		if qd.notify == nil {
-			qd.notify = make(chan struct{}, 1)
+			qd.notify = make(chan struct{})
 		}
 
 		if qd.Queue != nil && qd.Queue.FifoQueue && qd.DeduplicationCache == nil {
@@ -289,7 +302,7 @@ func (s *MemoryStorage) CreateQueue(_ context.Context, name string, attributes, 
 		Queue:    queue,
 		Messages: make([]*Message, 0),
 		Inflight: make(map[string]*Message),
-		notify:   make(chan struct{}, 1),
+		notify:   make(chan struct{}),
 	}
 
 	if isFifo {
@@ -578,10 +591,7 @@ func (s *MemoryStorage) SendMessage(_ context.Context, queueURL, body string, de
 
 	qd.Messages = append(qd.Messages, msg)
 
-	select {
-	case qd.notify <- struct{}{}:
-	default:
-	}
+	qd.broadcastLocked()
 
 	s.saveLocked()
 
@@ -642,7 +652,9 @@ func (s *MemoryStorage) ReceiveMessage(ctx context.Context, queueURL string, max
 		case <-timer.C:
 			return []*Message{}, nil
 		case <-notify:
-			result, _, err = s.receiveMessagesLocked(queueURL, maxMessages, visibilityTimeout)
+			// The woken channel is closed; wait on the fresh one captured
+			// under the lock, or the loop would spin on the closed channel.
+			result, notify, err = s.receiveMessagesLocked(queueURL, maxMessages, visibilityTimeout)
 			if err != nil {
 				return nil, err
 			}
@@ -1092,10 +1104,7 @@ func (s *MemoryStorage) moveToDeadLetterQueue(dlqArn string, msg *Message) {
 
 			qd.Messages = append(qd.Messages, dlqMsg)
 
-			select {
-			case qd.notify <- struct{}{}:
-			default:
-			}
+			qd.broadcastLocked()
 
 			return
 		}

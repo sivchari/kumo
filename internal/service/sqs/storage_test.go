@@ -1,6 +1,7 @@
 package sqs
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -425,5 +426,48 @@ func TestMemoryStorage_FIFODeduplicationCacheAfterReload(t *testing.T) {
 
 	if _, err := s2.SendMessage(ctx, queueURL, "second", 0, nil, "group-1", "dedup-2"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
+	}
+}
+
+// TestMemoryStorage_NotifyReachesEveryCapturedWaiter pins the broadcast
+// semantics without relying on goroutine timing. Two receivers that each
+// captured the notify channel on an empty queue but have not parked on it yet
+// (the gap between receiveMessagesLocked returning and the select starting)
+// must both observe two back-to-back sends. A single-slot signal keeps one
+// token and drops the other, so only one of them would wake.
+func TestMemoryStorage_NotifyReachesEveryCapturedWaiter(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage("http://localhost:4566")
+	ctx := context.Background()
+	queueURL := mustCreateQueue(t, s, "notify-captured", nil)
+
+	waiters := make([]<-chan struct{}, 2)
+
+	for i := range waiters {
+		msgs, notify, err := s.receiveMessagesLocked(queueURL, 1, 0)
+		if err != nil {
+			t.Fatalf("receiveMessagesLocked: %v", err)
+		}
+
+		if len(msgs) != 0 {
+			t.Fatalf("receiveMessagesLocked on empty queue: got %d messages, want 0", len(msgs))
+		}
+
+		waiters[i] = notify
+	}
+
+	for _, body := range []string{"first", "second"} {
+		if _, err := s.SendMessage(ctx, queueURL, body, 0, nil, "", ""); err != nil {
+			t.Fatalf("SendMessage(%q): %v", body, err)
+		}
+	}
+
+	for i, notify := range waiters {
+		select {
+		case <-notify:
+		default:
+			t.Fatalf("waiter %d was not woken by the sends", i)
+		}
 	}
 }

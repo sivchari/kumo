@@ -196,6 +196,144 @@ func TestMemoryStorage_LongPollReturnsOnSend(t *testing.T) {
 	})
 }
 
+// longPollResult is what one ReceiveMessage goroutine reports back.
+type longPollResult struct {
+	msgs    []*Message
+	err     error
+	elapsed time.Duration
+}
+
+// startLongPollers launches n receivers (maxMessages=1, 20s wait) and returns
+// the channel they report on. The caller should synctest.Wait afterwards so
+// every receiver is durably blocked.
+func startLongPollers(s *MemoryStorage, queueURL string, n int) <-chan longPollResult {
+	const waitTimeSeconds = 20
+
+	start := time.Now()
+	results := make(chan longPollResult, n)
+
+	for range n {
+		go func() {
+			msgs, err := s.ReceiveMessage(context.Background(), queueURL, 1, 0, new(waitTimeSeconds))
+			results <- longPollResult{msgs: msgs, err: err, elapsed: time.Since(start)}
+		}()
+	}
+
+	return results
+}
+
+func TestMemoryStorage_LongPollWakesEveryReceiver(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		s := NewMemoryStorage("http://localhost:4566")
+		ctx := context.Background()
+		queueURL := mustCreateQueue(t, s, "longpoll-broadcast", nil)
+
+		results := startLongPollers(s, queueURL, 2)
+
+		// Both receivers are now blocked in the long-poll select.
+		synctest.Wait()
+
+		// Back to back sends: a single-slot signal would drop the second one.
+		for _, body := range []string{"first", "second"} {
+			if _, err := s.SendMessage(ctx, queueURL, body, 0, nil, "", ""); err != nil {
+				t.Fatalf("SendMessage(%q): %v", body, err)
+			}
+		}
+
+		synctest.Wait()
+
+		if got := len(results); got != 2 {
+			t.Fatalf("receivers returned after both sends: got %d, want 2", got)
+		}
+
+		seen := make(map[string]struct{}, 2)
+
+		for range 2 {
+			res := <-results
+			if res.err != nil {
+				t.Fatalf("ReceiveMessage: %v", res.err)
+			}
+
+			if len(res.msgs) != 1 {
+				t.Fatalf("receiver got %d messages, want 1", len(res.msgs))
+			}
+
+			if res.elapsed >= time.Second {
+				t.Fatalf("receiver returned after %v, want well under the 20s wait", res.elapsed)
+			}
+
+			seen[res.msgs[0].MessageID] = struct{}{}
+		}
+
+		if len(seen) != 2 {
+			t.Fatalf("receivers got %d distinct messages, want 2", len(seen))
+		}
+	})
+}
+
+func TestMemoryStorage_LongPollKeepsWaitingAfterLostRace(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		s := NewMemoryStorage("http://localhost:4566")
+		ctx := context.Background()
+		queueURL := mustCreateQueue(t, s, "longpoll-lost-race", nil)
+
+		results := startLongPollers(s, queueURL, 2)
+
+		synctest.Wait()
+
+		// One message wakes both receivers; one of them takes it and the
+		// other finds nothing deliverable. The loser must go back to waiting
+		// on the fresh channel instead of returning empty or spinning on the
+		// closed one (a spin would keep synctest.Wait from ever returning).
+		first, err := s.SendMessage(ctx, queueURL, "first", 0, nil, "", "")
+		if err != nil {
+			t.Fatalf("SendMessage(first): %v", err)
+		}
+
+		synctest.Wait()
+
+		if got := len(results); got != 1 {
+			t.Fatalf("receivers returned after one send: got %d, want 1", got)
+		}
+
+		winner := <-results
+		if winner.err != nil || len(winner.msgs) != 1 || winner.msgs[0].MessageID != first.MessageID {
+			t.Fatalf("first receiver: msgs=%d err=%v, want the first message %s", len(winner.msgs), winner.err, first.MessageID)
+		}
+
+		// The loser stays blocked until the next message arrives.
+		time.Sleep(5 * time.Second)
+
+		if got := len(results); got != 0 {
+			t.Fatalf("losing receiver returned early: got %d results, want 0", got)
+		}
+
+		second, err := s.SendMessage(ctx, queueURL, "second", 0, nil, "", "")
+		if err != nil {
+			t.Fatalf("SendMessage(second): %v", err)
+		}
+
+		synctest.Wait()
+
+		if got := len(results); got != 1 {
+			t.Fatalf("losing receiver after second send: got %d results, want 1", got)
+		}
+
+		loser := <-results
+		if loser.err != nil || len(loser.msgs) != 1 || loser.msgs[0].MessageID != second.MessageID {
+			t.Fatalf("second receiver: msgs=%d err=%v, want the second message %s", len(loser.msgs), loser.err, second.MessageID)
+		}
+
+		if loser.elapsed != 5*time.Second {
+			t.Fatalf("second receiver returned after %v, want 5s (immediately on send)", loser.elapsed)
+		}
+	})
+}
+
 func TestMemoryStorage_LongPollTimesOutEmpty(t *testing.T) {
 	t.Parallel()
 
