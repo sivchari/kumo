@@ -184,7 +184,13 @@ func (e *executionEngine) awaitChildExecution(ctx context.Context, executionArn 
 	select {
 	case <-done:
 	case <-ctx.Done():
-		return nil, fmt.Errorf("wait for child execution %q: %w", executionArn, ctx.Err())
+		// Like timeoutOrLateResult: select does not prioritize ready cases, so
+		// favor a child that finished in the same instant over a spurious timeout.
+		select {
+		case <-done:
+		default:
+			return nil, fmt.Errorf("wait for child execution %q: %w", executionArn, ctx.Err())
+		}
 	}
 
 	exec, err := e.starter.DescribeExecution(ctx, executionArn)

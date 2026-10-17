@@ -170,3 +170,32 @@ func TestExecutionDoneUnknownExecution(t *testing.T) {
 		t.Fatal("executionDone for an unknown execution: want error")
 	}
 }
+
+func TestAwaitChildExecution_PrefersCompletionOverCoincidentCancel(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		store := NewMemoryStorage()
+		started := startBubbleExecution(t, store, holdDefinition)
+
+		if _, err := store.StopExecution(context.Background(), started.ExecutionArn, "", ""); err != nil {
+			t.Fatalf("StopExecution: %v", err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		// Both channels are ready on every call, so a plain select would report
+		// the cancellation about half the time.
+		for range 100 {
+			exec, err := store.engine.awaitChildExecution(ctx, started.ExecutionArn)
+			if err != nil {
+				t.Fatalf("awaitChildExecution: got %v, want the finished child", err)
+			}
+
+			if exec.Status != ExecutionStatusAborted {
+				t.Fatalf("child status: got %q, want ABORTED", exec.Status)
+			}
+		}
+	})
+}
