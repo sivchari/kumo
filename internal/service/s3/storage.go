@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5" //nolint:gosec // MD5 is required for S3 ETag calculation per AWS specification
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1652,16 +1653,13 @@ func (s *MemoryStorage) ListParts(_ context.Context, bucket, key, uploadID strin
 
 // generateUploadID generates a unique upload ID.
 func generateUploadID() string {
-	return strings.ReplaceAll(fmt.Sprintf("%s%s", randomHex(8), randomHex(8)), "-", "")
+	return randomHex(16)
 }
 
-// randomHex generates a random hex string.
+// randomHex returns n cryptographically random bytes encoded as 2n hex characters.
 func randomHex(n int) string {
 	b := make([]byte, n)
-	for i := range b {
-		b[i] = byte(time.Now().UnixNano() & 0xff)
-		time.Sleep(time.Nanosecond)
-	}
+	_, _ = rand.Read(b)
 
 	return hex.EncodeToString(b)
 }
