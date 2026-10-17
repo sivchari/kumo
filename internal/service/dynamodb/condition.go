@@ -2,6 +2,8 @@ package dynamodb
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -667,6 +669,11 @@ func compareAttributeValues(a, b AttributeValue, op string) bool {
 		return equalityOnly(*a.NULL == *b.NULL, op)
 	}
 
+	// Lists, maps and sets support only = and <>.
+	if equal, ok := collectionsEqual(a, b); ok {
+		return equalityOnly(equal, op)
+	}
+
 	// Type mismatch or unsupported types: only <> returns true.
 	return op == "<>"
 }
@@ -713,23 +720,34 @@ func compareNumbers(a, b float64, op string) bool {
 //
 //nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
 func attributeValuesEqualStatic(a, b AttributeValue) bool {
-	if a.S != nil && b.S != nil {
-		return *a.S == *b.S
-	}
+	return compareAttributeValues(a, b, "=")
+}
 
-	if a.N != nil && b.N != nil {
-		return *a.N == *b.N
+// collectionsEqual compares a and b when both are the same set, list or map
+// type, reporting ok false otherwise. Sets ignore order; lists do not.
+//
+//nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
+func collectionsEqual(a, b AttributeValue) (equal, ok bool) {
+	switch {
+	case a.SS != nil && b.SS != nil:
+		return sameElements(a.SS, b.SS), true
+	case a.NS != nil && b.NS != nil:
+		return sameElements(a.NS, b.NS), true
+	case a.L != nil && b.L != nil:
+		return slices.EqualFunc(a.L, b.L, elementsEqual), true
+	case a.M != nil && b.M != nil:
+		return maps.EqualFunc(a.M, b.M, elementsEqual), true
+	default:
+		return false, false
 	}
+}
 
-	if a.BOOL != nil && b.BOOL != nil {
-		return *a.BOOL == *b.BOOL
-	}
+func elementsEqual(a, b *AttributeValue) bool {
+	return a != nil && b != nil && attributeValuesEqualStatic(*a, *b)
+}
 
-	if a.NULL != nil && b.NULL != nil {
-		return *a.NULL == *b.NULL
-	}
-
-	return false
+func sameElements(a, b []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
 }
 
 // parseArgList parses a parenthesized, comma-separated argument list.
