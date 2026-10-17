@@ -15,33 +15,32 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	target := r.Header.Get("X-Amz-Target")
 	action := strings.TrimPrefix(target, "AmazonEC2ContainerServiceV20141113.")
 
-	switch action {
-	case "CreateCluster":
-		s.CreateCluster(w, r)
-	case "DeleteCluster":
-		s.DeleteCluster(w, r)
-	case "DescribeClusters":
-		s.DescribeClusters(w, r)
-	case "ListClusters":
-		s.ListClusters(w, r)
-	case "RegisterTaskDefinition":
-		s.RegisterTaskDefinition(w, r)
-	case "DeregisterTaskDefinition":
-		s.DeregisterTaskDefinition(w, r)
-	case "RunTask":
-		s.RunTask(w, r)
-	case "StopTask":
-		s.StopTask(w, r)
-	case "DescribeTasks":
-		s.DescribeTasks(w, r)
-	case "CreateService":
-		s.CreateService(w, r)
-	case "DeleteService":
-		s.DeleteService(w, r)
-	case "UpdateService":
-		s.UpdateService(w, r)
-	default:
+	handler, ok := s.actionHandlers()[action]
+	if !ok {
 		writeECSError(w, "UnknownOperationException", "The action "+action+" is not valid", http.StatusBadRequest)
+
+		return
+	}
+
+	handler(w, r)
+}
+
+func (s *Service) actionHandlers() map[string]func(http.ResponseWriter, *http.Request) {
+	return map[string]func(http.ResponseWriter, *http.Request){
+		"CreateCluster":            s.CreateCluster,
+		"DeleteCluster":            s.DeleteCluster,
+		"DescribeClusters":         s.DescribeClusters,
+		"ListClusters":             s.ListClusters,
+		"RegisterTaskDefinition":   s.RegisterTaskDefinition,
+		"DeregisterTaskDefinition": s.DeregisterTaskDefinition,
+		"DescribeTaskDefinition":   s.DescribeTaskDefinition,
+		"RunTask":                  s.RunTask,
+		"StopTask":                 s.StopTask,
+		"DescribeTasks":            s.DescribeTasks,
+		"CreateService":            s.CreateService,
+		"DescribeServices":         s.DescribeServices,
+		"DeleteService":            s.DeleteService,
+		"UpdateService":            s.UpdateService,
 	}
 }
 
@@ -232,6 +231,41 @@ func (s *Service) DeregisterTaskDefinition(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// DescribeTaskDefinition handles the DescribeTaskDefinition action.
+func (s *Service) DescribeTaskDefinition(w http.ResponseWriter, r *http.Request) {
+	var req DescribeTaskDefinitionRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.TaskDefinition == "" {
+		writeECSError(w, "InvalidParameterException", "TaskDefinition is required", http.StatusBadRequest)
+
+		return
+	}
+
+	taskDef, err := s.storage.DescribeTaskDefinition(r.Context(), req.TaskDefinition)
+	if err != nil {
+		var ecsErr *Error
+		if errors.As(err, &ecsErr) {
+			writeECSError(w, ecsErr.Code, ecsErr.Message, http.StatusBadRequest)
+
+			return
+		}
+
+		writeECSError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeTaskDefinitionResponse{
+		TaskDefinition: taskDef,
+		Tags:           taskDef.Tags,
+	})
+}
+
 // RunTask handles the RunTask action.
 func (s *Service) RunTask(w http.ResponseWriter, r *http.Request) {
 	var req RunTaskRequest
@@ -366,6 +400,28 @@ func (s *Service) CreateService(w http.ResponseWriter, r *http.Request) {
 
 	writeJSONResponse(w, CreateServiceResponse{
 		Service: svc,
+	})
+}
+
+// DescribeServices handles the DescribeServices action.
+func (s *Service) DescribeServices(w http.ResponseWriter, r *http.Request) {
+	var req DescribeServicesRequest
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeECSError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	services, failures, err := s.storage.DescribeServices(r.Context(), req.Cluster, req.Services)
+	if err != nil {
+		writeECSError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return
+	}
+
+	writeJSONResponse(w, DescribeServicesResponse{
+		Services: services,
+		Failures: failures,
 	})
 }
 
