@@ -122,6 +122,12 @@ type MemoryStorage struct {
 type ExecutionData struct {
 	Execution *Execution      `json:"execution"`
 	History   []*HistoryEvent `json:"history"`
+
+	// done is closed exactly once when Execution leaves RUNNING, and cancel
+	// stops its goroutine. Both are runtime-only: an execution restored from
+	// disk has no goroutine, so they are created on demand (see doneChanLocked).
+	done   chan struct{}      `json:"-"`
+	cancel context.CancelFunc `json:"-"`
 }
 
 // NewMemoryStorage creates a new in-memory storage.
@@ -375,7 +381,7 @@ func (s *MemoryStorage) startExecutionAtDepth(_ context.Context, stateMachineArn
 		},
 	}
 
-	ed := &ExecutionData{Execution: exec, History: history}
+	ed := &ExecutionData{Execution: exec, History: history, done: make(chan struct{})}
 	s.Executions[executionArn] = ed
 
 	s.saveLocked()
@@ -408,6 +414,10 @@ func (s *MemoryStorage) runExecution(ed *ExecutionData, definition, input string
 
 	ctx, cancel, definitionTimeoutApplies := executionContext(def)
 	defer cancel()
+
+	if !s.attachCancel(ed, cancel) {
+		return
+	}
 
 	ctx = withNestedExecutionDepth(ctx, depth)
 	ctx = withExecutionArn(ctx, ed.Execution.ExecutionArn)
@@ -464,48 +474,118 @@ func executionTimeoutDiagnosis(def *stateMachineDefinition, definitionTimeoutApp
 	)
 }
 
-// succeedExecution marks an execution as SUCCEEDED.
+// attachCancel records cancel on ed so StopExecution can stop the goroutine.
+// It reports false if ed already left RUNNING, in which case the goroutine
+// must not run.
+func (s *MemoryStorage) attachCancel(ed *ExecutionData, cancel context.CancelFunc) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if ed.Execution.Status != ExecutionStatusRunning {
+		return false
+	}
+
+	ed.cancel = cancel
+
+	return true
+}
+
+// doneChanLocked returns ed's completion channel, creating it on first use.
+// A restored execution has no goroutine to close it, so a non-RUNNING one
+// gets an already-closed channel and a RUNNING one stays open until stopped.
+// The caller holds s.mu.
+func (s *MemoryStorage) doneChanLocked(ed *ExecutionData) chan struct{} {
+	if ed.done == nil {
+		ed.done = make(chan struct{})
+
+		if ed.Execution.Status != ExecutionStatusRunning {
+			close(ed.done)
+		}
+	}
+
+	return ed.done
+}
+
+// terminalOutcome describes how an execution ended, for finishExecutionLocked.
+type terminalOutcome struct {
+	status ExecutionStatus
+	// apply sets the status-specific fields on the execution.
+	apply func(exec *Execution)
+	// event carries the history event's type and details; finishExecutionLocked
+	// fills in its identity and timing.
+	event           HistoryEvent
+	previousEventID int64
+}
+
+// finishExecutionLocked moves a RUNNING execution to o.status, appends the
+// matching history event and closes its done channel. It reports false and
+// changes nothing if ed already left RUNNING, which makes the terminal
+// transition exactly-once. The caller holds s.mu.
+func (s *MemoryStorage) finishExecutionLocked(ed *ExecutionData, o *terminalOutcome) bool {
+	if ed.Execution.Status != ExecutionStatusRunning {
+		return false
+	}
+
+	// Fetched before the status flips: doneChanLocked would otherwise hand
+	// back an already-closed channel for a restored execution.
+	done := s.doneChanLocked(ed)
+
+	now := time.Now()
+	ed.Execution.Status = o.status
+	ed.Execution.StopDate = &now
+	o.apply(ed.Execution)
+
+	event := o.event
+	event.Timestamp = now
+	event.ID = atomic.AddInt64(&s.EventCounter, 1)
+	event.PreviousEventID = o.previousEventID
+	ed.History = append(ed.History, &event)
+
+	close(done)
+
+	s.saveLocked()
+
+	return true
+}
+
+// succeedExecution marks an execution as SUCCEEDED unless it already finished.
 func (s *MemoryStorage) succeedExecution(ed *ExecutionData, lastEventID int64, output string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now()
-	ed.Execution.Status = ExecutionStatusSucceeded
-	ed.Execution.StopDate = &now
-	ed.Execution.Output = output
-	ed.Execution.OutputDetails = &CloudWatchEventsExecutionDataDetails{Included: true}
-
-	eventID := atomic.AddInt64(&s.EventCounter, 1)
-	ed.History = append(ed.History, &HistoryEvent{
-		Timestamp: now, Type: HistoryEventTypeExecutionSucceeded, ID: eventID, PreviousEventID: lastEventID,
-		ExecutionSucceededEventDetails: &ExecutionSucceededEventDetails{
-			Output: output, OutputDetails: &CloudWatchEventsExecutionDataDetails{Included: true},
+	s.finishExecutionLocked(ed, &terminalOutcome{
+		status: ExecutionStatusSucceeded,
+		apply: func(exec *Execution) {
+			exec.Output = output
+			exec.OutputDetails = &CloudWatchEventsExecutionDataDetails{Included: true}
 		},
+		event: HistoryEvent{
+			Type: HistoryEventTypeExecutionSucceeded,
+			ExecutionSucceededEventDetails: &ExecutionSucceededEventDetails{
+				Output: output, OutputDetails: &CloudWatchEventsExecutionDataDetails{Included: true},
+			},
+		},
+		previousEventID: lastEventID,
 	})
-
-	s.saveLocked()
 }
 
-// failExecution marks an execution as FAILED.
+// failExecution marks an execution as FAILED unless it already finished.
 func (s *MemoryStorage) failExecution(ed *ExecutionData, lastEventID int64, errorCode, cause string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now()
-	ed.Execution.Status = ExecutionStatusFailed
-	ed.Execution.StopDate = &now
-	ed.Execution.Error = errorCode
-	ed.Execution.Cause = cause
-
-	eventID := atomic.AddInt64(&s.EventCounter, 1)
-	ed.History = append(ed.History, &HistoryEvent{
-		Timestamp: now, Type: HistoryEventTypeExecutionFailed, ID: eventID, PreviousEventID: lastEventID,
-		ExecutionFailedEventDetails: &ExecutionFailedEventDetails{
-			Error: errorCode, Cause: cause,
+	s.finishExecutionLocked(ed, &terminalOutcome{
+		status: ExecutionStatusFailed,
+		apply: func(exec *Execution) {
+			exec.Error = errorCode
+			exec.Cause = cause
 		},
+		event: HistoryEvent{
+			Type:                        HistoryEventTypeExecutionFailed,
+			ExecutionFailedEventDetails: &ExecutionFailedEventDetails{Error: errorCode, Cause: cause},
+		},
+		previousEventID: lastEventID,
 	})
-
-	s.saveLocked()
 }
 
 // createExecution creates a new execution object.
@@ -546,28 +626,22 @@ func (s *MemoryStorage) StopExecution(_ context.Context, executionArn, errorCode
 		return copyExecution(ed.Execution), nil
 	}
 
-	now := time.Now()
-	ed.Execution.Status = ExecutionStatusAborted
-	ed.Execution.StopDate = &now
-	ed.Execution.Error = errorCode
-	ed.Execution.Cause = cause
-
-	// Add abort event.
-	eventID := atomic.AddInt64(&s.EventCounter, 1)
-	abortEvent := &HistoryEvent{
-		Timestamp:       now,
-		Type:            HistoryEventTypeExecutionAborted,
-		ID:              eventID,
-		PreviousEventID: int64(len(ed.History)),
-		ExecutionAbortedEventDetails: &ExecutionAbortedEventDetails{
-			Error: errorCode,
-			Cause: cause,
+	aborted := s.finishExecutionLocked(ed, &terminalOutcome{
+		status: ExecutionStatusAborted,
+		apply: func(exec *Execution) {
+			exec.Error = errorCode
+			exec.Cause = cause
 		},
+		event: HistoryEvent{
+			Type:                         HistoryEventTypeExecutionAborted,
+			ExecutionAbortedEventDetails: &ExecutionAbortedEventDetails{Error: errorCode, Cause: cause},
+		},
+		previousEventID: int64(len(ed.History)),
+	})
+
+	if aborted && ed.cancel != nil {
+		ed.cancel()
 	}
-
-	ed.History = append(ed.History, abortEvent)
-
-	s.saveLocked()
 
 	return copyExecution(ed.Execution), nil
 }
