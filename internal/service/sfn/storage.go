@@ -394,6 +394,20 @@ func (s *MemoryStorage) startExecutionAtDepth(_ context.Context, stateMachineArn
 	return copyExecution(exec), nil
 }
 
+// executionDone implements executionStarter: it returns a channel that is
+// closed once executionArn leaves RUNNING.
+func (s *MemoryStorage) executionDone(executionArn string) (<-chan struct{}, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ed, exists := s.Executions[executionArn]
+	if !exists {
+		return nil, &ServiceError{Code: errExecutionDoesNotExist, Message: msgExecutionDoesNotExist}
+	}
+
+	return s.doneChanLocked(ed), nil
+}
+
 // executionTimeoutCap bounds how long a background execution goroutine may
 // run, independent of the definition's own TimeoutSeconds (real AWS has no
 // default execution timeout). This is purely an emulator resource cap and

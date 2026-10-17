@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 )
 
 // resourceStartExecutionBase is the Task Resource for starting a nested
@@ -25,11 +24,6 @@ const (
 // AWS bounds this indirectly via running-execution quotas kumo doesn't
 // model; this fixed depth is an emulator-only substitute.
 const nestedExecutionMaxDepth = 5
-
-// nestedExecutionPollInterval is how often a .sync/.sync:2 Task polls the
-// child execution's status via DescribeExecution while waiting for it to
-// complete.
-const nestedExecutionPollInterval = 20 * time.Millisecond
 
 // startExecutionVariant identifies which of the three
 // arn:aws:states:::states:startExecution* integration patterns a Task
@@ -102,6 +96,8 @@ type executionStarter interface {
 	// survive StartExecution's intentional context detachment.
 	startNestedExecution(ctx context.Context, stateMachineArn, name, input string, depth int) (*Execution, error)
 	DescribeExecution(ctx context.Context, executionArn string) (*Execution, error)
+	// executionDone returns a channel closed once executionArn leaves RUNNING.
+	executionDone(executionArn string) (<-chan struct{}, error)
 }
 
 // executeStartExecutionTask executes a Task state whose Resource is
@@ -176,29 +172,27 @@ func startExecutionSuffixFor(variant startExecutionVariant) string {
 	return startExecutionSyncSuffix
 }
 
-// awaitChildExecution polls DescribeExecution until executionArn leaves
-// RUNNING, or ctx is done -- the Task's TimeoutSeconds/Retry/Catch context
-// applies here like any other Task invocation.
+// awaitChildExecution waits until executionArn leaves RUNNING, or ctx is
+// done -- the Task's TimeoutSeconds/Retry/Catch context applies here like any
+// other Task invocation.
 func (e *executionEngine) awaitChildExecution(ctx context.Context, executionArn string) (*Execution, error) {
-	ticker := time.NewTicker(nestedExecutionPollInterval)
-	defer ticker.Stop()
-
-	for {
-		exec, err := e.starter.DescribeExecution(ctx, executionArn)
-		if err != nil {
-			return nil, fmt.Errorf("describe child execution %q: %w", executionArn, err)
-		}
-
-		if exec.Status != ExecutionStatusRunning {
-			return exec, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("wait for child execution %q: %w", executionArn, ctx.Err())
-		case <-ticker.C:
-		}
+	done, err := e.starter.executionDone(executionArn)
+	if err != nil {
+		return nil, fmt.Errorf("wait for child execution %q: %w", executionArn, err)
 	}
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("wait for child execution %q: %w", executionArn, ctx.Err())
+	}
+
+	exec, err := e.starter.DescribeExecution(ctx, executionArn)
+	if err != nil {
+		return nil, fmt.Errorf("describe child execution %q: %w", executionArn, err)
+	}
+
+	return exec, nil
 }
 
 // marshalStartExecutionInput builds a child execution's input JSON from
