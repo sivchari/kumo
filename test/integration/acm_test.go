@@ -4,11 +4,16 @@ package integration
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"net/http"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/aws/aws-sdk-go-v2/service/acm/types"
 	"github.com/sivchari/golden"
@@ -20,6 +25,27 @@ func newACMClient(t *testing.T) *acm.Client {
 	return acm.NewFromConfig(awsConfig(t), func(o *acm.Options) {
 		o.BaseEndpoint = aws.String(testEndpoint())
 	})
+}
+
+// requireACMError fails unless err is the ACM exception E sent with HTTP 400:
+// the ACM API reference lists the operation-specific exceptions checked here,
+// including ResourceNotFoundException, with HTTP 400.
+func requireACMError[E error](t *testing.T, err error) {
+	t.Helper()
+
+	var target E
+	if !errors.As(err, &target) {
+		t.Fatalf("expected %T, got %v", target, err)
+	}
+
+	var respErr *awshttp.ResponseError
+	if !errors.As(err, &respErr) {
+		t.Fatalf("no HTTP response in %v", err)
+	}
+
+	if got := respErr.HTTPStatusCode(); got != http.StatusBadRequest {
+		t.Errorf("HTTP status: got %d, want 400", got)
+	}
 }
 
 func TestACM_RequestAndDescribeCertificate(t *testing.T) {
@@ -51,7 +77,7 @@ func TestACM_RequestAndDescribeCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "NotBefore", "NotAfter", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
 }
 
 func TestACM_ListCertificates(t *testing.T) {
@@ -210,7 +236,7 @@ func TestACM_RequestCertificateWithOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "NotBefore", "NotAfter", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
 }
 
 func TestACM_DescribeNonExistentCertificate(t *testing.T) {
@@ -221,9 +247,7 @@ func TestACM_DescribeNonExistentCertificate(t *testing.T) {
 	_, err := client.DescribeCertificate(ctx, &acm.DescribeCertificateInput{
 		CertificateArn: aws.String("arn:aws:acm:us-east-1:000000000000:certificate/non-existent"),
 	})
-	if err == nil {
-		t.Fatal("expected error when describing non-existent certificate")
-	}
+	requireACMError[*types.ResourceNotFoundException](t, err)
 }
 
 func TestACM_DeleteNonExistentCertificate(t *testing.T) {
@@ -234,9 +258,7 @@ func TestACM_DeleteNonExistentCertificate(t *testing.T) {
 	_, err := client.DeleteCertificate(ctx, &acm.DeleteCertificateInput{
 		CertificateArn: aws.String("arn:aws:acm:us-east-1:000000000000:certificate/non-existent"),
 	})
-	if err == nil {
-		t.Fatal("expected error when deleting non-existent certificate")
-	}
+	requireACMError[*types.ResourceNotFoundException](t, err)
 }
 
 func TestACM_GetCertificate(t *testing.T) {
@@ -285,8 +307,76 @@ func TestACM_GetCertificatePendingValidation(t *testing.T) {
 	_, err = client.GetCertificate(ctx, &acm.GetCertificateInput{
 		CertificateArn: aws.String(arn),
 	})
-	if err == nil {
-		t.Fatal("expected error when getting pending certificate")
+
+	requireACMError[*types.RequestInProgressException](t, err)
+}
+
+func TestACM_GetIssuedCertificate(t *testing.T) {
+	client := newACMClient(t)
+	ctx := t.Context()
+
+	requestOutput, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
+		DomainName:              aws.String("get-issued.example.com"),
+		SubjectAlternativeNames: []string{"*.get-issued.example.com"},
+		ValidationMethod:        types.ValidationMethodDns,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	arn := requestOutput.CertificateArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteCertificate(context.Background(), &acm.DeleteCertificateInput{
+			CertificateArn: arn,
+		})
+	})
+
+	waiter := acm.NewCertificateValidatedWaiter(client)
+	if err := waiter.Wait(ctx, &acm.DescribeCertificateInput{CertificateArn: arn}, 30*time.Second); err != nil {
+		t.Fatalf("wait for certificate validation: %v", err)
+	}
+
+	getOutput, err := client.GetCertificate(ctx, &acm.GetCertificateInput{CertificateArn: arn})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	block, _ := pem.Decode([]byte(aws.ToString(getOutput.Certificate)))
+	if block == nil {
+		t.Fatalf("Certificate is not PEM: %q", aws.ToString(getOutput.Certificate))
+	}
+
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+
+	if want := []string{"get-issued.example.com", "*.get-issued.example.com"}; !slices.Equal(leaf.DNSNames, want) {
+		t.Errorf("DNSNames: got %v, want %v", leaf.DNSNames, want)
+	}
+
+	chainBlock, _ := pem.Decode([]byte(aws.ToString(getOutput.CertificateChain)))
+	if chainBlock == nil {
+		t.Fatalf("CertificateChain is not PEM: %q", aws.ToString(getOutput.CertificateChain))
+	}
+
+	ca, err := x509.ParseCertificate(chainBlock.Bytes)
+	if err != nil {
+		t.Fatalf("parse chain: %v", err)
+	}
+
+	if err := leaf.CheckSignatureFrom(ca); err != nil {
+		t.Errorf("certificate is not signed by its chain: %v", err)
+	}
+
+	describeOutput, err := client.DescribeCertificate(ctx, &acm.DescribeCertificateInput{CertificateArn: arn})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if notAfter := aws.ToTime(describeOutput.Certificate.NotAfter); !notAfter.Equal(leaf.NotAfter) {
+		t.Errorf("NotAfter: describe %v, certificate %v", notAfter, leaf.NotAfter)
 	}
 }
 
@@ -382,8 +472,5 @@ func TestACM_ListTagsForNonExistentCertificate(t *testing.T) {
 		CertificateArn: aws.String("arn:aws:acm:us-east-1:000000000000:certificate/non-existent"),
 	})
 
-	var notFound *types.ResourceNotFoundException
-	if !errors.As(err, &notFound) {
-		t.Fatalf("expected ResourceNotFoundException, got %v", err)
-	}
+	requireACMError[*types.ResourceNotFoundException](t, err)
 }

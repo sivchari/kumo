@@ -23,6 +23,7 @@ const (
 	errInvalidParameter = "ValidationException"
 	errInvalidTag       = "InvalidTagException"
 	errTooManyTags      = "TooManyTagsException"
+	errRequestPending   = "RequestInProgressException"
 )
 
 // maxTagsPerCertificate is the ACM quota on tags per certificate.
@@ -82,6 +83,7 @@ type MemoryStorage struct {
 	mu           sync.RWMutex            `json:"-"`
 	Certificates map[string]*Certificate `json:"certificates"`
 	dataDir      string
+	ca           *localCA
 }
 
 // NewMemoryStorage creates a new in-memory storage.
@@ -263,6 +265,10 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 		Tags:                    slices.Clone(req.Tags),
 	}
 
+	if err := s.issueLocked(cert, now); err != nil {
+		return nil, err
+	}
+
 	s.Certificates[arn] = cert
 
 	s.saveLocked()
@@ -362,11 +368,14 @@ func (s *MemoryStorage) GetCertificate(_ context.Context, arn string) (*Certific
 		}
 	}
 
-	// Only issued or imported certificates can be retrieved.
-	if cert.Status != statusIssued && cert.Type != certificateTypeImported {
+	// Only imported certificates and issued certificates with their material
+	// can be retrieved; RequestCertificate generates the material when it
+	// issues a certificate.
+	issued := cert.Status == statusIssued && cert.CertificateBody != ""
+	if !issued && cert.Type != certificateTypeImported {
 		return nil, &Error{
-			Code:    errNotFound,
-			Message: "Certificate is not issued yet",
+			Code:    errRequestPending,
+			Message: fmt.Sprintf("Certificate with arn %s is not yet issued", arn),
 		}
 	}
 

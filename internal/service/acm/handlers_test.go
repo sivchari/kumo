@@ -8,6 +8,9 @@ import (
 	"testing"
 )
 
+// opGetCertificate is the GetCertificate operation name.
+const opGetCertificate = "GetCertificate"
+
 func dispatch(t *testing.T, svc *Service, operation, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -69,18 +72,36 @@ func TestDispatchAction_TagOperations(t *testing.T) {
 	}
 }
 
-func TestDispatchAction_TagOperationErrors(t *testing.T) {
+func TestDispatchAction_Errors(t *testing.T) {
 	t.Parallel()
 
 	svc := New(NewMemoryStorage())
 
+	w := dispatch(t, svc, "RequestCertificate", `{"DomainName":"pending.example.com","ValidationMethod":"EMAIL"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("RequestCertificate: status %d body=%s", w.Code, w.Body.String())
+	}
+
+	var pending RequestCertificateOutput
+	if err := json.Unmarshal(w.Body.Bytes(), &pending); err != nil {
+		t.Fatalf("unmarshal RequestCertificate: %v", err)
+	}
+
+	absent := `{"CertificateArn":"` + absentCertificateARN + `"}`
+
+	// Every case is HTTP 400, the status the ACM API reference documents for
+	// each of these exceptions.
 	cases := []struct {
 		name      string
 		operation string
 		body      string
 		wantCode  string
 	}{
-		{"list unknown arn", "ListTagsForCertificate", `{"CertificateArn":"` + absentCertificateARN + `"}`, errNotFound},
+		{"describe unknown arn", "DescribeCertificate", absent, errNotFound},
+		{"get unknown arn", opGetCertificate, absent, errNotFound},
+		{"delete unknown arn", "DeleteCertificate", absent, errNotFound},
+		{"get pending certificate", opGetCertificate, `{"CertificateArn":"` + pending.CertificateArn + `"}`, errRequestPending},
+		{"list unknown arn", "ListTagsForCertificate", absent, errNotFound},
 		{"add unknown arn", "AddTagsToCertificate", `{"CertificateArn":"` + absentCertificateARN + `","Tags":[{"Key":"k"}]}`, errNotFound},
 		{"remove unknown arn", "RemoveTagsFromCertificate", `{"CertificateArn":"` + absentCertificateARN + `","Tags":[{"Key":"k"}]}`, errNotFound},
 		{"list missing arn", "ListTagsForCertificate", `{}`, errInvalidParameter},
@@ -93,8 +114,8 @@ func TestDispatchAction_TagOperationErrors(t *testing.T) {
 			t.Parallel()
 
 			w := dispatch(t, svc, tc.operation, tc.body)
-			if w.Code == http.StatusOK {
-				t.Fatalf("status: got 200, want an error body=%s", w.Body.String())
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status: got %d, want 400 body=%s", w.Code, w.Body.String())
 			}
 
 			var resp ErrorResponse

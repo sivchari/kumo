@@ -364,15 +364,12 @@ func writeError(w http.ResponseWriter, code, message string, status int) {
 }
 
 // handleStorageError handles storage errors and writes appropriate response.
+// The ACM API reference lists the operation-specific exceptions returned
+// here, including ResourceNotFoundException, with HTTP 400.
 func handleStorageError(w http.ResponseWriter, err error) {
 	var acmErr *Error
 	if errors.As(err, &acmErr) {
-		status := http.StatusBadRequest
-		if acmErr.Code == errNotFound {
-			status = http.StatusNotFound
-		}
-
-		writeError(w, acmErr.Code, acmErr.Message, status)
+		writeError(w, acmErr.Code, acmErr.Message, http.StatusBadRequest)
 
 		return
 	}
