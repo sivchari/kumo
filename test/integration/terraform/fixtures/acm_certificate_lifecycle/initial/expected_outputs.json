@@ -1,0 +1,4 @@
+{
+  "certificate_status": "ISSUED",
+  "validation_record_names": "_acme-challenge.tf-acm-certificate-lifecycle.example.com,_acme-challenge.www.tf-acm-certificate-lifecycle.example.com"
+}
