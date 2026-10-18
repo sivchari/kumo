@@ -1,0 +1,33 @@
+name: Docker Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker/Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.dockerignore'
+      - '.github/workflows/docker-build.yaml'
+  pull_request:
+    paths:
+      - 'docker/Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.dockerignore'
+      - '.github/workflows/docker-build.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Build docker/Dockerfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t kumo:ci .
