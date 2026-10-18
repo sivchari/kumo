@@ -9,9 +9,9 @@
         "DomainName": "example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.example.com",
+          "Name": "_09962a7c6e9895cf51f7c722e052f151.example.com.",
           "Type": "CNAME",
-          "Value": "_83cdbf97.acm-validations.aws."
+          "Value": "_7b9657de66610d75e9b8838eb2825663.acm-validations.aws."
         },
         "ValidationDomain": "example.com",
         "ValidationEmails": null,
@@ -22,9 +22,9 @@
         "DomainName": "www.example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.www.example.com",
+          "Name": "_bff56a53f67e97f790fe82075c77fc30.www.example.com.",
           "Type": "CNAME",
-          "Value": "_83cdbf97.acm-validations.aws."
+          "Value": "_3431e70bf6061b88e099fc7f8ad307ab.acm-validations.aws."
         },
         "ValidationDomain": "www.example.com",
         "ValidationEmails": null,
@@ -35,9 +35,9 @@
         "DomainName": "api.example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.api.example.com",
+          "Name": "_74fbcdbf0b779e405cdb632b3678e67a.api.example.com.",
           "Type": "CNAME",
-          "Value": "_83cdbf97.acm-validations.aws."
+          "Value": "_cf519108b1c5fef726c5823fd8a53e80.acm-validations.aws."
         },
         "ValidationDomain": "api.example.com",
         "ValidationEmails": null,

@@ -9,9 +9,9 @@
         "DomainName": "cli-test.example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.cli-test.example.com",
+          "Name": "_edb4e9f2e5296cf28bfb9e1a6bef0ae4.cli-test.example.com.",
           "Type": "CNAME",
-          "Value": "_75a84988.acm-validations.aws."
+          "Value": "_f69fc50a1b01e83e9a145243b3e38819.acm-validations.aws."
         },
         "ValidationDomain": "cli-test.example.com",
         "ValidationEmails": null,

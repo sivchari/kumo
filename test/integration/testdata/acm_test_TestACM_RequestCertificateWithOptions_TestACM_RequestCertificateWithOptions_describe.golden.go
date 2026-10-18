@@ -9,9 +9,9 @@
         "DomainName": "options-test.example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.options-test.example.com",
+          "Name": "_fdc0993c0af2610b1aeb01d0163b89bc.options-test.example.com.",
           "Type": "CNAME",
-          "Value": "_17106d9f.acm-validations.aws."
+          "Value": "_4d7bcd744612c89633122abd1c3ea615.acm-validations.aws."
         },
         "ValidationDomain": "options-test.example.com",
         "ValidationEmails": null,

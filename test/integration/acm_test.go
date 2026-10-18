@@ -51,7 +51,7 @@ func TestACM_RequestAndDescribeCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "Value", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
 }
 
 func TestACM_ListCertificates(t *testing.T) {
@@ -210,7 +210,7 @@ func TestACM_RequestCertificateWithOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "Value", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
 }
 
 func TestACM_DescribeNonExistentCertificate(t *testing.T) {

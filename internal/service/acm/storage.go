@@ -3,6 +3,7 @@ package acm
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -39,6 +40,9 @@ const (
 	validationStatusSuccess = "SUCCESS"
 	validationMethodDNS     = "DNS"
 )
+
+// accountID is the AWS account ID kumo reports for every certificate.
+const accountID = "000000000000"
 
 // certificateTypeImported is the CertificateType value for a certificate
 // imported via ImportCertificate, as opposed to one issued by ACM itself.
@@ -155,7 +159,7 @@ func (s *MemoryStorage) Close() error {
 
 // buildDomainValidations creates domain validation options for the certificate.
 // DNS validation is reported as already succeeded (see initialStatus).
-func buildDomainValidations(req *RequestCertificateInput, validationMethod, certID string) []DomainValidation {
+func buildDomainValidations(req *RequestCertificateInput, validationMethod string) []DomainValidation {
 	domains := make([]string, 0, 1+len(req.SubjectAlternativeNames))
 	domains = append(domains, req.DomainName)
 	domains = append(domains, req.SubjectAlternativeNames...)
@@ -176,17 +180,34 @@ func buildDomainValidations(req *RequestCertificateInput, validationMethod, cert
 		}
 
 		if validationMethod == validationMethodDNS {
-			dv.ResourceRecord = &ResourceRecord{
-				Name:  fmt.Sprintf("_acme-challenge.%s", domain),
-				Type:  "CNAME",
-				Value: fmt.Sprintf("_%s.acm-validations.aws.", certID[:8]),
-			}
+			dv.ResourceRecord = validationRecord(domain)
 		}
 
 		validations = append(validations, dv)
 	}
 
 	return validations
+}
+
+// validationRecord returns the DNS validation CNAME for domain. ACM creates
+// the record for the domain and the account, so the same name and value are
+// returned for every certificate covering the domain, and a wildcard domain
+// shares the record of its base domain.
+// https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html
+func validationRecord(domain string) *ResourceRecord {
+	base := strings.ToLower(strings.TrimPrefix(domain, "*."))
+
+	token := func(kind string) string {
+		sum := sha256.Sum256([]byte(kind + "/" + accountID + "/" + base))
+
+		return hex.EncodeToString(sum[:16])
+	}
+
+	return &ResourceRecord{
+		Name:  fmt.Sprintf("_%s.%s.", token("name"), base),
+		Type:  "CNAME",
+		Value: fmt.Sprintf("_%s.acm-validations.aws.", token("value")),
+	}
 }
 
 // RequestCertificate requests a new certificate.
@@ -205,7 +226,7 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 		return nil, err
 	}
 
-	certID, arn := newCertificateARN()
+	arn := newCertificateARN()
 
 	serialBytes := make([]byte, 16)
 	if _, err := rand.Read(serialBytes); err != nil {
@@ -236,7 +257,7 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 		Subject:                 fmt.Sprintf("CN=%s", req.DomainName),
 		CreatedAt:               now,
 		IssuedAt:                issuedAt,
-		DomainValidationOptions: buildDomainValidations(req, validationMethod, certID),
+		DomainValidationOptions: buildDomainValidations(req, validationMethod),
 		RenewalEligibility:      "INELIGIBLE",
 		Options:                 req.Options,
 		Tags:                    slices.Clone(req.Tags),
@@ -249,11 +270,9 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 	return cert, nil
 }
 
-// newCertificateARN generates a certificate ID and its ARN.
-func newCertificateARN() (string, string) {
-	certID := uuid.New().String()
-
-	return certID, fmt.Sprintf("arn:aws:acm:us-east-1:000000000000:certificate/%s", certID)
+// newCertificateARN generates the ARN of a new certificate.
+func newCertificateARN() string {
+	return fmt.Sprintf("arn:aws:acm:us-east-1:%s:certificate/%s", accountID, uuid.New().String())
 }
 
 // initialStatus returns the status and issue time of a newly requested
@@ -379,7 +398,7 @@ func (s *MemoryStorage) ImportCertificate(_ context.Context, req *ImportCertific
 
 	arn := req.CertificateArn
 	if arn == "" {
-		_, arn = newCertificateARN()
+		arn = newCertificateARN()
 	}
 
 	serialBytes := make([]byte, 16)

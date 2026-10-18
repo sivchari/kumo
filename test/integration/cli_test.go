@@ -244,7 +244,7 @@ func TestCLI_ACM_RequestAndDescribeCertificate(t *testing.T) {
 
 	describeOut := runCLI(t, "acm", "describe-certificate", "--certificate-arn", arn)
 	golden.New(t, golden.WithIgnoreFields(
-		"CertificateArn", "CreatedAt", "IssuedAt", "Serial", "Value", "ResultMetadata",
+		"CertificateArn", "CreatedAt", "IssuedAt", "Serial", "ResultMetadata",
 	)).Assert(t.Name()+"_describe", describeOut)
 }
 

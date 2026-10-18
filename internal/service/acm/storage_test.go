@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +86,63 @@ func TestRequestCertificate_ValidationStatus(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRequestCertificate_ValidationRecords(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStorage()
+	ctx := t.Context()
+
+	request := func(domain string, sans ...string) map[string]ResourceRecord {
+		t.Helper()
+
+		cert, err := store.RequestCertificate(ctx, &RequestCertificateInput{
+			DomainName:              domain,
+			SubjectAlternativeNames: sans,
+			ValidationMethod:        validationMethodDNS,
+		})
+		if err != nil {
+			t.Fatalf("RequestCertificate: %v", err)
+		}
+
+		records := make(map[string]ResourceRecord, len(cert.DomainValidationOptions))
+		for _, dv := range cert.DomainValidationOptions {
+			records[dv.DomainName] = *dv.ResourceRecord
+		}
+
+		return records
+	}
+
+	first := request("example.com", "*.example.com", "www.example.com")
+
+	base := first["example.com"]
+	if !strings.HasPrefix(base.Name, "_") || !strings.HasSuffix(base.Name, ".example.com.") {
+		t.Errorf("record name %q, want _<token>.example.com.", base.Name)
+	}
+
+	if !strings.HasPrefix(base.Value, "_") || !strings.HasSuffix(base.Value, ".acm-validations.aws.") {
+		t.Errorf("record value %q, want _<token>.acm-validations.aws.", base.Value)
+	}
+
+	if got := first["*.example.com"]; got != base {
+		t.Errorf("wildcard record %+v, want the base domain's %+v", got, base)
+	}
+
+	www := first["www.example.com"]
+	if www.Name == base.Name || www.Value == base.Value {
+		t.Errorf("www.example.com record %+v shares a string with example.com's %+v", www, base)
+	}
+
+	if !strings.HasSuffix(www.Name, ".www.example.com.") {
+		t.Errorf("record name %q, want _<token>.www.example.com.", www.Name)
+	}
+
+	// A later certificate for the same domains reuses the same records.
+	second := request("*.example.com", "www.example.com")
+	if second["*.example.com"] != base || second["www.example.com"] != www {
+		t.Errorf("records changed across requests: got %+v, want %+v", second, first)
 	}
 }
 
