@@ -49,7 +49,7 @@ func defaultDelegationSet() DelegationSet {
 // recordInSyncChange creates an INSYNC ChangeInfo, persists it, and returns it.
 func (s *Service) recordInSyncChange(comment string) (ChangeInfo, error) {
 	ci := ChangeInfo{
-		ID:          "/change/" + uuid.New().String(),
+		ID:          "/change/" + newChangeID(),
 		Status:      "INSYNC",
 		SubmittedAt: time.Now().UTC().Format(time.RFC3339),
 		Comment:     comment,
@@ -115,9 +115,8 @@ func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
 
 	name := normalizeDNSName(req.Name)
 
-	zoneID := uuid.New().String()
 	zone := &HostedZone{
-		ID:                     "/hostedzone/" + zoneID,
+		ID:                     "/hostedzone/" + newHostedZoneID(),
 		Name:                   name,
 		CallerReference:        req.CallerReference,
 		Config:                 req.HostedZoneConfig,
