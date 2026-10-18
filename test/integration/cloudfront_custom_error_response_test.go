@@ -1,0 +1,239 @@
+//go:build integration
+
+package integration
+
+import (
+	"context"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
+	cloudfronttypes "github.com/aws/aws-sdk-go-v2/service/cloudfront/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+const (
+	customErrorOriginID = "pages-bucket"
+	customErrorPage404  = "<h1>custom 404</h1>"
+	customErrorPage403  = "<h1>custom 403</h1>"
+)
+
+// newCustomErrorBucket creates a bucket holding index.html and the custom
+// error pages under errors/, and returns its virtual-hosted domain name.
+func newCustomErrorBucket(t *testing.T) string {
+	t.Helper()
+
+	client := newS3Client(t)
+	bucket := "cf-custom-errors-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+
+	if _, err := client.CreateBucket(t.Context(), &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatalf("CreateBucket: %v", err)
+	}
+
+	objects := map[string]string{
+		"index.html":      "<h1>home</h1>",
+		"errors/404.html": customErrorPage404,
+		"errors/403.html": customErrorPage403,
+	}
+
+	for key, body := range objects {
+		if _, err := client.PutObject(t.Context(), &s3.PutObjectInput{
+			Bucket:      aws.String(bucket),
+			Key:         aws.String(key),
+			Body:        strings.NewReader(body),
+			ContentType: aws.String("text/html"),
+		}); err != nil {
+			t.Fatalf("PutObject %s: %v", key, err)
+		}
+	}
+
+	t.Cleanup(func() {
+		for key := range objects {
+			_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		}
+
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	return bucket + ".s3.us-east-1.amazonaws.com"
+}
+
+// createCustomErrorDistribution creates a distribution over the bucket with
+// the given default behaviour, an open `/errors/*` behaviour and the custom
+// error responses.
+func createCustomErrorDistribution(t *testing.T, domain string, defaultBehavior *cloudfronttypes.DefaultCacheBehavior, responses ...cloudfronttypes.CustomErrorResponse) (*cloudfront.Client, string) {
+	t.Helper()
+
+	client := newCloudFrontClient(t)
+
+	defaultBehavior.TargetOriginId = aws.String(customErrorOriginID)
+	defaultBehavior.ViewerProtocolPolicy = cloudfronttypes.ViewerProtocolPolicyAllowAll
+	defaultBehavior.CachePolicyId = aws.String(cachingDisabledID)
+
+	created, err := client.CreateDistribution(t.Context(), &cloudfront.CreateDistributionInput{DistributionConfig: &cloudfronttypes.DistributionConfig{
+		CallerReference: aws.String("test-cf-custom-errors-" + strconv.FormatInt(time.Now().UnixNano(), 36)),
+		Comment:         aws.String("custom error responses"),
+		Enabled:         aws.Bool(true),
+		Origins: &cloudfronttypes.Origins{Quantity: aws.Int32(1), Items: []cloudfronttypes.Origin{{
+			Id:             aws.String(customErrorOriginID),
+			DomainName:     aws.String(domain),
+			S3OriginConfig: &cloudfronttypes.S3OriginConfig{OriginAccessIdentity: aws.String("")},
+		}}},
+		DefaultCacheBehavior: defaultBehavior,
+		CacheBehaviors: &cloudfronttypes.CacheBehaviors{Quantity: aws.Int32(1), Items: []cloudfronttypes.CacheBehavior{{
+			PathPattern:          aws.String("/errors/*"),
+			TargetOriginId:       aws.String(customErrorOriginID),
+			ViewerProtocolPolicy: cloudfronttypes.ViewerProtocolPolicyAllowAll,
+			CachePolicyId:        aws.String(cachingDisabledID),
+		}}},
+		CustomErrorResponses: &cloudfronttypes.CustomErrorResponses{Quantity: aws.Int32(int32(len(responses))), Items: responses},
+	}})
+	if err != nil {
+		t.Fatalf("CreateDistribution: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteDistribution(context.Background(), &cloudfront.DeleteDistributionInput{Id: created.Distribution.Id, IfMatch: created.ETag})
+	})
+
+	return client, aws.ToString(created.Distribution.Id)
+}
+
+func customErrorResponse(errorCode int32, pagePath, responseCode string) cloudfronttypes.CustomErrorResponse {
+	return cloudfronttypes.CustomErrorResponse{
+		ErrorCode:          aws.Int32(errorCode),
+		ResponsePagePath:   aws.String(pagePath),
+		ResponseCode:       aws.String(responseCode),
+		ErrorCachingMinTTL: aws.Int64(0),
+	}
+}
+
+// TestCloudFront_CustomErrorResponseRoundTrip — the configured entries read
+// back from GetDistributionConfig.
+func TestCloudFront_CustomErrorResponseRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	client, distID := createCustomErrorDistribution(t, "roundtrip.s3.us-east-1.amazonaws.com", &cloudfronttypes.DefaultCacheBehavior{},
+		customErrorResponse(404, "/errors/404.html", "200"),
+		cloudfronttypes.CustomErrorResponse{ErrorCode: aws.Int32(503), ErrorCachingMinTTL: aws.Int64(5)})
+
+	got, err := client.GetDistributionConfig(t.Context(), &cloudfront.GetDistributionConfigInput{Id: aws.String(distID)})
+	if err != nil {
+		t.Fatalf("GetDistributionConfig: %v", err)
+	}
+
+	responses := got.DistributionConfig.CustomErrorResponses
+	if responses == nil || aws.ToInt32(responses.Quantity) != 2 || len(responses.Items) != 2 {
+		t.Fatalf("CustomErrorResponses = %+v, want two entries", responses)
+	}
+
+	first, second := responses.Items[0], responses.Items[1]
+	if aws.ToInt32(first.ErrorCode) != 404 || aws.ToString(first.ResponsePagePath) != "/errors/404.html" || aws.ToString(first.ResponseCode) != "200" || aws.ToInt64(first.ErrorCachingMinTTL) != 0 {
+		t.Errorf("first entry = %+v", first)
+	}
+
+	if aws.ToInt32(second.ErrorCode) != 503 || aws.ToString(second.ResponsePagePath) != "" || aws.ToInt64(second.ErrorCachingMinTTL) != 5 {
+		t.Errorf("second entry = %+v", second)
+	}
+}
+
+// TestCloudFront_EdgeCustomErrorPageForOrigin404 — an S3 404 is replaced by
+// the bucket's error page with the configured response code.
+func TestCloudFront_EdgeCustomErrorPageForOrigin404(t *testing.T) {
+	t.Parallel()
+
+	domain := newCustomErrorBucket(t)
+
+	for _, tc := range []struct {
+		responseCode string
+		want         int
+	}{{"200", http.StatusOK}, {"404", http.StatusNotFound}, {"204", http.StatusNotFound}} { // 204 is not a documented response code: the origin status is kept.
+		t.Run("response_code_"+tc.responseCode, func(t *testing.T) {
+			t.Parallel()
+
+			_, distID := createCustomErrorDistribution(t, domain, &cloudfronttypes.DefaultCacheBehavior{},
+				customErrorResponse(404, "/errors/404.html", tc.responseCode))
+
+			resp, body := callEdgePath(t, http.MethodGet, distID, "/no-such-page.html", http.NoBody, "")
+			if resp.StatusCode != tc.want || string(body) != customErrorPage404 {
+				t.Errorf("got %d %q, want %d %q", resp.StatusCode, body, tc.want, customErrorPage404)
+			}
+
+			if resp, body := callEdgePath(t, http.MethodGet, distID, "/index.html", http.NoBody, ""); resp.StatusCode != http.StatusOK || string(body) != "<h1>home</h1>" {
+				t.Errorf("existing object: got %d %q", resp.StatusCode, body)
+			}
+		})
+	}
+}
+
+// newTrustedKeyGroupBehavior creates a public key and key group and returns a
+// default behaviour that requires signed URLs or cookies from that group. The
+// key group's cleanup is registered before the caller creates the
+// distribution, so it runs after the distribution's.
+func newTrustedKeyGroupBehavior(t *testing.T) *cloudfronttypes.DefaultCacheBehavior {
+	t.Helper()
+
+	client := newCloudFrontClient(t)
+	_, pubPEM := generateTestKeyPair(t)
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
+
+	pk, err := client.CreatePublicKey(t.Context(), &cloudfront.CreatePublicKeyInput{PublicKeyConfig: &cloudfronttypes.PublicKeyConfig{
+		CallerReference: aws.String("test-cf-custom-errors-pk-" + suffix),
+		Name:            aws.String("custom-errors-key-" + suffix),
+		EncodedKey:      aws.String(pubPEM),
+	}})
+	if err != nil {
+		t.Fatalf("CreatePublicKey: %v", err)
+	}
+
+	kg, err := client.CreateKeyGroup(t.Context(), &cloudfront.CreateKeyGroupInput{KeyGroupConfig: &cloudfronttypes.KeyGroupConfig{
+		Name:  aws.String("custom-errors-kg-" + suffix),
+		Items: []string{aws.ToString(pk.PublicKey.Id)},
+	}})
+	if err != nil {
+		t.Fatalf("CreateKeyGroup: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteKeyGroup(context.Background(), &cloudfront.DeleteKeyGroupInput{Id: kg.KeyGroup.Id, IfMatch: kg.ETag})
+		_, _ = client.DeletePublicKey(context.Background(), &cloudfront.DeletePublicKeyInput{Id: pk.PublicKey.Id, IfMatch: pk.ETag})
+	})
+
+	return &cloudfronttypes.DefaultCacheBehavior{
+		TrustedKeyGroups: &cloudfronttypes.TrustedKeyGroups{Enabled: aws.Bool(true), Quantity: aws.Int32(1), Items: []string{aws.ToString(kg.KeyGroup.Id)}},
+	}
+}
+
+// TestCloudFront_EdgeCustomErrorPageForSignedCookie403 — the edge's own 403
+// for a request to a trusted-key-group behaviour without signed cookies is
+// replaced by the custom 403 page.
+func TestCloudFront_EdgeCustomErrorPageForSignedCookie403(t *testing.T) {
+	t.Parallel()
+
+	_, distID := createCustomErrorDistribution(t, newCustomErrorBucket(t), newTrustedKeyGroupBehavior(t),
+		customErrorResponse(403, "/errors/403.html", "403"))
+
+	resp, body := callEdgePath(t, http.MethodGet, distID, "/index.html", http.NoBody, "")
+	if resp.StatusCode != http.StatusForbidden || string(body) != customErrorPage403 {
+		t.Errorf("got %d %q, want 403 %q", resp.StatusCode, body, customErrorPage403)
+	}
+}
+
+// TestCloudFront_EdgeCustomErrorPageMissing — when the error page itself is
+// missing, the viewer gets the status the bucket returned for the page (404)
+// instead of the original 403 or the configured response code.
+func TestCloudFront_EdgeCustomErrorPageMissing(t *testing.T) {
+	t.Parallel()
+
+	_, distID := createCustomErrorDistribution(t, newCustomErrorBucket(t), newTrustedKeyGroupBehavior(t),
+		customErrorResponse(403, "/errors/deleted.html", "200"))
+
+	resp, body := callEdgePath(t, http.MethodGet, distID, "/index.html", http.NoBody, "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got %d %q, want the bucket's 404 for the missing page", resp.StatusCode, body)
+	}
+}

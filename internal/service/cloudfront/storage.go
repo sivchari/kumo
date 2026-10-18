@@ -367,6 +367,7 @@ func newDistributionConfig(config *CreateDistributionRequest) *DistributionConfi
 		Aliases:              convertAliasesFromXML(config.Aliases),
 		ViewerCertificate:    convertViewerCertificateFromXML(config.ViewerCertificate),
 		Logging:              convertLoggingFromXML(config.Logging),
+		CustomErrorResponses: convertCustomErrorResponsesFromXML(config.CustomErrorResponses),
 	}
 }
 
@@ -850,6 +851,23 @@ func convertLoggingFromXML(logging *LoggingConfigXML) *LoggingConfig {
 	if logging.Enabled {
 		result.Bucket = logging.Bucket
 		result.Prefix = logging.Prefix
+	}
+
+	return result
+}
+
+func convertCustomErrorResponsesFromXML(responses *CustomErrorResponsesXML) *CustomErrorResponses {
+	if responses == nil {
+		return nil
+	}
+
+	result := &CustomErrorResponses{Quantity: responses.Quantity}
+	if responses.Items == nil {
+		return result
+	}
+
+	for _, r := range responses.Items.CustomErrorResponse {
+		result.Items = append(result.Items, CustomErrorResponse(r))
 	}
 
 	return result
