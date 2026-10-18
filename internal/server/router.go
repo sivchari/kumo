@@ -349,32 +349,137 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Clean the URL path to prevent Go's ServeMux from returning 301 redirects
-	// for paths with double slashes (e.g., /bucket//key). S3 keys can start with
-	// "/" which produces double slashes in path-style URLs. We clean the path
-	// ourselves so the mux sees an already-clean path and serves it directly.
-	if cleaned := path.Clean(req.URL.Path); cleaned != req.URL.Path {
-		req = req.Clone(req.Context())
-		req.URL.Path = cleaned
-	}
-
-	if r.serveScoped(w, req) {
-		return
-	}
-
-	if r.servePrefixed(w, req) {
-		return
-	}
-
-	r.mux.ServeHTTP(w, req)
+	r.serveMux(w, req)
 }
 
-// servePrefixed serves the request from the matching prefix router,
-// reporting whether one matched.
+// serveMux dispatches req to the scope, prefix or main mux.
+//
+// Go's ServeMux redirects a path holding empty, "." or ".." segments to its
+// cleaned form, so the route is chosen on the cleaned path. S3 keys such as
+// "/lead", "a//b" or "dir/" are distinct objects, though, so the handler gets
+// the path as sent whenever that selects the same route.
+func (r *Router) serveMux(w http.ResponseWriter, req *http.Request) {
+	dispatch := req
+	if cleaned := path.Clean(req.URL.Path); cleaned != req.URL.Path {
+		dispatch = req.Clone(req.Context())
+		dispatch.URL.Path = cleaned
+	}
+
+	mux := r.selectMux(dispatch)
+
+	if dispatch != req {
+		if preserved, ok := r.preservePath(mux, req, dispatch); ok {
+			dispatch = preserved
+		}
+	}
+
+	mux.ServeHTTP(w, dispatch)
+}
+
+// selectMux returns the mux that serves req: its scope router, else its
+// prefix router, else the main mux.
+func (r *Router) selectMux(req *http.Request) *http.ServeMux {
+	if mux := r.scopedMux(req); mux != nil {
+		return mux
+	}
+
+	if mux := r.prefixedMux(req); mux != nil {
+		return mux
+	}
+
+	return r.mux
+}
+
+// preservePath returns orig, re-escaped by muxEscapedPath, when it selects the
+// same mux as cleaned and that mux serves both with the same pattern, so
+// r.URL.Path and path wildcards such as {key...} carry the path as sent. It
+// reports false when the original path selects another route (e.g.
+// "/bucket/" matches /{bucket}/{key...} while "/bucket" matches /{bucket}, or
+// "/kumo/cdn/x/../../../bucket/key" selects the /kumo prefix router while its
+// cleaned form selects the main mux), keeping the cleaned dispatch.
+func (r *Router) preservePath(mux *http.ServeMux, orig, cleaned *http.Request) (*http.Request, bool) {
+	raw := muxEscapedPath(orig.URL.EscapedPath())
+	if raw == "" {
+		return nil, false
+	}
+
+	_, want := mux.Handler(cleaned)
+	if want == "" {
+		return nil, false
+	}
+
+	preserved := orig.Clone(orig.Context())
+	preserved.URL.RawPath = raw
+
+	if r.selectMux(preserved) != mux {
+		return nil, false
+	}
+
+	if _, got := mux.Handler(preserved); got != want {
+		return nil, false
+	}
+
+	return preserved, true
+}
+
+// muxEscapedPath re-escapes an escaped request path so that ServeMux finds
+// nothing to clean while it still unescapes to the same path: "." and ".."
+// segments become "%2E" and "%2E%2E", and a slash that follows another slash
+// becomes "%2F". ServeMux treats such escapes as plain characters, not as
+// separators or dot segments, and unescapes them in path wildcards. It
+// returns "" if the result would still be cleaned.
+func muxEscapedPath(escaped string) string {
+	if !strings.HasPrefix(escaped, "/") {
+		return ""
+	}
+
+	segments := strings.Split(escaped, "/")
+	for i, seg := range segments {
+		switch seg {
+		case ".":
+			segments[i] = "%2E"
+		case "..":
+			segments[i] = "%2E%2E"
+		}
+	}
+
+	joined := strings.Join(segments, "/")
+
+	var b strings.Builder
+
+	b.Grow(len(joined))
+
+	for i := range len(joined) {
+		if joined[i] == '/' && i > 0 && joined[i-1] == '/' {
+			b.WriteString("%2F")
+
+			continue
+		}
+
+		b.WriteByte(joined[i])
+	}
+
+	out := b.String()
+
+	// ServeMux cleans with path.Clean but keeps a trailing slash.
+	clean := path.Clean(out)
+	if strings.HasSuffix(out, "/") && clean != "/" {
+		clean += "/"
+	}
+
+	if clean != out {
+		return ""
+	}
+
+	return out
+}
+
+// prefixedMux returns the router of the longest prefix matching the request
+// path, or nil.
 //
 // Longest prefix wins, so short prefixes (e.g. "/apps") cannot capture
 // longer ones (e.g. "/appsync").
-func (r *Router) servePrefixed(w http.ResponseWriter, req *http.Request) bool {
+func (r *Router) prefixedMux(req *http.Request) *http.ServeMux {
 	bestPrefix := ""
 
 	for prefix := range r.prefixRouters {
@@ -384,42 +489,38 @@ func (r *Router) servePrefixed(w http.ResponseWriter, req *http.Request) bool {
 	}
 
 	if bestPrefix == "" {
-		return false
+		return nil
 	}
 
-	r.prefixRouters[bestPrefix].ServeHTTP(w, req)
-
-	return true
+	return r.prefixRouters[bestPrefix]
 }
 
-// serveScoped serves the request from the scope router named by its SigV4
-// credential scope, reporting whether it did.
+// scopedMux returns the scope router named by the request's SigV4 credential
+// scope when it has a route for the request, or nil.
 //
 // The signing name is the only request attribute that disambiguates REST
 // services sharing identical paths (e.g. GET /tags/{arn}) on a single
 // endpoint, where real AWS uses per-service hostnames. Unsigned requests
 // fall through to path-based routing: real AWS likewise refuses unsigned API
 // calls, and path routing still serves kumo-native namespaces and unmigrated
-// services. A false return (unsigned, unmigrated service, or a path the scope
+// services. A nil return (unsigned, unmigrated service, or a path the scope
 // router does not know) keeps the request on path-based routing.
-func (r *Router) serveScoped(w http.ResponseWriter, req *http.Request) bool {
+func (r *Router) scopedMux(req *http.Request) *http.ServeMux {
 	name := sigV4SigningName(req)
 	if name == "" {
-		return false
+		return nil
 	}
 
 	mux, ok := r.scopeRouters[name]
 	if !ok {
-		return false
+		return nil
 	}
 
 	if _, pattern := mux.Handler(req); pattern == "" {
-		return false
+		return nil
 	}
 
-	mux.ServeHTTP(w, req)
-
-	return true
+	return mux
 }
 
 // Routes returns all registered routes.

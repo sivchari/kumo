@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1626,6 +1627,164 @@ func TestS3_PutObject_KeyWithLeadingSlash(t *testing.T) {
 	gotBody, _ := io.ReadAll(getOutput.Body)
 	if string(gotBody) != "hello" {
 		t.Errorf("body = %q, want %q", string(gotBody), "hello")
+	}
+}
+
+// TestS3_KeysWithPathSegmentsStayDistinct verifies that keys which differ
+// only by empty, "." or ".." segments, a leading slash or a trailing slash
+// are stored, listed, read, copied and deleted as distinct objects.
+func TestS3_KeysWithPathSegmentsStayDistinct(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-path-segment-keys"
+	keys := []string{"plain", "a/b", "dir/", "/lead", "a//b", "a/./b", "a/../b"}
+	copyKey := "copy//of/./a//b"
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		for _, key := range append(keys, copyKey) {
+			_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		}
+
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	for _, key := range keys {
+		if _, err := client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   strings.NewReader("body of " + key),
+		}); err != nil {
+			t.Fatalf("PutObject(%q): %v", key, err)
+		}
+	}
+
+	listed, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gotKeys := make([]string, 0, len(listed.Contents))
+	for _, obj := range listed.Contents {
+		gotKeys = append(gotKeys, aws.ToString(obj.Key))
+	}
+
+	wantKeys := slices.Clone(keys)
+	slices.Sort(wantKeys)
+
+	if !slices.Equal(gotKeys, wantKeys) {
+		t.Fatalf("listed keys = %q, want %q", gotKeys, wantKeys)
+	}
+
+	for _, key := range keys {
+		want := "body of " + key
+
+		got, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("GetObject(%q): %v", key, err)
+		}
+
+		body, _ := io.ReadAll(got.Body)
+		_ = got.Body.Close()
+
+		if string(body) != want {
+			t.Errorf("GetObject(%q) body = %q, want %q", key, body, want)
+		}
+
+		head, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("HeadObject(%q): %v", key, err)
+		}
+
+		if aws.ToInt64(head.ContentLength) != int64(len(want)) {
+			t.Errorf("HeadObject(%q) ContentLength = %d, want %d", key, aws.ToInt64(head.ContentLength), len(want))
+		}
+	}
+
+	if _, err := client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(copyKey),
+		CopySource: aws.String(bucket + "/a//b"),
+	}); err != nil {
+		t.Fatalf("CopyObject: %v", err)
+	}
+
+	copied, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(copyKey)})
+	if err != nil {
+		t.Fatalf("GetObject(%q): %v", copyKey, err)
+	}
+
+	copiedBody, _ := io.ReadAll(copied.Body)
+	_ = copied.Body.Close()
+
+	if string(copiedBody) != "body of a//b" {
+		t.Errorf("copied body = %q, want %q", copiedBody, "body of a//b")
+	}
+
+	for _, key := range append(keys, copyKey) {
+		if _, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)}); err != nil {
+			t.Fatalf("DeleteObject(%q): %v", key, err)
+		}
+	}
+
+	remaining, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(remaining.Contents) != 0 {
+		t.Errorf("objects left after delete: %d", len(remaining.Contents))
+	}
+}
+
+// TestS3_DotSegmentsOutOfAnotherPrefixUseCleanedPath verifies that a path
+// starting under another service's prefix whose ".." segments resolve to an
+// S3 object is still served from the cleaned path.
+func TestS3_DotSegmentsOutOfAnotherPrefixUseCleanedPath(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-dot-segments-prefix"
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String("key")})
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	if _, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String("key"),
+		Body:   strings.NewReader("real-object"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{
+		"/kumo/cdn/E123/../../../" + bucket + "/key",
+		"/2020-05-31/distribution/../../" + bucket + "/key",
+	} {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, kumoEndpoint+p, http.NoBody)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", p, err)
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK || string(body) != "real-object" {
+			t.Errorf("GET %s = %d %q, want 200 %q", p, resp.StatusCode, body, "real-object")
+		}
 	}
 }
 
