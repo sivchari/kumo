@@ -122,6 +122,14 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.RecordSets = make(map[string][]ResourceRecordSet)
 	}
 
+	// Snapshots written before record names were normalized may hold names
+	// without the trailing dot.
+	for _, records := range s.RecordSets {
+		for i := range records {
+			records[i].Name = fullyQualified(records[i].Name)
+		}
+	}
+
 	if s.Changes == nil {
 		s.Changes = make(map[string]*ChangeInfo)
 	}
@@ -255,26 +263,31 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 	records := s.RecordSets[hostedZoneID]
 
 	for i := range changes {
+		// Route 53 treats a record name with and without the trailing dot as
+		// identical and returns it fully qualified.
+		rrset := changes[i].ResourceRecordSet
+		rrset.Name = fullyQualified(rrset.Name)
+
 		switch changes[i].Action {
 		case "CREATE":
-			if s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type) >= 0 {
+			if s.findRecordIndex(records, rrset.Name, rrset.Type) >= 0 {
 				return ErrRecordSetAlreadyExists
 			}
 
-			records = append(records, changes[i].ResourceRecordSet)
+			records = append(records, rrset)
 		case "DELETE":
-			idx := s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type)
+			idx := s.findRecordIndex(records, rrset.Name, rrset.Type)
 			if idx < 0 {
 				return ErrRecordSetNotFound
 			}
 
 			records = append(records[:idx], records[idx+1:]...)
 		case "UPSERT":
-			idx := s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type)
+			idx := s.findRecordIndex(records, rrset.Name, rrset.Type)
 			if idx >= 0 {
-				records[idx] = changes[i].ResourceRecordSet
+				records[idx] = rrset
 			} else {
-				records = append(records, changes[i].ResourceRecordSet)
+				records = append(records, rrset)
 			}
 		default:
 			return ErrInvalidInput
@@ -316,6 +329,15 @@ func (s *MemoryStorage) GetChange(id string) (*ChangeInfo, error) {
 	}
 
 	return c, nil
+}
+
+// fullyQualified returns name with a trailing dot.
+func fullyQualified(name string) string {
+	if strings.HasSuffix(name, ".") {
+		return name
+	}
+
+	return name + "."
 }
 
 // findRecordIndex finds the index of a record set by name and type.

@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/route53/types"
+	"github.com/aws/smithy-go"
 	"github.com/sivchari/golden"
 )
 
@@ -445,6 +446,82 @@ func TestRoute53_UpsertResourceRecordSet(t *testing.T) {
 	}
 	if !found {
 		t.Error("Updated record set should be in list")
+	}
+}
+
+func TestRoute53_RecordNameWithoutTrailingDot(t *testing.T) {
+	t.Parallel()
+
+	client := newRoute53Client(t)
+	ctx := t.Context()
+
+	createResult, err := client.CreateHostedZone(ctx, &route53.CreateHostedZoneInput{
+		Name:            aws.String("fqdn-test.example.com"),
+		CallerReference: aws.String(fmt.Sprintf("test-fqdn-record-name-%d", time.Now().UnixNano())),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteHostedZone(context.Background(), &route53.DeleteHostedZoneInput{
+			Id: createResult.HostedZone.Id,
+		})
+	})
+
+	change := func(action types.ChangeAction, name string) error {
+		_, err := client.ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
+			HostedZoneId: createResult.HostedZone.Id,
+			ChangeBatch: &types.ChangeBatch{
+				Changes: []types.Change{
+					{
+						Action: action,
+						ResourceRecordSet: &types.ResourceRecordSet{
+							Name: aws.String(name),
+							Type: types.RRTypeA,
+							TTL:  aws.Int64(300),
+							ResourceRecords: []types.ResourceRecord{
+								{Value: aws.String("192.0.2.1")},
+							},
+						},
+					},
+				},
+			},
+		})
+
+		return err
+	}
+
+	// Create without the trailing dot.
+	if err := change(types.ChangeActionCreate, "www.fqdn-test.example.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	listResult, err := client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
+		HostedZoneId: createResult.HostedZone.Id,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	names := make([]string, 0, len(listResult.ResourceRecordSets))
+	for _, record := range listResult.ResourceRecordSets {
+		names = append(names, aws.ToString(record.Name))
+	}
+
+	if len(names) != 1 || names[0] != "www.fqdn-test.example.com." {
+		t.Fatalf("expected one record named www.fqdn-test.example.com., got %q", names)
+	}
+
+	// Creating the same name with the trailing dot is a duplicate.
+	var apiErr smithy.APIError
+	if err := change(types.ChangeActionCreate, "www.fqdn-test.example.com."); !errors.As(err, &apiErr) {
+		t.Fatalf("expected an API error for duplicate record, got %T: %v", err, err)
+	}
+
+	// Delete with the trailing dot.
+	if err := change(types.ChangeActionDelete, "www.fqdn-test.example.com."); err != nil {
+		t.Fatal(err)
 	}
 }
 
