@@ -3,7 +3,10 @@
 package integration
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
@@ -93,9 +96,10 @@ func TestACM_ListCertificatesWithStatusFilter(t *testing.T) {
 	client := newACMClient(t)
 	ctx := t.Context()
 
-	// Request a certificate.
+	// Request an email-validated certificate, which stays PENDING_VALIDATION.
 	_, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
-		DomainName: aws.String("filter-test.example.com"),
+		DomainName:       aws.String("filter-test.example.com"),
+		ValidationMethod: types.ValidationMethodEmail,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -266,9 +270,10 @@ func TestACM_GetCertificatePendingValidation(t *testing.T) {
 	client := newACMClient(t)
 	ctx := t.Context()
 
-	// Request a certificate (will be in PENDING_VALIDATION state).
+	// Request an email-validated certificate (will be in PENDING_VALIDATION state).
 	requestOutput, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
-		DomainName: aws.String("pending.example.com"),
+		DomainName:       aws.String("pending.example.com"),
+		ValidationMethod: types.ValidationMethodEmail,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -282,5 +287,103 @@ func TestACM_GetCertificatePendingValidation(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error when getting pending certificate")
+	}
+}
+
+func TestACM_DNSValidatedCertificateIsIssued(t *testing.T) {
+	client := newACMClient(t)
+	ctx := t.Context()
+
+	requestOutput, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
+		DomainName:       aws.String("issued.example.com"),
+		ValidationMethod: types.ValidationMethodDns,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	arn := requestOutput.CertificateArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteCertificate(context.Background(), &acm.DeleteCertificateInput{
+			CertificateArn: arn,
+		})
+	})
+
+	// The SDK waiter polls DescribeCertificate until the certificate is ISSUED.
+	waiter := acm.NewCertificateValidatedWaiter(client)
+	if err := waiter.Wait(ctx, &acm.DescribeCertificateInput{CertificateArn: arn}, 30*time.Second); err != nil {
+		t.Fatalf("wait for certificate validation: %v", err)
+	}
+}
+
+func TestACM_CertificateTags(t *testing.T) {
+	client := newACMClient(t)
+	ctx := t.Context()
+
+	requestOutput, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
+		DomainName: aws.String("tags.example.com"),
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("dev")},
+			{Key: aws.String("team"), Value: aws.String("web")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	arn := requestOutput.CertificateArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteCertificate(context.Background(), &acm.DeleteCertificateInput{
+			CertificateArn: arn,
+		})
+	})
+
+	listOutput, err := client.ListTagsForCertificate(ctx, &acm.ListTagsForCertificateInput{CertificateArn: arn})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_requested", listOutput)
+
+	_, err = client.AddTagsToCertificate(ctx, &acm.AddTagsToCertificateInput{
+		CertificateArn: arn,
+		Tags: []types.Tag{
+			{Key: aws.String("env"), Value: aws.String("prod")},
+			{Key: aws.String("owner"), Value: aws.String("alice")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.RemoveTagsFromCertificate(ctx, &acm.RemoveTagsFromCertificateInput{
+		CertificateArn: arn,
+		Tags:           []types.Tag{{Key: aws.String("team")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listOutput, err = client.ListTagsForCertificate(ctx, &acm.ListTagsForCertificateInput{CertificateArn: arn})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_updated", listOutput)
+}
+
+func TestACM_ListTagsForNonExistentCertificate(t *testing.T) {
+	client := newACMClient(t)
+	ctx := t.Context()
+
+	_, err := client.ListTagsForCertificate(ctx, &acm.ListTagsForCertificateInput{
+		CertificateArn: aws.String("arn:aws:acm:us-east-1:000000000000:certificate/non-existent"),
+	})
+
+	var notFound *types.ResourceNotFoundException
+	if !errors.As(err, &notFound) {
+		t.Fatalf("expected ResourceNotFoundException, got %v", err)
 	}
 }

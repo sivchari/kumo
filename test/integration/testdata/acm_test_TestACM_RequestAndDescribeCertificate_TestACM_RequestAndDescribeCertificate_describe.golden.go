@@ -16,7 +16,7 @@
         "ValidationDomain": "example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
-        "ValidationStatus": "PENDING_VALIDATION"
+        "ValidationStatus": "SUCCESS"
       },
       {
         "DomainName": "www.example.com",
@@ -29,7 +29,7 @@
         "ValidationDomain": "www.example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
-        "ValidationStatus": "PENDING_VALIDATION"
+        "ValidationStatus": "SUCCESS"
       },
       {
         "DomainName": "api.example.com",
@@ -42,14 +42,14 @@
         "ValidationDomain": "api.example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
-        "ValidationStatus": "PENDING_VALIDATION"
+        "ValidationStatus": "SUCCESS"
       }
     ],
     "ExtendedKeyUsages": null,
     "FailureReason": "",
     "ImportedAt": null,
     "InUseBy": null,
-    "IssuedAt": null,
+    "IssuedAt": "2026-03-23T07:45:24.794Z",
     "Issuer": null,
     "KeyAlgorithm": "RSA_2048",
     "KeyUsages": null,
@@ -63,7 +63,7 @@
     "RevokedAt": null,
     "Serial": "20a3ff8d59956a02d70df89a6509c41c",
     "SignatureAlgorithm": null,
-    "Status": "PENDING_VALIDATION",
+    "Status": "ISSUED",
     "Subject": "CN=example.com",
     "SubjectAlternativeNames": [
       "www.example.com",

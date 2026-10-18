@@ -21,13 +21,65 @@ func newACMCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
+		newACMAddTagsToCertificateCmd(),
 		newACMDeleteCertificateCmd(),
 		newACMDescribeCertificateCmd(),
 		newACMGetCertificateCmd(),
 		newACMImportCertificateCmd(),
 		newACMListCertificatesCmd(),
+		newACMListTagsForCertificateCmd(),
+		newACMRemoveTagsFromCertificateCmd(),
 		newACMRequestCertificateCmd(),
 	)
+
+	return cmd
+}
+
+func newACMAddTagsToCertificateCmd() *cobra.Command {
+	var certificateArn string
+	var tags []string
+
+	cmd := &cobra.Command{
+		Use:   "add-tags-to-certificate",
+		Short: "AddTagsToCertificate",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := acm.NewFromConfig(cfg, func(o *acm.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &acm.AddTagsToCertificateInput{}
+
+			if certificateArn != "" {
+				input.CertificateArn = aws.String(certificateArn)
+			}
+
+			for _, raw := range tags {
+				var val types.Tag
+				if err := cligen.SetFieldsFromKV(reflect.ValueOf(&val).Elem(), raw); err != nil {
+					return fmt.Errorf("add-tags-to-certificate: parse --tags: %w", err)
+				}
+				input.Tags = append(input.Tags, val)
+			}
+
+			_, err = client.AddTagsToCertificate(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("add-tags-to-certificate failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&certificateArn, "certificate-arn", "", "Certificate arn")
+
+	cmd.Flags().StringArrayVar(&tags, "tags", nil, "Tags (key=value,key2=value2, repeatable)")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
 
 	return cmd
 }
@@ -313,6 +365,97 @@ func newACMListCertificatesCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sortBy, "sort-by", "", "Sort by")
 
 	cmd.Flags().StringVar(&sortOrder, "sort-order", "", "Sort order")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newACMListTagsForCertificateCmd() *cobra.Command {
+	var certificateArn string
+
+	cmd := &cobra.Command{
+		Use:   "list-tags-for-certificate",
+		Short: "ListTagsForCertificate",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := acm.NewFromConfig(cfg, func(o *acm.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &acm.ListTagsForCertificateInput{}
+
+			if certificateArn != "" {
+				input.CertificateArn = aws.String(certificateArn)
+			}
+
+			out, err := client.ListTagsForCertificate(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("list-tags-for-certificate failed: %w", err)
+			}
+
+			if err := writeOutput(out); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&certificateArn, "certificate-arn", "", "Certificate arn")
+
+	cmd.Flags().String("region", "", "Region override (ignored)")
+
+	return cmd
+}
+
+func newACMRemoveTagsFromCertificateCmd() *cobra.Command {
+	var certificateArn string
+	var tags []string
+
+	cmd := &cobra.Command{
+		Use:   "remove-tags-from-certificate",
+		Short: "RemoveTagsFromCertificate",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := newAWSConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			client := acm.NewFromConfig(cfg, func(o *acm.Options) {
+				o.BaseEndpoint = aws.String(endpointURL)
+			})
+
+			input := &acm.RemoveTagsFromCertificateInput{}
+
+			if certificateArn != "" {
+				input.CertificateArn = aws.String(certificateArn)
+			}
+
+			for _, raw := range tags {
+				var val types.Tag
+				if err := cligen.SetFieldsFromKV(reflect.ValueOf(&val).Elem(), raw); err != nil {
+					return fmt.Errorf("remove-tags-from-certificate: parse --tags: %w", err)
+				}
+				input.Tags = append(input.Tags, val)
+			}
+
+			_, err = client.RemoveTagsFromCertificate(cmd.Context(), input)
+			if err != nil {
+				return fmt.Errorf("remove-tags-from-certificate failed: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&certificateArn, "certificate-arn", "", "Certificate arn")
+
+	cmd.Flags().StringArrayVar(&tags, "tags", nil, "Tags (key=value,key2=value2, repeatable)")
 
 	cmd.Flags().String("region", "", "Region override (ignored)")
 

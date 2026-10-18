@@ -16,14 +16,14 @@
         "ValidationDomain": "cli-test.example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
-        "ValidationStatus": "PENDING_VALIDATION"
+        "ValidationStatus": "SUCCESS"
       }
     ],
     "ExtendedKeyUsages": null,
     "FailureReason": "",
     "ImportedAt": null,
     "InUseBy": null,
-    "IssuedAt": null,
+    "IssuedAt": "2026-08-06T07:46:54.137Z",
     "Issuer": null,
     "KeyAlgorithm": "RSA_2048",
     "KeyUsages": null,
@@ -37,7 +37,7 @@
     "RevokedAt": null,
     "Serial": "4a4a3b7eefa5a788de7c47ab83a4da3f",
     "SignatureAlgorithm": null,
-    "Status": "PENDING_VALIDATION",
+    "Status": "ISSUED",
     "Subject": "CN=cli-test.example.com",
     "SubjectAlternativeNames": null,
     "Type": "AMAZON_ISSUED"

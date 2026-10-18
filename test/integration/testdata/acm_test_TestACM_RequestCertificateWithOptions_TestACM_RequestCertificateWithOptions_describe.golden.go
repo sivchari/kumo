@@ -16,14 +16,14 @@
         "ValidationDomain": "options-test.example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
-        "ValidationStatus": "PENDING_VALIDATION"
+        "ValidationStatus": "SUCCESS"
       }
     ],
     "ExtendedKeyUsages": null,
     "FailureReason": "",
     "ImportedAt": null,
     "InUseBy": null,
-    "IssuedAt": null,
+    "IssuedAt": "2026-03-23T07:45:24.814Z",
     "Issuer": null,
     "KeyAlgorithm": "EC_prime256v1",
     "KeyUsages": null,
@@ -40,7 +40,7 @@
     "RevokedAt": null,
     "Serial": "d4f59677b399c61fa428759b27299d6b",
     "SignatureAlgorithm": null,
-    "Status": "PENDING_VALIDATION",
+    "Status": "ISSUED",
     "Subject": "CN=options-test.example.com",
     "SubjectAlternativeNames": null,
     "Type": "AMAZON_ISSUED"

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,24 @@ import (
 const (
 	errNotFound         = "ResourceNotFoundException"
 	errInvalidParameter = "ValidationException"
+	errInvalidTag       = "InvalidTagException"
+	errTooManyTags      = "TooManyTagsException"
+)
+
+// maxTagsPerCertificate is the ACM quota on tags per certificate.
+// https://docs.aws.amazon.com/acm/latest/userguide/tags-restrictions.html
+const maxTagsPerCertificate = 50
+
+// reservedTagPrefix marks tag keys reserved for AWS use, which callers cannot
+// add, edit or delete.
+const reservedTagPrefix = "aws:"
+
+// Certificate and domain validation statuses.
+const (
+	statusPendingValidation = "PENDING_VALIDATION"
+	statusIssued            = "ISSUED"
+	validationStatusSuccess = "SUCCESS"
+	validationMethodDNS     = "DNS"
 )
 
 // certificateTypeImported is the CertificateType value for a certificate
@@ -33,6 +52,9 @@ type Storage interface {
 	DeleteCertificate(ctx context.Context, arn string) error
 	GetCertificate(ctx context.Context, arn string) (*Certificate, error)
 	ImportCertificate(ctx context.Context, req *ImportCertificateInput) (*Certificate, error)
+	ListTagsForCertificate(ctx context.Context, arn string) ([]Tag, error)
+	AddTagsToCertificate(ctx context.Context, arn string, tags []Tag) error
+	RemoveTagsFromCertificate(ctx context.Context, arn string, tags []TagToRemove) error
 }
 
 // Option is a configuration option for MemoryStorage.
@@ -132,14 +154,15 @@ func (s *MemoryStorage) Close() error {
 }
 
 // buildDomainValidations creates domain validation options for the certificate.
-func buildDomainValidations(req *RequestCertificateInput, certID string) []DomainValidation {
+// DNS validation is reported as already succeeded (see initialStatus).
+func buildDomainValidations(req *RequestCertificateInput, validationMethod, certID string) []DomainValidation {
 	domains := make([]string, 0, 1+len(req.SubjectAlternativeNames))
 	domains = append(domains, req.DomainName)
 	domains = append(domains, req.SubjectAlternativeNames...)
 
-	validationMethod := req.ValidationMethod
-	if validationMethod == "" {
-		validationMethod = "DNS"
+	validationStatus := statusPendingValidation
+	if validationMethod == validationMethodDNS {
+		validationStatus = validationStatusSuccess
 	}
 
 	validations := make([]DomainValidation, 0, len(domains))
@@ -148,11 +171,11 @@ func buildDomainValidations(req *RequestCertificateInput, certID string) []Domai
 		dv := DomainValidation{
 			DomainName:       domain,
 			ValidationDomain: domain,
-			ValidationStatus: "PENDING_VALIDATION",
+			ValidationStatus: validationStatus,
 			ValidationMethod: validationMethod,
 		}
 
-		if validationMethod == "DNS" {
+		if validationMethod == validationMethodDNS {
 			dv.ResourceRecord = &ResourceRecord{
 				Name:  fmt.Sprintf("_acme-challenge.%s", domain),
 				Type:  "CNAME",
@@ -178,8 +201,11 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 		}
 	}
 
-	certID := uuid.New().String()
-	arn := fmt.Sprintf("arn:aws:acm:us-east-1:000000000000:certificate/%s", certID)
+	if err := validateTags(req.Tags); err != nil {
+		return nil, err
+	}
+
+	certID, arn := newCertificateARN()
 
 	serialBytes := make([]byte, 16)
 	if _, err := rand.Read(serialBytes); err != nil {
@@ -191,21 +217,29 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 		keyAlgorithm = "RSA_2048"
 	}
 
+	validationMethod := req.ValidationMethod
+	if validationMethod == "" {
+		validationMethod = validationMethodDNS
+	}
+
 	now := time.Now()
+	status, issuedAt := initialStatus(validationMethod, now)
+
 	cert := &Certificate{
 		CertificateArn:          arn,
 		DomainName:              req.DomainName,
 		SubjectAlternativeNames: req.SubjectAlternativeNames,
-		Status:                  "PENDING_VALIDATION",
+		Status:                  status,
 		Type:                    "AMAZON_ISSUED",
 		KeyAlgorithm:            keyAlgorithm,
 		Serial:                  hex.EncodeToString(serialBytes),
 		Subject:                 fmt.Sprintf("CN=%s", req.DomainName),
 		CreatedAt:               now,
-		DomainValidationOptions: buildDomainValidations(req, certID),
+		IssuedAt:                issuedAt,
+		DomainValidationOptions: buildDomainValidations(req, validationMethod, certID),
 		RenewalEligibility:      "INELIGIBLE",
 		Options:                 req.Options,
-		Tags:                    req.Tags,
+		Tags:                    slices.Clone(req.Tags),
 	}
 
 	s.Certificates[arn] = cert
@@ -213,6 +247,26 @@ func (s *MemoryStorage) RequestCertificate(_ context.Context, req *RequestCertif
 	s.saveLocked()
 
 	return cert, nil
+}
+
+// newCertificateARN generates a certificate ID and its ARN.
+func newCertificateARN() (string, string) {
+	certID := uuid.New().String()
+
+	return certID, fmt.Sprintf("arn:aws:acm:us-east-1:000000000000:certificate/%s", certID)
+}
+
+// initialStatus returns the status and issue time of a newly requested
+// certificate. kumo cannot observe DNS, so a DNS-validated certificate is
+// issued immediately instead of waiting for its validation CNAME records:
+// clients such as the Terraform AWS provider's aws_acm_certificate_validation
+// block until the certificate is ISSUED. Email validation stays pending.
+func initialStatus(validationMethod string, now time.Time) (string, *time.Time) {
+	if validationMethod == validationMethodDNS {
+		return statusIssued, &now
+	}
+
+	return statusPendingValidation, nil
 }
 
 // DescribeCertificate retrieves certificate details.
@@ -290,7 +344,7 @@ func (s *MemoryStorage) GetCertificate(_ context.Context, arn string) (*Certific
 	}
 
 	// Only issued or imported certificates can be retrieved.
-	if cert.Status != "ISSUED" && cert.Type != certificateTypeImported {
+	if cert.Status != statusIssued && cert.Type != certificateTypeImported {
 		return nil, &Error{
 			Code:    errNotFound,
 			Message: "Certificate is not issued yet",
@@ -319,10 +373,13 @@ func (s *MemoryStorage) ImportCertificate(_ context.Context, req *ImportCertific
 		}
 	}
 
+	if err := validateTags(req.Tags); err != nil {
+		return nil, err
+	}
+
 	arn := req.CertificateArn
 	if arn == "" {
-		certID := uuid.New().String()
-		arn = fmt.Sprintf("arn:aws:acm:us-east-1:000000000000:certificate/%s", certID)
+		_, arn = newCertificateARN()
 	}
 
 	serialBytes := make([]byte, 16)
@@ -352,7 +409,7 @@ func (s *MemoryStorage) ImportCertificate(_ context.Context, req *ImportCertific
 		PrivateKey:         string(req.PrivateKey),
 		RenewalEligibility: "INELIGIBLE",
 		InUseBy:            []string{},
-		Tags:               req.Tags,
+		Tags:               slices.Clone(req.Tags),
 	}
 
 	s.Certificates[arn] = cert
@@ -360,4 +417,124 @@ func (s *MemoryStorage) ImportCertificate(_ context.Context, req *ImportCertific
 	s.saveLocked()
 
 	return cert, nil
+}
+
+// ListTagsForCertificate returns the tags applied to a certificate.
+func (s *MemoryStorage) ListTagsForCertificate(_ context.Context, arn string) ([]Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	cert, exists := s.Certificates[arn]
+	if !exists {
+		return nil, certificateNotFound(arn)
+	}
+
+	return slices.Clone(cert.Tags), nil
+}
+
+// AddTagsToCertificate adds tags to a certificate, overwriting the value of
+// any key that is already present.
+func (s *MemoryStorage) AddTagsToCertificate(_ context.Context, arn string, tags []Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cert, exists := s.Certificates[arn]
+	if !exists {
+		return certificateNotFound(arn)
+	}
+
+	if err := validateTags(tags); err != nil {
+		return err
+	}
+
+	merged := slices.Clone(cert.Tags)
+
+	for _, tag := range tags {
+		idx := slices.IndexFunc(merged, func(t Tag) bool { return t.Key == tag.Key })
+		if idx >= 0 {
+			merged[idx].Value = tag.Value
+		} else {
+			merged = append(merged, tag)
+		}
+	}
+
+	if len(merged) > maxTagsPerCertificate {
+		return tooManyTagsError()
+	}
+
+	cert.Tags = merged
+
+	s.saveLocked()
+
+	return nil
+}
+
+// RemoveTagsFromCertificate removes tags from a certificate. A tag given
+// without a value is removed regardless of its value; a tag given with a
+// value is removed only when the value matches.
+func (s *MemoryStorage) RemoveTagsFromCertificate(_ context.Context, arn string, tags []TagToRemove) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cert, exists := s.Certificates[arn]
+	if !exists {
+		return certificateNotFound(arn)
+	}
+
+	for _, tag := range tags {
+		if strings.HasPrefix(tag.Key, reservedTagPrefix) {
+			return reservedTagError(tag.Key)
+		}
+	}
+
+	cert.Tags = slices.DeleteFunc(slices.Clone(cert.Tags), func(t Tag) bool {
+		return slices.ContainsFunc(tags, func(r TagToRemove) bool {
+			return r.Key == t.Key && (r.Value == nil || *r.Value == t.Value)
+		})
+	})
+
+	s.saveLocked()
+
+	return nil
+}
+
+// validateTags rejects tag sets that ACM refuses on any tagging call: more
+// tags than a certificate may carry, or keys with the reserved prefix.
+func validateTags(tags []Tag) error {
+	if len(tags) > maxTagsPerCertificate {
+		return tooManyTagsError()
+	}
+
+	for _, tag := range tags {
+		if strings.HasPrefix(tag.Key, reservedTagPrefix) {
+			return reservedTagError(tag.Key)
+		}
+	}
+
+	return nil
+}
+
+// tooManyTagsError reports a certificate exceeding maxTagsPerCertificate.
+func tooManyTagsError() error {
+	return &Error{
+		Code:    errTooManyTags,
+		Message: fmt.Sprintf("a certificate can have at most %d tags", maxTagsPerCertificate),
+	}
+}
+
+// reservedTagError reports a tag key that uses the prefix reserved for AWS.
+func reservedTagError(key string) error {
+	return &Error{
+		Code:    errInvalidTag,
+		Message: fmt.Sprintf("tag key %q uses the reserved prefix %q", key, reservedTagPrefix),
+	}
+}
+
+// certificateNotFound reports an ARN that does not refer to a stored
+// certificate.
+func certificateNotFound(arn string) error {
+	return &Error{
+		Code:    errNotFound,
+		Message: fmt.Sprintf("Certificate with arn %s not found", arn),
+	}
 }
