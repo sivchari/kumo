@@ -12,6 +12,7 @@ const (
 	testZoneID        = "/hostedzone/test"
 	testActionDelete  = "DELETE"
 	testActionUpsert  = "UPSERT"
+	testCreatedRecord = "www.example.com. 192.0.2.1"
 	testUpdatedRecord = "www.example.com. 192.0.2.2"
 )
 
@@ -92,7 +93,7 @@ func TestChangeRecordSetsNormalizesRecordNames(t *testing.T) {
 				t.Fatalf("CREATE: %v", err)
 			}
 
-			if got, want := recordSummaries(t, s), []string{"www.example.com. 192.0.2.1"}; !slices.Equal(got, want) {
+			if got, want := recordSummaries(t, s), []string{testCreatedRecord}; !slices.Equal(got, want) {
 				t.Fatalf("records after CREATE = %q, want %q", got, want)
 			}
 
@@ -111,14 +112,14 @@ func TestChangeRecordSetsNormalizesRecordNames(t *testing.T) {
 	}
 }
 
-func TestLoadNormalizesPersistedRecordNames(t *testing.T) {
-	t.Parallel()
+// loadSnapshot writes a snapshot holding records as an earlier version
+// stored them, with names kept exactly as sent, and loads it.
+func loadSnapshot(t *testing.T, records []ResourceRecordSet) *MemoryStorage {
+	t.Helper()
 
-	// Build a snapshot as an earlier version stored it, with the record name
-	// kept exactly as sent.
 	legacy := NewMemoryStorage()
-	legacy.HostedZones[testZoneID] = &HostedZone{ID: testZoneID, Name: "example.com."}
-	legacy.RecordSets[testZoneID] = []ResourceRecordSet{newTestRecordSet("www.example.com", "192.0.2.1")}
+	legacy.HostedZones[testZoneID] = &HostedZone{ID: testZoneID, Name: "example.com.", ResourceRecordSetCount: int64(len(records))}
+	legacy.RecordSets[testZoneID] = records
 
 	data, err := legacy.MarshalJSON()
 	if err != nil {
@@ -130,27 +131,82 @@ func TestLoadNormalizesPersistedRecordNames(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := NewMemoryStorage(WithDataDir(dataDir))
+	return NewMemoryStorage(WithDataDir(dataDir))
+}
 
-	if got, want := recordSummaries(t, s), []string{"www.example.com. 192.0.2.1"}; !slices.Equal(got, want) {
-		t.Fatalf("records after load = %q, want %q", got, want)
-	}
+var loadNormalizationTests = []struct {
+	name            string
+	persisted       []ResourceRecordSet
+	wantLoaded      []string
+	wantAfterDelete []string
+}{
+	{
+		name:            "undotted name",
+		persisted:       []ResourceRecordSet{newTestRecordSet("www.example.com", "192.0.2.1")},
+		wantLoaded:      []string{testCreatedRecord},
+		wantAfterDelete: []string{},
+	},
+	{
+		name: "both spellings with identical values",
+		persisted: []ResourceRecordSet{
+			newTestRecordSet("www.example.com", "192.0.2.1"),
+			newTestRecordSet("www.example.com.", "192.0.2.1"),
+		},
+		wantLoaded:      []string{testCreatedRecord},
+		wantAfterDelete: []string{},
+	},
+	{
+		name: "both spellings with different values keep the later one",
+		persisted: []ResourceRecordSet{
+			newTestRecordSet("www.example.com", "192.0.2.1"),
+			newTestRecordSet("api.example.com.", "192.0.2.10"),
+			newTestRecordSet("www.example.com.", "192.0.2.9"),
+		},
+		wantLoaded:      []string{"api.example.com. 192.0.2.10", "www.example.com. 192.0.2.9"},
+		wantAfterDelete: []string{"api.example.com. 192.0.2.10"},
+	},
+}
 
-	upsert := Change{Action: testActionUpsert, ResourceRecordSet: newTestRecordSet("www.example.com.", "192.0.2.2")}
-	if err := s.ChangeRecordSets(testZoneID, []Change{upsert}); err != nil {
-		t.Fatalf("UPSERT: %v", err)
-	}
+func TestLoadNormalizesPersistedRecordNames(t *testing.T) {
+	t.Parallel()
 
-	if got, want := recordSummaries(t, s), []string{testUpdatedRecord}; !slices.Equal(got, want) {
-		t.Fatalf("records after UPSERT = %q, want %q", got, want)
-	}
+	for _, tt := range loadNormalizationTests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	del := Change{Action: testActionDelete, ResourceRecordSet: newTestRecordSet("www.example.com", "192.0.2.2")}
-	if err := s.ChangeRecordSets(testZoneID, []Change{del}); err != nil {
-		t.Fatalf("DELETE: %v", err)
-	}
+			s := loadSnapshot(t, tt.persisted)
 
-	if got := recordSummaries(t, s); len(got) != 0 {
-		t.Fatalf("records after DELETE = %q, want none", got)
+			if got := recordSummaries(t, s); !slices.Equal(got, tt.wantLoaded) {
+				t.Fatalf("records after load = %q, want %q", got, tt.wantLoaded)
+			}
+
+			zone, err := s.GetHostedZone(testZoneID)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if zone.ResourceRecordSetCount != int64(len(tt.wantLoaded)) {
+				t.Fatalf("ResourceRecordSetCount = %d, want %d", zone.ResourceRecordSetCount, len(tt.wantLoaded))
+			}
+
+			upsert := Change{Action: testActionUpsert, ResourceRecordSet: newTestRecordSet("www.example.com.", "192.0.2.2")}
+			if err := s.ChangeRecordSets(testZoneID, []Change{upsert}); err != nil {
+				t.Fatalf("UPSERT: %v", err)
+			}
+
+			wantUpserted := slices.Concat(tt.wantAfterDelete, []string{testUpdatedRecord})
+			if got := recordSummaries(t, s); !slices.Equal(got, wantUpserted) {
+				t.Fatalf("records after UPSERT = %q, want %q", got, wantUpserted)
+			}
+
+			del := Change{Action: testActionDelete, ResourceRecordSet: newTestRecordSet("www.example.com", "192.0.2.2")}
+			if err := s.ChangeRecordSets(testZoneID, []Change{del}); err != nil {
+				t.Fatalf("DELETE: %v", err)
+			}
+
+			if got := recordSummaries(t, s); !slices.Equal(got, tt.wantAfterDelete) {
+				t.Fatalf("records after DELETE = %q, want %q", got, tt.wantAfterDelete)
+			}
+		})
 	}
 }

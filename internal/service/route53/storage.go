@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -123,10 +125,17 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	// Snapshots written before record names were normalized may hold names
-	// without the trailing dot.
-	for _, records := range s.RecordSets {
+	// without the trailing dot, possibly for both spellings of one record.
+	for zoneID, records := range s.RecordSets {
 		for i := range records {
 			records[i].Name = fullyQualified(records[i].Name)
+		}
+
+		records = coalesceRecordSets(zoneID, records)
+		s.RecordSets[zoneID] = records
+
+		if zone, ok := s.HostedZones[zoneID]; ok {
+			zone.ResourceRecordSetCount = int64(len(records))
 		}
 	}
 
@@ -139,6 +148,42 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// coalesceRecordSets keeps one record set per name, type and set identifier,
+// keeping the last occurrence since CREATE appends. Dropping a record set
+// that differs from the kept one is logged.
+func coalesceRecordSets(zoneID string, records []ResourceRecordSet) []ResourceRecordSet {
+	type recordKey struct{ name, recordType, setIdentifier string }
+
+	kept := make(map[recordKey]int, len(records))
+	keep := make([]bool, len(records))
+
+	for i := len(records) - 1; i >= 0; i-- {
+		key := recordKey{records[i].Name, records[i].Type, records[i].SetIdentifier}
+
+		if j, ok := kept[key]; ok {
+			if !reflect.DeepEqual(records[i], records[j]) {
+				slog.Warn("route53: dropped an earlier conflicting record set from snapshot",
+					"zone", zoneID, "name", key.name, "type", key.recordType)
+			}
+
+			continue
+		}
+
+		kept[key] = i
+		keep[i] = true
+	}
+
+	coalesced := make([]ResourceRecordSet, 0, len(kept))
+
+	for i := range records {
+		if keep[i] {
+			coalesced = append(coalesced, records[i])
+		}
+	}
+
+	return coalesced
 }
 
 // saveLocked persists the current state to disk while the caller holds the lock.
