@@ -298,7 +298,7 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, ok := edgeCacheConfig(behavior)
+	cfg, ok := s.edgeCacheConfig(r.Context(), behavior)
 	if !ok {
 		http.Error(w, "distribution missing DefaultCacheBehavior", http.StatusServiceUnavailable)
 
@@ -607,12 +607,29 @@ func (s *Service) passthrough(w http.ResponseWriter, r *http.Request, target ups
 	writeUpstream(w, upstream, "Bypass from kumo", 0)
 }
 
+// cachePolicyTTLs is a cache policy's [MinTTL, DefaultTTL, MaxTTL] in seconds.
+type cachePolicyTTLs struct {
+	min, def, max int64
+}
+
 // edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of the
-// matched cache behaviour. Returns ok=false when the distribution has no
-// behaviour for the request (terraform almost always configures one).
-func edgeCacheConfig(behavior *DefaultCacheBehavior) (cache.DistributionConfig, bool) {
+// matched cache behaviour. When the behaviour references a cache policy the
+// TTLs come from that policy, as with CloudFront, and the legacy TTL fields
+// are not used; a policy whose TTLs kumo does not know falls back to them.
+// Returns ok=false when the distribution has no behaviour for the request
+// (terraform almost always configures one).
+func (s *Service) edgeCacheConfig(ctx context.Context, behavior *DefaultCacheBehavior) (cache.DistributionConfig, bool) {
 	if behavior == nil {
 		return cache.DistributionConfig{}, false
+	}
+
+	if ttls, ok := s.cachePolicyTTLs(ctx, behavior.CachePolicyID); ok {
+		return cache.DistributionConfig{
+			MinTTL:      time.Duration(ttls.min) * time.Second,
+			DefaultTTL:  time.Duration(ttls.def) * time.Second,
+			MaxTTL:      time.Duration(ttls.max) * time.Second,
+			CachePolicy: true,
+		}, true
 	}
 
 	return cache.DistributionConfig{
@@ -620,6 +637,29 @@ func edgeCacheConfig(behavior *DefaultCacheBehavior) (cache.DistributionConfig, 
 		DefaultTTL: time.Duration(behavior.DefaultTTL) * time.Second,
 		MaxTTL:     time.Duration(behavior.MaxTTL) * time.Second,
 	}, true
+}
+
+// cachePolicyTTLs looks up the TTLs of a managed or custom cache policy.
+func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTTLs, bool) {
+	if id == "" {
+		return cachePolicyTTLs{}, false
+	}
+
+	if ttls, ok := managedCachePolicyTTLs[id]; ok {
+		return ttls, true
+	}
+
+	policy, err := s.storage.GetCachePolicy(ctx, id)
+	if err != nil {
+		return cachePolicyTTLs{}, false
+	}
+
+	cfg := policy.Config
+	if cfg.MinTTL == nil || cfg.DefaultTTL == nil || cfg.MaxTTL == nil {
+		return cachePolicyTTLs{}, false
+	}
+
+	return cachePolicyTTLs{min: *cfg.MinTTL, def: *cfg.DefaultTTL, max: *cfg.MaxTTL}, true
 }
 
 // upstreamTarget is where an origin request goes and how the edge signs it.

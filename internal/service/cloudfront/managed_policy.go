@@ -24,6 +24,19 @@ var (
 		"7e5fad67-ee98-4ad0-b05a-394999eefc1a": "Amplify-StaticContent",
 	}
 
+	// managedCachePolicyTTLs holds the TTLs AWS documents for the managed
+	// cache policies, in seconds. The Amplify Hosting policies are left
+	// out because their TTLs are not documented.
+	managedCachePolicyTTLs = map[string]cachePolicyTTLs{
+		"2e54312d-136d-493c-8eb9-b001f22f67d2": {min: 2, def: 2, max: 600},
+		"4135ea2d-6df8-44a3-9df3-4b5a84be39ad": {min: 0, def: 0, max: 0},
+		"658327ea-f89d-4fab-a63d-7e88639e58f6": {min: 1, def: 86400, max: 31536000},
+		"b2884449-e4de-46a7-ac36-70bc7f1ddd6d": {min: 1, def: 86400, max: 31536000},
+		"08627262-05a9-4f76-9ded-b50ca2e3a84f": {min: 0, def: 86400, max: 31536000},
+		"83da9c7e-98b4-4e11-a168-04f0df8e2c65": {min: 0, def: 0, max: 31536000},
+		"4cc15a8a-d715-48a4-82b8-cc0b614638fe": {min: 0, def: 0, max: 31536000},
+	}
+
 	managedResponseHeadersPolicies = map[string]string{
 		"5cc3b908-e619-4b99-88e5-2cf7f45965bd": "Managed-CORS-With-Preflight",
 		"e61eb60c-9c35-4d20-a928-2b84e02af89c": "Managed-CORS-and-SecurityHeadersPolicy",

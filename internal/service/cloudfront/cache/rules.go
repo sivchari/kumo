@@ -26,6 +26,12 @@ type DistributionConfig struct {
 	MinTTL     time.Duration
 	DefaultTTL time.Duration
 	MaxTTL     time.Duration
+
+	// CachePolicy marks TTLs taken from the cache policy attached to the
+	// behaviour. They are evaluated as the CloudFront expiration table
+	// describes (see cachePolicyTTL) instead of the rules below, which
+	// the legacy TTL settings keep using.
+	CachePolicy bool
 }
 
 // EffectiveTTL implements the CloudFront precedence:
@@ -49,6 +55,10 @@ type DistributionConfig struct {
 // distinction belongs to NoCacheDirective, not the TTL.
 func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time) time.Duration {
 	cc := mergedCacheControl(respHeader)
+	if cfg.CachePolicy {
+		return cachePolicyTTL(respHeader, cc, cfg, now)
+	}
+
 	if cc.NoStore || cc.Private {
 		return 0
 	}
@@ -74,6 +84,44 @@ func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time)
 	}
 
 	return clampTTL(ttl, cfg)
+}
+
+// cachePolicyTTL follows the CloudFront expiration table for TTLs that
+// come from a cache policy:
+//
+//   - no-store / private: not cached; no-cache: revalidated on every hit.
+//     While the origin is reachable CloudFront gets such objects from it
+//     even with MinTTL > 0.
+//   - s-maxage / max-age / Expires: the value clamped to [MinTTL, MaxTTL].
+//     MaxTTL is a real bound here, so MaxTTL = 0 does not cache.
+//   - none of them: the greater of MinTTL and DefaultTTL. MaxTTL only
+//     applies when the origin sends Cache-Control or Expires, and there is
+//     no Last-Modified heuristic.
+//
+// References:
+//   - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html
+//   - https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CachePolicyConfig.html
+func cachePolicyTTL(respHeader http.Header, cc Control, cfg DistributionConfig, now time.Time) time.Duration {
+	// no-cache keeps the TTL below; MustRevalidate sends every hit back to
+	// the origin.
+	if cc.NoStore || cc.Private {
+		return 0
+	}
+
+	var ttl time.Duration
+
+	switch {
+	case cc.SMaxAge != nil:
+		ttl = time.Duration(*cc.SMaxAge) * time.Second
+	case cc.MaxAge != nil:
+		ttl = time.Duration(*cc.MaxAge) * time.Second
+	case respHeader.Get("Expires") != "":
+		ttl = expiresTTL(respHeader, now)
+	default:
+		return max(cfg.MinTTL, cfg.DefaultTTL)
+	}
+
+	return min(max(ttl, cfg.MinTTL), cfg.MaxTTL)
 }
 
 // expiresTTL evaluates the Expires header relative to `now`. Per RFC
