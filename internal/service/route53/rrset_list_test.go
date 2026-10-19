@@ -33,6 +33,7 @@ const (
 	escaped201Name      = `\201.example.com.`
 	escapedDotName      = `a\056b.example.com.`
 	dottedName          = "b.a.example.com."
+	wwwName             = "www.example.com."
 )
 
 // newRRSetListService returns a service whose test zone holds records in the
@@ -101,7 +102,7 @@ func recordKeys(records []ResourceRecordSet) []string {
 // trailing dot taking part in the comparison.
 var (
 	rrsetListFixture = []ResourceRecordSet{
-		{Name: "www.example.com.", Type: "A"},
+		{Name: wwwName, Type: "A"},
 		{Name: zoneApex, Type: "SOA"},
 		{Name: bName, Type: typeTXT},
 		{Name: "www-1.example.com.", Type: "A"},
@@ -542,7 +543,7 @@ func TestReversedLabelsKey(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "www.example.com.", want: "com.example.www."},
+		{name: wwwName, want: "com.example.www."},
 		{name: "WWW.Example.com", want: "com.example.www."},
 		{name: escapedStarName, want: "com.example.*."},
 		{name: starName, want: "com.example.*."},
