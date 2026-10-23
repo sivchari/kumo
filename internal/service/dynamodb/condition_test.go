@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 )
 
 const (
+	testExprMapEquals       = "m = :m"
 	testTableAccounts       = "accounts"
 	testTableUsers          = "users"
 	testAttrName            = "name"
@@ -628,7 +630,7 @@ func TestEvaluateCondition(t *testing.T) {
 			name: "equal maps",
 			item: Item{"pk": {S: new("1")}, "m": {M: map[string]*AttributeValue{"a": {N: new("1")}, "b": {SS: []string{"x", "y"}}}}},
 			cond: ConditionInput{
-				Expression: "m = :m",
+				Expression: testExprMapEquals,
 				ExprValues: map[string]AttributeValue{
 					":m": {M: map[string]*AttributeValue{"a": {N: new("1")}, "b": {SS: []string{"y", "x"}}}},
 				},
@@ -650,7 +652,7 @@ func TestEvaluateCondition(t *testing.T) {
 			name: "map subset is not equal",
 			item: Item{"pk": {S: new("1")}, "m": {M: map[string]*AttributeValue{"a": {N: new("1")}}}},
 			cond: ConditionInput{
-				Expression: "m = :m",
+				Expression: testExprMapEquals,
 				ExprValues: map[string]AttributeValue{
 					":m": {M: map[string]*AttributeValue{"a": {N: new("1")}, "b": {N: new("2")}}},
 				},
@@ -664,6 +666,182 @@ func TestEvaluateCondition(t *testing.T) {
 				Expression: "items = :l",
 				ExprValues: map[string]AttributeValue{
 					":l": {L: []*AttributeValue{{S: new("b")}, {S: new("a")}}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "equal binary",
+			item: Item{"pk": {S: new("1")}, "b": {B: []byte{1, 2}}},
+			cond: ConditionInput{
+				Expression: "b = :b",
+				ExprValues: map[string]AttributeValue{
+					":b": {B: []byte{1, 2}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "binary ordered by bytes",
+			item: Item{"pk": {S: new("1")}, "b": {B: []byte{1, 2}}},
+			cond: ConditionInput{
+				Expression: "b < :b",
+				ExprValues: map[string]AttributeValue{
+					":b": {B: []byte{1, 3}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "binary nested in map",
+			item: Item{"pk": {S: new("1")}, "m": {M: map[string]*AttributeValue{"b": {B: []byte{1}}}}},
+			cond: ConditionInput{
+				Expression: testExprMapEquals,
+				ExprValues: map[string]AttributeValue{
+					":m": {M: map[string]*AttributeValue{"b": {B: []byte{1}}}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "contains binary in list",
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{B: []byte{1}}}}},
+			cond: ConditionInput{
+				Expression: "contains(items, :b)",
+				ExprValues: map[string]AttributeValue{
+					":b": {B: []byte{1}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "contains binary in binary set",
+			item: Item{"pk": {S: new("1")}, "bs": {BS: [][]byte{{1}, {2}}}},
+			cond: ConditionInput{
+				Expression: "contains(bs, :b)",
+				ExprValues: map[string]AttributeValue{
+					":b": {B: []byte{2}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "binary sets ignore order",
+			item: Item{"pk": {S: new("1")}, "bs": {BS: [][]byte{{1}, {2}}}},
+			cond: ConditionInput{
+				Expression: "bs = :bs",
+				ExprValues: map[string]AttributeValue{
+					":bs": {BS: [][]byte{{2}, {1}}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "38-digit numbers differing in the last digit",
+			item: Item{"pk": {S: new("1")}, "n": {N: new("12345678901234567890123456789012345678")}},
+			cond: ConditionInput{
+				Expression: "n = :n",
+				ExprValues: map[string]AttributeValue{
+					":n": {N: new("12345678901234567890123456789012345679")},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "38-digit numbers ordered exactly",
+			item: Item{"pk": {S: new("1")}, "n": {N: new("12345678901234567890123456789012345678")}},
+			cond: ConditionInput{
+				Expression: "n < :n",
+				ExprValues: map[string]AttributeValue{
+					":n": {N: new("12345678901234567890123456789012345679")},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "numbers equal across notations",
+			item: Item{"pk": {S: new("1")}, "n": {N: new("100")}},
+			cond: ConditionInput{
+				Expression: "n = :n",
+				ExprValues: map[string]AttributeValue{
+					":n": {N: new("1E+2")},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "number sets compare by value",
+			item: Item{"pk": {S: new("1")}, "ns": {NS: []string{"1", "2.50"}}},
+			cond: ConditionInput{
+				Expression: "ns = :ns",
+				ExprValues: map[string]AttributeValue{
+					":ns": {NS: []string{"2.5", "1.0"}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "contains number in number set by value",
+			item: Item{"pk": {S: new("1")}, "ns": {NS: []string{"1", "2"}}},
+			cond: ConditionInput{
+				Expression: "contains(ns, :n)",
+				ExprValues: map[string]AttributeValue{
+					":n": {N: new("1.0")},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "string sets ignore order",
+			item: Item{"pk": {S: new("1")}, "ss": {SS: []string{"a", "b"}}},
+			cond: ConditionInput{
+				Expression: "ss = :ss",
+				ExprValues: map[string]AttributeValue{
+					":ss": {SS: []string{"b", "a"}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "string sets of different size",
+			item: Item{"pk": {S: new("1")}, "ss": {SS: []string{"a", "b"}}},
+			cond: ConditionInput{
+				Expression: "ss = :ss",
+				ExprValues: map[string]AttributeValue{
+					":ss": {SS: []string{"a"}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "ordering a list is false",
+			item: Item{"pk": {S: new("1")}, testAttrItems: {L: []*AttributeValue{{N: new("1")}}}},
+			cond: ConditionInput{
+				Expression: "items < :l",
+				ExprValues: map[string]AttributeValue{
+					":l": {L: []*AttributeValue{{N: new("2")}}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "ordering a map is false",
+			item: Item{"pk": {S: new("1")}, "m": {M: map[string]*AttributeValue{"a": {N: new("2")}}}},
+			cond: ConditionInput{
+				Expression: "m > :m",
+				ExprValues: map[string]AttributeValue{
+					":m": {M: map[string]*AttributeValue{"a": {N: new("1")}}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "list never equals a set",
+			item: Item{"pk": {S: new("1")}, "ss": {SS: []string{"a"}}},
+			cond: ConditionInput{
+				Expression: "ss = :l",
+				ExprValues: map[string]AttributeValue{
+					":l": {L: []*AttributeValue{{S: new("a")}}},
 				},
 			},
 			want: false,
@@ -797,6 +975,31 @@ func TestEvaluateCondition(t *testing.T) {
 				t.Errorf("evaluateCondition() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEvaluateConditionEmptyCollectionsSurvivePersistence(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(Item{"l": {L: []*AttributeValue{}}, "m": {M: map[string]*AttributeValue{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var item Item
+	if err := json.Unmarshal(data, &item); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := evaluateCondition(item, ConditionInput{
+		Expression: "l = :l AND m = :m",
+		ExprValues: map[string]AttributeValue{
+			":l": {L: []*AttributeValue{}},
+			":m": {M: map[string]*AttributeValue{}},
+		},
+	})
+	if err != nil || !got {
+		t.Errorf("evaluateCondition() = %v, %v, want true after a JSON round trip; item=%s", got, err, data)
 	}
 }
 

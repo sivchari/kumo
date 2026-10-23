@@ -1,8 +1,11 @@
 package dynamodb
 
 import (
+	"bytes"
+	"cmp"
 	"fmt"
 	"maps"
+	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -303,13 +306,13 @@ func evalContains(av AttributeValue, operand AttributeValue) bool {
 	}
 
 	if av.NS != nil && operand.N != nil {
-		for _, n := range av.NS {
-			if n == *operand.N {
-				return true
-			}
-		}
+		return slices.ContainsFunc(av.NS, func(n string) bool {
+			return compareAttributeValues(AttributeValue{N: &n}, operand, "=")
+		})
+	}
 
-		return false
+	if av.BS != nil && operand.B != nil {
+		return slices.ContainsFunc(av.BS, func(b []byte) bool { return bytes.Equal(b, operand.B) })
 	}
 
 	if av.L != nil {
@@ -318,7 +321,7 @@ func evalContains(av AttributeValue, operand AttributeValue) bool {
 				continue
 			}
 
-			if attributeValuesEqualStatic(*elem, operand) {
+			if compareAttributeValues(*elem, operand, "=") {
 				return true
 			}
 		}
@@ -382,7 +385,7 @@ func parseSizeComparison(expr string, item Item, values map[string]AttributeValu
 		return false, finalRest, nil
 	}
 
-	result := compareNumbers(float64(attributeSize(av)), rightNum, op)
+	result := satisfiesOrder(cmp.Compare(float64(attributeSize(av)), rightNum), op)
 
 	return result, finalRest, nil
 }
@@ -627,10 +630,59 @@ func resolveItemPath(item Item, path string) (AttributeValue, bool) {
 	return val, true
 }
 
-// compareAttributeValues compares two attribute values using the given operator.
+// compareAttributeValues compares two attribute values using the given
+// operator. Strings, numbers and binary are ordered; every other type supports
+// only = and <>, and values of different types are never equal.
 //
-// equalityOnly evaluates the only operators DynamoDB allows for BOOL and NULL
-// operands: equality and inequality. Any other operator is false.
+//nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
+func compareAttributeValues(a, b AttributeValue, op string) bool {
+	switch {
+	case a.S != nil && b.S != nil:
+		return satisfiesOrder(strings.Compare(*a.S, *b.S), op)
+	case a.N != nil && b.N != nil:
+		if order, ok := compareNumbers(*a.N, *b.N); ok {
+			return satisfiesOrder(order, op)
+		}
+
+		return equalityOnly(*a.N == *b.N, op)
+	case a.B != nil && b.B != nil:
+		return satisfiesOrder(bytes.Compare(a.B, b.B), op)
+	case a.BOOL != nil && b.BOOL != nil:
+		return equalityOnly(*a.BOOL == *b.BOOL, op)
+	case a.NULL != nil && b.NULL != nil:
+		return equalityOnly(*a.NULL == *b.NULL, op)
+	}
+
+	if equal, ok := collectionsEqual(a, b); ok {
+		return equalityOnly(equal, op)
+	}
+
+	return op == "<>"
+}
+
+// satisfiesOrder reports whether order, the result of a three-way compare,
+// satisfies op.
+func satisfiesOrder(order int, op string) bool {
+	switch op {
+	case "=":
+		return order == 0
+	case "<>":
+		return order != 0
+	case "<":
+		return order < 0
+	case "<=":
+		return order <= 0
+	case ">":
+		return order > 0
+	case ">=":
+		return order >= 0
+	default:
+		return false
+	}
+}
+
+// equalityOnly evaluates the only operators DynamoDB allows for unordered
+// types: equality and inequality. Any other operator is false.
 func equalityOnly(equal bool, op string) bool {
 	switch op {
 	case "=":
@@ -642,85 +694,28 @@ func equalityOnly(equal bool, op string) bool {
 	}
 }
 
-//nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
-func compareAttributeValues(a, b AttributeValue, op string) bool {
-	if a.S != nil && b.S != nil {
-		return compareStrings(*a.S, *b.S, op)
+// compareNumbers compares two DynamoDB numbers exactly, since they carry up to
+// 38 digits of precision. ok is false if either is not a valid number.
+func compareNumbers(a, b string) (order int, ok bool) {
+	x, okA := new(big.Rat).SetString(a)
+	y, okB := new(big.Rat).SetString(b)
+
+	if !okA || !okB {
+		return 0, false
 	}
 
-	if a.N != nil && b.N != nil {
-		aNum, err1 := strconv.ParseFloat(*a.N, 64)
-		bNum, err2 := strconv.ParseFloat(*b.N, 64)
-
-		if err1 != nil || err2 != nil {
-			return false
-		}
-
-		return compareNumbers(aNum, bNum, op)
-	}
-
-	// Boolean comparison (only = and <>).
-	if a.BOOL != nil && b.BOOL != nil {
-		return equalityOnly(*a.BOOL == *b.BOOL, op)
-	}
-
-	// NULL comparison (only = and <>).
-	if a.NULL != nil && b.NULL != nil {
-		return equalityOnly(*a.NULL == *b.NULL, op)
-	}
-
-	// Lists, maps and sets support only = and <>.
-	if equal, ok := collectionsEqual(a, b); ok {
-		return equalityOnly(equal, op)
-	}
-
-	// Type mismatch or unsupported types: only <> returns true.
-	return op == "<>"
+	return x.Cmp(y), true
 }
 
-func compareStrings(a, b, op string) bool {
-	switch op {
-	case "=":
-		return a == b
-	case "<>":
-		return a != b
-	case "<":
-		return a < b
-	case "<=":
-		return a <= b
-	case ">":
-		return a > b
-	case ">=":
-		return a >= b
-	default:
-		return false
+// numberKey returns a canonical form of n, so numbers equal by value share a
+// key; an invalid number is its own key.
+func numberKey(n string) string {
+	r, ok := new(big.Rat).SetString(n)
+	if !ok {
+		return n
 	}
-}
 
-func compareNumbers(a, b float64, op string) bool {
-	switch op {
-	case "=":
-		return a == b
-	case "<>":
-		return a != b
-	case "<":
-		return a < b
-	case "<=":
-		return a <= b
-	case ">":
-		return a > b
-	case ">=":
-		return a >= b
-	default:
-		return false
-	}
-}
-
-// attributeValuesEqualStatic compares two attribute values for equality (static function).
-//
-//nolint:gocritic // hugeParam: AttributeValue passed by value for comparison.
-func attributeValuesEqualStatic(a, b AttributeValue) bool {
-	return compareAttributeValues(a, b, "=")
+	return r.RatString()
 }
 
 // collectionsEqual compares a and b when both are the same set, list or map
@@ -730,9 +725,11 @@ func attributeValuesEqualStatic(a, b AttributeValue) bool {
 func collectionsEqual(a, b AttributeValue) (equal, ok bool) {
 	switch {
 	case a.SS != nil && b.SS != nil:
-		return sameElements(a.SS, b.SS), true
+		return sameSet(a.SS, b.SS, func(s string) string { return s }), true
 	case a.NS != nil && b.NS != nil:
-		return sameElements(a.NS, b.NS), true
+		return sameSet(a.NS, b.NS, numberKey), true
+	case a.BS != nil && b.BS != nil:
+		return sameSet(a.BS, b.BS, func(b []byte) string { return string(b) }), true
 	case a.L != nil && b.L != nil:
 		return slices.EqualFunc(a.L, b.L, elementsEqual), true
 	case a.M != nil && b.M != nil:
@@ -743,11 +740,29 @@ func collectionsEqual(a, b AttributeValue) (equal, ok bool) {
 }
 
 func elementsEqual(a, b *AttributeValue) bool {
-	return a != nil && b != nil && attributeValuesEqualStatic(*a, *b)
+	return a != nil && b != nil && compareAttributeValues(*a, *b, "=")
 }
 
-func sameElements(a, b []string) bool {
-	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
+// sameSet reports whether the sets a and b hold the same elements, comparing
+// them by key. Sets have no duplicates, so equal lengths and every element of
+// b being in a means equal.
+func sameSet[T any](a, b []T, key func(T) string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	keys := make(map[string]struct{}, len(a))
+	for _, v := range a {
+		keys[key(v)] = struct{}{}
+	}
+
+	for _, v := range b {
+		if _, ok := keys[key(v)]; !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 // parseArgList parses a parenthesized, comma-separated argument list.
