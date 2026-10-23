@@ -246,7 +246,7 @@ func setupIndexPaginationTable(t *testing.T, indexKeySchema []KeySchemaElement, 
 		GlobalSecondaryIndexes: []GlobalSecondaryIndex{{
 			IndexName:  testIndexName,
 			KeySchema:  indexKeySchema,
-			Projection: Projection{ProjectionType: "ALL"},
+			Projection: Projection{ProjectionType: testProjectionAll},
 		}},
 	})
 
