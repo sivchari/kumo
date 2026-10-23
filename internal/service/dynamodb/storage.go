@@ -1,11 +1,15 @@
 package dynamodb
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"math/big"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -744,11 +748,14 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 		return nil, nil, 0, err
 	}
 
-	m.orderQueryCandidates(candidates, keyAttrName(keySchema, keyTypeRange), scanForward)
+	pageKeyNames := keyNames(keySchema, td.Table.KeySchema)
+	if err := validateStartKey(exclusiveStartKey, pageKeyNames); err != nil {
+		return nil, nil, 0, err
+	}
 
-	startIdx := m.startIndexAfterKey(td.Table, candidates, exclusiveStartKey)
+	page := orderAfterStartKey(candidates, pageKeyNames, exclusiveStartKey, scanForward)
 
-	items, lastKey, scannedCount, err := m.evaluatePage(td.Table, candidates[startIdx:], filterExpr, exprNames, exprValues, limit)
+	items, lastKey, scannedCount, err := m.evaluatePage(pageKeyNames, page, filterExpr, exprNames, exprValues, limit)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -814,44 +821,130 @@ func (m *MemoryStorage) queryMatchingItems(items map[string]Item, partitionKeyNa
 	return candidates, nil
 }
 
-// orderQueryCandidates sorts query candidates by sort key (DynamoDB Query
-// always returns items in sort-key order) and reverses them in place when
-// scanForward is false. A table/index without a sort key is left in its
-// original (arbitrary map iteration) order.
-func (m *MemoryStorage) orderQueryCandidates(candidates []Item, sortKeyName string, scanForward bool) {
-	if sortKeyName != "" {
-		sort.Slice(candidates, func(i, j int) bool {
-			vi := candidates[i][sortKeyName]
-			vj := candidates[j][sortKeyName]
+// keyNames returns the attribute names of the given key schemas, each
+// schema's HASH key before its RANGE key, without duplicates. For an index
+// query that is the index key followed by the table key, which is both the
+// order of the results and the attributes of LastEvaluatedKey.
+func keyNames(schemas ...[]KeySchemaElement) []string {
+	var names []string
 
-			return m.compareForSort(&vi, &vj)
-		})
-	}
-
-	if !scanForward {
-		for i, j := 0, len(candidates)-1; i < j; i, j = i+1, j-1 {
-			candidates[i], candidates[j] = candidates[j], candidates[i]
+	for _, schema := range schemas {
+		for _, keyType := range []string{keyTypeHash, keyTypeRange} {
+			if name := keyAttrName(schema, keyType); name != "" && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
 		}
 	}
+
+	return names
 }
 
-// startIndexAfterKey returns the index in ordered immediately following the
-// item whose primary key matches exclusiveStartKey, or 0 when
-// exclusiveStartKey is nil or not found among ordered.
-func (m *MemoryStorage) startIndexAfterKey(table *Table, ordered []Item, exclusiveStartKey Item) int {
+// validateStartKey rejects an ExclusiveStartKey that lacks any of names, the
+// attributes needed to locate its position.
+func validateStartKey(exclusiveStartKey Item, names []string) error {
 	if exclusiveStartKey == nil {
-		return 0
+		return nil
 	}
 
-	startKeyStr := m.serializeKey(table, exclusiveStartKey)
+	for _, name := range names {
+		if _, ok := exclusiveStartKey[name]; !ok {
+			return &TableError{
+				Code:    errCodeValidation,
+				Message: "The provided starting key is invalid: The provided key element does not match the schema",
+			}
+		}
+	}
 
-	for i, item := range ordered {
-		if m.serializeKey(table, item) == startKeyStr {
-			return i + 1
+	return nil
+}
+
+// orderAfterStartKey sorts items in place by the attributes in names,
+// descending when forward is false, and returns the items positioned after
+// exclusiveStartKey. The start key's item need not still exist, so a page
+// boundary item deleted between calls neither repeats nor skips items.
+func orderAfterStartKey(items []Item, names []string, exclusiveStartKey Item, forward bool) []Item {
+	direction := 1
+	if !forward {
+		direction = -1
+	}
+
+	slices.SortFunc(items, func(a, b Item) int {
+		return direction * compareKeys(names, a, b)
+	})
+
+	if exclusiveStartKey == nil {
+		return items
+	}
+
+	start := sort.Search(len(items), func(i int) bool {
+		return direction*compareKeys(names, items[i], exclusiveStartKey) > 0
+	})
+
+	return items[start:]
+}
+
+// compareKeys orders a and b by the attributes in names, in turn. An item
+// missing an attribute sorts before one that has it.
+func compareKeys(names []string, a, b Item) int {
+	for _, name := range names {
+		va, okA := a[name]
+		vb, okB := b[name]
+
+		if okA != okB {
+			if okA {
+				return 1
+			}
+
+			return -1
+		}
+
+		if !okA {
+			continue
+		}
+
+		if c := compareKeyValues(&va, &vb); c != 0 {
+			return c
 		}
 	}
 
 	return 0
+}
+
+// compareKeyValues orders key attribute values as DynamoDB does: numbers by
+// exact value, strings and binary byte by byte.
+func compareKeyValues(a, b *AttributeValue) int {
+	switch {
+	case a.N != nil && b.N != nil:
+		x, okA := new(big.Rat).SetString(*a.N)
+		y, okB := new(big.Rat).SetString(*b.N)
+
+		if okA && okB {
+			return x.Cmp(y)
+		}
+
+		return strings.Compare(*a.N, *b.N)
+	case a.S != nil && b.S != nil:
+		return strings.Compare(*a.S, *b.S)
+	case a.B != nil && b.B != nil:
+		return bytes.Compare(a.B, b.B)
+	default:
+		return cmp.Compare(keyTypeRank(a), keyTypeRank(b))
+	}
+}
+
+// keyTypeRank gives mismatched key types, which only a malformed start key
+// can produce, a fixed order.
+func keyTypeRank(av *AttributeValue) int {
+	switch {
+	case av.S != nil:
+		return 1
+	case av.N != nil:
+		return 2
+	case av.B != nil:
+		return 3
+	default:
+		return 0
+	}
 }
 
 // evaluatePage evaluates candidates in order, up to Limit items when limit is
@@ -862,8 +955,9 @@ func (m *MemoryStorage) startIndexAfterKey(table *Table, ordered []Item, exclusi
 // ones that also pass the filter. lastEvaluatedKey is set to the last
 // evaluated item's key when evaluation stopped early because Limit was
 // reached while candidates remained, and is nil once candidates are
-// exhausted (even if that happens to coincide with Limit).
-func (m *MemoryStorage) evaluatePage(table *Table, candidates []Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
+// exhausted (even if that happens to coincide with Limit). lastEvaluatedKey
+// holds the attributes named in pageKeyNames.
+func (m *MemoryStorage) evaluatePage(pageKeyNames []string, candidates []Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
 	items := []Item{}
 
 	for i, item := range candidates {
@@ -881,7 +975,7 @@ func (m *MemoryStorage) evaluatePage(table *Table, candidates []Item, filterExpr
 			var lastEvaluatedKey Item
 
 			if i+1 < len(candidates) {
-				lastEvaluatedKey = m.extractKey(table, item)
+				lastEvaluatedKey = keyAttributes(pageKeyNames, item)
 			}
 
 			return items, lastEvaluatedKey, scannedCount, nil
@@ -927,46 +1021,18 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 	return items, lastKey, scannedCount, nil
 }
 
-// sortByKeyAndEvaluate orders scan candidates by serialized primary key (Scan
-// has no sort-key ordering), positions past ExclusiveStartKey, and then
-// evaluates up to Limit items against the filter via evaluatePage. Keys are
-// pre-computed once so neither the sort nor the start-key lookup re-serializes.
+// sortByKeyAndEvaluate orders scan candidates by primary key (Scan has no
+// sort-key ordering), positions past ExclusiveStartKey, and then evaluates up
+// to Limit items against the filter via evaluatePage.
 func (m *MemoryStorage) sortByKeyAndEvaluate(table *Table, candidates []Item, exclusiveStartKey Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
-	type keyedItem struct {
-		key  string
-		item Item
+	pageKeyNames := keyNames(table.KeySchema)
+	if err := validateStartKey(exclusiveStartKey, pageKeyNames); err != nil {
+		return nil, nil, 0, err
 	}
 
-	pairs := make([]keyedItem, len(candidates))
-	for i, it := range candidates {
-		pairs[i] = keyedItem{key: m.serializeKey(table, it), item: it}
-	}
+	page := orderAfterStartKey(candidates, pageKeyNames, exclusiveStartKey, true)
 
-	sort.Slice(pairs, func(i, j int) bool { return pairs[i].key < pairs[j].key })
-
-	startIdx := 0
-
-	if exclusiveStartKey != nil {
-		startKeyStr := m.serializeKey(table, exclusiveStartKey)
-		for i, p := range pairs {
-			if p.key == startKeyStr {
-				startIdx = i + 1
-
-				break
-			}
-		}
-	}
-
-	ordered := make([]Item, 0, len(pairs))
-	for _, p := range pairs {
-		ordered = append(ordered, p.item)
-	}
-
-	if startIdx >= len(ordered) {
-		return []Item{}, nil, 0, nil
-	}
-
-	return m.evaluatePage(table, ordered[startIdx:], filterExpr, exprNames, exprValues, limit)
+	return m.evaluatePage(pageKeyNames, page, filterExpr, exprNames, exprValues, limit)
 }
 
 // scanCandidateItems walks every item and applies parallel-scan segment
@@ -1220,11 +1286,16 @@ func (m *MemoryStorage) copyAttributeValue(av AttributeValue) AttributeValue {
 
 // extractKey extracts the primary key from an item.
 func (m *MemoryStorage) extractKey(table *Table, item Item) Item {
-	key := make(Item)
+	return keyAttributes(keyNames(table.KeySchema), item)
+}
 
-	for _, ks := range table.KeySchema {
-		if val, ok := item[ks.AttributeName]; ok {
-			key[ks.AttributeName] = val
+// keyAttributes returns the item's attributes named in names.
+func keyAttributes(names []string, item Item) Item {
+	key := make(Item, len(names))
+
+	for _, name := range names {
+		if val, ok := item[name]; ok {
+			key[name] = val
 		}
 	}
 
@@ -2235,24 +2306,6 @@ func (m *MemoryStorage) DescribeTimeToLive(_ context.Context, tableName string) 
 	}
 
 	return td.Table.TTLAttributeName, td.Table.TTLEnabled, nil
-}
-
-// compareForSort compares two AttributeValues for sorting (S or N type).
-func (m *MemoryStorage) compareForSort(a, b *AttributeValue) bool {
-	if a.S != nil && b.S != nil {
-		return *a.S < *b.S
-	}
-
-	if a.N != nil && b.N != nil {
-		var an, bn float64
-
-		_, _ = fmt.Sscanf(*a.N, "%f", &an)
-		_, _ = fmt.Sscanf(*b.N, "%f", &bn)
-
-		return an < bn
-	}
-
-	return false
 }
 
 // emitStreamEvent publishes a stream record to the shared event store.
