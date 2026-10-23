@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.33.1](https://github.com/sivchari/kumo/compare/v0.33.0...v0.33.1) - 2026-10-23
+- fix(docker): build with Go 1.26.8 to match go.mod toolchain by @sivchari in https://github.com/sivchari/kumo/pull/1030
+- release v0.33.1 by @sivchari in https://github.com/sivchari/kumo/pull/1032
+
 ## [v0.33.0](https://github.com/sivchari/kumo/compare/v0.32.0...v0.33.0) - 2026-10-23
 - test: eliminate flaky timing in integration tests and add synctest coverage by @sivchari in https://github.com/sivchari/kumo/pull/981
 - feat(server): route signed requests by SigV4 credential scope by @sivchari in https://github.com/sivchari/kumo/pull/977
