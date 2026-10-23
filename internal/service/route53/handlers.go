@@ -113,10 +113,7 @@ func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := req.Name
-	if !strings.HasSuffix(name, ".") {
-		name += "."
-	}
+	name := normalizeDNSName(req.Name)
 
 	zoneID := uuid.New().String()
 	zone := &HostedZone{
@@ -293,15 +290,22 @@ func (s *Service) ListHostedZonesByName(w http.ResponseWriter, r *http.Request) 
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
-// normalizeDNSName makes the DNS-name query value compare-friendly: AWS
-// canonicalizes hosted-zone names with a trailing dot, but clients may send
-// either form. Lowercase to make comparison case-insensitive.
+// normalizeDNSName canonicalizes a hosted-zone name: AWS returns names with a
+// trailing dot, but clients may send either form. Route 53 stores alphabetic
+// characters as lowercase letters (a-z) regardless of how they are specified,
+// so ASCII A-Z is lowercased; other characters are left as sent.
 func normalizeDNSName(name string) string {
 	if name == "" {
 		return ""
 	}
 
-	lower := strings.ToLower(name)
+	lower := strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+
+		return r
+	}, name)
 	if !strings.HasSuffix(lower, ".") {
 		lower += "."
 	}
