@@ -2,12 +2,15 @@ package server
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 func TestParseServiceFromUserAgent(t *testing.T) {
@@ -91,6 +94,36 @@ func TestQueryDispatcher_RoutesViaUserAgent(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestQueryDispatcher_MarksRequestAsQueryProtocol(t *testing.T) {
+	t.Parallel()
+
+	d := NewQueryProtocolDispatcher()
+
+	marked := false
+
+	d.RegisterAction("DescribeAlarms", "GraniteServiceVersion20100801", "cloudwatch", func(w http.ResponseWriter, r *http.Request) {
+		marked = service.IsQueryProtocol(r)
+
+		w.WriteHeader(http.StatusOK)
+	})
+
+	body := strings.NewReader("Action=DescribeAlarms&Version=2010-08-01")
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "aws-sdk-go-v2/1.36.3 api/cloudwatch#1.0.0 os/linux")
+
+	d.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !marked {
+		t.Error("expected the handler to see the request marked as Query protocol")
+	}
+
+	if service.IsQueryProtocol(req) {
+		t.Error("expected the caller's request to stay unmarked")
 	}
 }
 
@@ -250,10 +283,21 @@ func TestQueryDispatcher_UnknownAction(t *testing.T) {
 		t.Errorf("expected status 400, got %d", rec.Code)
 	}
 
-	if !strings.Contains(rec.Body.String(), "UnknownAction") {
-		t.Errorf("expected UnknownAction error, got %s", rec.Body.String())
+	if !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/xml") {
+		t.Errorf("Content-Type = %q, want text/xml", rec.Header().Get("Content-Type"))
+	}
+
+	var resp struct {
+		XMLName xml.Name `xml:"ErrorResponse"`
+		Code    string   `xml:"Error>Code"`
+	}
+
+	if err := xml.Unmarshal(rec.Body.Bytes(), &resp); err != nil || resp.Code != "UnknownAction" {
+		t.Errorf("expected an XML UnknownAction error, got %s (%v)", rec.Body.String(), err)
 	}
 }
+
+const formValueKey = "Value"
 
 // formToJSONTests covers the form-to-JSON conversions that
 // QueryProtocolDispatcher relies on before dispatching to a JSON protocol
@@ -284,8 +328,52 @@ var formToJSONTests = []struct {
 		},
 		want: map[string]any{
 			"Tags": []any{
-				map[string]any{"Key": "env", "Value": "terraform"},
-				map[string]any{"Key": "team", "Value": "platform"},
+				map[string]any{"Key": "env", formValueKey: "terraform"},
+				map[string]any{"Key": "team", formValueKey: "platform"},
+			},
+		},
+	},
+	{
+		name: "nested structs and lists inside members (GetMetricData)",
+		form: url.Values{
+			"MetricDataQueries.member.1.Id":                                          {"m"},
+			"MetricDataQueries.member.1.MetricStat.Metric.Namespace":                 {"Kumo/Test"},
+			"MetricDataQueries.member.1.MetricStat.Metric.MetricName":                {"Latency"},
+			"MetricDataQueries.member.1.MetricStat.Metric.Dimensions.member.1.Name":  {"Account"},
+			"MetricDataQueries.member.1.MetricStat.Metric.Dimensions.member.1.Value": {"123"},
+			"MetricDataQueries.member.1.MetricStat.Period":                           {"60"},
+			"MetricDataQueries.member.1.MetricStat.Stat":                             {"Sum"},
+			"MetricDataQueries.member.2.Id":                                          {"e"},
+			"MetricDataQueries.member.2.Expression":                                  {"m * 2"},
+		},
+		want: map[string]any{
+			"MetricDataQueries": []any{
+				map[string]any{
+					"Id": "m",
+					"MetricStat": map[string]any{
+						"Metric": map[string]any{
+							"Namespace":  "Kumo/Test",
+							"MetricName": "Latency",
+							"Dimensions": []any{map[string]any{"Name": "Account", formValueKey: float64(123)}},
+						},
+						"Period": float64(60),
+						"Stat":   "Sum",
+					},
+				},
+				map[string]any{"Id": "e", "Expression": "m * 2"},
+			},
+		},
+	},
+	{
+		name: "scalar list inside a member",
+		form: url.Values{
+			"Filters.member.1.Name":            {"engine"},
+			"Filters.member.1.Values.member.1": {"postgres"},
+			"Filters.member.1.Values.member.2": {"mysql"},
+		},
+		want: map[string]any{
+			"Filters": []any{
+				map[string]any{"Name": "engine", "Values": []any{"postgres", "mysql"}},
 			},
 		},
 	},

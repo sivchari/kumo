@@ -45,21 +45,30 @@ func (s *Service) PutMetricData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.Namespace != "", "Namespace") {
+	if !requireCloudWatchParameter(w, r, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, len(req.MetricData) != 0, "MetricData") {
+	if !requireCloudWatchParameter(w, r, len(req.MetricData) != 0, "MetricData") {
 		return
 	}
 
 	if err := s.storage.PutMetricData(r.Context(), req.Namespace, req.MetricData); err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
 
 		return
 	}
 
-	writeJSONResponse(w, struct{}{})
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, struct{}{})
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlPutMetricDataResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // GetMetricData handles the GetMetricData action.
@@ -69,20 +78,33 @@ func (s *Service) GetMetricData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, len(req.MetricDataQueries) != 0, "MetricDataQueries") {
+	if !requireCloudWatchParameter(w, r, len(req.MetricDataQueries) != 0, "MetricDataQueries") {
 		return
 	}
 
 	result, err := s.storage.GetMetricData(r.Context(), &req)
 	if err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
 
 		return
 	}
 
-	writeJSONResponse(w, GetMetricDataResponse{
-		MetricDataResults: result.MetricDataResults,
-		NextToken:         result.NextToken,
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, GetMetricDataResponse{
+			MetricDataResults: result.MetricDataResults,
+			NextToken:         result.NextToken,
+		})
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlGetMetricDataResponse{
+		Xmlns: cloudWatchXMLNS,
+		GetMetricDataResult: xmlGetMetricDataResult{
+			MetricDataResults: xmlMetricDataResultList{Members: metricDataResultsToXML(result.MetricDataResults)},
+			NextToken:         result.NextToken,
+		},
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
 
@@ -93,24 +115,37 @@ func (s *Service) GetMetricStatistics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.Namespace != "", "Namespace") {
+	if !requireCloudWatchParameter(w, r, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.MetricName != "", "MetricName") {
+	if !requireCloudWatchParameter(w, r, req.MetricName != "", "MetricName") {
 		return
 	}
 
 	result, err := s.storage.GetMetricStatistics(r.Context(), &req)
 	if err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
 
 		return
 	}
 
-	writeJSONResponse(w, GetMetricStatisticsResponse{
-		Label:      result.Label,
-		Datapoints: result.Datapoints,
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, GetMetricStatisticsResponse{
+			Label:      result.Label,
+			Datapoints: result.Datapoints,
+		})
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlGetMetricStatisticsResponse{
+		Xmlns: cloudWatchXMLNS,
+		GetMetricStatisticsResult: xmlGetMetricStatisticsResult{
+			Label:      result.Label,
+			Datapoints: xmlDatapointList{Members: datapointsToXML(result.Datapoints)},
+		},
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
 
@@ -123,15 +158,29 @@ func (s *Service) ListMetrics(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.storage.ListMetrics(r.Context(), &req)
 	if err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
 
 		return
 	}
 
-	writeJSONResponse(w, ListMetricsResponse{
-		Metrics:        result.Metrics,
-		NextToken:      result.NextToken,
-		OwningAccounts: result.OwningAccounts,
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, ListMetricsResponse{
+			Metrics:        result.Metrics,
+			NextToken:      result.NextToken,
+			OwningAccounts: result.OwningAccounts,
+		})
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlListMetricsResponse{
+		Xmlns: cloudWatchXMLNS,
+		ListMetricsResult: xmlListMetricsResult{
+			Metrics:        xmlMetricList{Members: metricsToXML(result.Metrics)},
+			NextToken:      result.NextToken,
+			OwningAccounts: xmlStringList{Members: result.OwningAccounts},
+		},
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
 	})
 }
 
@@ -142,24 +191,30 @@ func (s *Service) PutMetricAlarm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.AlarmName != "", "AlarmName") {
+	if !requireCloudWatchParameter(w, r, req.AlarmName != "", "AlarmName") {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.MetricName != "", "MetricName") {
+	if !requireCloudWatchParameter(w, r, req.MetricName != "", "MetricName") {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.Namespace != "", "Namespace") {
+	if !requireCloudWatchParameter(w, r, req.Namespace != "", "Namespace") {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.ComparisonOperator != "", "ComparisonOperator") {
+	if !requireCloudWatchParameter(w, r, req.ComparisonOperator != "", "ComparisonOperator") {
 		return
 	}
 
 	if err := s.storage.PutMetricAlarm(r.Context(), &req); err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
+
+		return
+	}
+
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, struct{}{})
 
 		return
 	}
@@ -179,12 +234,18 @@ func (s *Service) DeleteAlarms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, len(req.AlarmNames) != 0, "AlarmNames") {
+	if !requireCloudWatchParameter(w, r, len(req.AlarmNames) != 0, "AlarmNames") {
 		return
 	}
 
 	if err := s.storage.DeleteAlarms(r.Context(), req.AlarmNames); err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
+
+		return
+	}
+
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, struct{}{})
 
 		return
 	}
@@ -206,7 +267,16 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.storage.DescribeAlarms(r.Context(), &req)
 	if err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
+
+		return
+	}
+
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, DescribeAlarmsResponse{
+			MetricAlarms: result.MetricAlarms,
+			NextToken:    result.NextToken,
+		})
 
 		return
 	}
@@ -222,24 +292,33 @@ func (s *Service) DescribeAlarms(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SetAlarmState handles the SetAlarmState action via JSON protocol.
+// SetAlarmState handles the SetAlarmState action.
 func (s *Service) SetAlarmState(w http.ResponseWriter, r *http.Request) {
 	var req SetAlarmStateRequest
 	if !decodeCloudWatchRequest(w, r, &req) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.AlarmName != "", "AlarmName") {
+	if !requireCloudWatchParameter(w, r, req.AlarmName != "", "AlarmName") {
 		return
 	}
 
 	if err := s.storage.SetAlarmState(r.Context(), req.AlarmName, req.StateValue, req.StateReason); err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
 
 		return
 	}
 
-	writeJSONResponse(w, struct{}{})
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, struct{}{})
+
+		return
+	}
+
+	writeCloudWatchXML(w, xmlSetAlarmStateResponse{
+		Xmlns:            cloudWatchXMLNS,
+		ResponseMetadata: xmlResponseMetadata{RequestID: uuid.New().String()},
+	})
 }
 
 // ListTagsForResource returns the tags attached to a CloudWatch resource.
@@ -249,13 +328,19 @@ func (s *Service) ListTagsForResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.ResourceARN != "", "ResourceARN") {
+	if !requireCloudWatchParameter(w, r, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
 	tags, err := s.storage.ListTagsForResource(r.Context(), req.ResourceARN)
 	if err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
+
+		return
+	}
+
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, ListTagsForResourceResponse{Tags: tags})
 
 		return
 	}
@@ -281,12 +366,18 @@ func (s *Service) TagResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.ResourceARN != "", "ResourceARN") {
+	if !requireCloudWatchParameter(w, r, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
 	if err := s.storage.TagResource(r.Context(), req.ResourceARN, req.Tags); err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
+
+		return
+	}
+
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, struct{}{})
 
 		return
 	}
@@ -304,12 +395,18 @@ func (s *Service) UntagResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !requireCloudWatchParameter(w, req.ResourceARN != "", "ResourceARN") {
+	if !requireCloudWatchParameter(w, r, req.ResourceARN != "", "ResourceARN") {
 		return
 	}
 
 	if err := s.storage.UntagResource(r.Context(), req.ResourceARN, req.TagKeys); err != nil {
-		handleCloudWatchError(w, err)
+		handleCloudWatchError(w, r, err)
+
+		return
+	}
+
+	if !service.IsQueryProtocol(r) {
+		writeJSONResponse(w, struct{}{})
 
 		return
 	}
@@ -349,12 +446,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 	case actionUntagResource:
 		s.UntagResource(w, r)
 	default:
-		writeCloudWatchError(w, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
+		writeCloudWatchError(w, r, errInvalidAction, "The action "+action+" is not valid", http.StatusBadRequest)
 	}
 }
 
 // handleCloudWatchError handles CloudWatch errors.
-func handleCloudWatchError(w http.ResponseWriter, err error) {
+func handleCloudWatchError(w http.ResponseWriter, r *http.Request, err error) {
 	var cwErr *Error
 	if errors.As(err, &cwErr) {
 		status := http.StatusBadRequest
@@ -362,12 +459,12 @@ func handleCloudWatchError(w http.ResponseWriter, err error) {
 			status = http.StatusNotFound
 		}
 
-		writeCloudWatchError(w, cwErr.Code, cwErr.Message, status)
+		writeCloudWatchError(w, r, cwErr.Code, cwErr.Message, status)
 
 		return
 	}
 
-	writeCloudWatchError(w, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
+	writeCloudWatchError(w, r, errInternalServiceError, "Internal server error", http.StatusInternalServerError)
 }
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
@@ -375,16 +472,35 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 	service.WriteJSONResponse(w, service.ContentTypeAmzJSON10, v)
 }
 
-// writeCloudWatchError writes a CloudWatch error response in JSON format.
-func writeCloudWatchError(w http.ResponseWriter, code, message string, status int) {
+// writeCloudWatchError writes a CloudWatch error response in the request's
+// protocol: an XML ErrorResponse for Query clients, otherwise JSON 1.0 with
+// the x-amzn-query-error header that awsQueryCompatible SDKs read the code from.
+func writeCloudWatchError(w http.ResponseWriter, r *http.Request, code, message string, status int) {
+	if service.IsQueryProtocol(r) {
+		writeCloudWatchXMLError(w, code, message, status)
+
+		return
+	}
+
+	w.Header().Set("x-amzn-query-error", code+";"+errorFaultType(status))
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
+}
+
+// errorFaultType returns the AWS fault type for an error status: Receiver
+// for server errors, Sender otherwise.
+func errorFaultType(status int) string {
+	if status >= http.StatusInternalServerError {
+		return "Receiver"
+	}
+
+	return "Sender"
 }
 
 // decodeCloudWatchRequest decodes the JSON request body into req, writing the
 // standard CloudWatch decode-failure error and returning false on failure.
 func decodeCloudWatchRequest(w http.ResponseWriter, r *http.Request, req any) bool {
 	if err := service.ReadJSONRequest(r, req); err != nil {
-		writeCloudWatchError(w, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
+		writeCloudWatchError(w, r, errInvalidParameter, "Failed to parse request body", http.StatusBadRequest)
 
 		return false
 	}
@@ -394,9 +510,9 @@ func decodeCloudWatchRequest(w http.ResponseWriter, r *http.Request, req any) bo
 
 // requireCloudWatchParameter writes the standard CloudWatch MissingParameter
 // error and returns false if present is false.
-func requireCloudWatchParameter(w http.ResponseWriter, present bool, name string) bool {
+func requireCloudWatchParameter(w http.ResponseWriter, r *http.Request, present bool, name string) bool {
 	if !present {
-		writeCloudWatchError(w, errMissingParameter, "The parameter "+name+" is required", http.StatusBadRequest)
+		writeCloudWatchError(w, r, errMissingParameter, "The parameter "+name+" is required", http.StatusBadRequest)
 
 		return false
 	}
@@ -444,8 +560,8 @@ func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 
 	storageReq := &GetMetricDataRequest{
 		MetricDataQueries: req.MetricDataQueries,
-		StartTime:         req.StartTime.Format(time.RFC3339),
-		EndTime:           req.EndTime.Format(time.RFC3339),
+		StartTime:         jsonTimestamp{req.StartTime},
+		EndTime:           jsonTimestamp{req.EndTime},
 		NextToken:         req.NextToken,
 		MaxDatapoints:     req.MaxDatapoints,
 	}
@@ -464,8 +580,7 @@ func (s *Service) GetMetricDataCBOR(w http.ResponseWriter, r *http.Request) {
 		timestamps := make([]time.Time, len(r.Timestamps))
 
 		for j := range r.Timestamps {
-			t, _ := parseTimestamp(r.Timestamps[j])
-			timestamps[j] = t
+			timestamps[j] = r.Timestamps[j].Time
 		}
 
 		cborResults[i] = MetricDataCBORResult{
@@ -502,8 +617,8 @@ func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request
 		Namespace:  req.Namespace,
 		MetricName: req.MetricName,
 		Dimensions: req.Dimensions,
-		StartTime:  req.StartTime.Format(time.RFC3339),
-		EndTime:    req.EndTime.Format(time.RFC3339),
+		StartTime:  jsonTimestamp{req.StartTime},
+		EndTime:    jsonTimestamp{req.EndTime},
 		Period:     req.Period,
 		Statistics: req.Statistics,
 		Unit:       req.Unit,
@@ -520,9 +635,8 @@ func (s *Service) GetMetricStatisticsCBOR(w http.ResponseWriter, r *http.Request
 
 	for i := range result.Datapoints {
 		dp := result.Datapoints[i]
-		t, _ := parseTimestamp(dp.Timestamp)
 		cborDatapoints[i] = CBORDatapoint{
-			Timestamp:   t,
+			Timestamp:   dp.Timestamp.Time,
 			SampleCount: dp.SampleCount,
 			Average:     dp.Average,
 			Sum:         dp.Sum,
@@ -629,8 +743,6 @@ func (s *Service) DescribeAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 
 	for i := range result.MetricAlarms {
 		alarm := &result.MetricAlarms[i]
-		stateUpdated, _ := parseTimestamp(alarm.StateUpdatedTimestamp)
-		configUpdated, _ := parseTimestamp(alarm.AlarmConfigurationUpdatedTimestamp)
 		cborAlarms[i] = MetricAlarmCBOR{
 			AlarmName:                          alarm.AlarmName,
 			AlarmArn:                           alarm.AlarmArn,
@@ -648,8 +760,8 @@ func (s *Service) DescribeAlarmsCBOR(w http.ResponseWriter, r *http.Request) {
 			OKActions:                          alarm.OKActions,
 			StateValue:                         alarm.StateValue,
 			StateReason:                        alarm.StateReason,
-			StateUpdatedTimestamp:              stateUpdated,
-			AlarmConfigurationUpdatedTimestamp: configUpdated,
+			StateUpdatedTimestamp:              alarm.StateUpdatedTimestamp.Time,
+			AlarmConfigurationUpdatedTimestamp: alarm.AlarmConfigurationUpdatedTimestamp.Time,
 		}
 	}
 
