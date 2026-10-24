@@ -10,16 +10,24 @@ import (
 
 // Routes registered by newPathTestRouter.
 const (
-	routeObject = "object"
-	routeEdge   = "edge"
-	routeTags   = "tags"
+	routeBucket     = "bucket"
+	routeBucketPost = "bucket-post"
+	routeObject     = "object"
+	routePreflight  = "preflight"
+	routeEdge       = "edge"
+	routeTags       = "tags"
 )
 
 const (
-	signingLambda     = "lambda"
-	keyDoubleSlash    = "a//b"
-	cleanedObjectPath = "/bucket/key"
-	cleanedObjectKey  = "key"
+	signingLambda         = "lambda"
+	keyDoubleSlash        = "a//b"
+	objectPathDoubleSlash = "/bucket/a//b"
+	objectPathDir         = "/bucket/dir/"
+	edgePathDir           = "/kumo/cdn/E123/browser/"
+	bucketPathSlash       = "/bucket/"
+	cleanedBucketPath     = "/bucket"
+	cleanedObjectPath     = "/bucket/key"
+	cleanedObjectKey      = "key"
 )
 
 // observed records what a handler saw for a request.
@@ -29,10 +37,11 @@ type observed struct {
 	value string
 }
 
-// newPathTestRouter registers S3-style object routes, a CloudFront-style
-// edge route under a prefix router, a fixed route without a trailing slash
-// and a SigV4-scoped tags route. Each handler records the route it serves,
-// r.URL.Path and the value of its trailing wildcard.
+// newPathTestRouter registers S3-style bucket (GET, POST) and object (GET,
+// PUT, OPTIONS) routes, a CloudFront-style edge route under a prefix router,
+// a fixed route without a trailing slash and a SigV4-scoped tags route. Each
+// handler records the route it serves, r.URL.Path and the value of its
+// trailing wildcard.
 func newPathTestRouter(got *observed) *Router {
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
@@ -47,9 +56,11 @@ func newPathTestRouter(got *observed) *Router {
 		}
 	}
 
-	r.Handle(http.MethodGet, "/{bucket}", record("bucket", "bucket"))
+	r.Handle(http.MethodGet, "/{bucket}", record(routeBucket, "bucket"))
+	r.Handle(http.MethodPost, "/{bucket}", record(routeBucketPost, "bucket"))
 	r.Handle(http.MethodGet, "/{bucket}/{key...}", record(routeObject, "key"))
 	r.Handle(http.MethodPut, "/{bucket}/{key...}", record(routeObject, "key"))
+	r.Handle(http.MethodOptions, "/{bucket}/{key...}", record(routePreflight, "key"))
 	r.Handle(http.MethodGet, "/kumo/cdn/{id}/{path...}", record(routeEdge, "path"))
 	r.Handle(http.MethodGet, "/2020-05-31/distribution", record("fixed", ""))
 	r.ScopedRouter(signingLambda).Handle(http.MethodGet, "/2017-03-31/tags/{arn...}", record(routeTags, "arn"))
@@ -122,16 +133,16 @@ func TestRouter_UncleanPathPreservedForHandler(t *testing.T) {
 		wantPath  string
 		wantValue string
 	}{
-		{"trailing slash key", http.MethodPut, "/bucket/dir/", routeObject, "/bucket/dir/", "dir/"},
+		{"trailing slash key", http.MethodPut, objectPathDir, routeObject, objectPathDir, "dir/"},
 		{"leading slash key", http.MethodPut, "/bucket//lead", routeObject, "/bucket//lead", "/lead"},
-		{"double slash in key", http.MethodGet, "/bucket/a//b", routeObject, "/bucket/a//b", keyDoubleSlash},
+		{"double slash in key", http.MethodGet, objectPathDoubleSlash, routeObject, objectPathDoubleSlash, keyDoubleSlash},
 		{"triple slash in key", http.MethodGet, "/bucket/a///b", routeObject, "/bucket/a///b", "a///b"},
 		{"dot segment in key", http.MethodGet, "/bucket/a/./b", routeObject, "/bucket/a/./b", "a/./b"},
 		{"dot-dot segment in key", http.MethodGet, "/bucket/a/../b", routeObject, "/bucket/a/../b", "a/../b"},
 		{"trailing double slash key", http.MethodGet, "/bucket/a//", routeObject, "/bucket/a//", "a//"},
 		{"escaped slash kept", http.MethodGet, "/bucket/a%2F/b//c", routeObject, "/bucket/a//b//c", "a//b//c"},
 		{"clean key unchanged", http.MethodGet, "/bucket/a/b", routeObject, "/bucket/a/b", "a/b"},
-		{"edge trailing slash", http.MethodGet, "/kumo/cdn/E123/browser/", routeEdge, "/kumo/cdn/E123/browser/", "browser/"},
+		{"edge trailing slash", http.MethodGet, edgePathDir, routeEdge, edgePathDir, "browser/"},
 		{"edge double slash", http.MethodGet, "/kumo/cdn/E123/a//b", routeEdge, "/kumo/cdn/E123/a//b", keyDoubleSlash},
 	}
 
@@ -176,7 +187,7 @@ func TestRouter_UncleanPathKeepsCleanedRoute(t *testing.T) {
 		wantRoute string
 		wantPath  string
 	}{
-		{"bucket with trailing slash", "/bucket/", "bucket", "/bucket"},
+		{"bucket with trailing slash", bucketPathSlash, routeBucket, cleanedBucketPath},
 		{"fixed route with trailing slash", "/2020-05-31/distribution/", "fixed", "/2020-05-31/distribution"},
 		{"fixed route with double slash", "/2020-05-31//distribution", "fixed", "/2020-05-31/distribution"},
 	}
@@ -201,6 +212,57 @@ func TestRouter_UncleanPathKeepsCleanedRoute(t *testing.T) {
 
 			if got.path != tc.wantPath {
 				t.Errorf("r.URL.Path = %q, want %q", got.path, tc.wantPath)
+			}
+		})
+	}
+}
+
+// TestRouter_UncleanPathMethodResolution verifies the route comparison under
+// ServeMux's method resolution: HEAD served by a GET route, an OPTIONS
+// route, a method that has a route only for the cleaned path (the original
+// path alone would get 405), and a method that has a route for neither, which
+// still gets ServeMux's 405 for the cleaned path.
+func TestRouter_UncleanPathMethodResolution(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		method     string
+		target     string
+		wantStatus int
+		wantAllow  string
+		wantRoute  string
+		wantPath   string
+		wantValue  string
+	}{
+		{"HEAD served by GET object route", http.MethodHead, objectPathDoubleSlash, http.StatusOK, "", routeObject, objectPathDoubleSlash, keyDoubleSlash},
+		{"HEAD served by GET edge route", http.MethodHead, edgePathDir, http.StatusOK, "", routeEdge, edgePathDir, "browser/"},
+		{"HEAD bucket with trailing slash", http.MethodHead, bucketPathSlash, http.StatusOK, "", routeBucket, cleanedBucketPath, "bucket"},
+		{"OPTIONS object route", http.MethodOptions, objectPathDir, http.StatusOK, "", routePreflight, objectPathDir, "dir/"},
+		{"method routed only for cleaned path", http.MethodPost, bucketPathSlash, http.StatusOK, "", routeBucketPost, cleanedBucketPath, "bucket"},
+		{"method routed for neither path", http.MethodDelete, objectPathDoubleSlash, http.StatusMethodNotAllowed, "GET, HEAD, OPTIONS, PUT", "", "", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got observed
+
+			r := newPathTestRouter(&got)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), tc.method, tc.target, http.NoBody))
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d (Location %q), want %d", rec.Code, rec.Header().Get("Location"), tc.wantStatus)
+			}
+
+			if allow := rec.Header().Get("Allow"); allow != tc.wantAllow {
+				t.Errorf("Allow = %q, want %q", allow, tc.wantAllow)
+			}
+
+			if got != (observed{route: tc.wantRoute, path: tc.wantPath, value: tc.wantValue}) {
+				t.Errorf("observed %+v, want route=%q path=%q value=%q", got, tc.wantRoute, tc.wantPath, tc.wantValue)
 			}
 		})
 	}
