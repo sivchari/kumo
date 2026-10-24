@@ -48,7 +48,11 @@ func positionOf(rrset *ResourceRecordSet) recordSetPosition {
 }
 
 // compare orders positions by name, then type, then set identifier, each in
-// ASCII order.
+// ASCII order. Names are compared as whole reversed-name keys, dots included,
+// rather than label by label: the reference notes that the trailing dot "can
+// change the sort order when the record name contains characters that appear
+// before . (decimal 46) in the ASCII table", which it could not do if labels
+// were compared one at a time.
 func (p recordSetPosition) compare(o recordSetPosition) int {
 	if c := strings.Compare(p.name, o.name); c != 0 {
 		return c

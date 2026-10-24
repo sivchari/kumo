@@ -2,6 +2,7 @@ package route53
 
 import (
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -140,6 +141,39 @@ func TestListResourceRecordSets_SortOrder(t *testing.T) {
 
 	if resp.MaxItems != "300" {
 		t.Errorf("MaxItems: got %q, want default 300", resp.MaxItems)
+	}
+}
+
+// The reference notes that the trailing dot "can change the sort order when
+// the record name contains characters that appear before . (decimal 46) in
+// the ASCII table. These characters include the following: ! " # $ % & ' ( )
+// * + , -". With the dots taking part in the comparison, com.example.www!1.
+// sorts before com.example.www. for each of them, spelled as is or as the
+// \ddd escape that Route 53 returns.
+func TestListResourceRecordSets_TrailingDotChangesSortOrder(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range `!"#$%&'()*+,-` {
+		for _, name := range []string{
+			"www" + string(c) + "1.example.com.",
+			fmt.Sprintf(`www\%03o1.example.com.`, c),
+		} {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				svc := newRRSetListService(t, []ResourceRecordSet{
+					{Name: wwwName, Type: "A"},
+					{Name: name, Type: "A"},
+				})
+
+				resp := decodeRRSetList(t, listRRSets(t, svc, url.Values{}))
+
+				want := []string{name + " A", wwwName + " A"}
+				if got := recordKeys(resp.ResourceRecordSets); !slices.Equal(got, want) {
+					t.Errorf("order:\n got  %q\n want %q", got, want)
+				}
+			})
+		}
 	}
 }
 
