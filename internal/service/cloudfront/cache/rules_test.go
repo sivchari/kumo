@@ -11,6 +11,9 @@ import (
 const (
 	testETagAbc     = `"abc"`
 	testWeakETagAbc = `W/"abc"`
+	testMaxAge60    = "max-age=60"
+	testNoStore     = "no-store"
+	hdrExpires      = "Expires"
 )
 
 var (
@@ -40,7 +43,7 @@ func TestEffectiveTTL_PrecedenceTable(t *testing.T) {
 		},
 		{
 			name:    "max-age wins over DefaultTTL",
-			headers: http.Header{hdrCacheControl: {"max-age=60"}},
+			headers: http.Header{hdrCacheControl: {testMaxAge60}},
 			want:    60 * time.Second,
 		},
 		{
@@ -50,14 +53,14 @@ func TestEffectiveTTL_PrecedenceTable(t *testing.T) {
 		},
 		{
 			name:    "Expires used when no Cache-Control",
-			headers: http.Header{"Expires": {now.Add(5 * time.Minute).UTC().Format(http.TimeFormat)}},
+			headers: http.Header{hdrExpires: {now.Add(5 * time.Minute).UTC().Format(http.TimeFormat)}},
 			want:    5 * time.Minute,
 		},
 		{
 			name: "Expires ignored if Cache-Control present",
 			headers: http.Header{
 				hdrCacheControl: {"max-age=42"},
-				"Expires":       {now.Add(time.Hour).UTC().Format(http.TimeFormat)},
+				hdrExpires:      {now.Add(time.Hour).UTC().Format(http.TimeFormat)},
 			},
 			want: 42 * time.Second,
 		},
@@ -91,7 +94,7 @@ func TestEffectiveTTL_CDNCacheControlOverride(t *testing.T) {
 	t.Parallel()
 
 	headers := http.Header{}
-	headers.Set(hdrCacheControl, "max-age=60")
+	headers.Set(hdrCacheControl, testMaxAge60)
 	headers.Set("CDN-Cache-Control", "max-age=600")
 
 	got := EffectiveTTL(headers, defCfg, now)
@@ -118,6 +121,75 @@ func TestEffectiveTTL_Clamp(t *testing.T) {
 	}
 }
 
+// TestEffectiveTTL_CachePolicy covers the CloudFront expiration table for
+// TTLs that come from a cache policy.
+func TestEffectiveTTL_CachePolicy(t *testing.T) {
+	t.Parallel()
+
+	disabled := DistributionConfig{CachePolicy: true}
+	optimized := DistributionConfig{MinTTL: time.Second, DefaultTTL: 24 * time.Hour, MaxTTL: 365 * 24 * time.Hour, CachePolicy: true}
+	minTen := DistributionConfig{MinTTL: 10 * time.Second, DefaultTTL: 5 * time.Second, MaxTTL: time.Minute, CachePolicy: true}
+	defaultAboveMax := DistributionConfig{DefaultTTL: time.Hour, MaxTTL: time.Minute, CachePolicy: true}
+	lastModified := http.Header{"Last-Modified": {now.Add(-24 * time.Hour).Format(http.TimeFormat)}}
+
+	cases := []struct {
+		name    string
+		cfg     DistributionConfig
+		headers http.Header
+		want    time.Duration
+	}{
+		{"no headers, MinTTL 0 → DefaultTTL 0", disabled, http.Header{}, 0},
+		{"Last-Modified is no heuristic", disabled, lastModified, 0},
+		{"Last-Modified only → DefaultTTL", optimized, lastModified, 24 * time.Hour},
+		{"no headers → greater of MinTTL and DefaultTTL", minTen, http.Header{}, 10 * time.Second},
+		{"DefaultTTL is not clamped by MaxTTL", defaultAboveMax, http.Header{}, time.Hour},
+		{"MaxTTL 0 → max-age not cached", disabled, http.Header{hdrCacheControl: {testMaxAge60}}, 0},
+		{"MaxTTL 0 → Expires not cached", disabled, http.Header{hdrExpires: {now.Add(time.Hour).Format(http.TimeFormat)}}, 0},
+		{"max-age below MinTTL → MinTTL", minTen, http.Header{hdrCacheControl: {"max-age=1"}}, 10 * time.Second},
+		{"s-maxage above MaxTTL → MaxTTL", minTen, http.Header{hdrCacheControl: {"max-age=1, s-maxage=600"}}, time.Minute},
+		{"Expires within bounds", optimized, http.Header{hdrExpires: {now.Add(time.Hour).Format(http.TimeFormat)}}, time.Hour},
+		{"no-store, MinTTL > 0 → 0", minTen, http.Header{hdrCacheControl: {testNoStore}}, 0},
+		{"private, MinTTL > 0 → 0", minTen, http.Header{hdrCacheControl: {"private, max-age=600"}}, 0},
+		{"no-cache, MinTTL > 0 keeps the clamped max-age", minTen, http.Header{hdrCacheControl: {"no-cache, max-age=600"}}, time.Minute},
+		{"no-store, MinTTL 0 → 0", DistributionConfig{DefaultTTL: time.Hour, MaxTTL: time.Hour, CachePolicy: true}, http.Header{hdrCacheControl: {testNoStore}}, 0},
+		{"no-cache, MinTTL 0 keeps max-age", DistributionConfig{MaxTTL: time.Hour, CachePolicy: true}, http.Header{hdrCacheControl: {"no-cache, max-age=60"}}, time.Minute},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := EffectiveTTL(tc.headers, tc.cfg, now); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEffectiveTTL_LegacyUnchanged pins the legacy-settings behaviour the
+// cache policy path does not share: the Last-Modified heuristic and
+// MaxTTL 0 meaning no upper bound.
+func TestEffectiveTTL_LegacyUnchanged(t *testing.T) {
+	t.Parallel()
+
+	zero := DistributionConfig{}
+
+	got := EffectiveTTL(http.Header{"Last-Modified": {now.Add(-10 * time.Hour).Format(http.TimeFormat)}}, zero, now)
+	if got != time.Hour {
+		t.Fatalf("heuristic: got %v, want 1h", got)
+	}
+
+	got = EffectiveTTL(http.Header{hdrCacheControl: {testMaxAge60}}, zero, now)
+	if got != time.Minute {
+		t.Fatalf("MaxTTL 0: got %v, want 1m", got)
+	}
+
+	got = EffectiveTTL(http.Header{hdrCacheControl: {testNoStore}}, DistributionConfig{MinTTL: time.Minute}, now)
+	if got != 0 {
+		t.Fatalf("no-store with legacy MinTTL: got %v, want 0", got)
+	}
+}
+
 // TestIsCacheable enumerates the directives and status codes that
 // flip cacheability either way.
 func TestIsCacheable(t *testing.T) {
@@ -130,7 +202,7 @@ func TestIsCacheable(t *testing.T) {
 		want    bool
 	}{
 		{"200 with no directives", http.Header{}, 200, true},
-		{"200 + no-store", http.Header{hdrCacheControl: {"no-store"}}, 200, false},
+		{"200 + no-store", http.Header{hdrCacheControl: {testNoStore}}, 200, false},
 		{"200 + private", http.Header{hdrCacheControl: {"private"}}, 200, false},
 		{"301 redirect cacheable", http.Header{}, 301, true},
 		{"500 not cacheable by default", http.Header{}, 500, false},
@@ -158,7 +230,7 @@ func TestMustRevalidate(t *testing.T) {
 		want   bool
 	}{
 		{"", false},
-		{"max-age=60", false},
+		{testMaxAge60, false},
 		{"no-cache", true},
 		{"must-revalidate", false}, // fresh entries serve as-is
 		{"max-age=60, no-cache", true},
