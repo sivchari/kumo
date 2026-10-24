@@ -353,8 +353,40 @@ func buildDistributionConfigXML(config *DistributionConfig) *DistributionConfigX
 	result.Aliases = buildAliasesConfigXML(config.Aliases)
 	result.ViewerCertificate = buildViewerCertificateConfigXML(config.ViewerCertificate)
 	result.Logging = buildLoggingXML(config.Logging)
+	result.CustomErrorResponses = buildCustomErrorResponsesXML(config.CustomErrorResponses)
 
 	return result
+}
+
+// buildCustomErrorResponsesXML echoes the configured custom error responses;
+// nil when the request carried none.
+func buildCustomErrorResponsesXML(responses *CustomErrorResponses) *CustomErrorResponsesXML {
+	if responses == nil {
+		return nil
+	}
+
+	result := &CustomErrorResponsesXML{Quantity: responses.Quantity}
+	if len(responses.Items) == 0 {
+		return result
+	}
+
+	result.Items = &CustomErrorResponseListXML{}
+
+	for _, r := range responses.Items {
+		result.Items.CustomErrorResponse = append(result.Items.CustomErrorResponse, CustomErrorResponseXML(r))
+	}
+
+	return result
+}
+
+// buildSummaryCustomErrorResponsesXML is buildCustomErrorResponsesXML for a
+// DistributionSummary, which always carries CustomErrorResponses.
+func buildSummaryCustomErrorResponsesXML(responses *CustomErrorResponses) *CustomErrorResponsesXML {
+	if result := buildCustomErrorResponsesXML(responses); result != nil {
+		return result
+	}
+
+	return &CustomErrorResponsesXML{}
 }
 
 // buildLoggingXML always returns Logging, as CloudFront does: a distribution
@@ -664,7 +696,7 @@ func buildDistributionSummaryXML(d *Distribution) DistributionSummaryXML {
 		HTTPVersion:          d.DistributionConfig.HTTPVersion,
 		IsIPV6Enabled:        d.DistributionConfig.IsIPV6Enabled,
 		CacheBehaviors:       buildCacheBehaviorsXML(d.DistributionConfig.CacheBehaviors),
-		CustomErrorResponses: &CustomErrorResponsesXML{Quantity: 0},
+		CustomErrorResponses: buildSummaryCustomErrorResponsesXML(d.DistributionConfig.CustomErrorResponses),
 		Restrictions: &RestrictionsXML{
 			GeoRestriction: &GeoRestrictionXML{
 				RestrictionType: "none",

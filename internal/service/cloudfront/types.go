@@ -35,6 +35,22 @@ type DistributionConfig struct {
 	HTTPVersion          string
 	IsIPV6Enabled        bool
 	Logging              *LoggingConfig
+	CustomErrorResponses *CustomErrorResponses
+}
+
+// CustomErrorResponses holds the distribution's custom error responses.
+type CustomErrorResponses struct {
+	Quantity int
+	Items    []CustomErrorResponse
+}
+
+// CustomErrorResponse maps an HTTP error code to a custom error page and/or an
+// error caching duration. ResponseCode is a string, as in the API.
+type CustomErrorResponse struct {
+	ErrorCode          int
+	ResponsePagePath   string
+	ResponseCode       string
+	ErrorCachingMinTTL *int64
 }
 
 // LoggingConfig represents standard (legacy) access log settings. kumo stores
@@ -269,6 +285,7 @@ type DistributionConfigXML struct {
 	OriginGroups         *OriginGroupsXML         `xml:"OriginGroups,omitempty"`
 	DefaultCacheBehavior *DefaultCacheBehaviorXML `xml:"DefaultCacheBehavior"`
 	CacheBehaviors       *CacheBehaviorsXML       `xml:"CacheBehaviors,omitempty"`
+	CustomErrorResponses *CustomErrorResponsesXML `xml:"CustomErrorResponses,omitempty"`
 	Comment              string                   `xml:"Comment"`
 	Logging              *LoggingConfigXML        `xml:"Logging,omitempty"`
 	Enabled              bool                     `xml:"Enabled"`
@@ -468,7 +485,21 @@ type GeoRestrictionXML struct {
 
 // CustomErrorResponsesXML represents custom error responses in XML format.
 type CustomErrorResponsesXML struct {
-	Quantity int `xml:"Quantity"`
+	Quantity int                         `xml:"Quantity"`
+	Items    *CustomErrorResponseListXML `xml:"Items,omitempty"`
+}
+
+// CustomErrorResponseListXML is the Items wrapper of CustomErrorResponses.
+type CustomErrorResponseListXML struct {
+	CustomErrorResponse []CustomErrorResponseXML `xml:"CustomErrorResponse"`
+}
+
+// CustomErrorResponseXML represents one custom error response in XML format.
+type CustomErrorResponseXML struct {
+	ErrorCode          int    `xml:"ErrorCode"`
+	ResponsePagePath   string `xml:"ResponsePagePath,omitempty"`
+	ResponseCode       string `xml:"ResponseCode,omitempty"`
+	ErrorCachingMinTTL *int64 `xml:"ErrorCachingMinTTL,omitempty"`
 }
 
 // ViewerCertificateXML represents viewer certificate in XML format.
@@ -543,6 +574,7 @@ type CreateDistributionRequest struct {
 	Origins              *OriginsXML              `xml:"Origins"`
 	DefaultCacheBehavior *DefaultCacheBehaviorXML `xml:"DefaultCacheBehavior"`
 	CacheBehaviors       *CacheBehaviorsXML       `xml:"CacheBehaviors,omitempty"`
+	CustomErrorResponses *CustomErrorResponsesXML `xml:"CustomErrorResponses,omitempty"`
 	Comment              string                   `xml:"Comment"`
 	Logging              *LoggingConfigXML        `xml:"Logging,omitempty"`
 	Enabled              bool                     `xml:"Enabled"`
