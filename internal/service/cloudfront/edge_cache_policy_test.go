@@ -202,6 +202,7 @@ func TestEdge_CachePolicyDrivesCaching(t *testing.T) {
 		{name: "CachingOptimized", header: lastModified, policyID: managedCachingOptimized, second: cacheHit},
 		{name: "custom MaxTTL 0", header: http.Header{testCacheControl: {"max-age=60"}}, custom: []int64{0, 0, 0}, second: cacheMiss},
 		{name: "custom MinTTL does not cache no-store", header: http.Header{testCacheControl: {"no-store"}}, custom: []int64{60, 60, 600}, second: cacheMiss},
+		{name: "custom MinTTL still sends no-cache to the origin", header: http.Header{testCacheControl: {"no-cache"}}, custom: []int64{60, 60, 600}, second: cacheMiss},
 		{name: "legacy heuristic unchanged", header: lastModified, second: cacheHit},
 	}
 

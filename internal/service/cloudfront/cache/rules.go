@@ -89,9 +89,10 @@ func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time)
 // cachePolicyTTL follows the CloudFront expiration table for TTLs that
 // come from a cache policy:
 //
-//   - no-store / private: not cached; no-cache: revalidated on every hit.
-//     While the origin is reachable CloudFront gets such objects from it
-//     even with MinTTL > 0.
+//   - no-store / private: 0, so the edge does not store the object.
+//   - no-cache: the TTL of the cases below. This function does not send
+//     hits back to the origin; the edge does, since tryServeFromCache
+//     checks MustRevalidate before it serves any stored entry.
 //   - s-maxage / max-age / Expires: the value clamped to [MinTTL, MaxTTL].
 //     MaxTTL is a real bound here, so MaxTTL = 0 does not cache. A value
 //     below MinTTL gets MinTTL even when a policy has MinTTL > MaxTTL. An
@@ -101,12 +102,18 @@ func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time)
 //     applies when the origin sends Cache-Control or Expires, and there is
 //     no Last-Modified heuristic.
 //
+// With MinTTL > 0 CloudFront caches no-cache, no-store and private objects
+// for MinTTL, but "If the origin is reachable, CloudFront gets the object
+// from the origin and returns it to the viewer", which is what the first
+// two cases give. Serving the cached object while the origin is
+// unreachable is not modelled.
+//
 // References:
 //   - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html
 //   - https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CachePolicyConfig.html
 func cachePolicyTTL(respHeader http.Header, cc Control, cfg DistributionConfig, now time.Time) time.Duration {
-	// no-cache keeps the TTL below; MustRevalidate sends every hit back to
-	// the origin.
+	// no-cache keeps the TTL below; the MustRevalidate check in the edge's
+	// tryServeFromCache sends every hit back to the origin.
 	if cc.NoStore || cc.Private {
 		return 0
 	}
