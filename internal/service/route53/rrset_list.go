@@ -236,6 +236,13 @@ func sortRecordSets(records []ResourceRecordSet) []positionedRecordSet {
 // by name; when one of them matches the requested name, type and identifier
 // exactly, the page begins there instead, so that a NextRecordName echoed
 // from storage resumes on that record rather than repeating the earlier ones.
+//
+// If that record set is deleted before the next call, no spelling matches
+// exactly and the page begins at the first record set of that position,
+// listing again those of its spellings that the previous page returned. The
+// reference asks callers not to submit a ChangeResourceRecordSets request
+// "while you're paging through the results of a ListResourceRecordSets
+// request".
 func pageRecordSets(records []ResourceRecordSet, start *listStart, pageSize int) ([]ResourceRecordSet, *ResourceRecordSet, bool) {
 	sorted := sortRecordSets(slices.Clone(records))
 
