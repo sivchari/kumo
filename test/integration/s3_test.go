@@ -520,6 +520,92 @@ func TestS3_PresignedURL_Expired(t *testing.T) {
 	})
 }
 
+// TestS3_PresignedURL_KeysWithPathSegmentsAndReservedCharacters verifies that
+// presigned PUT and GET URLs address the object the key names when the key
+// holds empty, "." or ".." segments, a leading or trailing slash, or
+// characters the SDK percent-encodes ("+", "!", "(", ")").
+func TestS3_PresignedURL_KeysWithPathSegmentsAndReservedCharacters(t *testing.T) {
+	client := newS3Client(t)
+	presignClient := newS3PresignClient(t)
+	ctx := t.Context()
+	bucket := "test-presigned-path-segment-keys"
+	keys := []string{"a//b", "a/./b", "a/../b", "/lead", "dir/", "plus+sign", "bang!", "(parens)", "x//(y)/../z+!"}
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		for _, key := range keys {
+			_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		}
+
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	for _, key := range keys {
+		presigned, err := presignClient.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("PresignPutObject(%q): %v", key, err)
+		}
+
+		if status, body := doPresigned(t, http.MethodPut, presigned.URL, "presigned body of "+key); status != http.StatusOK {
+			t.Fatalf("presigned PUT %q (%s) = %d %s", key, presigned.URL, status, body)
+		}
+	}
+
+	listed, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gotKeys := make([]string, 0, len(listed.Contents))
+	for _, obj := range listed.Contents {
+		gotKeys = append(gotKeys, aws.ToString(obj.Key))
+	}
+
+	wantKeys := slices.Sorted(slices.Values(keys))
+	if !slices.Equal(gotKeys, wantKeys) {
+		t.Fatalf("listed keys = %q, want %q", gotKeys, wantKeys)
+	}
+
+	for _, key := range keys {
+		presigned, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("PresignGetObject(%q): %v", key, err)
+		}
+
+		status, body := doPresigned(t, http.MethodGet, presigned.URL, "")
+		if status != http.StatusOK || body != "presigned body of "+key {
+			t.Errorf("presigned GET %q (%s) = %d %q, want 200 %q", key, presigned.URL, status, body, "presigned body of "+key)
+		}
+	}
+}
+
+// doPresigned sends a request to a presigned URL and returns the status and
+// body of the response.
+func doPresigned(t *testing.T, method, presignedURL, body string) (int, string) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), method, presignedURL, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, presignedURL, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return resp.StatusCode, string(respBody)
+}
+
 // Multipart Upload Tests
 
 func TestS3_MultipartUpload_BasicFlow(t *testing.T) {
