@@ -93,7 +93,10 @@ func EffectiveTTL(respHeader http.Header, cfg DistributionConfig, now time.Time)
 //     While the origin is reachable CloudFront gets such objects from it
 //     even with MinTTL > 0.
 //   - s-maxage / max-age / Expires: the value clamped to [MinTTL, MaxTTL].
-//     MaxTTL is a real bound here, so MaxTTL = 0 does not cache.
+//     MaxTTL is a real bound here, so MaxTTL = 0 does not cache. A value
+//     below MinTTL gets MinTTL even when a policy has MinTTL > MaxTTL. An
+//     Expires date in the past, or one that does not parse (RFC 9111
+//     §5.3: "already expired"), counts as 0 and so gets MinTTL.
 //   - none of them: the greater of MinTTL and DefaultTTL. MaxTTL only
 //     applies when the origin sends Cache-Control or Expires, and there is
 //     no Last-Modified heuristic.
@@ -121,7 +124,17 @@ func cachePolicyTTL(respHeader http.Header, cc Control, cfg DistributionConfig, 
 		return max(cfg.MinTTL, cfg.DefaultTTL)
 	}
 
-	return min(max(ttl, cfg.MinTTL), cfg.MaxTTL)
+	// The table's "If max-age < minimum TTL" row is checked first, so
+	// MinTTL wins over a smaller MaxTTL; CreateCachePolicy documents no
+	// error for such a policy and kumo accepts it.
+	switch {
+	case ttl < cfg.MinTTL:
+		return cfg.MinTTL
+	case ttl > cfg.MaxTTL:
+		return cfg.MaxTTL
+	}
+
+	return ttl
 }
 
 // expiresTTL evaluates the Expires header relative to `now`. Per RFC

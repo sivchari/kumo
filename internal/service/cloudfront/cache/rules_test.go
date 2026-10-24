@@ -130,7 +130,11 @@ func TestEffectiveTTL_CachePolicy(t *testing.T) {
 	optimized := DistributionConfig{MinTTL: time.Second, DefaultTTL: 24 * time.Hour, MaxTTL: 365 * 24 * time.Hour, CachePolicy: true}
 	minTen := DistributionConfig{MinTTL: 10 * time.Second, DefaultTTL: 5 * time.Second, MaxTTL: time.Minute, CachePolicy: true}
 	defaultAboveMax := DistributionConfig{DefaultTTL: time.Hour, MaxTTL: time.Minute, CachePolicy: true}
+	minAboveMax := DistributionConfig{MinTTL: 10 * time.Minute, DefaultTTL: 10 * time.Minute, MaxTTL: time.Minute, CachePolicy: true}
+	minZero := DistributionConfig{DefaultTTL: time.Hour, MaxTTL: time.Hour, CachePolicy: true}
 	lastModified := http.Header{"Last-Modified": {now.Add(-24 * time.Hour).Format(http.TimeFormat)}}
+	pastExpires := http.Header{hdrExpires: {now.Add(-time.Hour).Format(http.TimeFormat)}}
+	invalidExpires := http.Header{hdrExpires: {"0"}}
 
 	cases := []struct {
 		name    string
@@ -148,6 +152,13 @@ func TestEffectiveTTL_CachePolicy(t *testing.T) {
 		{"max-age below MinTTL → MinTTL", minTen, http.Header{hdrCacheControl: {"max-age=1"}}, 10 * time.Second},
 		{"s-maxage above MaxTTL → MaxTTL", minTen, http.Header{hdrCacheControl: {"max-age=1, s-maxage=600"}}, time.Minute},
 		{"Expires within bounds", optimized, http.Header{hdrExpires: {now.Add(time.Hour).Format(http.TimeFormat)}}, time.Hour},
+		{"MinTTL > MaxTTL: max-age below both → MinTTL", minAboveMax, http.Header{hdrCacheControl: {"max-age=10"}}, 10 * time.Minute},
+		{"MinTTL > MaxTTL: max-age between them → MinTTL", minAboveMax, http.Header{hdrCacheControl: {"max-age=300"}}, 10 * time.Minute},
+		{"MinTTL > MaxTTL: max-age above both → MaxTTL", minAboveMax, http.Header{hdrCacheControl: {"max-age=3600"}}, time.Minute},
+		{"past Expires, MinTTL 0 → 0", minZero, pastExpires, 0},
+		{"past Expires below MinTTL → MinTTL", minTen, pastExpires, 10 * time.Second},
+		{"invalid Expires is already expired, MinTTL 0 → 0", minZero, invalidExpires, 0},
+		{"invalid Expires is already expired, not DefaultTTL", optimized, invalidExpires, time.Second},
 		{"no-store, MinTTL > 0 → 0", minTen, http.Header{hdrCacheControl: {testNoStore}}, 0},
 		{"private, MinTTL > 0 → 0", minTen, http.Header{hdrCacheControl: {"private, max-age=600"}}, 0},
 		{"no-cache, MinTTL > 0 keeps the clamped max-age", minTen, http.Header{hdrCacheControl: {"no-cache, max-age=600"}}, time.Minute},
