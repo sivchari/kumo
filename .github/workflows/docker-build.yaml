@@ -31,3 +31,21 @@ jobs:
 
       - name: Build image
         run: docker build -f docker/Dockerfile -t kumo:ci .
+
+      - name: Smoke test image
+        id: smoke
+        run: |
+          docker run -d --name kumo-smoke -p 127.0.0.1:4566:4566 -e KUMO_DATA_DIR=/data kumo:ci
+          curl -fsS --max-time 5 --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:4566/health
+          # On SIGTERM kumo snapshots every service into KUMO_DATA_DIR, so
+          # s3.json only exists if the image's non-root user can write /data.
+          docker stop kumo-smoke
+          docker cp kumo-smoke:/data/s3.json - > /dev/null
+
+      - name: Show kumo logs
+        if: ${{ failure() && steps.smoke.outcome == 'failure' }}
+        run: docker logs kumo-smoke
+
+      - name: Remove smoke test container
+        if: always()
+        run: docker rm -f kumo-smoke
