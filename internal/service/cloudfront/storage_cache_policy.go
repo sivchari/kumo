@@ -187,17 +187,50 @@ func normalizeCachePolicyConfig(cfg *CachePolicyConfig) (*CachePolicyConfig, err
 	out.XMLName = xml.Name{}
 	out.Xmlns = ""
 
-	if out.DefaultTTL == nil {
-		defaultTTL := max(int64(cachePolicyDefaultTTL), *out.MinTTL)
-		out.DefaultTTL = &defaultTTL
-	}
-
-	if out.MaxTTL == nil {
-		maxTTL := max(int64(cachePolicyDefaultMaxTTL), *out.DefaultTTL)
-		out.MaxTTL = &maxTTL
-	}
+	ttls := out.ttls()
+	out.DefaultTTL = &ttls.def
+	out.MaxTTL = &ttls.max
 
 	return out, nil
+}
+
+// ttls resolves the policy's TTLs. An omitted DefaultTTL or MaxTTL takes the
+// default the API reference documents for it:
+//
+//   - DefaultTTL: "The default value for this field is 86400 seconds (one
+//     day). If the value of MinTTL is more than 86400 seconds, then the
+//     default value for this field is the same as the value of MinTTL."
+//   - MaxTTL: "The default value for this field is 31536000 seconds (one
+//     year). If the value of MinTTL or DefaultTTL is more than 31536000
+//     seconds, then the default value for this field is the same as the
+//     value of DefaultTTL."
+//
+// MinTTL is required, so only a stored policy that bypassed validation (a
+// snapshot edited by hand) can lack it; it counts as 0 then.
+//
+// Reference: https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CachePolicyConfig.html
+func (c *CachePolicyConfig) ttls() cachePolicyTTLs {
+	out := cachePolicyTTLs{def: cachePolicyDefaultTTL, max: cachePolicyDefaultMaxTTL}
+
+	if c.MinTTL != nil {
+		out.min = *c.MinTTL
+	}
+
+	switch {
+	case c.DefaultTTL != nil:
+		out.def = *c.DefaultTTL
+	case out.min > cachePolicyDefaultTTL:
+		out.def = out.min
+	}
+
+	switch {
+	case c.MaxTTL != nil:
+		out.max = *c.MaxTTL
+	case out.min > cachePolicyDefaultMaxTTL || out.def > cachePolicyDefaultMaxTTL:
+		out.max = out.def
+	}
+
+	return out
 }
 
 // validateCachePolicyConfig enforces the required members, the documented

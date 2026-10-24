@@ -39,9 +39,24 @@ func createTTLCachePolicy(t *testing.T, svc *Service, name string, minTTL, defau
 func TestEdgeCacheConfig_CachePolicyTTLs(t *testing.T) {
 	t.Parallel()
 
-	svc := New(NewMemoryStorage())
+	const unsetTTLs = "unset-ttls"
+
+	store := NewMemoryStorage()
+	svc := New(store)
 	custom := createTTLCachePolicy(t, svc, "custom-ttls", 5, 30, 120)
 	legacy := cache.DistributionConfig{MinTTL: 2 * time.Second, DefaultTTL: 60 * time.Second, MaxTTL: time.Hour}
+
+	// Only MinTTL is required; CreateCachePolicy stores the documented
+	// defaults of the omitted DefaultTTL and MaxTTL.
+	minOnly, err := svc.storage.CreateCachePolicy(t.Context(), &CachePolicyConfig{Name: "min-ttl-only", MinTTL: new(int64(5))})
+	if err != nil {
+		t.Fatalf("CreateCachePolicy: %v", err)
+	}
+
+	// A stored policy lacks them only when it bypassed CreateCachePolicy, as
+	// in a snapshot edited by hand; the edge applies the same defaults.
+	store.CachePolicies[unsetTTLs] = &CachePolicy{ID: unsetTTLs, Config: CachePolicyConfig{Name: unsetTTLs, MinTTL: new(int64(5))}}
+	documentedDefaults := cache.DistributionConfig{MinTTL: 5 * time.Second, DefaultTTL: 24 * time.Hour, MaxTTL: 365 * 24 * time.Hour, CachePolicy: true}
 
 	cases := []struct {
 		name     string
@@ -58,6 +73,8 @@ func TestEdgeCacheConfig_CachePolicyTTLs(t *testing.T) {
 			"custom policy from storage", custom,
 			cache.DistributionConfig{MinTTL: 5 * time.Second, DefaultTTL: 30 * time.Second, MaxTTL: 2 * time.Minute, CachePolicy: true},
 		},
+		{"custom policy created with only MinTTL", minOnly.ID, documentedDefaults},
+		{"stored policy without DefaultTTL and MaxTTL", unsetTTLs, documentedDefaults},
 		{"managed policy without documented TTLs falls back", amplifyDefault, legacy},
 		{"unknown policy falls back", "00000000-0000-0000-0000-000000000000", legacy},
 	}

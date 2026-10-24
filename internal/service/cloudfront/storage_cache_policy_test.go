@@ -70,21 +70,27 @@ func TestNormalizeCachePolicyConfig_Defaults(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		min, wantDefault, wantMax int64
+		min                  int64
+		def                  *int64 // nil when DefaultTTL is omitted
+		wantDefault, wantMax int64
 	}{
-		{0, cachePolicyDefaultTTL, cachePolicyDefaultMaxTTL},
-		{100000, 100000, cachePolicyDefaultMaxTTL},
-		{40000000, 40000000, 40000000},
+		{0, nil, cachePolicyDefaultTTL, cachePolicyDefaultMaxTTL},
+		{100000, nil, 100000, cachePolicyDefaultMaxTTL},
+		{40000000, nil, 40000000, 40000000},
+		// MaxTTL defaults to DefaultTTL when MinTTL or DefaultTTL is more
+		// than one year, even when that DefaultTTL is the smaller one.
+		{0, new(int64(40000000)), 40000000, 40000000},
+		{40000000, new(int64(100)), 100, 100},
 	}
 
 	for _, tc := range cases {
-		got, err := normalizeCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: new(tc.min)})
+		got, err := normalizeCachePolicyConfig(&CachePolicyConfig{Name: "n", MinTTL: new(tc.min), DefaultTTL: tc.def})
 		if err != nil {
 			t.Fatalf("normalize: %v", err)
 		}
 
 		if *got.DefaultTTL != tc.wantDefault || *got.MaxTTL != tc.wantMax {
-			t.Errorf("MinTTL %d: DefaultTTL %d MaxTTL %d, want %d %d", tc.min, *got.DefaultTTL, *got.MaxTTL, tc.wantDefault, tc.wantMax)
+			t.Errorf("MinTTL %d (DefaultTTL omitted: %v): DefaultTTL %d MaxTTL %d, want %d %d", tc.min, tc.def == nil, *got.DefaultTTL, *got.MaxTTL, tc.wantDefault, tc.wantMax)
 		}
 	}
 

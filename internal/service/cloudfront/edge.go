@@ -615,7 +615,8 @@ type cachePolicyTTLs struct {
 // edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of the
 // matched cache behaviour. When the behaviour references a cache policy the
 // TTLs come from that policy, as with CloudFront, and the legacy TTL fields
-// are not used; a policy whose TTLs kumo does not know falls back to them.
+// are not used; a managed policy whose TTLs AWS does not document, or a
+// policy kumo cannot find, falls back to them.
 // Returns ok=false when the distribution has no behaviour for the request
 // (terraform almost always configures one).
 func (s *Service) edgeCacheConfig(ctx context.Context, behavior *DefaultCacheBehavior) (cache.DistributionConfig, bool) {
@@ -654,12 +655,7 @@ func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTT
 		return cachePolicyTTLs{}, false
 	}
 
-	cfg := policy.Config
-	if cfg.MinTTL == nil || cfg.DefaultTTL == nil || cfg.MaxTTL == nil {
-		return cachePolicyTTLs{}, false
-	}
-
-	return cachePolicyTTLs{min: *cfg.MinTTL, def: *cfg.DefaultTTL, max: *cfg.MaxTTL}, true
+	return policy.Config.ttls(), true
 }
 
 // upstreamTarget is where an origin request goes and how the edge signs it.
