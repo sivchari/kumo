@@ -1,6 +1,6 @@
 {
   "DistributionConfig": {
-    "CallerReference": "test-cf-logging-dlyyl7y0smbp",
+    "CallerReference": "test-cf-logging-dmd5wizdg7iy",
     "Comment": "distribution logging",
     "DefaultCacheBehavior": {
       "TargetOriginId": "assets",
@@ -88,7 +88,10 @@
     "ConnectionFunctionAssociation": null,
     "ConnectionMode": "",
     "ContinuousDeploymentPolicyId": null,
-    "CustomErrorResponses": null,
+    "CustomErrorResponses": {
+      "Quantity": 0,
+      "Items": null
+    },
     "DefaultRootObject": null,
     "HttpVersion": "http2",
     "IsIPV6Enabled": null,
@@ -118,6 +121,6 @@
     "ViewerMtlsConfig": null,
     "WebACLId": null
   },
-  "ETag": "E051b3ddc-3f64-4588-be7a-2b2a8aec",
+  "ETag": "Eba5776e3-0a9c-4dfb-8476-8c468188",
   "ResultMetadata": {}
 }

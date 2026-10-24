@@ -1,6 +1,6 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/Ea823a305-8f7d",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/E6f72cf97-79ce",
     "DistributionConfig": {
       "CallerReference": "test-create-distribution-with-tags",
       "Comment": "Tagged distribution",
@@ -84,7 +84,10 @@
       "ConnectionFunctionAssociation": null,
       "ConnectionMode": "",
       "ContinuousDeploymentPolicyId": null,
-      "CustomErrorResponses": null,
+      "CustomErrorResponses": {
+        "Quantity": 0,
+        "Items": null
+      },
       "DefaultRootObject": null,
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
@@ -114,10 +117,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "Ea823a305-8f7d.cloudfront.net",
-    "Id": "Ea823a305-8f7d",
+    "DomainName": "E6f72cf97-79ce.cloudfront.net",
+    "Id": "E6f72cf97-79ce",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-10-08T07:28:16+09:00",
+    "LastModifiedTime": "2026-10-25T00:09:29+09:00",
     "Status": "Deployed",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -131,7 +134,7 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "E314560c2-4469-4bc3-93cd-73f850f6",
-  "Location": "/2020-05-31/distribution/Ea823a305-8f7d",
+  "ETag": "E1a89cf07-02c5-47b3-82ea-beab295a",
+  "Location": "/2020-05-31/distribution/E6f72cf97-79ce",
   "ResultMetadata": {}
 }

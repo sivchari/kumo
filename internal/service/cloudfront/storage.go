@@ -861,7 +861,7 @@ func convertCustomErrorResponsesFromXML(responses *CustomErrorResponsesXML) *Cus
 		return nil
 	}
 
-	result := &CustomErrorResponses{Quantity: responses.Quantity}
+	result := &CustomErrorResponses{}
 	if responses.Items == nil {
 		return result
 	}

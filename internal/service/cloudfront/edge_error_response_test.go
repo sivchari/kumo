@@ -684,11 +684,12 @@ func TestCustomErrorStatus(t *testing.T) {
 }
 
 // TestCustomErrorResponses_RoundTrip — the request XML is stored and echoed
-// back in DistributionConfig and the distribution summary.
+// back in DistributionConfig and the distribution summary, with the Quantity
+// of the items echoed rather than the one the request claimed (3 for 2).
 func TestCustomErrorResponses_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	body := `<DistributionConfig><CustomErrorResponses><Quantity>2</Quantity><Items>` +
+	body := `<DistributionConfig><CustomErrorResponses><Quantity>3</Quantity><Items>` +
 		`<CustomErrorResponse><ErrorCode>404</ErrorCode><ResponsePagePath>/errors/404.html</ResponsePagePath><ResponseCode>200</ResponseCode><ErrorCachingMinTTL>0</ErrorCachingMinTTL></CustomErrorResponse>` +
 		`<CustomErrorResponse><ErrorCode>503</ErrorCode><ErrorCachingMinTTL>5</ErrorCachingMinTTL></CustomErrorResponse>` +
 		`</Items></CustomErrorResponses></DistributionConfig>`

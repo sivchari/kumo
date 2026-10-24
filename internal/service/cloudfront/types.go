@@ -38,10 +38,10 @@ type DistributionConfig struct {
 	CustomErrorResponses *CustomErrorResponses
 }
 
-// CustomErrorResponses holds the distribution's custom error responses.
+// CustomErrorResponses holds the distribution's custom error responses. The
+// API's Quantity is not stored: it is the number of Items.
 type CustomErrorResponses struct {
-	Quantity int
-	Items    []CustomErrorResponse
+	Items []CustomErrorResponse
 }
 
 // CustomErrorResponse maps an HTTP error code to a custom error page and/or an

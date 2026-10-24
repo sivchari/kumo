@@ -1,6 +1,6 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/E5738e109-a3ba",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/E38ae5b84-0367",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
       "Items": null,
@@ -25,7 +25,10 @@
       "ConnectionFunctionAssociation": null,
       "ConnectionMode": "",
       "ContinuousDeploymentPolicyId": null,
-      "CustomErrorResponses": null,
+      "CustomErrorResponses": {
+        "Items": null,
+        "Quantity": 0
+      },
       "DefaultCacheBehavior": {
         "AllowedMethods": {
           "CachedMethods": {
@@ -126,12 +129,12 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "E5738e109-a3ba.cloudfront.net",
-    "Id": "E5738e109-a3ba",
+    "DomainName": "E38ae5b84-0367.cloudfront.net",
+    "Id": "E38ae5b84-0367",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-10-08T07:29:16+09:00",
+    "LastModifiedTime": "2026-10-25T00:09:29+09:00",
     "Status": "Deployed"
   },
-  "ETag": "E30e68387-835e-4e61-85ad-6f5d2c2a",
+  "ETag": "Eaa86bcc6-a6d6-42c7-8cfa-bc8e97f9",
   "ResultMetadata": {}
 }

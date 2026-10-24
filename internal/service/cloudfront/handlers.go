@@ -358,35 +358,22 @@ func buildDistributionConfigXML(config *DistributionConfig) *DistributionConfigX
 	return result
 }
 
-// buildCustomErrorResponsesXML echoes the configured custom error responses;
-// nil when the request carried none.
+// buildCustomErrorResponsesXML always returns CustomErrorResponses, as
+// CloudFront does: a distribution created without them reads back with
+// Quantity 0 (see the create-distribution examples in
+// https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/example_cloudfront_CreateDistribution_section.html).
+// Quantity is the number of stored items, whatever the request said.
 func buildCustomErrorResponsesXML(responses *CustomErrorResponses) *CustomErrorResponsesXML {
-	if responses == nil {
-		return nil
+	if responses == nil || len(responses.Items) == 0 {
+		return &CustomErrorResponsesXML{}
 	}
 
-	result := &CustomErrorResponsesXML{Quantity: responses.Quantity}
-	if len(responses.Items) == 0 {
-		return result
-	}
-
-	result.Items = &CustomErrorResponseListXML{}
-
+	items := make([]CustomErrorResponseXML, 0, len(responses.Items))
 	for _, r := range responses.Items {
-		result.Items.CustomErrorResponse = append(result.Items.CustomErrorResponse, CustomErrorResponseXML(r))
+		items = append(items, CustomErrorResponseXML(r))
 	}
 
-	return result
-}
-
-// buildSummaryCustomErrorResponsesXML is buildCustomErrorResponsesXML for a
-// DistributionSummary, which always carries CustomErrorResponses.
-func buildSummaryCustomErrorResponsesXML(responses *CustomErrorResponses) *CustomErrorResponsesXML {
-	if result := buildCustomErrorResponsesXML(responses); result != nil {
-		return result
-	}
-
-	return &CustomErrorResponsesXML{}
+	return &CustomErrorResponsesXML{Quantity: len(items), Items: &CustomErrorResponseListXML{CustomErrorResponse: items}}
 }
 
 // buildLoggingXML always returns Logging, as CloudFront does: a distribution
@@ -696,7 +683,7 @@ func buildDistributionSummaryXML(d *Distribution) DistributionSummaryXML {
 		HTTPVersion:          d.DistributionConfig.HTTPVersion,
 		IsIPV6Enabled:        d.DistributionConfig.IsIPV6Enabled,
 		CacheBehaviors:       buildCacheBehaviorsXML(d.DistributionConfig.CacheBehaviors),
-		CustomErrorResponses: buildSummaryCustomErrorResponsesXML(d.DistributionConfig.CustomErrorResponses),
+		CustomErrorResponses: buildCustomErrorResponsesXML(d.DistributionConfig.CustomErrorResponses),
 		Restrictions: &RestrictionsXML{
 			GeoRestriction: &GeoRestrictionXML{
 				RestrictionType: "none",

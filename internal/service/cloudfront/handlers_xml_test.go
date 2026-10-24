@@ -69,6 +69,17 @@ func assertMandatoryElements(t *testing.T, b *DefaultCacheBehaviorXML) {
 	}
 }
 
+// assertEmptyCustomErrorResponses checks the CustomErrorResponses element of a
+// distribution created without custom error responses: CloudFront returns it
+// with Quantity 0 rather than omitting it.
+func assertEmptyCustomErrorResponses(t *testing.T, responses *CustomErrorResponsesXML) {
+	t.Helper()
+
+	if responses == nil || responses.Quantity != 0 || responses.Items != nil {
+		t.Errorf("CustomErrorResponses must always be present and empty, got %+v", responses)
+	}
+}
+
 func TestBuildDistributionXML_AlwaysEmitsMandatoryElements(t *testing.T) {
 	t.Parallel()
 
@@ -79,6 +90,7 @@ func TestBuildDistributionXML_AlwaysEmitsMandatoryElements(t *testing.T) {
 		t.Errorf("OriginGroups must always be present and empty, got %+v", cfg.OriginGroups)
 	}
 
+	assertEmptyCustomErrorResponses(t, cfg.CustomErrorResponses)
 	assertMandatoryElements(t, cfg.DefaultCacheBehavior)
 
 	if len(cfg.CacheBehaviors.Items) != 1 {
@@ -133,6 +145,7 @@ func TestBuildDistributionListXML_AlwaysEmitsMandatoryElements(t *testing.T) {
 	}
 
 	summary := got.Items.DistributionSummary[0]
+	assertEmptyCustomErrorResponses(t, summary.CustomErrorResponses)
 	assertMandatoryElements(t, summary.DefaultCacheBehavior)
 
 	if len(summary.CacheBehaviors.Items) != 1 {

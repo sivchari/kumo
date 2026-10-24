@@ -1,8 +1,8 @@
 {
   "Distribution": {
-    "ARN": "arn:aws:cloudfront::000000000000:distribution/E8dd302a9-7f0c",
+    "ARN": "arn:aws:cloudfront::000000000000:distribution/Ed7c162eb-3e4a",
     "DistributionConfig": {
-      "CallerReference": "test-cf-cache-behaviors-dlyyl7xty652",
+      "CallerReference": "test-cf-cache-behaviors-dmd5wiz9i2lc",
       "Comment": "ordered cache behaviors",
       "DefaultCacheBehavior": {
         "TargetOriginId": "assets",
@@ -236,7 +236,10 @@
       "ConnectionFunctionAssociation": null,
       "ConnectionMode": "",
       "ContinuousDeploymentPolicyId": null,
-      "CustomErrorResponses": null,
+      "CustomErrorResponses": {
+        "Quantity": 0,
+        "Items": null
+      },
       "DefaultRootObject": null,
       "HttpVersion": "http2",
       "IsIPV6Enabled": null,
@@ -266,10 +269,10 @@
       "ViewerMtlsConfig": null,
       "WebACLId": null
     },
-    "DomainName": "E8dd302a9-7f0c.cloudfront.net",
-    "Id": "E8dd302a9-7f0c",
+    "DomainName": "Ed7c162eb-3e4a.cloudfront.net",
+    "Id": "Ed7c162eb-3e4a",
     "InProgressInvalidationBatches": null,
-    "LastModifiedTime": "2026-10-08T07:28:16+09:00",
+    "LastModifiedTime": "2026-10-25T00:09:29+09:00",
     "Status": "Deployed",
     "ActiveTrustedKeyGroups": {
       "Enabled": false,
@@ -283,7 +286,7 @@
     },
     "AliasICPRecordals": null
   },
-  "ETag": "Efb9dd2e3-8c74-413b-9e2a-e52f2731",
-  "Location": "/2020-05-31/distribution/E8dd302a9-7f0c",
+  "ETag": "E3a3ce4d8-789e-4343-8ea6-547bb265",
+  "Location": "/2020-05-31/distribution/Ed7c162eb-3e4a",
   "ResultMetadata": {}
 }
