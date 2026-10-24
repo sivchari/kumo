@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -122,6 +124,21 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 		s.RecordSets = make(map[string][]ResourceRecordSet)
 	}
 
+	// Snapshots written before record names were normalized may hold names
+	// without the trailing dot, possibly for both spellings of one record.
+	for zoneID, records := range s.RecordSets {
+		for i := range records {
+			records[i].Name = fullyQualified(records[i].Name)
+		}
+
+		records = coalesceRecordSets(zoneID, records)
+		s.RecordSets[zoneID] = records
+
+		if zone, ok := s.HostedZones[zoneID]; ok {
+			zone.ResourceRecordSetCount = int64(len(records))
+		}
+	}
+
 	if s.Changes == nil {
 		s.Changes = make(map[string]*ChangeInfo)
 	}
@@ -131,6 +148,42 @@ func (s *MemoryStorage) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// coalesceRecordSets keeps one record set per name, type and set identifier,
+// keeping the last occurrence since CREATE appends. Dropping a record set
+// that differs from the kept one is logged.
+func coalesceRecordSets(zoneID string, records []ResourceRecordSet) []ResourceRecordSet {
+	type recordKey struct{ name, recordType, setIdentifier string }
+
+	kept := make(map[recordKey]int, len(records))
+	keep := make([]bool, len(records))
+
+	for i := len(records) - 1; i >= 0; i-- {
+		key := recordKey{records[i].Name, records[i].Type, records[i].SetIdentifier}
+
+		if j, ok := kept[key]; ok {
+			if !reflect.DeepEqual(records[i], records[j]) {
+				slog.Warn("route53: dropped an earlier conflicting record set from snapshot",
+					"zone", zoneID, "name", key.name, "type", key.recordType)
+			}
+
+			continue
+		}
+
+		kept[key] = i
+		keep[i] = true
+	}
+
+	coalesced := make([]ResourceRecordSet, 0, len(kept))
+
+	for i := range records {
+		if keep[i] {
+			coalesced = append(coalesced, records[i])
+		}
+	}
+
+	return coalesced
 }
 
 // saveLocked persists the current state to disk while the caller holds the lock.
@@ -255,26 +308,31 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 	records := s.RecordSets[hostedZoneID]
 
 	for i := range changes {
+		// Route 53 treats a record name with and without the trailing dot as
+		// identical and returns it fully qualified.
+		rrset := changes[i].ResourceRecordSet
+		rrset.Name = fullyQualified(rrset.Name)
+
 		switch changes[i].Action {
 		case "CREATE":
-			if s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type) >= 0 {
+			if s.findRecordIndex(records, rrset.Name, rrset.Type) >= 0 {
 				return ErrRecordSetAlreadyExists
 			}
 
-			records = append(records, changes[i].ResourceRecordSet)
+			records = append(records, rrset)
 		case "DELETE":
-			idx := s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type)
+			idx := s.findRecordIndex(records, rrset.Name, rrset.Type)
 			if idx < 0 {
 				return ErrRecordSetNotFound
 			}
 
 			records = append(records[:idx], records[idx+1:]...)
 		case "UPSERT":
-			idx := s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type)
+			idx := s.findRecordIndex(records, rrset.Name, rrset.Type)
 			if idx >= 0 {
-				records[idx] = changes[i].ResourceRecordSet
+				records[idx] = rrset
 			} else {
-				records = append(records, changes[i].ResourceRecordSet)
+				records = append(records, rrset)
 			}
 		default:
 			return ErrInvalidInput
@@ -316,6 +374,15 @@ func (s *MemoryStorage) GetChange(id string) (*ChangeInfo, error) {
 	}
 
 	return c, nil
+}
+
+// fullyQualified returns name with a trailing dot.
+func fullyQualified(name string) string {
+	if strings.HasSuffix(name, ".") {
+		return name
+	}
+
+	return name + "."
 }
 
 // findRecordIndex finds the index of a record set by name and type.
