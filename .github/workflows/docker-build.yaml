@@ -7,15 +7,11 @@ on:
     paths:
       - 'docker/Dockerfile'
       - 'go.mod'
-      - 'go.sum'
-      - '.dockerignore'
       - '.github/workflows/docker-build.yaml'
   pull_request:
     paths:
       - 'docker/Dockerfile'
       - 'go.mod'
-      - 'go.sum'
-      - '.dockerignore'
       - '.github/workflows/docker-build.yaml'
 
 permissions:
