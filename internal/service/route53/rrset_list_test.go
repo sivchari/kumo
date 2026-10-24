@@ -150,7 +150,7 @@ func TestListResourceRecordSets_SortOrder(t *testing.T) {
 // * + , -". With the dots taking part in the comparison, com.example.www!1.
 // sorts before com.example.www. for each of them, spelled as is or as the
 // \ddd escape that Route 53 returns.
-func TestListResourceRecordSets_TrailingDotChangesSortOrder(t *testing.T) {
+func TestSortRecordSets_TrailingDotChangesSortOrder(t *testing.T) {
 	t.Parallel()
 
 	for _, c := range `!"#$%&'()*+,-` {
@@ -158,21 +158,14 @@ func TestListResourceRecordSets_TrailingDotChangesSortOrder(t *testing.T) {
 			"www" + string(c) + "1.example.com.",
 			fmt.Sprintf(`www\%03o1.example.com.`, c),
 		} {
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
-
-				svc := newRRSetListService(t, []ResourceRecordSet{
-					{Name: wwwName, Type: "A"},
-					{Name: name, Type: "A"},
-				})
-
-				resp := decodeRRSetList(t, listRRSets(t, svc, url.Values{}))
-
-				want := []string{name + " A", wwwName + " A"}
-				if got := recordKeys(resp.ResourceRecordSets); !slices.Equal(got, want) {
-					t.Errorf("order:\n got  %q\n want %q", got, want)
-				}
+			sorted := sortRecordSets([]ResourceRecordSet{
+				{Name: wwwName, Type: "A"},
+				{Name: name, Type: "A"},
 			})
+
+			if got := []string{sorted[0].rrset.Name, sorted[1].rrset.Name}; !slices.Equal(got, []string{name, wwwName}) {
+				t.Errorf("order of %q and %q: got %q", name, wwwName, got)
+			}
 		}
 	}
 }
