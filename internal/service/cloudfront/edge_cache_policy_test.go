@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -108,16 +109,32 @@ func (failingCachePolicyStorage) GetCachePolicy(context.Context, string) (*Cache
 	return nil, errors.New("storage unavailable")
 }
 
+// captureDefaultLog sends the default slog logger's output to the returned
+// buffer until the test ends. slog.SetDefault also redirects the log
+// package, and setting the original slog logger back does not undo that, so
+// the log package's output and flags are restored as well.
+func captureDefaultLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var logs bytes.Buffer
+
+	defaultLogger, logOutput, logFlags := slog.Default(), log.Writer(), log.Flags()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(defaultLogger)
+		log.SetOutput(logOutput)
+		log.SetFlags(logFlags)
+	})
+
+	return &logs
+}
+
 // TestEdgeCacheConfig_LogsCachePolicyFallback — every fallback to the legacy
 // TTL settings is logged, and a policy that does not exist is told apart
 // from a failed lookup. Not parallel: it replaces the default logger.
 func TestEdgeCacheConfig_LogsCachePolicyFallback(t *testing.T) {
-	var logs bytes.Buffer
-
-	defaultLogger := slog.Default()
-
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(defaultLogger) })
+	logs := captureDefaultLog(t)
 
 	cases := []struct {
 		name     string
