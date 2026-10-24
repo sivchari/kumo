@@ -296,8 +296,8 @@ func keepOriginalHeaders(dst, original http.Header) {
 //
 // The page is not cached: every error that is replaced fetches it from its
 // origin again. That is intentional for now, while CloudFront "also caches
-// the custom error page" for the error caching minimum TTL or the origin's
-// max-age, whichever is longer (HTTPStatusCodes.html, cited on
+// the custom error page" for the error caching minimum TTL or the max-age of
+// the error response, whichever is longer (HTTPStatusCodes.html, cited on
 // writeErrorPage); see the TODO on customErrorWriter.
 func (s *Service) fetchErrorPage(ctx context.Context, dist *Distribution, pagePath string) (*originResponse, error) {
 	path := strings.TrimPrefix(pagePath, "/")
