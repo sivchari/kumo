@@ -91,6 +91,16 @@ func hasCustomErrorPages(dist *Distribution) bool {
 // (https://aws.amazon.com/blogs/networking-and-content-delivery/generating-dynamic-error-responses-in-amazon-cloudfront-with-lambdaedge/)
 // so errors the edge produces itself, such as a 403 for a missing signed
 // cookie, are replaced as well.
+//
+// TODO: apply ErrorCachingMinTTL. It is stored and returned by the API, but
+// the edge caches an error response only by the cache behavior's TTLs and the
+// origin's headers, like any other response, and never caches the custom
+// error page. CloudFront caches error responses "for a default duration of 10
+// seconds", or for the Error Caching Minimum TTL configured for the status
+// code
+// (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/custom-error-pages-expiration.html),
+// and caches the custom error page with them (HTTPStatusCodes.html, cited on
+// writeErrorPage).
 type customErrorWriter struct {
 	svc    *Service
 	viewer http.ResponseWriter
@@ -288,7 +298,7 @@ func keepOriginalHeaders(dst, original http.Header) {
 // origin again. That is intentional for now, while CloudFront "also caches
 // the custom error page" for the error caching minimum TTL or the origin's
 // max-age, whichever is longer (HTTPStatusCodes.html, cited on
-// writeErrorPage).
+// writeErrorPage); see the TODO on customErrorWriter.
 func (s *Service) fetchErrorPage(ctx context.Context, dist *Distribution, pagePath string) (*originResponse, error) {
 	path := strings.TrimPrefix(pagePath, "/")
 	behavior := resolveBehavior(dist, path)
