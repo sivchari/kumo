@@ -184,6 +184,28 @@ func parseRecordSetsMaxItems(raw string) (pageSize int, echoed string) {
 	return min(n, maxListRecordSets), strconv.Itoa(n)
 }
 
+// positionedRecordSet is a record set together with its sort position, which
+// is computed once per listing rather than in every comparison.
+type positionedRecordSet struct {
+	position recordSetPosition
+	rrset    *ResourceRecordSet
+}
+
+// sortRecordSets returns records in ListResourceRecordSets order, each paired
+// with its position. The returned entries point into records.
+func sortRecordSets(records []ResourceRecordSet) []positionedRecordSet {
+	sorted := make([]positionedRecordSet, len(records))
+	for i := range records {
+		sorted[i] = positionedRecordSet{position: positionOf(&records[i]), rrset: &records[i]}
+	}
+
+	slices.SortStableFunc(sorted, func(a, b positionedRecordSet) int {
+		return a.position.compare(b.position)
+	})
+
+	return sorted
+}
+
 // pageRecordSets sorts records into ListResourceRecordSets order and returns
 // the page that begins at start, the record set that would begin the next
 // page, and whether there is one.
@@ -195,18 +217,15 @@ func parseRecordSetsMaxItems(raw string) (pageSize int, echoed string) {
 // begins there instead, so that a NextRecordName echoed from storage resumes
 // on that record rather than repeating the earlier ones.
 func pageRecordSets(records []ResourceRecordSet, start *listStart, pageSize int) ([]ResourceRecordSet, *ResourceRecordSet, bool) {
-	sorted := slices.Clone(records)
-	slices.SortStableFunc(sorted, func(a, b ResourceRecordSet) int {
-		return positionOf(&a).compare(positionOf(&b))
-	})
+	sorted := sortRecordSets(slices.Clone(records))
 
-	first, _ := slices.BinarySearchFunc(sorted, start.position, func(rrset ResourceRecordSet, target recordSetPosition) int {
-		return positionOf(&rrset).compare(target)
+	first, _ := slices.BinarySearchFunc(sorted, start.position, func(entry positionedRecordSet, target recordSetPosition) int {
+		return entry.position.compare(target)
 	})
 
 	if start.name != "" {
-		for i := first; i < len(sorted) && positionOf(&sorted[i]).compare(start.position) == 0; i++ {
-			if sorted[i].Name == start.name && sorted[i].Type == start.recordType && sorted[i].SetIdentifier == start.setIdentifier {
+		for i := first; i < len(sorted) && sorted[i].position.compare(start.position) == 0; i++ {
+			if rrset := sorted[i].rrset; rrset.Name == start.name && rrset.Type == start.recordType && rrset.SetIdentifier == start.setIdentifier {
 				first = i
 
 				break
@@ -214,10 +233,16 @@ func pageRecordSets(records []ResourceRecordSet, start *listStart, pageSize int)
 		}
 	}
 
-	page := sorted[first:]
-	if len(page) <= pageSize {
+	rest := sorted[first:]
+
+	page := make([]ResourceRecordSet, min(len(rest), pageSize))
+	for i := range page {
+		page[i] = *rest[i].rrset
+	}
+
+	if len(rest) <= pageSize {
 		return page, nil, false
 	}
 
-	return page[:pageSize], &page[pageSize], true
+	return page, rest[pageSize].rrset, true
 }
