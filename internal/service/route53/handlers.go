@@ -397,6 +397,25 @@ func writeChangeRecordSetsError(w http.ResponseWriter, err error) {
 	writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
 }
 
+// unlistedTypeToStore returns the Type of the first CREATE or UPSERT change
+// whose record set type is not one of rrTypes, the valid values the API
+// reference lists for ResourceRecordSet.Type. DELETE is not checked, so that
+// a record set stored with an unlisted type can still be deleted, and its
+// hosted zone with it.
+func unlistedTypeToStore(changes []Change) (string, bool) {
+	for i := range changes {
+		if action := changes[i].Action; action != "CREATE" && action != "UPSERT" {
+			continue
+		}
+
+		if recordType := changes[i].ResourceRecordSet.Type; !isRRType(recordType) {
+			return recordType, true
+		}
+	}
+
+	return "", false
+}
+
 // ChangeResourceRecordSets handles the ChangeResourceRecordSets API.
 func (s *Service) ChangeResourceRecordSets(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -418,6 +437,12 @@ func (s *Service) ChangeResourceRecordSets(w http.ResponseWriter, r *http.Reques
 	}
 
 	zoneID := "/hostedzone/" + id
+
+	if recordType, ok := unlistedTypeToStore(req.ChangeBatch.Changes); ok {
+		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Invalid value for Type: "+recordType)
+
+		return
+	}
 
 	if err := s.storage.ChangeRecordSets(zoneID, req.ChangeBatch.Changes); err != nil {
 		writeChangeRecordSetsError(w, err)
