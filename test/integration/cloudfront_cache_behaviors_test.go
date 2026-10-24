@@ -257,3 +257,54 @@ func TestCloudFront_EdgeRoutesOrderedCacheBehaviors(t *testing.T) {
 		t.Errorf("invocations assets=%d api=%d, want 2 and 1", assets.invocations.Load(), api.invocations.Load())
 	}
 }
+
+// TestCloudFront_EdgeMatchesTrailingSlashPathPattern — a behaviour whose path
+// pattern ends in "/" matches a request for exactly that path, and the
+// origin sees the trailing slash.
+func TestCloudFront_EdgeMatchesTrailingSlashPathPattern(t *testing.T) {
+	assets := newFunctionURLEcho(t)
+	app := newFunctionURLEcho(t)
+	assetsDomain := createFunctionURL(t, "test-cf-slash-assets", assets.url, lambdatypes.FunctionUrlAuthTypeNone, nil) + ".lambda-url.us-east-1.on.aws"
+	appDomain := createFunctionURL(t, "test-cf-slash-app", app.url, lambdatypes.FunctionUrlAuthTypeNone, nil) + ".lambda-url.us-east-1.on.aws"
+
+	client := newCloudFrontClient(t)
+
+	created, err := client.CreateDistribution(t.Context(), &cloudfront.CreateDistributionInput{DistributionConfig: &cloudfronttypes.DistributionConfig{
+		CallerReference: aws.String("test-cf-slash-edge-" + strconv.FormatInt(time.Now().UnixNano(), 36)),
+		Comment:         aws.String("trailing slash path pattern"),
+		Enabled:         aws.Bool(true),
+		Origins:         &cloudfronttypes.Origins{Quantity: aws.Int32(2), Items: []cloudfronttypes.Origin{customOrigin("assets", assetsDomain), customOrigin("app", appDomain)}},
+		DefaultCacheBehavior: &cloudfronttypes.DefaultCacheBehavior{
+			TargetOriginId:       aws.String("assets"),
+			ViewerProtocolPolicy: cloudfronttypes.ViewerProtocolPolicyAllowAll,
+			CachePolicyId:        aws.String(cachingDisabledID),
+		},
+		CacheBehaviors: &cloudfronttypes.CacheBehaviors{Quantity: aws.Int32(1), Items: []cloudfronttypes.CacheBehavior{apiCacheBehavior("/app/", "app")}},
+	}})
+	if err != nil {
+		t.Fatalf("CreateDistribution: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteDistribution(context.Background(), &cloudfront.DeleteDistributionInput{Id: created.Distribution.Id, IfMatch: created.ETag})
+	})
+
+	distID := aws.ToString(created.Distribution.Id)
+
+	for path, want := range map[string]string{"/app/": appDomain, "/app": assetsDomain} {
+		resp, body := callEdgePath(t, http.MethodGet, distID, path, http.NoBody, "")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, resp.StatusCode, body)
+		}
+
+		event := decodeEvent(t, body)
+		if event["rawPath"] != path {
+			t.Errorf("%s: origin rawPath = %v, want %s", path, event["rawPath"], path)
+		}
+
+		ctx, _ := event["requestContext"].(map[string]any)
+		if ctx["domainName"] != want {
+			t.Errorf("%s reached %v, want %s", path, ctx["domainName"], want)
+		}
+	}
+}
