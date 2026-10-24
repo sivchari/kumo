@@ -273,8 +273,6 @@ func sameVarySignature(a, b *cacheEntry) bool {
 //     origin extends the entry's freshness; 200 replaces it.
 //  6. On a true miss: fetch, evaluate cacheability + TTL via `cache/`,
 //     store when allowed, and serve with `X-Cache: Miss from kumo`.
-//
-//nolint:funlen // One linear request flow; splitting it would obscure the steps above.
 func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 	distID := r.PathValue("distributionId")
 
@@ -285,11 +283,17 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Responses written below that match a custom error response are replaced
-	// by its error page when Edge returns.
+	// Responses serveEdge writes that match a custom error response are
+	// replaced by its error page when serveEdge returns.
 	w, finish := s.applyCustomErrorResponses(w, r, dist)
 	defer finish()
 
+	s.serveEdge(w, r, distID, dist)
+}
+
+// serveEdge serves a request for an existing distribution, steps 1 to 6 of
+// Edge.
+func (s *Service) serveEdge(w http.ResponseWriter, r *http.Request, distID string, dist *Distribution) {
 	// The matched cache behaviour drives signed-URL enforcement, the origin
 	// and the TTLs below. The cache key stays path-based: the path alone
 	// selects the behaviour, so entries can never cross behaviours.

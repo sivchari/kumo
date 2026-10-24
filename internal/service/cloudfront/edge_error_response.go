@@ -174,7 +174,12 @@ func (cw *customErrorWriter) Write(b []byte) (int, error) {
 		return len(b), nil
 	}
 
-	return cw.viewer.Write(b) //nolint:wrapcheck // io.Writer passthrough: the caller expects the viewer's own error.
+	n, err := cw.viewer.Write(b)
+	if err != nil {
+		return n, fmt.Errorf("write response: %w", err)
+	}
+
+	return n, nil
 }
 
 // finish writes the custom error page for a held-back response. Per
