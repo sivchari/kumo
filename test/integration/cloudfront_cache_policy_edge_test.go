@@ -16,6 +16,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+// The X-Cache values of the kumo edge, and the regional domain suffix of an
+// S3 origin.
+const (
+	headerXCache           = "X-Cache"
+	edgeCacheHit           = "Hit from kumo"
+	edgeCacheMiss          = "Miss from kumo"
+	s3RegionalDomainSuffix = ".s3.us-east-1.amazonaws.com"
+)
+
 // TestCloudFront_EdgeHonoursCachePolicyTTLs — with an S3 origin (which sends
 // Last-Modified and no Cache-Control), the edge caches according to the
 // behaviour's managed cache policy: CachingDisabled never caches, while
@@ -44,8 +53,8 @@ func TestCloudFront_EdgeHonoursCachePolicyTTLs(t *testing.T) {
 	for _, tc := range []struct {
 		name, policyID, second string
 	}{
-		{"CachingDisabled", "4135ea2d-6df8-44a3-9df3-4b5a84be39ad", "Miss from kumo"},
-		{"CachingOptimized", "658327ea-f89d-4fab-a63d-7e88639e58f6", "Hit from kumo"},
+		{"CachingDisabled", cachingDisabledID, edgeCacheMiss},
+		{"CachingOptimized", managedCachingOptimizedID, edgeCacheHit},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			distID := createS3OriginDistribution(t, "test-cf-"+tc.name, bucket, tc.policyID)
@@ -61,11 +70,11 @@ func TestCloudFront_EdgeHonoursCachePolicyTTLs(t *testing.T) {
 
 			second, _ := callEdgePath(t, http.MethodGet, distID, "/object.txt", http.NoBody, "")
 
-			if got := first.Header.Get("X-Cache"); got != "Miss from kumo" {
-				t.Errorf("first X-Cache = %q, want Miss from kumo", got)
+			if got := first.Header.Get(headerXCache); got != edgeCacheMiss {
+				t.Errorf("first X-Cache = %q, want %q", got, edgeCacheMiss)
 			}
 
-			if got := second.Header.Get("X-Cache"); got != tc.second {
+			if got := second.Header.Get(headerXCache); got != tc.second {
 				t.Errorf("second X-Cache = %q, want %q", got, tc.second)
 			}
 		})
@@ -89,7 +98,7 @@ func createS3OriginDistribution(t *testing.T, name, bucket, cachePolicyID string
 				Quantity: aws.Int32(1),
 				Items: []cloudfronttypes.Origin{{
 					Id:             aws.String("s3"),
-					DomainName:     aws.String(bucket + ".s3.us-east-1.amazonaws.com"),
+					DomainName:     aws.String(bucket + s3RegionalDomainSuffix),
 					S3OriginConfig: &cloudfronttypes.S3OriginConfig{OriginAccessIdentity: aws.String("")},
 				}},
 			},
