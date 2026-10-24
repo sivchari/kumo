@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -612,11 +613,15 @@ type cachePolicyTTLs struct {
 	min, def, max int64
 }
 
+// msgCachePolicyFallback is logged whenever the edge cannot use the TTLs of
+// the behaviour's cache policy.
+const msgCachePolicyFallback = "cloudfront edge: using the cache behavior's legacy TTL settings instead of its cache policy"
+
 // edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of the
 // matched cache behaviour. When the behaviour references a cache policy the
 // TTLs come from that policy, as with CloudFront, and the legacy TTL fields
 // are not used; a managed policy whose TTLs AWS does not document, or a
-// policy kumo cannot find, falls back to them.
+// policy kumo cannot find, falls back to them, which is logged.
 // Returns ok=false when the distribution has no behaviour for the request
 // (terraform almost always configures one).
 func (s *Service) edgeCacheConfig(ctx context.Context, behavior *DefaultCacheBehavior) (cache.DistributionConfig, bool) {
@@ -648,6 +653,8 @@ func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTT
 
 	if managed, ok := managedCachePolicies[id]; ok {
 		if managed.ttls == nil {
+			slog.Warn(msgCachePolicyFallback, "cachePolicyId", id, "name", managed.name, "reason", "managed policy TTLs are not documented")
+
 			return cachePolicyTTLs{}, false
 		}
 
@@ -656,6 +663,16 @@ func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTT
 
 	policy, err := s.storage.GetCachePolicy(ctx, id)
 	if err != nil {
+		// CreateDistribution and UpdateDistribution reject an unknown
+		// policy and DeleteCachePolicy one in use, so a missing policy
+		// comes from a distribution persisted before those checks.
+		var cfErr *Error
+		if errors.As(err, &cfErr) && cfErr.Code == errNoSuchCachePolicy {
+			slog.Warn(msgCachePolicyFallback, "cachePolicyId", id, "reason", "cache policy not found")
+		} else {
+			slog.Error(msgCachePolicyFallback, "cachePolicyId", id, "error", err)
+		}
+
 		return cachePolicyTTLs{}, false
 	}
 

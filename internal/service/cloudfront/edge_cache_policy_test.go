@@ -1,6 +1,10 @@
 package cloudfront
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +18,7 @@ const (
 	managedCachingDisabled  = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
 	managedCachingOptimized = "658327ea-f89d-4fab-a63d-7e88639e58f6"
 	amplifyDefault          = "4d1d2f1d-3a71-49ad-9e08-7ea5d843a556"
+	unknownCachePolicyID    = "00000000-0000-0000-0000-000000000000"
 	testOriginID            = "origin"
 	testCacheControl        = "Cache-Control"
 )
@@ -76,7 +81,7 @@ func TestEdgeCacheConfig_CachePolicyTTLs(t *testing.T) {
 		{"custom policy created with only MinTTL", minOnly.ID, documentedDefaults},
 		{"stored policy without DefaultTTL and MaxTTL", unsetTTLs, documentedDefaults},
 		{"managed policy without documented TTLs falls back", amplifyDefault, legacy},
-		{"unknown policy falls back", "00000000-0000-0000-0000-000000000000", legacy},
+		{"unknown policy falls back", unknownCachePolicyID, legacy},
 	}
 
 	for _, tc := range cases {
@@ -90,6 +95,54 @@ func TestEdgeCacheConfig_CachePolicyTTLs(t *testing.T) {
 				t.Fatalf("got %+v (ok=%v), want %+v", got, ok, tc.want)
 			}
 		})
+	}
+}
+
+// failingCachePolicyStorage fails every cache policy lookup with an error
+// other than NoSuchCachePolicy.
+type failingCachePolicyStorage struct {
+	Storage
+}
+
+func (failingCachePolicyStorage) GetCachePolicy(context.Context, string) (*CachePolicy, error) {
+	return nil, errors.New("storage unavailable")
+}
+
+// TestEdgeCacheConfig_LogsCachePolicyFallback — every fallback to the legacy
+// TTL settings is logged, and a policy that does not exist is told apart
+// from a failed lookup. Not parallel: it replaces the default logger.
+func TestEdgeCacheConfig_LogsCachePolicyFallback(t *testing.T) {
+	var logs bytes.Buffer
+
+	defaultLogger := slog.Default()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(defaultLogger) })
+
+	cases := []struct {
+		name     string
+		storage  Storage
+		policyID string
+		want     []string
+	}{
+		{"policy not found", NewMemoryStorage(), unknownCachePolicyID, []string{"level=WARN", `reason="cache policy not found"`}},
+		{"managed policy without documented TTLs", NewMemoryStorage(), amplifyDefault, []string{"level=WARN", "name=Amplify-Default"}},
+		{"lookup failed", failingCachePolicyStorage{NewMemoryStorage()}, "custom-policy", []string{"level=ERROR", `error="storage unavailable"`}},
+	}
+
+	for _, tc := range cases {
+		logs.Reset()
+
+		if _, ok := New(tc.storage).edgeCacheConfig(t.Context(), &DefaultCacheBehavior{CachePolicyID: tc.policyID}); !ok {
+			t.Fatalf("%s: no cache config", tc.name)
+		}
+
+		got := logs.String()
+		for _, want := range append(tc.want, "cachePolicyId="+tc.policyID) {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: log %q does not contain %s", tc.name, got, want)
+			}
+		}
 	}
 }
 
