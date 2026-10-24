@@ -11,17 +11,35 @@ import (
 // The reference does not state a default; kumo uses the same value.
 const maxListRecordSets = 300
 
-// listRecordTypes are the valid values the API reference lists for the type
-// parameter of ListResourceRecordSets.
-var listRecordTypes = []string{
+// rrTypes are the values of the RRType enum, which the API reference lists as
+// the valid values of the type parameter of ListResourceRecordSets.
+var rrTypes = []string{
 	"SOA", "A", "TXT", "NS", "CNAME", "MX", "NAPTR", "PTR", "SRV",
 	"SPF", "AAAA", "CAA", "DS", "TLSA", "SSHFP", "SVCB", "HTTPS",
 }
 
-// isListRecordType reports whether recordType is one of listRecordTypes,
-// spelled exactly as the reference lists it.
-func isListRecordType(recordType string) bool {
-	return slices.Contains(listRecordTypes, recordType)
+// isRRType reports whether recordType is one of rrTypes, spelled exactly as
+// the reference lists it.
+func isRRType(recordType string) bool {
+	return slices.Contains(rrTypes, recordType)
+}
+
+// isListableType reports whether recordType may start a listing of records:
+// it is one of rrTypes or exactly the type of one of the record sets. The
+// latter keeps the NextRecordType returned for a record set stored with an
+// unlisted type usable to continue the listing.
+func isListableType(recordType string, records []ResourceRecordSet) bool {
+	if isRRType(recordType) {
+		return true
+	}
+
+	for i := range records {
+		if records[i].Type == recordType {
+			return true
+		}
+	}
+
+	return false
 }
 
 // recordSetPosition is a record set's place in the ListResourceRecordSets

@@ -282,6 +282,27 @@ func TestListResourceRecordSets_EveryListedTypeIsAccepted(t *testing.T) {
 	}
 }
 
+// A record set stored with an unlisted type must not strand a listing: the
+// NextRecordType returned for it continues the listing, since it matches a
+// stored type exactly.
+func TestListResourceRecordSets_ContinuesFromStoredUnlistedType(t *testing.T) {
+	t.Parallel()
+
+	for _, recordType := range []string{"FOO", "a"} {
+		t.Run(recordType, func(t *testing.T) {
+			t.Parallel()
+
+			records := []ResourceRecordSet{{Name: aName, Type: "A"}, {Name: bName, Type: recordType}}
+			svc := newRRSetListService(t, records)
+
+			want := []string{aName + " A", bName + " " + recordType}
+			if got := pageAllRecordSets(t, svc, len(records), 1); !slices.Equal(got, want) {
+				t.Errorf("paged one at a time:\n got  %q\n want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestListResourceRecordSets_MaxItemsTruncates(t *testing.T) {
 	t.Parallel()
 
