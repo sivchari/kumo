@@ -118,79 +118,42 @@ func TestRoute53_ListResourceRecordSetsPaging(t *testing.T) {
 
 // A MaxItems above the 300 record sets the reference says one call returns is
 // echoed back, since the reference defines MaxItems as "The maximum number of
-// records you requested", while the page itself stops at 300.
+// records you requested", while the page itself stops at 300. Both pages are
+// compared in order against golden files, so a missing, repeated or
+// misordered record set fails.
 func TestRoute53_ListResourceRecordSetsMaxItemsAbovePageLimit(t *testing.T) {
 	t.Parallel()
 
 	const (
-		pageLimit = 300
-		stored    = pageLimit + 1
+		zoneName  = "paging-limit-test.example.com"
+		stored    = 301
 		requested = 1000
 	)
 
+	// Stored in reverse, so the pages show the listing order rather than the
+	// order of creation.
+	names := make([]string, 0, stored)
+	for i := stored - 1; i >= 0; i-- {
+		names = append(names, fmt.Sprintf("r%03d.%s.", i, zoneName))
+	}
+
 	client := newRoute53Client(t)
-	ctx := t.Context()
+	zoneID := createZoneWithARecords(t, client, zoneName, names)
 
-	zone, err := client.CreateHostedZone(ctx, &route53.CreateHostedZoneInput{
-		Name:            aws.String("paging-limit-test.example.com"),
-		CallerReference: aws.String("test-list-record-sets-paging-limit"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	changes := func(action types.ChangeAction) []types.Change {
-		out := make([]types.Change, 0, stored)
-		for i := range stored {
-			out = append(out, types.Change{
-				Action: action,
-				ResourceRecordSet: &types.ResourceRecordSet{
-					Name:            aws.String(fmt.Sprintf("r%03d.paging-limit-test.example.com.", i)),
-					Type:            types.RRTypeA,
-					TTL:             aws.Int64(300),
-					ResourceRecords: []types.ResourceRecord{{Value: aws.String("192.0.2.1")}},
-				},
-			})
-		}
-
-		return out
-	}
-
-	t.Cleanup(func() {
-		_, _ = client.ChangeResourceRecordSets(context.Background(), &route53.ChangeResourceRecordSetsInput{
-			HostedZoneId: zone.HostedZone.Id,
-			ChangeBatch:  &types.ChangeBatch{Changes: changes(types.ChangeActionDelete)},
-		})
-		_, _ = client.DeleteHostedZone(context.Background(), &route53.DeleteHostedZoneInput{Id: zone.HostedZone.Id})
-	})
-
-	if _, err := client.ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
-		HostedZoneId: zone.HostedZone.Id,
-		ChangeBatch:  &types.ChangeBatch{Changes: changes(types.ChangeActionCreate)},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	page, err := client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
-		HostedZoneId: zone.HostedZone.Id,
+	page, err := client.ListResourceRecordSets(t.Context(), &route53.ListResourceRecordSetsInput{
+		HostedZoneId: zoneID,
 		MaxItems:     aws.Int32(requested),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(page.ResourceRecordSets) != pageLimit || !page.IsTruncated || aws.ToInt32(page.MaxItems) != requested {
-		t.Fatalf("first page: got %d records IsTruncated=%v MaxItems=%d, want %d records IsTruncated=true MaxItems=%d",
-			len(page.ResourceRecordSets), page.IsTruncated, aws.ToInt32(page.MaxItems), pageLimit, requested)
-	}
+	// golden ignores the order of arrays by default; the order is part of
+	// what this test checks.
+	golden.New(t, golden.WithIgnoreOrder(false)).Assert(t.Name()+"_first_page", newRecordSetPage(page))
 
-	wantNext := fmt.Sprintf("r%03d.paging-limit-test.example.com.", pageLimit)
-	if aws.ToString(page.NextRecordName) != wantNext || page.NextRecordType != types.RRTypeA {
-		t.Fatalf("next: got (%q, %q), want (%q, A)", aws.ToString(page.NextRecordName), page.NextRecordType, wantNext)
-	}
-
-	rest, err := client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
-		HostedZoneId:    zone.HostedZone.Id,
+	rest, err := client.ListResourceRecordSets(t.Context(), &route53.ListResourceRecordSetsInput{
+		HostedZoneId:    zoneID,
 		MaxItems:        aws.Int32(requested),
 		StartRecordName: page.NextRecordName,
 		StartRecordType: page.NextRecordType,
@@ -199,8 +162,28 @@ func TestRoute53_ListResourceRecordSetsMaxItemsAbovePageLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(rest.ResourceRecordSets) != 1 || rest.IsTruncated || aws.ToString(rest.ResourceRecordSets[0].Name) != wantNext {
-		t.Errorf("second page: got %d records IsTruncated=%v, want only %s", len(rest.ResourceRecordSets), rest.IsTruncated, wantNext)
+	golden.New(t, golden.WithIgnoreOrder(false)).Assert(t.Name()+"_second_page", newRecordSetPage(rest))
+}
+
+// recordSetPage is a ListResourceRecordSets page as the paging tests compare
+// it: the record sets in order as "name type", and the paging fields.
+type recordSetPage struct {
+	RecordSets           []string
+	IsTruncated          bool
+	MaxItems             int32
+	NextRecordName       string
+	NextRecordType       types.RRType
+	NextRecordIdentifier string
+}
+
+func newRecordSetPage(out *route53.ListResourceRecordSetsOutput) recordSetPage {
+	return recordSetPage{
+		RecordSets:           recordSetKeys(out.ResourceRecordSets),
+		IsTruncated:          out.IsTruncated,
+		MaxItems:             aws.ToInt32(out.MaxItems),
+		NextRecordName:       aws.ToString(out.NextRecordName),
+		NextRecordType:       out.NextRecordType,
+		NextRecordIdentifier: aws.ToString(out.NextRecordIdentifier),
 	}
 }
 
