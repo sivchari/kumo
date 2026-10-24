@@ -60,6 +60,109 @@ func TestRoute53_CreateHostedZone(t *testing.T) {
 	)).Assert(t.Name(), result)
 }
 
+// Route 53 stores alphabetic characters in names as lowercase letters,
+// regardless of how they are specified, and treats a name with and without
+// the trailing dot as identical.
+func TestRoute53_CreateHostedZone_LowercasesName(t *testing.T) {
+	t.Parallel()
+
+	client := newRoute53Client(t)
+	ctx := t.Context()
+
+	createZone := func(name, callerReference string) *route53.CreateHostedZoneOutput {
+		t.Helper()
+
+		result, err := client.CreateHostedZone(ctx, &route53.CreateHostedZoneInput{
+			Name:            aws.String(name),
+			CallerReference: aws.String(callerReference),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Cleanup(func() {
+			_, err := client.DeleteHostedZone(context.Background(), &route53.DeleteHostedZoneInput{
+				Id: result.HostedZone.Id,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		return result
+	}
+
+	createResult := createZone("Lowercase-Test.Example.COM", "test-create-hosted-zone-lowercase")
+	zoneID := createResult.HostedZone.Id
+
+	// In ASCII order the guard zone sorts after the zone name without its
+	// trailing dot and before the zone itself ('-' is below '.'), so a
+	// dnsname query that is not lowercased, or not given its trailing dot,
+	// starts at the guard or earlier instead of at the zone under test.
+	createZone("lowercase-test.example.com-guard", "test-create-hosted-zone-lowercase-guard")
+
+	golden.New(t, golden.WithIgnoreFields(
+		"Id",
+		"SubmittedAt",
+		"NameServers",
+		"Location",
+		"ResultMetadata",
+	)).Assert(t.Name()+"_create", createResult)
+
+	getResult, err := client.GetHostedZone(ctx, &route53.GetHostedZoneInput{
+		Id: zoneID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields(
+		"Id",
+		"NameServers",
+		"ResultMetadata",
+	)).Assert(t.Name()+"_get", getResult)
+
+	const wantName = "lowercase-test.example.com."
+
+	listResult, err := client.ListHostedZones(ctx, &route53.ListHostedZonesInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listedName := ""
+	for _, zone := range listResult.HostedZones {
+		if *zone.Id == *zoneID {
+			listedName = *zone.Name
+		}
+	}
+
+	if listedName != wantName {
+		t.Errorf("ListHostedZones name = %q, want %q", listedName, wantName)
+	}
+
+	// kumo normalizes the dnsname query like the stored name, so the zone
+	// comes first whatever the query's case and with or without the dot.
+	for _, dnsName := range []string{"LOWERCASE-test.example.Com", "LOWERCASE-test.example.Com."} {
+		byName, err := client.ListHostedZonesByName(ctx, &route53.ListHostedZonesByNameInput{
+			DNSName:  aws.String(dnsName),
+			MaxItems: aws.Int32(1),
+		})
+		if err != nil {
+			t.Fatalf("ListHostedZonesByName(%q): %v", dnsName, err)
+		}
+
+		if len(byName.HostedZones) == 0 {
+			t.Errorf("ListHostedZonesByName(%q) returned no zones", dnsName)
+
+			continue
+		}
+
+		if first := byName.HostedZones[0]; *first.Id != *zoneID || *first.Name != wantName {
+			t.Errorf("ListHostedZonesByName(%q) first zone = %s %q, want %s %q", dnsName, *first.Id, *first.Name, *zoneID, wantName)
+		}
+	}
+}
+
 func TestRoute53_GetHostedZone(t *testing.T) {
 	t.Parallel()
 
