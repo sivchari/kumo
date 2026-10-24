@@ -125,6 +125,12 @@ func (cw *customErrorWriter) WriteHeader(status int) {
 		return
 	}
 
+	if isInformational(status) {
+		cw.writeInformational(status)
+
+		return
+	}
+
 	cw.wroteHeader = true
 	cw.status = status
 
@@ -134,6 +140,27 @@ func (cw *customErrorWriter) WriteHeader(status int) {
 
 	copyHeader(cw.viewer.Header(), cw.header)
 	cw.viewer.WriteHeader(status)
+}
+
+// isInformational reports whether status is a 1xx that net/http sends ahead
+// of the final response; it takes 101 Switching Protocols as final.
+func isInformational(status int) bool {
+	return status >= http.StatusContinue && status < http.StatusOK && status != http.StatusSwitchingProtocols
+}
+
+// writeInformational passes a 1xx on to the viewer with the handler's header,
+// as net/http does, without taking it for the final status. The viewer's
+// header is restored afterwards, since the final response copies the
+// handler's header again.
+func (cw *customErrorWriter) writeInformational(status int) {
+	h := cw.viewer.Header()
+	before := h.Clone()
+
+	copyHeader(h, cw.header)
+	cw.viewer.WriteHeader(status)
+
+	clear(h)
+	copyHeader(h, before)
 }
 
 func (cw *customErrorWriter) Write(b []byte) (int, error) {

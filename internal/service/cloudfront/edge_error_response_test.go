@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
 	"slices"
 	"strconv"
 	"strings"
@@ -441,6 +443,82 @@ func TestEdge_CustomErrorPageRedirectKeepsOriginal(t *testing.T) {
 				t.Errorf("got %d %q (Location %q), want the original 404", w.Code, w.Body.String(), w.Header().Get("Location"))
 			}
 		})
+	}
+}
+
+// onlyDistribution returns the distribution the test setup created in svc.
+func onlyDistribution(t *testing.T, svc *Service) *Distribution {
+	t.Helper()
+
+	mem, ok := svc.storage.(*MemoryStorage)
+	if !ok {
+		t.Fatalf("expected *MemoryStorage, got %T", svc.storage)
+	}
+
+	for _, dist := range mem.Distributions {
+		return dist
+	}
+
+	t.Fatal("the test setup created no distribution")
+
+	return nil
+}
+
+// TestCustomErrorWriter_InformationalStatusIsNotFinal — a 1xx written before
+// the final status reaches the viewer, and the final status still decides: a
+// 404 after a 103 is replaced by its custom error page.
+func TestCustomErrorWriter_InformationalStatusIsNotFinal(t *testing.T) {
+	t.Parallel()
+
+	const preload = "</style.css>; rel=preload"
+
+	svc := newErrorPageDistribution(t, newContentOrigin(t).URL, newPagesOrigin(t).URL, &DefaultCacheBehaviorXML{},
+		CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "404"})
+	dist := onlyDistribution(t, svc)
+
+	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w, finish := svc.applyCustomErrorResponses(w, r, dist)
+		defer finish()
+
+		w.Header().Set("Link", preload)
+		w.WriteHeader(http.StatusEarlyHints)
+		http.Error(w, contentMissing, http.StatusNotFound)
+	}))
+	t.Cleanup(edge.Close)
+
+	var hints []string
+
+	trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+		if code == http.StatusEarlyHints {
+			hints = append(hints, header.Values("Link")...)
+		}
+
+		return nil
+	}}
+
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), http.MethodGet, edge.URL, http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resp.StatusCode != http.StatusNotFound || string(body) != page404Body {
+		t.Errorf("got %q %q, want 404 %q", resp.Status, body, page404Body)
+	}
+
+	if !slices.Equal(hints, []string{preload}) {
+		t.Errorf("103 Link = %q, want [%q]", hints, preload)
 	}
 }
 
