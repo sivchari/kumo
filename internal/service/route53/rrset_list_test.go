@@ -473,6 +473,41 @@ func TestListResourceRecordSets_PagingReturnsEveryRecordOnce(t *testing.T) {
 	}
 }
 
+// Spellings that share a position are listed in the ASCII order of their
+// names, so the order, and continuing from Next*, does not depend on the
+// order they were stored in.
+func TestListResourceRecordSets_EqualPositionsOrderedByName(t *testing.T) {
+	t.Parallel()
+
+	want := []string{"A.EXAMPLE.COM. A", `\141.example.com. A`, aNameNoDot + " A", aName + " A"}
+
+	stored := []ResourceRecordSet{
+		{Name: aName, Type: "A"},
+		{Name: `\141.example.com.`, Type: "A"},
+		{Name: aNameNoDot, Type: "A"},
+		{Name: "A.EXAMPLE.COM.", Type: "A"},
+	}
+	reversed := slices.Clone(stored)
+	slices.Reverse(reversed)
+
+	for name, records := range map[string][]ResourceRecordSet{"stored": stored, "reversed": reversed} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := newRRSetListService(t, records)
+
+			resp := decodeRRSetList(t, listRRSets(t, svc, url.Values{}))
+			if got := recordKeys(resp.ResourceRecordSets); !slices.Equal(got, want) {
+				t.Errorf("order:\n got  %q\n want %q", got, want)
+			}
+
+			if got := pageAllRecordSets(t, svc, len(records), 1); !slices.Equal(got, want) {
+				t.Errorf("paged one at a time:\n got  %q\n want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestListResourceRecordSets_EscapedDotStaysInsideLabel(t *testing.T) {
 	t.Parallel()
 

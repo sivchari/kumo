@@ -206,15 +206,21 @@ type positionedRecordSet struct {
 }
 
 // sortRecordSets returns records in ListResourceRecordSets order, each paired
-// with its position. The returned entries point into records.
+// with its position. The returned entries point into records. Record sets
+// that share a position are ordered by name as stored, in ASCII order, so the
+// order does not depend on the order they were stored in.
 func sortRecordSets(records []ResourceRecordSet) []positionedRecordSet {
 	sorted := make([]positionedRecordSet, len(records))
 	for i := range records {
 		sorted[i] = positionedRecordSet{position: positionOf(&records[i]), rrset: &records[i]}
 	}
 
-	slices.SortStableFunc(sorted, func(a, b positionedRecordSet) int {
-		return a.position.compare(b.position)
+	slices.SortFunc(sorted, func(a, b positionedRecordSet) int {
+		if c := a.position.compare(b.position); c != 0 {
+			return c
+		}
+
+		return strings.Compare(a.rrset.Name, b.rrset.Name)
 	})
 
 	return sorted
@@ -226,10 +232,10 @@ func sortRecordSets(records []ResourceRecordSet) []positionedRecordSet {
 //
 // The page begins at the first record set at or after start.position. Stored
 // spellings that normalize to the same position (with and without the
-// trailing dot, differing case or escapes) sort next to each other; when one
-// of them matches the requested name, type and identifier exactly, the page
-// begins there instead, so that a NextRecordName echoed from storage resumes
-// on that record rather than repeating the earlier ones.
+// trailing dot, differing case or escapes) sort next to each other, ordered
+// by name; when one of them matches the requested name, type and identifier
+// exactly, the page begins there instead, so that a NextRecordName echoed
+// from storage resumes on that record rather than repeating the earlier ones.
 func pageRecordSets(records []ResourceRecordSet, start *listStart, pageSize int) ([]ResourceRecordSet, *ResourceRecordSet, bool) {
 	sorted := sortRecordSets(slices.Clone(records))
 
