@@ -21,7 +21,11 @@ const (
 const (
 	signingLambda         = "lambda"
 	keyDoubleSlash        = "a//b"
+	keyDot                = "a/./b"
+	keyDotDot             = "a/../b"
 	objectPathDoubleSlash = "/bucket/a//b"
+	objectPathDot         = "/bucket/a/./b"
+	objectPathDotDot      = "/bucket/a/../b"
 	objectPathDir         = "/bucket/dir/"
 	edgePathDir           = "/kumo/cdn/E123/browser/"
 	bucketPathSlash       = "/bucket/"
@@ -84,6 +88,8 @@ func TestRouter_UncleanPathAcrossMuxesKeepsCleanedDispatch(t *testing.T) {
 		wantValue string
 	}{
 		{"prefixed to main", "/kumo/cdn/E123/../../../bucket/key", "", routeObject, cleanedObjectPath, cleanedObjectKey},
+		{"lowercase escaped prefixed to main", "/kumo/cdn/E123/%2e%2e/%2e%2e/%2e%2e/bucket/key", "", routeObject, cleanedObjectPath, cleanedObjectKey},
+		{"uppercase escaped prefixed to main", "/kumo/cdn/E123/%2E%2E/%2E%2E/%2E%2E/bucket/key", "", routeObject, cleanedObjectPath, cleanedObjectKey},
 		{"fixed prefix to main", "/2020-05-31/distribution/../../bucket/key", "", routeObject, cleanedObjectPath, cleanedObjectKey},
 		{"main to prefixed", "/bucket/../kumo/cdn/E123/x", "", routeEdge, "/kumo/cdn/E123/x", "x"},
 		{"scoped to main", "/2017-03-31/tags/x/../../../bucket/key", signingLambda, routeObject, cleanedObjectPath, cleanedObjectKey},
@@ -121,7 +127,9 @@ func TestRouter_UncleanPathAcrossMuxesKeepsCleanedDispatch(t *testing.T) {
 // TestRouter_UncleanPathPreservedForHandler verifies that a request whose
 // path holds empty, "." or ".." segments or a trailing slash is served
 // directly (no ServeMux redirect) and that the handler sees the path as
-// sent, so an S3 key or a CloudFront edge path is not rewritten.
+// sent, so an S3 key or a CloudFront edge path is not rewritten. A dot
+// segment escaped as "%2e" or "%2E" unescapes to the same path and is
+// treated the same way.
 func TestRouter_UncleanPathPreservedForHandler(t *testing.T) {
 	t.Parallel()
 
@@ -137,8 +145,13 @@ func TestRouter_UncleanPathPreservedForHandler(t *testing.T) {
 		{"leading slash key", http.MethodPut, "/bucket//lead", routeObject, "/bucket//lead", "/lead"},
 		{"double slash in key", http.MethodGet, objectPathDoubleSlash, routeObject, objectPathDoubleSlash, keyDoubleSlash},
 		{"triple slash in key", http.MethodGet, "/bucket/a///b", routeObject, "/bucket/a///b", "a///b"},
-		{"dot segment in key", http.MethodGet, "/bucket/a/./b", routeObject, "/bucket/a/./b", "a/./b"},
-		{"dot-dot segment in key", http.MethodGet, "/bucket/a/../b", routeObject, "/bucket/a/../b", "a/../b"},
+		{"dot segment in key", http.MethodGet, objectPathDot, routeObject, objectPathDot, keyDot},
+		{"dot-dot segment in key", http.MethodGet, objectPathDotDot, routeObject, objectPathDotDot, keyDotDot},
+		{"lowercase escaped dot in key", http.MethodGet, "/bucket/a/%2e/b", routeObject, objectPathDot, keyDot},
+		{"uppercase escaped dot in key", http.MethodGet, "/bucket/a/%2E/b", routeObject, objectPathDot, keyDot},
+		{"lowercase escaped dot-dot in key", http.MethodGet, "/bucket/a/%2e%2e/b", routeObject, objectPathDotDot, keyDotDot},
+		{"uppercase escaped dot-dot in key", http.MethodGet, "/bucket/a/%2E%2E/b", routeObject, objectPathDotDot, keyDotDot},
+		{"half-escaped dot-dot in key", http.MethodGet, "/bucket/a/.%2e/b", routeObject, objectPathDotDot, keyDotDot},
 		{"trailing double slash key", http.MethodGet, "/bucket/a//", routeObject, "/bucket/a//", "a//"},
 		{"escaped slash kept", http.MethodGet, "/bucket/a%2F/b//c", routeObject, "/bucket/a//b//c", "a//b//c"},
 		{"clean key unchanged", http.MethodGet, "/bucket/a/b", routeObject, "/bucket/a/b", "a/b"},
@@ -188,6 +201,7 @@ func TestRouter_UncleanPathKeepsCleanedRoute(t *testing.T) {
 		wantPath  string
 	}{
 		{"bucket with trailing slash", bucketPathSlash, routeBucket, cleanedBucketPath},
+		{"escaped dot-dot back to bucket", "/bucket/x/%2e%2e", routeBucket, cleanedBucketPath},
 		{"fixed route with trailing slash", "/2020-05-31/distribution/", "fixed", "/2020-05-31/distribution"},
 		{"fixed route with double slash", "/2020-05-31//distribution", "fixed", "/2020-05-31/distribution"},
 	}
@@ -284,6 +298,7 @@ func TestMuxEscapedPath(t *testing.T) {
 		{"/b/./a/..", "/b/%2E/a/%2E%2E"},
 		{"/b/a//../c", "/b/a/%2F%2E%2E/c"},
 		{"/b/..x/.y", "/b/..x/.y"},
+		{"/b/%2e%2e/%2E/.%2e", "/b/%2e%2e/%2E/.%2e"},
 		{"/b/a%2Fb", "/b/a%2Fb"},
 	}
 
