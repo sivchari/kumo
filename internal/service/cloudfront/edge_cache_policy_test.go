@@ -25,16 +25,14 @@ const (
 	testCacheControl          = "Cache-Control"
 )
 
-func ptrInt64(v int64) *int64 { return &v }
-
 func createTTLCachePolicy(t *testing.T, svc *Service, name string, minTTL, defaultTTL, maxTTL int64) string {
 	t.Helper()
 
 	policy, err := svc.storage.CreateCachePolicy(t.Context(), &CachePolicyConfig{
 		Name:       name,
-		MinTTL:     ptrInt64(minTTL),
-		DefaultTTL: ptrInt64(defaultTTL),
-		MaxTTL:     ptrInt64(maxTTL),
+		MinTTL:     new(minTTL),
+		DefaultTTL: new(defaultTTL),
+		MaxTTL:     new(maxTTL),
 	})
 	if err != nil {
 		t.Fatalf("CreateCachePolicy: %v", err)
