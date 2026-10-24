@@ -6,8 +6,11 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -221,6 +224,132 @@ func TestCloudFront_EdgeCustomErrorPageKeepsCORSHeaders(t *testing.T) {
 
 	if got := resp.Header.Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != viewerOrigin {
 		t.Errorf("Access-Control-Allow-Origin = %q, want [%q]", got, viewerOrigin)
+	}
+}
+
+// localOrigin is a custom origin for an HTTP server of the test, reached over
+// plain HTTP on its port.
+func localOrigin(t *testing.T, id, serverURL string) cloudfronttypes.Origin {
+	t.Helper()
+
+	parsed, err := url.Parse(serverURL)
+	if err != nil {
+		t.Fatalf("parse %s: %v", serverURL, err)
+	}
+
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatalf("port of %s: %v", serverURL, err)
+	}
+
+	return cloudfronttypes.Origin{
+		Id:         aws.String(id),
+		DomainName: aws.String(parsed.Hostname()),
+		CustomOriginConfig: &cloudfronttypes.CustomOriginConfig{
+			HTTPPort:             aws.Int32(int32(port)),
+			HTTPSPort:            aws.Int32(443),
+			OriginProtocolPolicy: cloudfronttypes.OriginProtocolPolicyHttpOnly,
+		},
+	}
+}
+
+// createLocalCustomErrorDistribution creates a distribution over two HTTP
+// servers of the test: contentURL behind a default behaviour that forwards
+// cookies and lets the edge cache a response for an hour, and pagesURL behind
+// an uncached `/errors/*` behaviour.
+func createLocalCustomErrorDistribution(t *testing.T, contentURL, pagesURL string, responses ...cloudfronttypes.CustomErrorResponse) string {
+	t.Helper()
+
+	client := newCloudFrontClient(t)
+
+	created, err := client.CreateDistribution(t.Context(), &cloudfront.CreateDistributionInput{DistributionConfig: &cloudfronttypes.DistributionConfig{
+		CallerReference: aws.String("test-cf-local-custom-errors-" + strconv.FormatInt(time.Now().UnixNano(), 36)),
+		Comment:         aws.String("custom error responses over local origins"),
+		Enabled:         aws.Bool(true),
+		Origins: &cloudfronttypes.Origins{Quantity: aws.Int32(2), Items: []cloudfronttypes.Origin{
+			localOrigin(t, "content", contentURL),
+			localOrigin(t, customErrorOriginID, pagesURL),
+		}},
+		DefaultCacheBehavior: &cloudfronttypes.DefaultCacheBehavior{
+			TargetOriginId:       aws.String("content"),
+			ViewerProtocolPolicy: cloudfronttypes.ViewerProtocolPolicyAllowAll,
+			ForwardedValues: &cloudfronttypes.ForwardedValues{
+				QueryString: aws.Bool(false),
+				Cookies:     &cloudfronttypes.CookiePreference{Forward: cloudfronttypes.ItemSelectionAll},
+			},
+			MinTTL:     aws.Int64(0),
+			DefaultTTL: aws.Int64(3600),
+			MaxTTL:     aws.Int64(86400),
+		},
+		CacheBehaviors: &cloudfronttypes.CacheBehaviors{Quantity: aws.Int32(1), Items: []cloudfronttypes.CacheBehavior{{
+			PathPattern:          aws.String("/errors/*"),
+			TargetOriginId:       aws.String(customErrorOriginID),
+			ViewerProtocolPolicy: cloudfronttypes.ViewerProtocolPolicyAllowAll,
+			CachePolicyId:        aws.String(cachingDisabledID),
+		}}},
+		CustomErrorResponses: &cloudfronttypes.CustomErrorResponses{Quantity: aws.Int32(int32(len(responses))), Items: responses},
+	}})
+	if err != nil {
+		t.Fatalf("CreateDistribution: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteDistribution(context.Background(), &cloudfront.DeleteDistributionInput{Id: created.Distribution.Id, IfMatch: created.ETag})
+	})
+
+	return aws.ToString(created.Distribution.Id)
+}
+
+// TestCloudFront_EdgeCustomErrorPageCarryingCookieIsNotCacheable — the custom
+// error page that replaces an origin error setting a cookie carries the
+// cookie, but no cache may store it although the page origin marked the page
+// public, and the edge does not answer the next request from its cache.
+func TestCloudFront_EdgeCustomErrorPageCarryingCookieIsNotCacheable(t *testing.T) {
+	t.Parallel()
+
+	const cookie = "session=viewer-1; Path=/; HttpOnly"
+
+	var contentRequests atomic.Int32
+
+	content := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		contentRequests.Add(1)
+		w.Header().Set("Set-Cookie", cookie)
+		w.Header().Set("Cache-Control", "private")
+		http.Error(w, "content 404", http.StatusNotFound)
+	}))
+	t.Cleanup(content.Close)
+
+	pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("CDN-Cache-Control", "max-age=3600")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, customErrorPage404)
+	}))
+	t.Cleanup(pages.Close)
+
+	distID := createLocalCustomErrorDistribution(t, content.URL, pages.URL, customErrorResponse(404, "/errors/404.html", "200"))
+
+	for i := range 2 {
+		resp, body := callEdgePath(t, http.MethodGet, distID, "/no-such-page.html", http.NoBody, "")
+		if resp.StatusCode != http.StatusOK || string(body) != customErrorPage404 {
+			t.Fatalf("request %d: got %d %q, want 200 %q", i, resp.StatusCode, body, customErrorPage404)
+		}
+
+		if got := resp.Header.Values("Set-Cookie"); len(got) != 1 || got[0] != cookie {
+			t.Errorf("request %d: Set-Cookie = %q, want [%q]", i, got, cookie)
+		}
+
+		if got := resp.Header.Values("Cache-Control"); len(got) != 1 || got[0] != "no-store" {
+			t.Errorf("request %d: Cache-Control = %q, want [no-store]", i, got)
+		}
+
+		if got := resp.Header.Get("CDN-Cache-Control"); got != "" {
+			t.Errorf("request %d: CDN-Cache-Control = %q, want none", i, got)
+		}
+	}
+
+	if n := contentRequests.Load(); n != 2 {
+		t.Errorf("content origin got %d requests, want 2: the cookie must not be served from the edge cache", n)
 	}
 }
 

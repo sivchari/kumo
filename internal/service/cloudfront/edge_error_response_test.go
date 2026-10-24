@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -410,6 +411,59 @@ func TestEdge_CustomErrorPageKeepsOriginalCORSAndCookies(t *testing.T) {
 		if got := w.Header().Values(name); !slices.Equal(got, want) {
 			t.Errorf("%s = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// TestEdge_CustomErrorPageCarryingCookiesIsNotStored — a replacement that
+// carries the original response's cookies must not be stored by any cache,
+// whatever the page origin allowed for the page: the page's caching headers
+// are replaced by no-store, and the edge's own cache does not keep it either.
+func TestEdge_CustomErrorPageCarryingCookiesIsNotStored(t *testing.T) {
+	t.Parallel()
+
+	var contentRequests atomic.Int32
+
+	content := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		contentRequests.Add(1)
+		w.Header().Set("Set-Cookie", "session=1")
+		w.Header().Set("Cache-Control", "private")
+		http.Error(w, contentMissing, http.StatusNotFound)
+	}))
+	t.Cleanup(content.Close)
+
+	pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("CDN-Cache-Control", "max-age=3600")
+		w.Header().Set("Surrogate-Control", "max-age=3600")
+		w.Header().Set("Expires", time.Now().Add(time.Hour).UTC().Format(http.TimeFormat))
+		_, _ = w.Write([]byte(page404Body))
+	}))
+	t.Cleanup(pages.Close)
+
+	// The default behaviour lets the edge cache a response for an hour.
+	svc := newErrorPageDistribution(t, content.URL, pages.URL, &DefaultCacheBehaviorXML{DefaultTTL: 3600, MaxTTL: 86400},
+		CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "200"})
+
+	for i := range 2 {
+		w := callEdge(t, svc, http.MethodGet, missingPath, nil)
+		if w.Code != http.StatusOK || w.Body.String() != page404Body || w.Header().Get("Set-Cookie") != "session=1" {
+			t.Fatalf("request %d: got %d %q with Set-Cookie %q, want 200 %q with the original's cookie", i, w.Code, w.Body.String(), w.Header().Get("Set-Cookie"), page404Body)
+		}
+
+		for name, want := range map[string][]string{
+			"Cache-Control":     {"no-store"},
+			"Cdn-Cache-Control": nil,
+			"Surrogate-Control": nil,
+			"Expires":           nil,
+		} {
+			if got := w.Header().Values(name); !slices.Equal(got, want) {
+				t.Errorf("request %d: %s = %q, want %q", i, name, got, want)
+			}
+		}
+	}
+
+	if n := contentRequests.Load(); n != 2 {
+		t.Errorf("content origin got %d requests, want 2: the cookie must not be served from the edge cache", n)
 	}
 }
 

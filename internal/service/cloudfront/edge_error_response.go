@@ -254,10 +254,17 @@ func (cw *customErrorWriter) writeErrorPage(entry *CustomErrorResponse, status i
 	return true
 }
 
-// Headers of the original response that keepOriginalHeaders carries over.
+// Headers that keepOriginalHeaders carries over from the original response or
+// adjusts on the response that replaces it.
 const (
 	corsHeaderPrefix = "Access-Control-"
 	headerSetCookie  = "Set-Cookie"
+
+	headerCacheControl         = "Cache-Control"
+	headerExpires              = "Expires"
+	headerSurrogateControl     = "Surrogate-Control"
+	targetedCacheControlSuffix = "-Cache-Control"
+	cacheDirectiveNoStore      = "no-store"
 )
 
 // keepOriginalHeaders carries headers of the original response over to the
@@ -268,14 +275,28 @@ const (
 // custom error pages specifies no response header beyond Connection
 // (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/creating-custom-error-pages.html),
 // so which headers are kept is kumo's choice.
+//
+// A carried-over cookie comes without the caching headers of the response
+// that set it, and "the Set-Cookie response header field does not inhibit
+// caching" (https://www.rfc-editor.org/rfc/rfc9111.html#section-7.3): under
+// the page's caching headers a shared cache could hand the viewer's cookie to
+// others. So once cookies are carried over, the response is kept out of every
+// cache (forbidStoring), which is never more cacheable than the original
+// allowed. The docs are silent here too, so this is kumo's choice as well.
+// The edge's own cache never stores the response that replaces an error: it
+// stores origin responses only.
 func keepOriginalHeaders(dst, original http.Header) {
+	carriedCookies := false
+
 	for name, values := range original {
 		name = http.CanonicalHeaderKey(name)
 
 		switch {
 		case strings.HasPrefix(name, corsHeaderPrefix):
 			dst.Del(name)
-		case name != headerSetCookie:
+		case name == headerSetCookie:
+			carriedCookies = carriedCookies || len(values) > 0
+		default:
 			continue
 		}
 
@@ -283,6 +304,31 @@ func keepOriginalHeaders(dst, original http.Header) {
 			dst.Add(name, v)
 		}
 	}
+
+	if carriedCookies {
+		forbidStoring(dst)
+	}
+}
+
+// forbidStoring makes h the header of a response that no cache may store:
+// with no-store "a cache MUST NOT store any part of either the immediate
+// request or the response", and the directive "applies to both private and
+// shared caches"
+// (https://www.rfc-editor.org/rfc/rfc9111.html#section-5.2.2.5). It replaces
+// Cache-Control and drops Expires, the targeted cache-control fields such as
+// CDN-Cache-Control, which a CDN that uses them follows instead of
+// Cache-Control and Expires
+// (https://www.rfc-editor.org/rfc/rfc9213.html#section-2.2), and the older
+// Surrogate-Control.
+func forbidStoring(h http.Header) {
+	for name := range h {
+		canonical := http.CanonicalHeaderKey(name)
+		if canonical == headerExpires || canonical == headerSurrogateControl || strings.HasSuffix(canonical, targetedCacheControlSuffix) {
+			delete(h, name)
+		}
+	}
+
+	h.Set(headerCacheControl, cacheDirectiveNoStore)
 }
 
 // fetchErrorPage requests the custom error page from the origin of the cache
