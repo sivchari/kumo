@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -62,6 +63,52 @@ func newPagesOrigin(t *testing.T) *httptest.Server {
 	return origin
 }
 
+// pageRequest is what a recording pages origin saw of the last page request.
+type pageRequest struct {
+	method string
+	header http.Header
+}
+
+// newRecordingPagesOrigin answers every request with page404Body and returns
+// a function reporting the last request it got.
+func newRecordingPagesOrigin(t *testing.T) (*httptest.Server, func() pageRequest) {
+	t.Helper()
+
+	var (
+		mu   sync.Mutex
+		last pageRequest
+	)
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		last = pageRequest{method: r.Method, header: r.Header.Clone()}
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(page404Body))
+	}))
+	t.Cleanup(origin.Close)
+
+	return origin, func() pageRequest {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return last
+	}
+}
+
+// viewerOnlyHeaders are request headers that belong to the viewer's own
+// request and must not reach the origin of the custom error page.
+func viewerOnlyHeaders() http.Header {
+	return http.Header{
+		headerAuthorization: {viewerAuthorization},
+		"Cookie":            {"session=viewer"},
+		"If-None-Match":     {`"viewer-etag"`},
+		"Range":             {"bytes=0-3"},
+		"X-Viewer":          {"1"},
+	}
+}
+
 // newErrorPageDistribution routes `/errors/*` to pagesURL and everything else
 // to contentURL, with the given default behaviour and custom error responses.
 func newErrorPageDistribution(t *testing.T, contentURL, pagesURL string, defaultBehavior *DefaultCacheBehaviorXML, responses ...CustomErrorResponseXML) *Service {
@@ -73,19 +120,29 @@ func newErrorPageDistribution(t *testing.T, contentURL, pagesURL string, default
 func newErrorPageDistributionWithPagesBehavior(t *testing.T, contentURL, pagesURL string, defaultBehavior, pagesBehavior *DefaultCacheBehaviorXML, responses ...CustomErrorResponseXML) *Service {
 	t.Helper()
 
-	svc := New(NewMemoryStorage())
-	contentHost, contentPort := splitHostPort(strings.TrimPrefix(contentURL, "http://"))
 	pagesHost, pagesPort := splitHostPort(strings.TrimPrefix(pagesURL, "http://"))
+	pagesOrigin := &OriginXML{DomainName: pagesHost, CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: pagesPort, OriginProtocolPolicy: originPolicyHTTP}}
+
+	return createErrorPageDistribution(t, New(NewMemoryStorage()), contentURL, pagesOrigin, defaultBehavior, pagesBehavior, responses...)
+}
+
+// createErrorPageDistribution creates in svc's storage a distribution that
+// routes `/errors/*` to pagesOrigin and everything else to contentURL.
+func createErrorPageDistribution(t *testing.T, svc *Service, contentURL string, pagesOrigin *OriginXML, defaultBehavior, pagesBehavior *DefaultCacheBehaviorXML, responses ...CustomErrorResponseXML) *Service {
+	t.Helper()
+
+	contentHost, contentPort := splitHostPort(strings.TrimPrefix(contentURL, "http://"))
 
 	defaultBehavior.TargetOriginID = originContent
 	pagesBehavior.TargetOriginID = originPages
+	pagesOrigin.ID = originPages
 
 	if _, err := svc.storage.CreateDistribution(t.Context(), &CreateDistributionRequest{
 		CallerReference: "custom-error-responses",
 		Enabled:         true,
 		Origins: &OriginsXML{Quantity: 2, Items: &OriginList{Origin: []OriginXML{
 			{ID: originContent, DomainName: contentHost, CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: contentPort, OriginProtocolPolicy: originPolicyHTTP}},
-			{ID: originPages, DomainName: pagesHost, CustomOriginConfig: &CustomOriginConfigXML{HTTPPort: pagesPort, OriginProtocolPolicy: originPolicyHTTP}},
+			*pagesOrigin,
 		}}},
 		DefaultCacheBehavior: defaultBehavior,
 		CacheBehaviors: &CacheBehaviorsXML{Quantity: 1, Items: []CacheBehaviorXML{
@@ -243,6 +300,62 @@ func TestEdge_CustomErrorResponseForSignedCookie403(t *testing.T) {
 				t.Errorf("got %d %q, want 403 %q", w.Code, w.Body.String(), page403Body)
 			}
 		})
+	}
+}
+
+// TestEdge_CustomErrorPageRequestLeavesViewerHeadersBehind — the page is
+// requested with a GET of its own: the viewer's credentials, cookies,
+// conditional and range headers stay with the viewer's request.
+func TestEdge_CustomErrorPageRequestLeavesViewerHeadersBehind(t *testing.T) {
+	t.Parallel()
+
+	pages, lastPageRequest := newRecordingPagesOrigin(t)
+	svc := newErrorPageDistribution(t, newContentOrigin(t).URL, pages.URL, &DefaultCacheBehaviorXML{},
+		CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "200"})
+
+	if w := callEdge(t, svc, http.MethodGet, missingPath, viewerOnlyHeaders()); w.Code != http.StatusOK || w.Body.String() != page404Body {
+		t.Fatalf("got %d %q, want 200 %q", w.Code, w.Body.String(), page404Body)
+	}
+
+	got := lastPageRequest()
+	if got.method != http.MethodGet {
+		t.Errorf("page request method = %q, want GET", got.method)
+	}
+
+	for name := range viewerOnlyHeaders() {
+		if v := got.header.Get(name); v != "" {
+			t.Errorf("page origin got the viewer's %s: %q", name, v)
+		}
+	}
+}
+
+// TestEdge_CustomErrorPageRequestSignedByOAC — a page origin behind an origin
+// access control gets the edge's own signature, never the viewer's, even when
+// its behaviour forwards Authorization and the control would let a viewer
+// signature through (no-override).
+func TestEdge_CustomErrorPageRequestSignedByOAC(t *testing.T) {
+	pages, lastPageRequest := newRecordingPagesOrigin(t)
+	t.Setenv("KUMO_S3_BACKEND", pages.URL)
+
+	store, ids := newSigningStorage(t)
+	pagesOrigin := lambdaOrigin(ids[oacSigningNoOverride])
+	forwardsAuthorization := &DefaultCacheBehaviorXML{ForwardedValues: &ForwardedValuesXML{Headers: &HeadersXML{Quantity: 1, Items: []string{headerAuthorization}}}}
+	svc := createErrorPageDistribution(t, New(store), newContentOrigin(t).URL, pagesOrigin, &DefaultCacheBehaviorXML{}, forwardsAuthorization,
+		CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "200"})
+
+	if w := callEdge(t, svc, http.MethodGet, missingPath, viewerOnlyHeaders()); w.Code != http.StatusOK || w.Body.String() != page404Body {
+		t.Fatalf("got %d %q, want 200 %q", w.Code, w.Body.String(), page404Body)
+	}
+
+	got := lastPageRequest()
+	if auth := got.header.Get(headerAuthorization); !strings.HasPrefix(auth, "AWS4-HMAC-SHA256 Credential="+edgeCredentials().AccessKeyID+"/") {
+		t.Errorf("page request Authorization = %q, want the edge's own signature", auth)
+	}
+
+	for name := range viewerOnlyHeaders() {
+		if v := got.header.Get(name); name != headerAuthorization && v != "" {
+			t.Errorf("page origin got the viewer's %s: %q", name, v)
+		}
 	}
 }
 

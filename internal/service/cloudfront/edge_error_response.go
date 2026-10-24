@@ -2,7 +2,9 @@ package cloudfront
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -163,7 +165,7 @@ func (cw *customErrorWriter) finish() {
 		return
 	}
 
-	page, err := cw.svc.fetchErrorPage(cw.r, cw.dist, cw.entry.ResponsePagePath)
+	page, err := cw.svc.fetchErrorPage(cw.r.Context(), cw.dist, cw.entry.ResponsePagePath)
 	if err != nil {
 		copyHeader(cw.viewer.Header(), cw.header)
 		cw.viewer.WriteHeader(cw.status)
@@ -184,11 +186,19 @@ func (cw *customErrorWriter) finish() {
 }
 
 // fetchErrorPage requests the custom error page from the origin of the cache
-// behaviour that matches its path. Viewer-side checks (signed URLs and
-// cookies) belong to the viewer's own request and are not applied to it; the
-// origin's access control signing is, so a private S3 origin behind an origin
-// access control can hold the pages.
-func (s *Service) fetchErrorPage(r *http.Request, dist *Distribution, pagePath string) (*originResponse, error) {
+// behaviour that matches its path, with a GET of its own. None of the
+// viewer's headers are sent: its credentials, cookies and conditional or
+// range headers belong to the viewer's request, and the page origin may not
+// be the origin that request went to. Viewer-side checks (signed URLs and
+// cookies) are not applied to the page request either; the page origin's
+// access control signing is, so a private origin behind an origin access
+// control can hold the pages.
+//
+// The page is not cached: every error that is replaced fetches it from its
+// origin again. That is intentional for now, while CloudFront "also caches
+// the custom error page" for the error caching minimum TTL or the origin's
+// max-age, whichever is longer (HTTPStatusCodes.html, cited on finish).
+func (s *Service) fetchErrorPage(ctx context.Context, dist *Distribution, pagePath string) (*originResponse, error) {
 	path := strings.TrimPrefix(pagePath, "/")
 	behavior := resolveBehavior(dist, path)
 
@@ -202,18 +212,14 @@ func (s *Service) fetchErrorPage(r *http.Request, dist *Distribution, pagePath s
 		return nil, errNoErrorPageOrigin
 	}
 
-	signing, err := s.resolveSigning(r.Context(), &origin, behavior)
+	signing, err := s.resolveSigning(ctx, &origin, behavior)
 	if err != nil && !errors.Is(err, errNotSigned) {
 		return nil, err
 	}
 
-	req := r.Clone(r.Context())
-	req.Method = http.MethodGet
-
-	// The page is fetched whole, regardless of the viewer's conditional or
-	// range headers.
-	for _, h := range []string{"Range", "If-Range", "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"} {
-		req.Header.Del(h)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("build custom error page request: %w", err)
 	}
 
 	return fetchOrigin(upstreamTarget{url: pageURL, signing: signing}, req)
