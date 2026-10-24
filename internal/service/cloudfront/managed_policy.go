@@ -8,33 +8,23 @@ package cloudfront
 //   - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html
 //   - https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-response-headers-policies.html
 var (
-	managedCachePolicies = map[string]string{
-		"2e54312d-136d-493c-8eb9-b001f22f67d2": "Managed-Amplify",
-		"4135ea2d-6df8-44a3-9df3-4b5a84be39ad": "Managed-CachingDisabled",
-		"658327ea-f89d-4fab-a63d-7e88639e58f6": "Managed-CachingOptimized",
-		"b2884449-e4de-46a7-ac36-70bc7f1ddd6d": "Managed-CachingOptimizedForUncompressedObjects",
-		"08627262-05a9-4f76-9ded-b50ca2e3a84f": "Managed-Elemental-MediaPackage",
-		"83da9c7e-98b4-4e11-a168-04f0df8e2c65": "UseOriginCacheControlHeaders",
-		"4cc15a8a-d715-48a4-82b8-cc0b614638fe": "UseOriginCacheControlHeaders-QueryStrings",
+	// managedCachePolicies keeps each policy's TTLs, in seconds, in the
+	// same entry as its name. ttls is nil for the Amplify Hosting policies,
+	// whose TTLs are not documented.
+	managedCachePolicies = map[string]managedCachePolicy{
+		"2e54312d-136d-493c-8eb9-b001f22f67d2": {name: "Managed-Amplify", ttls: &cachePolicyTTLs{min: 2, def: 2, max: 600}},
+		"4135ea2d-6df8-44a3-9df3-4b5a84be39ad": {name: "Managed-CachingDisabled", ttls: &cachePolicyTTLs{min: 0, def: 0, max: 0}},
+		"658327ea-f89d-4fab-a63d-7e88639e58f6": {name: "Managed-CachingOptimized", ttls: &cachePolicyTTLs{min: 1, def: 86400, max: 31536000}},
+		"b2884449-e4de-46a7-ac36-70bc7f1ddd6d": {name: "Managed-CachingOptimizedForUncompressedObjects", ttls: &cachePolicyTTLs{min: 1, def: 86400, max: 31536000}},
+		"08627262-05a9-4f76-9ded-b50ca2e3a84f": {name: "Managed-Elemental-MediaPackage", ttls: &cachePolicyTTLs{min: 0, def: 86400, max: 31536000}},
+		"83da9c7e-98b4-4e11-a168-04f0df8e2c65": {name: "UseOriginCacheControlHeaders", ttls: &cachePolicyTTLs{min: 0, def: 0, max: 31536000}},
+		"4cc15a8a-d715-48a4-82b8-cc0b614638fe": {name: "UseOriginCacheControlHeaders-QueryStrings", ttls: &cachePolicyTTLs{min: 0, def: 0, max: 31536000}},
 
 		// AWS marks the Amplify Hosting policies as used by Amplify only.
-		"4d1d2f1d-3a71-49ad-9e08-7ea5d843a556": "Amplify-Default",
-		"a6bad946-36c3-4c33-aa98-362c74a7fb13": "Amplify-DefaultNoCookies",
-		"1c6db51a-a33f-469a-8245-dae26771f530": "Amplify-ImageOptimization",
-		"7e5fad67-ee98-4ad0-b05a-394999eefc1a": "Amplify-StaticContent",
-	}
-
-	// managedCachePolicyTTLs holds the TTLs AWS documents for the managed
-	// cache policies, in seconds. The Amplify Hosting policies are left
-	// out because their TTLs are not documented.
-	managedCachePolicyTTLs = map[string]cachePolicyTTLs{
-		"2e54312d-136d-493c-8eb9-b001f22f67d2": {min: 2, def: 2, max: 600},
-		"4135ea2d-6df8-44a3-9df3-4b5a84be39ad": {min: 0, def: 0, max: 0},
-		"658327ea-f89d-4fab-a63d-7e88639e58f6": {min: 1, def: 86400, max: 31536000},
-		"b2884449-e4de-46a7-ac36-70bc7f1ddd6d": {min: 1, def: 86400, max: 31536000},
-		"08627262-05a9-4f76-9ded-b50ca2e3a84f": {min: 0, def: 86400, max: 31536000},
-		"83da9c7e-98b4-4e11-a168-04f0df8e2c65": {min: 0, def: 0, max: 31536000},
-		"4cc15a8a-d715-48a4-82b8-cc0b614638fe": {min: 0, def: 0, max: 31536000},
+		"4d1d2f1d-3a71-49ad-9e08-7ea5d843a556": {name: "Amplify-Default"},
+		"a6bad946-36c3-4c33-aa98-362c74a7fb13": {name: "Amplify-DefaultNoCookies"},
+		"1c6db51a-a33f-469a-8245-dae26771f530": {name: "Amplify-ImageOptimization"},
+		"7e5fad67-ee98-4ad0-b05a-394999eefc1a": {name: "Amplify-StaticContent"},
 	}
 
 	managedResponseHeadersPolicies = map[string]string{
@@ -45,3 +35,9 @@ var (
 		"60669652-455b-4ae9-85a4-c4c02393f86c": "Managed-SimpleCORS",
 	}
 )
+
+// managedCachePolicy is an entry of managedCachePolicies.
+type managedCachePolicy struct {
+	name string
+	ttls *cachePolicyTTLs
+}

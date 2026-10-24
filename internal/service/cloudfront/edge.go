@@ -646,8 +646,12 @@ func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTT
 		return cachePolicyTTLs{}, false
 	}
 
-	if ttls, ok := managedCachePolicyTTLs[id]; ok {
-		return ttls, true
+	if managed, ok := managedCachePolicies[id]; ok {
+		if managed.ttls == nil {
+			return cachePolicyTTLs{}, false
+		}
+
+		return *managed.ttls, true
 	}
 
 	policy, err := s.storage.GetCachePolicy(ctx, id)
