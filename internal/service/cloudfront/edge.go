@@ -284,10 +284,8 @@ func (s *Service) Edge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Responses serveEdge writes that match a custom error response are
-	// replaced by its error page when serveEdge returns.
-	w, finish := s.applyCustomErrorResponses(w, r, dist)
-	defer finish()
-
+	// replaced by its error page.
+	w = s.applyCustomErrorResponses(w, r, dist)
 	s.serveEdge(w, r, distID, dist)
 }
 

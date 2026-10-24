@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const (
@@ -477,8 +478,7 @@ func TestCustomErrorWriter_InformationalStatusIsNotFinal(t *testing.T) {
 	dist := onlyDistribution(t, svc)
 
 	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w, finish := svc.applyCustomErrorResponses(w, r, dist)
-		defer finish()
+		w = svc.applyCustomErrorResponses(w, r, dist)
 
 		w.Header().Set("Link", preload)
 		w.WriteHeader(http.StatusEarlyHints)
@@ -519,6 +519,91 @@ func TestCustomErrorWriter_InformationalStatusIsNotFinal(t *testing.T) {
 
 	if !slices.Equal(hints, []string{preload}) {
 		t.Errorf("103 Link = %q, want [%q]", hints, preload)
+	}
+}
+
+// TestCustomErrorWriter_ResponseController — http.ResponseController reaches
+// the viewer's writer through the wrapper instead of failing with
+// http.ErrNotSupported.
+func TestCustomErrorWriter_ResponseController(t *testing.T) {
+	t.Parallel()
+
+	svc := newErrorPageDistribution(t, newContentOrigin(t).URL, newPagesOrigin(t).URL, &DefaultCacheBehaviorXML{},
+		CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "404"})
+	dist := onlyDistribution(t, svc)
+
+	// SetWriteDeadline's and Flush's errors, sent by the handler.
+	controllerErrs := make(chan [2]error, 1)
+
+	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w = svc.applyCustomErrorResponses(w, r, dist)
+
+		rc := http.NewResponseController(w)
+		deadlineErr := rc.SetWriteDeadline(time.Now().Add(time.Minute))
+
+		_, _ = w.Write([]byte(originContent))
+		controllerErrs <- [2]error{deadlineErr, rc.Flush()}
+	}))
+	t.Cleanup(edge.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, edge.URL, http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if body, err := io.ReadAll(resp.Body); err != nil || resp.StatusCode != http.StatusOK || string(body) != originContent {
+		t.Fatalf("got %q %q (%v), want 200 %q", resp.Status, body, err, originContent)
+	}
+
+	if errs := <-controllerErrs; errs[0] != nil || errs[1] != nil {
+		t.Errorf("SetWriteDeadline = %v, Flush = %v; want both to reach the viewer's writer", errs[0], errs[1])
+	}
+}
+
+// TestCustomErrorWriter_DoesNotHoldBackTheBody — the page is fetched as soon as
+// the error status is written, so the original body is never buffered: it is
+// passed straight on when the page origin can't be reached, and dropped when
+// the page replaces it.
+func TestCustomErrorWriter_DoesNotHoldBackTheBody(t *testing.T) {
+	t.Parallel()
+
+	down := httptest.NewServer(http.NotFoundHandler())
+	down.Close()
+
+	for _, tc := range []struct {
+		name     string
+		pagesURL string
+		want     string // viewer body once the error status and one chunk are written
+	}{
+		{"page origin unreachable", down.URL, contentMissing},
+		{"page served", newPagesOrigin(t).URL, page404Body},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := newErrorPageDistribution(t, newContentOrigin(t).URL, tc.pagesURL, &DefaultCacheBehaviorXML{},
+				CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "404"})
+
+			viewer := httptest.NewRecorder()
+			w := svc.applyCustomErrorResponses(viewer, httptest.NewRequestWithContext(t.Context(), http.MethodGet, missingPath, http.NoBody), onlyDistribution(t, svc))
+
+			w.WriteHeader(http.StatusNotFound)
+
+			if n, err := w.Write([]byte(contentMissing)); n != len(contentMissing) || err != nil {
+				t.Fatalf("Write = %d, %v", n, err)
+			}
+
+			if viewer.Code != http.StatusNotFound || viewer.Body.String() != tc.want {
+				t.Errorf("got %d %q, want 404 %q", viewer.Code, viewer.Body.String(), tc.want)
+			}
+		})
 	}
 }
 

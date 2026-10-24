@@ -330,14 +330,18 @@ linters:
         text: "G204"
       # G704/G705: connecting to user-configured endpoints and echoing
       # their responses is the emulator's purpose (AMP workspace proxy,
-      # CloudFront origin fetch, EventBridge API destinations, Lambda
-      # invocation, SFN HTTP tasks, ECS Exec endpoint, EBS blocks).
+      # CloudFront origin and custom error page fetches, EventBridge API
+      # destinations, Lambda invocation, SFN HTTP tasks, ECS Exec endpoint,
+      # EBS blocks).
       - path: internal/service/amp/service\.go
         linters: [gosec]
         text: "G704"
       - path: internal/service/cloudfront/edge\.go
         linters: [gosec]
         text: "G704|G705"
+      - path: internal/service/cloudfront/edge_error_response\.go
+        linters: [gosec]
+        text: "G704"
       - path: internal/service/cloudfront/edge_test\.go
         linters: [gosec]
         text: "G705"

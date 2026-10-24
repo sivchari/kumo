@@ -1,7 +1,6 @@
 package cloudfront
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -80,9 +79,11 @@ func hasCustomErrorPages(dist *Distribution) bool {
 	return false
 }
 
-// customErrorWriter sits between the edge handler and the viewer. Responses
-// whose status has a custom error page are held back and replaced by that
-// page in finish; every other response is passed straight through.
+// customErrorWriter sits between the edge handler and the viewer. When the
+// handler writes a status that has a custom error page, the page is fetched
+// right away and written in place of the handler's response, whose body is
+// then dropped; every other response is passed straight through. Nothing is
+// held back, so there is no body to buffer.
 //
 // CloudFront "serves them to the user anytime that the edge location receives
 // an HTTP status code that matches the error code. It does not differentiate
@@ -98,26 +99,29 @@ type customErrorWriter struct {
 
 	header      http.Header
 	wroteHeader bool
-	status      int
-	entry       *CustomErrorResponse
-	body        bytes.Buffer
+	// replaced is set once the viewer got the custom error page, or the page
+	// origin's error, in place of the handler's response.
+	replaced bool
 }
 
-// applyCustomErrorResponses wraps w in a customErrorWriter when the
-// distribution has custom error pages, and returns the writer to use with the
-// function that writes the page once the edge handler is done.
-func (s *Service) applyCustomErrorResponses(w http.ResponseWriter, r *http.Request, dist *Distribution) (http.ResponseWriter, func()) {
+// applyCustomErrorResponses returns the writer for the edge handler: w
+// wrapped in a customErrorWriter when the distribution has custom error
+// pages, w itself otherwise.
+func (s *Service) applyCustomErrorResponses(w http.ResponseWriter, r *http.Request, dist *Distribution) http.ResponseWriter {
 	if !hasCustomErrorPages(dist) {
-		return w, func() {}
+		return w
 	}
 
-	cw := &customErrorWriter{svc: s, viewer: w, r: r, dist: dist, header: http.Header{}}
-
-	return cw, cw.finish
+	return &customErrorWriter{svc: s, viewer: w, r: r, dist: dist, header: http.Header{}}
 }
 
 func (cw *customErrorWriter) Header() http.Header {
 	return cw.header
+}
+
+// Unwrap returns the viewer's writer, for http.ResponseController.
+func (cw *customErrorWriter) Unwrap() http.ResponseWriter {
+	return cw.viewer
 }
 
 func (cw *customErrorWriter) WriteHeader(status int) {
@@ -132,9 +136,10 @@ func (cw *customErrorWriter) WriteHeader(status int) {
 	}
 
 	cw.wroteHeader = true
-	cw.status = status
 
-	if cw.entry = customErrorPageFor(cw.dist, status); cw.entry != nil {
+	if entry := customErrorPageFor(cw.dist, status); entry != nil && cw.writeErrorPage(entry, status) {
+		cw.replaced = true
+
 		return
 	}
 
@@ -168,9 +173,8 @@ func (cw *customErrorWriter) Write(b []byte) (int, error) {
 		cw.WriteHeader(http.StatusOK)
 	}
 
-	if cw.entry != nil {
-		_, _ = cw.body.Write(b) // bytes.Buffer.Write never fails.
-
+	// The custom error page has taken the place of this body.
+	if cw.replaced {
 		return len(b), nil
 	}
 
@@ -182,7 +186,29 @@ func (cw *customErrorWriter) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-// finish writes the custom error page for a held-back response. Per
+// FlushError flushes the viewer's writer, for http.ResponseController, which
+// would otherwise reach it through Unwrap and bypass WriteHeader. As with
+// net/http, flushing before WriteHeader sends a 200.
+func (cw *customErrorWriter) FlushError() error {
+	if !cw.wroteHeader {
+		cw.WriteHeader(http.StatusOK)
+	}
+
+	if err := http.NewResponseController(cw.viewer).Flush(); err != nil {
+		return fmt.Errorf("flush response: %w", err)
+	}
+
+	return nil
+}
+
+// Flush implements http.Flusher with FlushError.
+func (cw *customErrorWriter) Flush() {
+	_ = cw.FlushError()
+}
+
+// writeErrorPage writes the custom error page of entry to the viewer in place
+// of the handler's response with the given status, and reports whether it
+// did. Per
 // https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HTTPStatusCodes.html
 // the page is requested from the origin of "the first cache behavior in your
 // distribution that has a path pattern that matches the path of the custom
@@ -191,36 +217,31 @@ func (cw *customErrorWriter) Write(b []byte) (int, error) {
 // custom error pages"
 // (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/GeneratingCustomErrorResponses.html).
 //
-// When the page origin can't be reached, or answers with a 3xx, the original
-// response is served unchanged. A 3xx does not serve the page either, but
-// passing it on would turn the error into a redirect, or into a 304 the
-// viewer did not ask for. The docs describe an unavailable page only through
-// an error status (their example is the 404 for a deleted page), so keeping
-// the original response for a 3xx is kumo's choice.
-func (cw *customErrorWriter) finish() {
-	if cw.entry == nil {
-		return
-	}
-
-	page, err := cw.svc.fetchErrorPage(cw.r.Context(), cw.dist, cw.entry.ResponsePagePath)
+// When the page origin can't be reached, or answers with a 3xx, nothing is
+// written and the handler's response goes out unchanged. A 3xx does not serve
+// the page either, but passing it on would turn the error into a redirect, or
+// into a 304 the viewer did not ask for. The docs describe an unavailable page
+// only through an error status (their example is the 404 for a deleted page),
+// so keeping the original response for a 3xx is kumo's choice.
+func (cw *customErrorWriter) writeErrorPage(entry *CustomErrorResponse, status int) bool {
+	page, err := cw.svc.fetchErrorPage(cw.r.Context(), cw.dist, entry.ResponsePagePath)
 	if err != nil || (page.StatusCode >= http.StatusMultipleChoices && page.StatusCode < http.StatusBadRequest) {
-		copyHeader(cw.viewer.Header(), cw.header)
-		cw.viewer.WriteHeader(cw.status)
-		_, _ = cw.viewer.Write(cw.body.Bytes())
-
-		return
+		return false
 	}
 
-	status := page.StatusCode
-	if status >= http.StatusOK && status < http.StatusMultipleChoices {
-		status = customErrorStatus(cw.entry, cw.status)
+	viewerStatus := page.StatusCode
+	if viewerStatus >= http.StatusOK && viewerStatus < http.StatusMultipleChoices {
+		viewerStatus = customErrorStatus(entry, status)
 	}
 
-	copyHeader(cw.viewer.Header(), page.Header)
-	keepOriginalHeaders(cw.viewer.Header(), cw.header)
-	cw.viewer.Header().Set(headerXCache, errorPageCacheTag)
-	cw.viewer.WriteHeader(status)
+	h := cw.viewer.Header()
+	copyHeader(h, page.Header)
+	keepOriginalHeaders(h, cw.header)
+	h.Set(headerXCache, errorPageCacheTag)
+	cw.viewer.WriteHeader(viewerStatus)
 	_, _ = cw.viewer.Write(page.Body)
+
+	return true
 }
 
 // Headers of the original response that keepOriginalHeaders carries over.
@@ -266,7 +287,8 @@ func keepOriginalHeaders(dst, original http.Header) {
 // The page is not cached: every error that is replaced fetches it from its
 // origin again. That is intentional for now, while CloudFront "also caches
 // the custom error page" for the error caching minimum TTL or the origin's
-// max-age, whichever is longer (HTTPStatusCodes.html, cited on finish).
+// max-age, whichever is longer (HTTPStatusCodes.html, cited on
+// writeErrorPage).
 func (s *Service) fetchErrorPage(ctx context.Context, dist *Distribution, pagePath string) (*originResponse, error) {
 	path := strings.TrimPrefix(pagePath, "/")
 	behavior := resolveBehavior(dist, path)
@@ -297,7 +319,7 @@ func (s *Service) fetchErrorPage(ctx context.Context, dist *Distribution, pagePa
 // errorPageClient requests custom error pages without following redirects:
 // when an origin returns one, "CloudFront doesn't follow the redirect"
 // (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/http-3xx-status-codes.html),
-// and finish handles the 3xx itself.
+// and writeErrorPage handles the 3xx itself.
 var errorPageClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
