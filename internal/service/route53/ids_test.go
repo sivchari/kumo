@@ -1,7 +1,9 @@
 package route53
 
 import (
+	"bytes"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 )
@@ -56,22 +58,43 @@ func TestNewIDShape(t *testing.T) {
 	}
 }
 
-func TestNewIDUsesWholeAlphabet(t *testing.T) {
+// drawID must skip every byte at or above idRejectThreshold: kept, 252-255
+// would map to A-D and make those characters more likely than the others.
+// The source starts with more bytes to skip than one read takes, then mixes
+// bytes to skip with bytes to keep, so the expected ID is exact.
+func TestDrawIDSkipsBytesAtOrAboveRejectThreshold(t *testing.T) {
 	t.Parallel()
 
-	counts := make(map[byte]int, len(idAlphabet))
+	var skipped []byte
+	for b := byte(math.MaxUint8); int(b) >= idRejectThreshold; b-- {
+		skipped = append(skipped, b)
+	}
 
-	for range 2000 {
-		id := newHostedZoneID()
-		for i := 1; i < len(id); i++ {
-			counts[id[i]]++
+	src := bytes.Repeat(skipped, idRandomLength)
+	// The largest byte below the threshold maps to the last character, '9'.
+	src = append(src, byte(idRejectThreshold-1))
+	// 0-11 map to 'A'-'L', each one after a byte to skip.
+	for b := range byte(idRandomLength - 1) {
+		src = append(src, skipped[int(b)%len(skipped)], b)
+	}
+
+	fill := func(buf []byte) {
+		if len(src) == 0 {
+			t.Fatal("drawID read past the end of the test source")
+		}
+
+		n := copy(buf, src)
+		src = src[n:]
+
+		// Pad a short last read with a byte drawID must skip.
+		for i := n; i < len(buf); i++ {
+			buf[i] = math.MaxUint8
 		}
 	}
 
-	for i := range len(idAlphabet) {
-		if counts[idAlphabet[i]] == 0 {
-			t.Errorf("character %q never generated", idAlphabet[i])
-		}
+	const want = "Z9ABCDEFGHIJKL"
+	if got := drawID('Z', fill); got != want {
+		t.Errorf("drawID = %q, want %q", got, want)
 	}
 }
 

@@ -17,7 +17,12 @@ const (
 	// or "/change/" path prefix.
 	idRandomLength = 13
 	// idRejectThreshold is the largest multiple of len(idAlphabet) that fits
-	// in a byte; random bytes at or above it are discarded to avoid modulo bias.
+	// in a byte: 252, or 7*36. drawID keeps a random byte b only below it and
+	// maps b to idAlphabet[b%len(idAlphabet)], so each character comes from
+	// exactly 7 of the 252 kept values and all characters are equally likely.
+	// The IDs are therefore free of modulo bias by construction (rejection
+	// sampling). Keeping 252-255 as well would map them to A-D and make each
+	// of those 8/256 likely against 7/256 for the other characters.
 	idRejectThreshold = 256 - 256%len(idAlphabet)
 	// maxIDAttempts bounds how many generated IDs insertWithNewID tries. With
 	// 36^13 possible IDs even one collision is unlikely; the bound only turns
@@ -53,15 +58,27 @@ func newChangeID() string {
 }
 
 // newID returns prefix followed by idRandomLength random characters from
-// idAlphabet.
+// idAlphabet, drawn from crypto/rand.
 func newID(prefix byte) string {
+	return drawID(prefix, fillRandom)
+}
+
+// fillRandom fills b from crypto/rand, whose Read never returns an error and
+// always fills b entirely.
+func fillRandom(b []byte) {
+	_, _ = rand.Read(b)
+}
+
+// drawID returns prefix followed by idRandomLength characters from
+// idAlphabet, made from the bytes fill writes, skipping every byte at or
+// above idRejectThreshold. Tests pass their own fill to control the bytes.
+func drawID(prefix byte, fill func([]byte)) string {
 	id := make([]byte, 1, 1+idRandomLength)
 	id[0] = prefix
 
 	buf := make([]byte, idRandomLength*2)
 	for len(id) < cap(id) {
-		// crypto/rand.Read never returns an error.
-		_, _ = rand.Read(buf)
+		fill(buf)
 
 		for _, b := range buf {
 			if int(b) >= idRejectThreshold {
