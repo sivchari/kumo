@@ -180,9 +180,41 @@ func (cw *customErrorWriter) finish() {
 	}
 
 	copyHeader(cw.viewer.Header(), page.Header)
+	keepOriginalHeaders(cw.viewer.Header(), cw.header)
 	cw.viewer.Header().Set(headerXCache, errorPageCacheTag)
 	cw.viewer.WriteHeader(status)
 	_, _ = cw.viewer.Write(page.Body)
+}
+
+// Headers of the original response that keepOriginalHeaders carries over.
+const (
+	corsHeaderPrefix = "Access-Control-"
+	headerSetCookie  = "Set-Cookie"
+)
+
+// keepOriginalHeaders carries headers of the original response over to the
+// response that replaces it, whose other headers come from the page origin
+// and describe the page. The CORS headers (Access-Control-*) replace the page
+// origin's, so a cross-origin request that ended in the page can still read
+// it; Set-Cookie is added to the page origin's. CloudFront's documentation of
+// custom error pages specifies no response header beyond Connection
+// (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/creating-custom-error-pages.html),
+// so which headers are kept is kumo's choice.
+func keepOriginalHeaders(dst, original http.Header) {
+	for name, values := range original {
+		name = http.CanonicalHeaderKey(name)
+
+		switch {
+		case strings.HasPrefix(name, corsHeaderPrefix):
+			dst.Del(name)
+		case name != headerSetCookie:
+			continue
+		}
+
+		for _, v := range values {
+			dst.Add(name, v)
+		}
+	}
 }
 
 // fetchErrorPage requests the custom error page from the origin of the cache

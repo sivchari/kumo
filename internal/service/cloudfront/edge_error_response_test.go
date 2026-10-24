@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -355,6 +356,55 @@ func TestEdge_CustomErrorPageRequestSignedByOAC(t *testing.T) {
 	for name := range viewerOnlyHeaders() {
 		if v := got.header.Get(name); name != headerAuthorization && v != "" {
 			t.Errorf("page origin got the viewer's %s: %q", name, v)
+		}
+	}
+}
+
+// TestEdge_CustomErrorPageKeepsOriginalCORSAndCookies — the response that
+// replaces an error keeps the original response's CORS headers, in place of
+// the page origin's, and its cookies, next to the page origin's; the rest of
+// the headers describe the page.
+func TestEdge_CustomErrorPageKeepsOriginalCORSAndCookies(t *testing.T) {
+	t.Parallel()
+
+	const viewerOrigin = "https://app.example"
+
+	content := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", viewerOrigin)
+		w.Header().Set("Access-Control-Expose-Headers", "X-Trace")
+		w.Header().Add("Set-Cookie", "session=1")
+		w.Header().Set("ETag", `"original"`)
+		http.Error(w, contentMissing, http.StatusNotFound)
+	}))
+	t.Cleanup(content.Close)
+
+	pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Add("Set-Cookie", "page=1")
+		w.Header().Set("ETag", `"page"`)
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(page404Body))
+	}))
+	t.Cleanup(pages.Close)
+
+	svc := newErrorPageDistribution(t, content.URL, pages.URL, &DefaultCacheBehaviorXML{},
+		CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "200"})
+
+	w := callEdge(t, svc, http.MethodGet, missingPath, http.Header{"Origin": {viewerOrigin}})
+	if w.Code != http.StatusOK || w.Body.String() != page404Body {
+		t.Fatalf("got %d %q, want 200 %q", w.Code, w.Body.String(), page404Body)
+	}
+
+	for name, want := range map[string][]string{
+		"Access-Control-Allow-Origin":   {viewerOrigin},
+		"Access-Control-Expose-Headers": {"X-Trace"},
+		"Set-Cookie":                    {"page=1", "session=1"},
+		"Etag":                          {`"page"`},
+		"Content-Type":                  {"text/html"},
+		headerXCache:                    {errorPageCacheTag},
+	} {
+		if got := w.Header().Values(name); !slices.Equal(got, want) {
+			t.Errorf("%s = %q, want %q", name, got, want)
 		}
 	}
 }

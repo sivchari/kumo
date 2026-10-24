@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
 	cloudfronttypes "github.com/aws/aws-sdk-go-v2/service/cloudfront/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 const (
@@ -167,6 +169,58 @@ func TestCloudFront_EdgeCustomErrorPageForOrigin404(t *testing.T) {
 				t.Errorf("existing object: got %d %q", resp.StatusCode, body)
 			}
 		})
+	}
+}
+
+// TestCloudFront_EdgeCustomErrorPageKeepsCORSHeaders — a cross-origin request
+// that ends in the custom error page still gets the CORS headers the bucket
+// answered the request with, so the browser lets the page through.
+func TestCloudFront_EdgeCustomErrorPageKeepsCORSHeaders(t *testing.T) {
+	t.Parallel()
+
+	const viewerOrigin = "https://app.example"
+
+	domain := newCustomErrorBucket(t)
+	bucket, _, _ := strings.Cut(domain, ".")
+
+	if _, err := newS3Client(t).PutBucketCors(t.Context(), &s3.PutBucketCorsInput{
+		Bucket: aws.String(bucket),
+		CORSConfiguration: &s3types.CORSConfiguration{CORSRules: []s3types.CORSRule{{
+			AllowedOrigins: []string{viewerOrigin},
+			AllowedMethods: []string{http.MethodGet},
+		}}},
+	}); err != nil {
+		t.Fatalf("PutBucketCors: %v", err)
+	}
+
+	_, distID := createCustomErrorDistribution(t, domain, &cloudfronttypes.DefaultCacheBehavior{},
+		customErrorResponse(404, "/errors/404.html", "200"))
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, kumoEndpoint+"/kumo/cdn/"+distID+"/no-such-page.html", http.NoBody)
+	if err != nil {
+		t.Fatalf("build edge request: %v", err)
+	}
+
+	req.Header.Set("Origin", viewerOrigin)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("edge request: %v", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read edge response: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK || string(body) != customErrorPage404 {
+		t.Fatalf("got %d %q, want 200 %q", resp.StatusCode, body, customErrorPage404)
+	}
+
+	if got := resp.Header.Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != viewerOrigin {
+		t.Errorf("Access-Control-Allow-Origin = %q, want [%q]", got, viewerOrigin)
 	}
 }
 
