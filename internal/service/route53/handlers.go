@@ -435,6 +435,19 @@ func (s *Service) ListResourceRecordSets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	query := r.URL.Query()
+	startName := query.Get("name")
+	startType := query.Get("type")
+
+	if startType != "" && startName == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Specifying type without specifying name is not allowed")
+
+		return
+	}
+
+	start := newListStart(startName, startType, query.Get("identifier"))
+	pageSize, maxItems := parseRecordSetsMaxItems(query.Get("maxitems"))
+
 	zoneID := "/hostedzone/" + id
 
 	records, err := s.storage.GetRecordSets(zoneID)
@@ -450,11 +463,19 @@ func (s *Service) ListResourceRecordSets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	page, next, isTruncated := pageRecordSets(records, &start, pageSize)
+
 	resp := ListResourceRecordSetsResponse{
 		XMLNS:              xmlns,
-		ResourceRecordSets: records,
-		IsTruncated:        false,
-		MaxItems:           "100",
+		ResourceRecordSets: page,
+		IsTruncated:        isTruncated,
+		MaxItems:           maxItems,
+	}
+
+	if isTruncated {
+		resp.NextRecordName = next.Name
+		resp.NextRecordType = next.Type
+		resp.NextRecordIdentifier = next.SetIdentifier
 	}
 
 	writeXMLResponse(w, http.StatusOK, resp)
