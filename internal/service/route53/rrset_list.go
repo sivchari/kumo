@@ -11,13 +11,27 @@ import (
 // The reference does not state a default; kumo uses the same value.
 const maxListRecordSets = 300
 
+// listRecordTypes are the valid values the API reference lists for the type
+// parameter of ListResourceRecordSets.
+var listRecordTypes = []string{
+	"SOA", "A", "TXT", "NS", "CNAME", "MX", "NAPTR", "PTR", "SRV",
+	"SPF", "AAAA", "CAA", "DS", "TLSA", "SSHFP", "SVCB", "HTTPS",
+}
+
+// isListRecordType reports whether recordType is one of listRecordTypes,
+// spelled exactly as the reference lists it.
+func isListRecordType(recordType string) bool {
+	return slices.Contains(listRecordTypes, recordType)
+}
+
 // recordSetPosition is a record set's place in the ListResourceRecordSets
 // order. The API reference documents the name order (labels reversed, ASCII)
 // and that records with the same name are sorted by type. Comparing types in
 // ASCII order follows the reference's "in ASCII order" prose; its example
-// response lists SOA before NS, which ASCII order does not. Ordering by set
-// identifier after type is a kumo choice so that weighted and other routed
-// record sets have a stable order.
+// response lists SOA before NS, which ASCII order does not. Types are compared
+// as spelled, since the reference lists each valid value in one spelling.
+// Ordering by set identifier after type is a kumo choice so that weighted and
+// other routed record sets have a stable order.
 type recordSetPosition struct {
 	name          string
 	recordType    string
@@ -28,7 +42,7 @@ type recordSetPosition struct {
 func positionOf(rrset *ResourceRecordSet) recordSetPosition {
 	return recordSetPosition{
 		name:          reversedLabelsKey(rrset.Name),
-		recordType:    strings.ToUpper(rrset.Type),
+		recordType:    rrset.Type,
 		setIdentifier: rrset.SetIdentifier,
 	}
 }
@@ -59,8 +73,8 @@ type listStart struct {
 
 // newListStart builds the start of a listing from the name, type and
 // identifier query values. The reference describes identifier only as a
-// continuation within a name and type, so kumo ignores it unless type is
-// given rather than rejecting the request.
+// continuation within a name and type and documents no error for it alone,
+// so kumo ignores it unless type is given rather than rejecting the request.
 func newListStart(name, recordType, identifier string) listStart {
 	if recordType == "" {
 		identifier = ""
@@ -69,7 +83,7 @@ func newListStart(name, recordType, identifier string) listStart {
 	return listStart{
 		position: recordSetPosition{
 			name:          reversedLabelsKey(name),
-			recordType:    strings.ToUpper(recordType),
+			recordType:    recordType,
 			setIdentifier: identifier,
 		},
 		name:          name,

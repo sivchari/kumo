@@ -193,12 +193,10 @@ func TestListResourceRecordSets_StartPosition(t *testing.T) {
 	}
 }
 
-func TestListResourceRecordSets_TypeWithoutNameIsInvalidInput(t *testing.T) {
-	t.Parallel()
+// assertInvalidInput fails the test unless w is a 400 InvalidInput error.
+func assertInvalidInput(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
 
-	svc := newRRSetListService(t, rrsetListFixture)
-
-	w := listRRSets(t, svc, url.Values{qType: {"A"}})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d, want 400 body=%s", w.Code, w.Body.String())
 	}
@@ -210,6 +208,43 @@ func TestListResourceRecordSets_TypeWithoutNameIsInvalidInput(t *testing.T) {
 
 	if resp.Error.Code != "InvalidInput" {
 		t.Errorf("code: got %q, want InvalidInput", resp.Error.Code)
+	}
+}
+
+func TestListResourceRecordSets_TypeWithoutNameIsInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	svc := newRRSetListService(t, rrsetListFixture)
+
+	assertInvalidInput(t, listRRSets(t, svc, url.Values{qType: {"A"}}))
+}
+
+// The reference lists the valid values of type; any other value, including a
+// valid one in lower case, is rejected rather than positioned.
+func TestListResourceRecordSets_UnlistedTypeIsInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	svc := newRRSetListService(t, rrsetListFixture)
+
+	for _, recordType := range []string{"FOO", "a", "Txt"} {
+		t.Run(recordType, func(t *testing.T) {
+			t.Parallel()
+
+			assertInvalidInput(t, listRRSets(t, svc, url.Values{qName: {bName}, qType: {recordType}}))
+		})
+	}
+}
+
+func TestListResourceRecordSets_EveryListedTypeIsAccepted(t *testing.T) {
+	t.Parallel()
+
+	svc := newRRSetListService(t, rrsetListFixture)
+
+	for _, recordType := range []string{
+		"SOA", "A", typeTXT, "NS", "CNAME", "MX", "NAPTR", "PTR", "SRV",
+		"SPF", "AAAA", "CAA", "DS", "TLSA", "SSHFP", "SVCB", "HTTPS",
+	} {
+		decodeRRSetList(t, listRRSets(t, svc, url.Values{qName: {bName}, qType: {recordType}}))
 	}
 }
 

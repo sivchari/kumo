@@ -102,4 +102,13 @@ func TestRoute53_ListResourceRecordSetsPaging(t *testing.T) {
 	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "InvalidInput" {
 		t.Errorf("type without name: got %v, want InvalidInput", err)
 	}
+
+	_, err = client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
+		HostedZoneId:    zone.HostedZone.Id,
+		StartRecordName: aws.String(names[0]),
+		StartRecordType: types.RRType("FOO"),
+	})
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "InvalidInput" {
+		t.Errorf("unlisted type: got %v, want InvalidInput", err)
+	}
 }

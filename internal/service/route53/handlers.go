@@ -459,6 +459,12 @@ func (s *Service) ListResourceRecordSets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if startType != "" && !isListRecordType(startType) {
+		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "Invalid value for type: "+startType)
+
+		return
+	}
+
 	start := newListStart(startName, startType, query.Get("identifier"))
 	pageSize, maxItems := parseRecordSetsMaxItems(query.Get("maxitems"))
 
