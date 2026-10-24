@@ -48,30 +48,15 @@ func customErrorPageFor(dist *Distribution, status int) *CustomErrorResponse {
 	return nil
 }
 
-// customErrorResponseCodes are the HTTP status codes CloudFront can return
-// along with a custom error page:
-// https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/custom-error-pages-response-code.html
-var customErrorResponseCodes = map[int]bool{
-	http.StatusOK:                           true,
-	http.StatusBadRequest:                   true,
-	http.StatusForbidden:                    true,
-	http.StatusNotFound:                     true,
-	http.StatusMethodNotAllowed:             true,
-	http.StatusRequestURITooLong:            true,
-	http.StatusRequestedRangeNotSatisfiable: true,
-	http.StatusInternalServerError:          true,
-	http.StatusNotImplemented:               true,
-	http.StatusBadGateway:                   true,
-	http.StatusServiceUnavailable:           true,
-	http.StatusGatewayTimeout:               true,
-}
-
 // customErrorStatus is the status the viewer gets with the custom error page:
-// ResponseCode, or the original status when ResponseCode is unset, invalid or
-// not one of customErrorResponseCodes.
+// ResponseCode when it is one of the codes CloudFront can return along with a
+// custom error page, which are 200 and the customErrorPageCodes:
+// https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/custom-error-pages-response-code.html
+// The original status otherwise, including when ResponseCode is unset or
+// invalid.
 func customErrorStatus(entry *CustomErrorResponse, original int) int {
 	code, err := strconv.Atoi(strings.TrimSpace(entry.ResponseCode))
-	if err != nil || !customErrorResponseCodes[code] {
+	if err != nil || (code != http.StatusOK && !customErrorPageCodes[code]) {
 		return original
 	}
 
