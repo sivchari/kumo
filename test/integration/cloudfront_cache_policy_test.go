@@ -213,6 +213,60 @@ func TestCloudFront_CachePolicyLifecycle(t *testing.T) {
 	createCachePolicy(t, client, cachePolicyConfig(name))
 }
 
+// TestCloudFront_CachePolicyMaxTTLDefault — an omitted MaxTTL takes the
+// default the API reference documents: "If the value of MinTTL or
+// DefaultTTL is more than 31536000 seconds, then the default value for this
+// field is the same as the value of DefaultTTL", even when that DefaultTTL
+// is below MinTTL. Create and update both store it, and GetCachePolicy
+// returns it.
+func TestCloudFront_CachePolicyMaxTTLDefault(t *testing.T) {
+	t.Parallel()
+
+	client := newCloudFrontClient(t)
+	ctx := t.Context()
+
+	cfg := cachePolicyConfig(uniqueName("test-cf-cache-policy-max-ttl-default"))
+	cfg.MinTTL = aws.Int64(40000000)
+	cfg.DefaultTTL = aws.Int64(100)
+	cfg.MaxTTL = nil
+
+	created := createCachePolicy(t, client, cfg)
+	golden.New(t, cachePolicyGoldenIgnores).Assert(t.Name()+"_create", created)
+
+	got, err := client.GetCachePolicy(ctx, &cloudfront.GetCachePolicyInput{Id: created.CachePolicy.Id})
+	if err != nil {
+		t.Fatalf("GetCachePolicy: %v", err)
+	}
+
+	golden.New(t, cachePolicyGoldenIgnores).Assert(t.Name()+"_get", got)
+
+	if maxTTL := aws.ToInt64(got.CachePolicy.CachePolicyConfig.MaxTTL); maxTTL != 100 {
+		t.Errorf("MaxTTL after create = %d, want the DefaultTTL 100", maxTTL)
+	}
+
+	// The update replaces the configuration, so MaxTTL follows the new
+	// DefaultTTL instead of keeping the stored value.
+	cfg.DefaultTTL = aws.Int64(200)
+
+	updated, err := client.UpdateCachePolicy(ctx, &cloudfront.UpdateCachePolicyInput{Id: created.CachePolicy.Id, IfMatch: got.ETag, CachePolicyConfig: cfg})
+	if err != nil {
+		t.Fatalf("UpdateCachePolicy: %v", err)
+	}
+
+	golden.New(t, cachePolicyGoldenIgnores).Assert(t.Name()+"_update", updated)
+
+	got, err = client.GetCachePolicy(ctx, &cloudfront.GetCachePolicyInput{Id: created.CachePolicy.Id})
+	if err != nil {
+		t.Fatalf("GetCachePolicy after update: %v", err)
+	}
+
+	golden.New(t, cachePolicyGoldenIgnores).Assert(t.Name()+"_get_updated", got)
+
+	if maxTTL := aws.ToInt64(got.CachePolicy.CachePolicyConfig.MaxTTL); maxTTL != 200 {
+		t.Errorf("MaxTTL after update = %d, want the DefaultTTL 200", maxTTL)
+	}
+}
+
 func TestCloudFront_CachePolicyErrors(t *testing.T) {
 	t.Parallel()
 
