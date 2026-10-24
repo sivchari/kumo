@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sivchari/kumo/internal/service/cloudfront/cache"
 )
 
 const (
@@ -26,6 +28,10 @@ const (
 	page403Body    = "<h1>sign in first</h1>"
 	missingPath    = "/missing.txt"
 	contentMissing = "origin 404 body"
+
+	// Request header names the CORS and Vary tests send or vary on.
+	headerOrigin         = "Origin"
+	headerAcceptEncoding = "Accept-Encoding"
 )
 
 // newContentOrigin answers /missing.txt with 404, /boom with 500 and anything
@@ -395,7 +401,7 @@ func TestEdge_CustomErrorPageKeepsOriginalCORSAndCookies(t *testing.T) {
 	svc := newErrorPageDistribution(t, content.URL, pages.URL, &DefaultCacheBehaviorXML{},
 		CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "200"})
 
-	w := callEdge(t, svc, http.MethodGet, missingPath, http.Header{"Origin": {viewerOrigin}})
+	w := callEdge(t, svc, http.MethodGet, missingPath, http.Header{headerOrigin: {viewerOrigin}})
 	if w.Code != http.StatusOK || w.Body.String() != page404Body {
 		t.Fatalf("got %d %q, want 200 %q", w.Code, w.Body.String(), page404Body)
 	}
@@ -464,6 +470,58 @@ func TestEdge_CustomErrorPageCarryingCookiesIsNotStored(t *testing.T) {
 
 	if n := contentRequests.Load(); n != 2 {
 		t.Errorf("content origin got %d requests, want 2: the cookie must not be served from the edge cache", n)
+	}
+}
+
+// TestEdge_CustomErrorPageMergesVary — the replacement's Vary lists the field
+// names of the original response's Vary and the page's, each once whatever
+// its case; a "*" in either wins.
+func TestEdge_CustomErrorPageMergesVary(t *testing.T) {
+	t.Parallel()
+
+	const viewerOrigin = "https://app.example"
+
+	origin, acceptEncoding := strings.ToLower(headerOrigin), strings.ToLower(headerAcceptEncoding)
+
+	for _, tc := range []struct {
+		name                   string
+		originalVary, pageVary []string
+		want                   []string // as cache.VaryHeaders reports it
+	}{
+		{"both", []string{headerOrigin + ", " + acceptEncoding}, []string{headerAcceptEncoding}, []string{acceptEncoding, origin}},
+		{"original only", []string{headerOrigin}, nil, []string{origin}},
+		{"star in the original", []string{varyWildcard}, []string{headerAcceptEncoding}, []string{varyWildcard}},
+		{"star in the page", []string{headerOrigin}, []string{varyWildcard}, []string{varyWildcard}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			content := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				header := w.Header()
+				header[headerVary] = tc.originalVary
+				header.Set("Access-Control-Allow-Origin", viewerOrigin)
+				http.Error(w, contentMissing, http.StatusNotFound)
+			}))
+			t.Cleanup(content.Close)
+
+			pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header()[headerVary] = tc.pageVary
+				_, _ = w.Write([]byte(page404Body))
+			}))
+			t.Cleanup(pages.Close)
+
+			svc := newErrorPageDistribution(t, content.URL, pages.URL, &DefaultCacheBehaviorXML{},
+				CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "200"})
+
+			w := callEdge(t, svc, http.MethodGet, missingPath, http.Header{headerOrigin: {viewerOrigin}})
+			if w.Code != http.StatusOK || w.Body.String() != page404Body {
+				t.Fatalf("got %d %q, want 200 %q", w.Code, w.Body.String(), page404Body)
+			}
+
+			if got := cache.VaryHeaders(w.Header()); !slices.Equal(got, tc.want) {
+				t.Errorf("Vary = %q, want %q", w.Header().Values(headerVary), tc.want)
+			}
+		})
 	}
 }
 

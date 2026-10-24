@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -199,7 +200,22 @@ func TestCloudFront_EdgeCustomErrorPageKeepsCORSHeaders(t *testing.T) {
 	_, distID := createCustomErrorDistribution(t, domain, &cloudfronttypes.DefaultCacheBehavior{},
 		customErrorResponse(404, "/errors/404.html", "200"))
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, kumoEndpoint+"/kumo/cdn/"+distID+"/no-such-page.html", http.NoBody)
+	resp, body := callEdgeFromOrigin(t, distID, "/no-such-page.html", viewerOrigin)
+	if resp.StatusCode != http.StatusOK || string(body) != customErrorPage404 {
+		t.Fatalf("got %d %q, want 200 %q", resp.StatusCode, body, customErrorPage404)
+	}
+
+	if got := resp.Header.Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != viewerOrigin {
+		t.Errorf("Access-Control-Allow-Origin = %q, want [%q]", got, viewerOrigin)
+	}
+}
+
+// callEdgeFromOrigin is a GET through the edge as a cross-origin request from
+// viewerOrigin would send it.
+func callEdgeFromOrigin(t *testing.T, distID, path, viewerOrigin string) (*http.Response, []byte) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, kumoEndpoint+"/kumo/cdn/"+distID+path, http.NoBody)
 	if err != nil {
 		t.Fatalf("build edge request: %v", err)
 	}
@@ -218,13 +234,7 @@ func TestCloudFront_EdgeCustomErrorPageKeepsCORSHeaders(t *testing.T) {
 		t.Fatalf("read edge response: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusOK || string(body) != customErrorPage404 {
-		t.Fatalf("got %d %q, want 200 %q", resp.StatusCode, body, customErrorPage404)
-	}
-
-	if got := resp.Header.Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != viewerOrigin {
-		t.Errorf("Access-Control-Allow-Origin = %q, want [%q]", got, viewerOrigin)
-	}
+	return resp, body
 }
 
 // localOrigin is a custom origin for an HTTP server of the test, reached over
@@ -350,6 +360,54 @@ func TestCloudFront_EdgeCustomErrorPageCarryingCookieIsNotCacheable(t *testing.T
 
 	if n := contentRequests.Load(); n != 2 {
 		t.Errorf("content origin got %d requests, want 2: the cookie must not be served from the edge cache", n)
+	}
+}
+
+// TestCloudFront_EdgeCustomErrorPageMergesVary — the custom error page that
+// answers a cross-origin request carries the original response's CORS
+// headers together with the Origin it varied on, next to the page's own Vary.
+func TestCloudFront_EdgeCustomErrorPageMergesVary(t *testing.T) {
+	t.Parallel()
+
+	const viewerOrigin = "https://app.example"
+
+	content := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", viewerOrigin)
+		w.Header().Set("Vary", "Origin")
+		http.Error(w, "content 404", http.StatusNotFound)
+	}))
+	t.Cleanup(content.Close)
+
+	pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, customErrorPage404)
+	}))
+	t.Cleanup(pages.Close)
+
+	distID := createLocalCustomErrorDistribution(t, content.URL, pages.URL, customErrorResponse(404, "/errors/404.html", "200"))
+
+	resp, body := callEdgeFromOrigin(t, distID, "/no-such-page.html", viewerOrigin)
+	if resp.StatusCode != http.StatusOK || string(body) != customErrorPage404 {
+		t.Fatalf("got %d %q, want 200 %q", resp.StatusCode, body, customErrorPage404)
+	}
+
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != viewerOrigin {
+		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, viewerOrigin)
+	}
+
+	var vary []string
+
+	for _, line := range resp.Header.Values("Vary") {
+		for _, name := range strings.Split(line, ",") {
+			vary = append(vary, strings.ToLower(strings.TrimSpace(name)))
+		}
+	}
+
+	slices.Sort(vary)
+
+	if want := []string{"accept-encoding", "origin"}; !slices.Equal(vary, want) {
+		t.Errorf("Vary = %q, want the field names %q", resp.Header.Values("Vary"), want)
 	}
 }
 

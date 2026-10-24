@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/sivchari/kumo/internal/service/cloudfront/cache"
 )
 
 // errorPageCacheTag marks a response the edge answered with a custom error
@@ -265,14 +268,18 @@ const (
 	headerSurrogateControl     = "Surrogate-Control"
 	targetedCacheControlSuffix = "-Cache-Control"
 	cacheDirectiveNoStore      = "no-store"
+
+	headerVary   = "Vary"
+	varyWildcard = "*"
 )
 
 // keepOriginalHeaders carries headers of the original response over to the
 // response that replaces it, whose other headers come from the page origin
 // and describe the page. The CORS headers (Access-Control-*) replace the page
 // origin's, so a cross-origin request that ended in the page can still read
-// it; Set-Cookie is added to the page origin's. CloudFront's documentation of
-// custom error pages specifies no response header beyond Connection
+// it; Set-Cookie is added to the page origin's; Vary lists the field names
+// of both responses' Vary (mergeVary). CloudFront's documentation of custom
+// error pages specifies no response header beyond Connection
 // (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/creating-custom-error-pages.html),
 // so which headers are kept is kumo's choice.
 //
@@ -305,8 +312,37 @@ func keepOriginalHeaders(dst, original http.Header) {
 		}
 	}
 
+	mergeVary(dst, original)
+
 	if carriedCookies {
 		forbidStoring(dst)
+	}
+}
+
+// mergeVary makes dst's Vary list the field names of its own Vary and of
+// original's. The CORS headers carried over, and whether the page is served
+// at all, depend on the request fields the original response varied on, and a
+// cache must not reuse a stored response for a request that differs in them
+// (https://www.rfc-editor.org/rfc/rfc9111.html#section-4.1). Field names are
+// case-insensitive (RFC 9110 Section 5.1), so each is listed once, lower-cased
+// as cache.VaryHeaders reports it; a "*" in either, which never matches a
+// later request, replaces the list.
+func mergeVary(dst, original http.Header) {
+	if cache.VaryDisablesCache(dst) || cache.VaryDisablesCache(original) {
+		dst.Set(headerVary, varyWildcard)
+
+		return
+	}
+
+	names := cache.VaryHeaders(dst)
+	for _, name := range cache.VaryHeaders(original) {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+
+	if len(names) > 0 {
+		dst.Set(headerVary, strings.Join(names, ", "))
 	}
 }
 
