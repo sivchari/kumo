@@ -158,15 +158,20 @@ func (cw *customErrorWriter) Write(b []byte) (int, error) {
 // the status code that CloudFront received from the origin that contains the
 // custom error pages"
 // (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/GeneratingCustomErrorResponses.html).
-// When the page origin can't be reached at all, the original response is
-// served unchanged.
+//
+// When the page origin can't be reached, or answers with a 3xx, the original
+// response is served unchanged. A 3xx does not serve the page either, but
+// passing it on would turn the error into a redirect, or into a 304 the
+// viewer did not ask for. The docs describe an unavailable page only through
+// an error status (their example is the 404 for a deleted page), so keeping
+// the original response for a 3xx is kumo's choice.
 func (cw *customErrorWriter) finish() {
 	if cw.entry == nil {
 		return
 	}
 
 	page, err := cw.svc.fetchErrorPage(cw.r.Context(), cw.dist, cw.entry.ResponsePagePath)
-	if err != nil {
+	if err != nil || (page.StatusCode >= http.StatusMultipleChoices && page.StatusCode < http.StatusBadRequest) {
 		copyHeader(cw.viewer.Header(), cw.header)
 		cw.viewer.WriteHeader(cw.status)
 		_, _ = cw.viewer.Write(cw.body.Bytes())
@@ -254,7 +259,15 @@ func (s *Service) fetchErrorPage(ctx context.Context, dist *Distribution, pagePa
 		return nil, fmt.Errorf("build custom error page request: %w", err)
 	}
 
-	return fetchOrigin(upstreamTarget{url: pageURL, signing: signing}, req)
+	return fetchOrigin(upstreamTarget{url: pageURL, signing: signing, client: errorPageClient}, req)
+}
+
+// errorPageClient requests custom error pages without following redirects:
+// when an origin returns one, "CloudFront doesn't follow the redirect"
+// (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/http-3xx-status-codes.html),
+// and finish handles the 3xx itself.
+var errorPageClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
 var errNoErrorPageOrigin = errors.New("no usable origin for the custom error page")

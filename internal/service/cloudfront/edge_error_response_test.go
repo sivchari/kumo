@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -406,6 +407,40 @@ func TestEdge_CustomErrorPageKeepsOriginalCORSAndCookies(t *testing.T) {
 		if got := w.Header().Values(name); !slices.Equal(got, want) {
 			t.Errorf("%s = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// TestEdge_CustomErrorPageRedirectKeepsOriginal — a page origin that answers
+// the page request with a 3xx has not served the page: the redirect is not
+// followed, and the viewer gets the original response instead of a redirect
+// or an empty 304.
+func TestEdge_CustomErrorPageRedirectKeepsOriginal(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusNotModified} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			t.Parallel()
+
+			pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/target.html" {
+					_, _ = w.Write([]byte("redirect target"))
+
+					return
+				}
+
+				w.Header().Set("Location", "/target.html")
+				w.WriteHeader(status)
+			}))
+			t.Cleanup(pages.Close)
+
+			svc := newErrorPageDistribution(t, newContentOrigin(t).URL, pages.URL, &DefaultCacheBehaviorXML{},
+				CustomErrorResponseXML{ErrorCode: http.StatusNotFound, ResponsePagePath: page404Path, ResponseCode: "200"})
+
+			w := callEdge(t, svc, http.MethodGet, missingPath, nil)
+			if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), contentMissing) || w.Header().Get("Location") != "" {
+				t.Errorf("got %d %q (Location %q), want the original 404", w.Code, w.Body.String(), w.Header().Get("Location"))
+			}
+		})
 	}
 }
 
