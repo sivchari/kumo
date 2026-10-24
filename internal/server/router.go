@@ -396,15 +396,28 @@ func (r *Router) selectMux(req *http.Request) *http.ServeMux {
 // reports false when the original path selects another route (e.g.
 // "/bucket/" matches /{bucket}/{key...} while "/bucket" matches /{bucket}, or
 // "/kumo/cdn/x/../../../bucket/key" selects the /kumo prefix router while its
-// cleaned form selects the main mux), keeping the cleaned dispatch.
+// cleaned form selects the main mux) or has an empty segment before the
+// pattern's trailing wildcard (e.g. "//bucket/key"), keeping the cleaned
+// dispatch.
 func (r *Router) preservePath(mux *http.ServeMux, orig, cleaned *http.Request) (*http.Request, bool) {
-	raw := muxEscapedPath(orig.URL.EscapedPath())
+	escaped := orig.URL.EscapedPath()
+
+	raw := muxEscapedPath(escaped)
 	if raw == "" {
 		return nil, false
 	}
 
 	_, want := mux.Handler(cleaned)
 	if want == "" {
+		return nil, false
+	}
+
+	// ServeMux matches the segments before a trailing {name...} wildcard (all
+	// segments of a pattern without one) one path segment at a time, and
+	// muxEscapedPath merges an empty segment into the next one, so a repeated
+	// slash there would turn up as a leading "/" in a value such as {bucket}
+	// or {id} instead of being dropped as in the cleaned path.
+	if hasEmptySegment(escaped, fixedSegmentCount(want)) {
 		return nil, false
 	}
 
@@ -472,6 +485,39 @@ func muxEscapedPath(escaped string) string {
 	}
 
 	return out
+}
+
+// fixedSegmentCount returns how many path segments of a ServeMux pattern
+// come before its trailing {name...} wildcard or subtree slash, or the number
+// of all its segments if it has neither.
+func fixedSegmentCount(pattern string) int {
+	if i := strings.IndexByte(pattern, '/'); i >= 0 {
+		pattern = pattern[i:] // drop the method and host
+	}
+
+	segments := strings.Split(strings.TrimPrefix(pattern, "/"), "/")
+
+	if last := segments[len(segments)-1]; last == "" || strings.HasSuffix(last, "...}") {
+		return len(segments) - 1
+	}
+
+	return len(segments)
+}
+
+// hasEmptySegment reports whether one of the first n segments of an escaped
+// path is empty, i.e. the path repeats a slash before or between them. An
+// escaped slash ("%2F") sent by the client is part of a segment, not a
+// separator, and does not count.
+func hasEmptySegment(escaped string, n int) bool {
+	segments := strings.SplitN(strings.TrimPrefix(escaped, "/"), "/", n+1)
+
+	for i := 0; i < n && i < len(segments); i++ {
+		if segments[i] == "" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // prefixedMux returns the router of the longest prefix matching the request

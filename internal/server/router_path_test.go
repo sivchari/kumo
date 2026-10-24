@@ -10,12 +10,13 @@ import (
 
 // Routes registered by newPathTestRouter.
 const (
-	routeBucket     = "bucket"
-	routeBucketPost = "bucket-post"
-	routeObject     = "object"
-	routePreflight  = "preflight"
-	routeEdge       = "edge"
-	routeTags       = "tags"
+	routeBucket       = "bucket"
+	routeBucketPost   = "bucket-post"
+	routeObject       = "object"
+	routePreflight    = "preflight"
+	routeEdge         = "edge"
+	routeDistribution = "distribution"
+	routeTags         = "tags"
 )
 
 const (
@@ -43,9 +44,9 @@ type observed struct {
 
 // newPathTestRouter registers S3-style bucket (GET, POST) and object (GET,
 // PUT, OPTIONS) routes, a CloudFront-style edge route under a prefix router,
-// a fixed route without a trailing slash and a SigV4-scoped tags route. Each
-// handler records the route it serves, r.URL.Path and the value of its
-// trailing wildcard.
+// a fixed route without a trailing slash, a route ending in a single
+// wildcard and a SigV4-scoped tags route. Each handler records the route it
+// serves, r.URL.Path and the value of its trailing wildcard.
 func newPathTestRouter(got *observed) *Router {
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
@@ -67,6 +68,7 @@ func newPathTestRouter(got *observed) *Router {
 	r.Handle(http.MethodOptions, "/{bucket}/{key...}", record(routePreflight, "key"))
 	r.Handle(http.MethodGet, "/kumo/cdn/{id}/{path...}", record(routeEdge, "path"))
 	r.Handle(http.MethodGet, "/2020-05-31/distribution", record("fixed", ""))
+	r.Handle(http.MethodGet, "/2020-05-31/distribution/{id}", record(routeDistribution, "id"))
 	r.ScopedRouter(signingLambda).Handle(http.MethodGet, "/2017-03-31/tags/{arn...}", record(routeTags, "arn"))
 
 	return r
@@ -157,6 +159,7 @@ func TestRouter_UncleanPathPreservedForHandler(t *testing.T) {
 		{"clean key unchanged", http.MethodGet, "/bucket/a/b", routeObject, "/bucket/a/b", "a/b"},
 		{"edge trailing slash", http.MethodGet, edgePathDir, routeEdge, edgePathDir, "browser/"},
 		{"edge double slash", http.MethodGet, "/kumo/cdn/E123/a//b", routeEdge, "/kumo/cdn/E123/a//b", keyDoubleSlash},
+		{"escaped slash in single wildcard kept", http.MethodGet, "/2020-05-31/distribution/%2FE123", routeDistribution, "/2020-05-31/distribution//E123", "/E123"},
 	}
 
 	for _, tc := range cases {
@@ -189,8 +192,10 @@ func TestRouter_UncleanPathPreservedForHandler(t *testing.T) {
 }
 
 // TestRouter_UncleanPathKeepsCleanedRoute verifies that when the path as sent
-// would select a different route than its cleaned form (here: a trailing
-// slash), the request is still dispatched on the cleaned path, as before.
+// would select a different route than its cleaned form (e.g. a trailing
+// slash), or has an empty segment before the route's trailing wildcard (a
+// repeated slash that would end up in {bucket} or {id}), the request is still
+// dispatched on the cleaned path, as before.
 func TestRouter_UncleanPathKeepsCleanedRoute(t *testing.T) {
 	t.Parallel()
 
@@ -202,6 +207,10 @@ func TestRouter_UncleanPathKeepsCleanedRoute(t *testing.T) {
 	}{
 		{"bucket with trailing slash", bucketPathSlash, routeBucket, cleanedBucketPath},
 		{"escaped dot-dot back to bucket", "/bucket/x/%2e%2e", routeBucket, cleanedBucketPath},
+		{"repeated slash before bucket of object", "//bucket/key", routeObject, cleanedObjectPath},
+		{"repeated slash before bucket", "//bucket", routeBucket, cleanedBucketPath},
+		{"repeated slash before edge id", "/kumo/cdn//E123/x", routeEdge, "/kumo/cdn/E123/x"},
+		{"repeated slash before single wildcard", "/2020-05-31/distribution//E123", routeDistribution, "/2020-05-31/distribution/E123"},
 		{"fixed route with trailing slash", "/2020-05-31/distribution/", "fixed", "/2020-05-31/distribution"},
 		{"fixed route with double slash", "/2020-05-31//distribution", "fixed", "/2020-05-31/distribution"},
 	}
