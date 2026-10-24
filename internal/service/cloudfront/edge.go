@@ -21,6 +21,10 @@ import (
 
 const maxEdgeCacheEntries = 1024
 
+// headerXCache is the response header in which the edge tells the viewer how
+// it served the response ("Hit from kumo", "Miss from kumo", ...).
+const headerXCache = "X-Cache"
+
 // originPolicyHTTP is the CustomOriginConfig.OriginProtocolPolicy value that
 // forces plain HTTP to the origin, regardless of the viewer's own scheme.
 const (
@@ -527,7 +531,7 @@ func writeNotModified(w http.ResponseWriter, entry *cacheEntry, age time.Duratio
 		}
 	}
 
-	w.Header().Set("X-Cache", "Hit from kumo")
+	w.Header().Set(headerXCache, "Hit from kumo")
 
 	if age > 0 {
 		w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))
@@ -553,7 +557,7 @@ func writePartialContent(w http.ResponseWriter, entry *cacheEntry, start, end in
 
 	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(entry.Body)))
 	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
-	w.Header().Set("X-Cache", "Hit from kumo")
+	w.Header().Set(headerXCache, "Hit from kumo")
 
 	if age > 0 {
 		w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))
@@ -571,7 +575,7 @@ func writeFullCached(w http.ResponseWriter, entry *cacheEntry, age time.Duration
 		}
 	}
 
-	w.Header().Set("X-Cache", "Hit from kumo")
+	w.Header().Set(headerXCache, "Hit from kumo")
 	w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))
 	w.WriteHeader(entry.StatusCode)
 	_, _ = w.Write(entry.Body)
@@ -1070,7 +1074,7 @@ func writeUpstream(w http.ResponseWriter, resp *originResponse, cacheTag string,
 		}
 	}
 
-	w.Header().Set("X-Cache", cacheTag)
+	w.Header().Set(headerXCache, cacheTag)
 
 	if age > 0 {
 		w.Header().Set("Age", strconv.FormatInt(int64(age.Seconds()), 10))

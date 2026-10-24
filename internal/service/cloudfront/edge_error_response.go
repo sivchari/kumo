@@ -178,7 +178,7 @@ func (cw *customErrorWriter) finish() {
 	}
 
 	copyHeader(cw.viewer.Header(), page.Header)
-	cw.viewer.Header().Set("X-Cache", errorPageCacheTag)
+	cw.viewer.Header().Set(headerXCache, errorPageCacheTag)
 	cw.viewer.WriteHeader(status)
 	_, _ = cw.viewer.Write(page.Body)
 }

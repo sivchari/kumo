@@ -133,7 +133,7 @@ func TestEdge_CustomErrorResponseReplacesOriginError(t *testing.T) {
 				t.Errorf("Content-Type = %q, want the page's text/html", got)
 			}
 
-			if got := w.Header().Get("X-Cache"); got != errorPageCacheTag {
+			if got := w.Header().Get(headerXCache); got != errorPageCacheTag {
 				t.Errorf("X-Cache = %q, want %q", got, errorPageCacheTag)
 			}
 		})
