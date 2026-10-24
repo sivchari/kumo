@@ -290,27 +290,30 @@ func (s *Service) ListHostedZonesByName(w http.ResponseWriter, r *http.Request) 
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
-// normalizeDNSName canonicalizes a hosted-zone name: AWS returns names with a
-// trailing dot, but clients may send either form. Route 53 stores alphabetic
-// characters as lowercase letters (a-z) regardless of how they are specified,
-// so ASCII A-Z is lowercased; other characters are left as sent.
+// normalizeDNSName returns the canonical form of a hosted zone name: the form
+// CreateHostedZone stores and ListHostedZonesByName compares the dnsname
+// query against. Route 53 treats a name with and without the trailing dot as
+// identical and returns it with the dot, and it stores alphabetic characters
+// as lowercase letters (a-z) regardless of how they are specified. The name
+// is handled as bytes: ASCII A-Z is folded to a-z and every other byte,
+// including non-ASCII and invalid UTF-8, is kept as sent.
 func normalizeDNSName(name string) string {
 	if name == "" {
 		return ""
 	}
 
-	lower := strings.Map(func(r rune) rune {
-		if 'A' <= r && r <= 'Z' {
-			return r + ('a' - 'A')
+	b := []byte(name)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
 		}
-
-		return r
-	}, name)
-	if !strings.HasSuffix(lower, ".") {
-		lower += "."
 	}
 
-	return lower
+	if b[len(b)-1] != '.' {
+		b = append(b, '.')
+	}
+
+	return string(b)
 }
 
 // DeleteHostedZone handles the DeleteHostedZone API.
