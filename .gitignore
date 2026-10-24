@@ -37,3 +37,7 @@ dist/
 # Temporary files
 tmp/
 *.tmp
+
+# Written by the "Start kumo" step of .github/workflows/terraform-e2e.yaml
+kumo.log
+kumo.pid
