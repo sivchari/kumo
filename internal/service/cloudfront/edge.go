@@ -613,9 +613,15 @@ type cachePolicyTTLs struct {
 	min, def, max int64
 }
 
-// msgCachePolicyFallback is logged whenever the edge cannot use the TTLs of
-// the behaviour's cache policy.
+// msgCachePolicyFallback is logged when the edge cannot use the TTLs of the
+// behaviour's cache policy.
 const msgCachePolicyFallback = "cloudfront edge: using the cache behavior's legacy TTL settings instead of its cache policy"
+
+// cachePolicyFallback is a cache policy and the reason its TTLs cannot be
+// used, the key of Service.loggedFallbacks.
+type cachePolicyFallback struct {
+	policyID, reason string
+}
 
 // edgeCacheConfig pulls the [MinTTL, DefaultTTL, MaxTTL] triple out of the
 // matched cache behaviour. When the behaviour references a cache policy the
@@ -653,7 +659,7 @@ func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTT
 
 	if managed, ok := managedCachePolicies[id]; ok {
 		if managed.ttls == nil {
-			slog.Warn(msgCachePolicyFallback, "cachePolicyId", id, "name", managed.name, "reason", "managed policy TTLs are not documented")
+			s.warnCachePolicyFallback(id, "managed policy TTLs are not documented", "name", managed.name)
 
 			return cachePolicyTTLs{}, false
 		}
@@ -668,8 +674,12 @@ func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTT
 		// comes from a distribution persisted before those checks.
 		var cfErr *Error
 		if errors.As(err, &cfErr) && cfErr.Code == errNoSuchCachePolicy {
-			slog.Warn(msgCachePolicyFallback, "cachePolicyId", id, "reason", "cache policy not found")
+			s.warnCachePolicyFallback(id, "cache policy not found")
 		} else {
+			// A failed lookup is logged every time: unlike the cases
+			// above it says nothing lasting about the policy, and logging
+			// it once would hide a recurrence. The in-memory storage
+			// never fails this way.
 			slog.Error(msgCachePolicyFallback, "cachePolicyId", id, "error", err)
 		}
 
@@ -677,6 +687,18 @@ func (s *Service) cachePolicyTTLs(ctx context.Context, id string) (cachePolicyTT
 	}
 
 	return policy.Config.ttls(), true
+}
+
+// warnCachePolicyFallback logs a fallback once per cache policy and reason.
+// The lookup runs before every cache lookup, hits included, and a policy
+// that is missing or has no documented TTLs stays that way, so repeating the
+// warning on every request would only flood the log.
+func (s *Service) warnCachePolicyFallback(id, reason string, args ...any) {
+	if _, logged := s.loggedFallbacks.LoadOrStore(cachePolicyFallback{policyID: id, reason: reason}, struct{}{}); logged {
+		return
+	}
+
+	slog.Warn(msgCachePolicyFallback, append([]any{"cachePolicyId", id, "reason", reason}, args...)...)
 }
 
 // upstreamTarget is where an origin request goes and how the edge signs it.

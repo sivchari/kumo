@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	managedCachingDisabled  = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-	managedCachingOptimized = "658327ea-f89d-4fab-a63d-7e88639e58f6"
-	amplifyDefault          = "4d1d2f1d-3a71-49ad-9e08-7ea5d843a556"
-	unknownCachePolicyID    = "00000000-0000-0000-0000-000000000000"
-	testOriginID            = "origin"
-	testCacheControl        = "Cache-Control"
+	managedCachingDisabled    = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+	managedCachingOptimized   = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+	amplifyDefault            = "4d1d2f1d-3a71-49ad-9e08-7ea5d843a556"
+	unknownCachePolicyID      = "00000000-0000-0000-0000-000000000000"
+	otherUnknownCachePolicyID = "11111111-1111-1111-1111-111111111111"
+	testOriginID              = "origin"
+	testCacheControl          = "Cache-Control"
 )
 
 func ptrInt64(v int64) *int64 { return &v }
@@ -132,25 +133,31 @@ func captureDefaultLog(t *testing.T) *bytes.Buffer {
 
 // TestEdgeCacheConfig_LogsCachePolicyFallback — every fallback to the legacy
 // TTL settings is logged, and a policy that does not exist is told apart
-// from a failed lookup. Not parallel: it replaces the default logger.
+// from a failed lookup. A missing policy and one without documented TTLs are
+// logged once per policy, as the lookup runs on every request; a failed
+// lookup is logged every time. Not parallel: it replaces the default logger.
 func TestEdgeCacheConfig_LogsCachePolicyFallback(t *testing.T) {
 	logs := captureDefaultLog(t)
 
 	cases := []struct {
-		name     string
-		storage  Storage
-		policyID string
-		want     []string
+		name      string
+		storage   Storage
+		policyID  string
+		want      []string
+		logsAgain bool
 	}{
-		{"policy not found", NewMemoryStorage(), unknownCachePolicyID, []string{"level=WARN", `reason="cache policy not found"`}},
-		{"managed policy without documented TTLs", NewMemoryStorage(), amplifyDefault, []string{"level=WARN", "name=Amplify-Default"}},
-		{"lookup failed", failingCachePolicyStorage{NewMemoryStorage()}, "custom-policy", []string{"level=ERROR", `error="storage unavailable"`}},
+		{"policy not found", NewMemoryStorage(), unknownCachePolicyID, []string{"level=WARN", `reason="cache policy not found"`}, false},
+		{"managed policy without documented TTLs", NewMemoryStorage(), amplifyDefault, []string{"level=WARN", "name=Amplify-Default"}, false},
+		{"lookup failed", failingCachePolicyStorage{NewMemoryStorage()}, "custom-policy", []string{"level=ERROR", `error="storage unavailable"`}, true},
 	}
 
 	for _, tc := range cases {
+		svc := New(tc.storage)
+		behavior := &DefaultCacheBehavior{CachePolicyID: tc.policyID}
+
 		logs.Reset()
 
-		if _, ok := New(tc.storage).edgeCacheConfig(t.Context(), &DefaultCacheBehavior{CachePolicyID: tc.policyID}); !ok {
+		if _, ok := svc.edgeCacheConfig(t.Context(), behavior); !ok {
 			t.Fatalf("%s: no cache config", tc.name)
 		}
 
@@ -159,6 +166,26 @@ func TestEdgeCacheConfig_LogsCachePolicyFallback(t *testing.T) {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: log %q does not contain %s", tc.name, got, want)
 			}
+		}
+
+		logs.Reset()
+		svc.edgeCacheConfig(t.Context(), behavior)
+
+		if again := logs.String(); (again != "") != tc.logsAgain {
+			t.Errorf("%s: the repeated request logged %q, want logged again: %v", tc.name, again, tc.logsAgain)
+		}
+	}
+
+	// Each policy is logged once, not each reason: a second missing policy is
+	// logged too.
+	svc := New(NewMemoryStorage())
+
+	for _, id := range []string{unknownCachePolicyID, otherUnknownCachePolicyID} {
+		logs.Reset()
+		svc.edgeCacheConfig(t.Context(), &DefaultCacheBehavior{CachePolicyID: id})
+
+		if got := logs.String(); !strings.Contains(got, "cachePolicyId="+id) {
+			t.Errorf("missing policy %s: log %q", id, got)
 		}
 	}
 }

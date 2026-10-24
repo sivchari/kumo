@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/sivchari/kumo/internal/service"
 )
@@ -24,6 +25,10 @@ func init() {
 type Service struct {
 	storage   Storage
 	edgeCache *edgeCache
+
+	// loggedFallbacks holds the cachePolicyFallback keys the edge has
+	// already logged, so that each is logged once.
+	loggedFallbacks sync.Map
 }
 
 // New creates a new CloudFront service.
