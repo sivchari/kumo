@@ -232,3 +232,41 @@ func TestEdge_CachePolicyDrivesCaching(t *testing.T) {
 		})
 	}
 }
+
+// TestEdge_OrderedBehaviorCachePolicy — an ordered behaviour matched by its
+// path pattern caches with its own cache policy, not with the default
+// behaviour's policy or its own legacy TTL fields. The origins send neither
+// Cache-Control nor Last-Modified, so only a policy's DefaultTTL caches, and
+// the two cases swap the policies so that either mistake changes X-Cache.
+func TestEdge_OrderedBehaviorCachePolicy(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name                     string
+		defaultPolicy, apiPolicy string
+		apiLegacyDefaultTTL      int64
+		apiSecond, defaultSecond string
+	}{
+		{"ordered behaviour caches with its policy", managedCachingDisabled, managedCachingOptimized, 0, cacheHit, cacheMiss},
+		{"ordered behaviour's policy disables caching", managedCachingOptimized, managedCachingDisabled, 60, cacheMiss, cacheHit},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := New(NewMemoryStorage())
+			newTwoOriginDistribution(t, svc, newNamedOrigin(t, originDefault).URL, newNamedOrigin(t, originAPI).URL,
+				&DefaultCacheBehaviorXML{CachePolicyID: tc.defaultPolicy},
+				&DefaultCacheBehaviorXML{CachePolicyID: tc.apiPolicy, DefaultTTL: tc.apiLegacyDefaultTTL, MaxTTL: 3600})
+
+			for _, req := range []struct{ path, second string }{{"/api/items", tc.apiSecond}, {"/items", tc.defaultSecond}} {
+				callEdge(t, svc, http.MethodGet, req.path, nil)
+
+				if got := callEdge(t, svc, http.MethodGet, req.path, nil).Header().Get("X-Cache"); got != req.second {
+					t.Errorf("%s: second X-Cache = %q, want %q", req.path, got, req.second)
+				}
+			}
+		})
+	}
+}
