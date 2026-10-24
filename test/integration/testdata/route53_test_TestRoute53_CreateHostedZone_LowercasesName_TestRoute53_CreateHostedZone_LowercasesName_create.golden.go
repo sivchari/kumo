@@ -1,8 +1,8 @@
 {
   "ChangeInfo": {
-    "Id": "/change/6f2a54fc-f4c7-4781-bdca-6a1c7a61e1ab",
+    "Id": "/change/567128f0-0f43-4a52-9f26-ab7a2fbb2c1d",
     "Status": "INSYNC",
-    "SubmittedAt": "2026-10-24T14:46:12Z",
+    "SubmittedAt": "2026-10-24T15:21:52Z",
     "Comment": null
   },
   "DelegationSet": {
@@ -16,15 +16,15 @@
     "Id": null
   },
   "HostedZone": {
-    "CallerReference": "test-create-hosted-zone-lowercase",
-    "Id": "/hostedzone/a04cd4d1-e2eb-4b12-9071-25e2511cb3d0",
-    "Name": "lowercase-test.example.com.",
+    "CallerReference": "test-create-hosted-zone-lowercase-{token}",
+    "Id": "/hostedzone/88a0c781-5731-48f8-b58c-065f1d4f1eee",
+    "Name": "lowercase-test-{token}.example.com.",
     "Config": null,
     "Features": null,
     "LinkedService": null,
     "ResourceRecordSetCount": 0
   },
-  "Location": "https://route53.amazonaws.com/2013-04-01/hostedzone/a04cd4d1-e2eb-4b12-9071-25e2511cb3d0",
+  "Location": "https://route53.amazonaws.com/2013-04-01/hostedzone/88a0c781-5731-48f8-b58c-065f1d4f1eee",
   "VPC": null,
   "ResultMetadata": {}
 }

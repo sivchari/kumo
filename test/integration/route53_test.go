@@ -92,14 +92,30 @@ func TestRoute53_CreateHostedZone_LowercasesName(t *testing.T) {
 		return result
 	}
 
-	createResult := createZone("Lowercase-Test.Example.COM", "test-create-hosted-zone-lowercase")
+	// A per-run token keeps these zones apart from zones that an interrupted
+	// run left on a persisted server. The goldens show it as {token}.
+	token := fmt.Sprint(time.Now().UnixNano())
+	wantName := "lowercase-test-" + token + ".example.com."
+
+	createResult := createZone("Lowercase-Test-"+token+".Example.COM", "test-create-hosted-zone-lowercase-"+token)
 	zoneID := createResult.HostedZone.Id
 
 	// In ASCII order the guard zone sorts after the zone name without its
 	// trailing dot and before the zone itself ('-' is below '.'), so a
 	// dnsname query that is not lowercased, or not given its trailing dot,
 	// starts at the guard or earlier instead of at the zone under test.
-	createZone("lowercase-test.example.com-guard", "test-create-hosted-zone-lowercase-guard")
+	createZone(strings.TrimSuffix(wantName, ".")+"-guard", "test-create-hosted-zone-lowercase-guard-"+token)
+
+	redact := func(zone *types.HostedZone) *types.HostedZone {
+		redacted := *zone
+		redacted.Name = aws.String(strings.ReplaceAll(aws.ToString(zone.Name), token, "{token}"))
+		redacted.CallerReference = aws.String(strings.ReplaceAll(aws.ToString(zone.CallerReference), token, "{token}"))
+
+		return &redacted
+	}
+
+	created := *createResult
+	created.HostedZone = redact(createResult.HostedZone)
 
 	golden.New(t, golden.WithIgnoreFields(
 		"Id",
@@ -107,7 +123,7 @@ func TestRoute53_CreateHostedZone_LowercasesName(t *testing.T) {
 		"NameServers",
 		"Location",
 		"ResultMetadata",
-	)).Assert(t.Name()+"_create", createResult)
+	)).Assert(t.Name()+"_create", &created)
 
 	getResult, err := client.GetHostedZone(ctx, &route53.GetHostedZoneInput{
 		Id: zoneID,
@@ -116,23 +132,30 @@ func TestRoute53_CreateHostedZone_LowercasesName(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	got := *getResult
+	got.HostedZone = redact(getResult.HostedZone)
+
 	golden.New(t, golden.WithIgnoreFields(
 		"Id",
 		"NameServers",
 		"ResultMetadata",
-	)).Assert(t.Name()+"_get", getResult)
+	)).Assert(t.Name()+"_get", &got)
 
-	const wantName = "lowercase-test.example.com."
-
-	listResult, err := client.ListHostedZones(ctx, &route53.ListHostedZonesInput{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	// ListHostedZones returns at most 100 zones per response, so on a server
+	// that holds more zones the new one can be on a later page.
 	listedName := ""
-	for _, zone := range listResult.HostedZones {
-		if *zone.Id == *zoneID {
-			listedName = *zone.Name
+	pages := route53.NewListHostedZonesPaginator(client, &route53.ListHostedZonesInput{})
+
+	for listedName == "" && pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, zone := range page.HostedZones {
+			if *zone.Id == *zoneID {
+				listedName = *zone.Name
+			}
 		}
 	}
 
@@ -142,7 +165,7 @@ func TestRoute53_CreateHostedZone_LowercasesName(t *testing.T) {
 
 	// kumo normalizes the dnsname query like the stored name, so the zone
 	// comes first whatever the query's case and with or without the dot.
-	for _, dnsName := range []string{"LOWERCASE-test.example.Com", "LOWERCASE-test.example.Com."} {
+	for _, dnsName := range []string{"LOWERCASE-test-" + token + ".example.Com", "LOWERCASE-test-" + token + ".example.Com."} {
 		byName, err := client.ListHostedZonesByName(ctx, &route53.ListHostedZonesByNameInput{
 			DNSName:  aws.String(dnsName),
 			MaxItems: aws.Int32(1),

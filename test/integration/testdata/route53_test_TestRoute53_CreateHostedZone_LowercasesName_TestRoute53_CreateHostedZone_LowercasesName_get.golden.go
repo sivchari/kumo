@@ -1,8 +1,8 @@
 {
   "HostedZone": {
-    "CallerReference": "test-create-hosted-zone-lowercase",
-    "Id": "/hostedzone/a04cd4d1-e2eb-4b12-9071-25e2511cb3d0",
-    "Name": "lowercase-test.example.com.",
+    "CallerReference": "test-create-hosted-zone-lowercase-{token}",
+    "Id": "/hostedzone/88a0c781-5731-48f8-b58c-065f1d4f1eee",
+    "Name": "lowercase-test-{token}.example.com.",
     "Config": null,
     "Features": null,
     "LinkedService": null,
