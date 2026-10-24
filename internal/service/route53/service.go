@@ -24,11 +24,19 @@ func init() {
 // Service is the Route 53 service.
 type Service struct {
 	storage Storage
+	// nextZoneID and nextChangeID return new bare hosted zone and change IDs.
+	// Tests replace them to make a generated ID collide with a stored one.
+	nextZoneID   func() string
+	nextChangeID func() string
 }
 
 // New creates a new Route 53 service.
 func New(storage Storage) *Service {
-	return &Service{storage: storage}
+	return &Service{
+		storage:      storage,
+		nextZoneID:   newHostedZoneID,
+		nextChangeID: newChangeID,
+	}
 }
 
 // Name returns the service name.

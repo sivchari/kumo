@@ -46,16 +46,21 @@ func defaultDelegationSet() DelegationSet {
 	}
 }
 
-// recordInSyncChange creates an INSYNC ChangeInfo, persists it, and returns it.
+// recordInSyncChange creates an INSYNC ChangeInfo under a newly generated ID,
+// persists it, and returns it.
 func (s *Service) recordInSyncChange(comment string) (ChangeInfo, error) {
 	ci := ChangeInfo{
-		ID:          "/change/" + newChangeID(),
 		Status:      "INSYNC",
 		SubmittedAt: time.Now().UTC().Format(time.RFC3339),
 		Comment:     comment,
 	}
 
-	if err := s.storage.PutChange(&ci); err != nil {
+	err := insertWithNewID(s.nextChangeID, ErrChangeAlreadyExists, func(id string) error {
+		ci.ID = "/change/" + id
+
+		return s.storage.PutChange(&ci)
+	})
+	if err != nil {
 		return ChangeInfo{}, fmt.Errorf("put change: %w", err)
 	}
 
@@ -94,6 +99,16 @@ func pageHostedZones(zones []*HostedZone, startIdx, maxItems int) ([]HostedZone,
 	return page, endIdx, truncated
 }
 
+// insertHostedZone stores zone under a newly generated ID, drawing another
+// one while the generated ID is already taken.
+func (s *Service) insertHostedZone(zone *HostedZone) error {
+	return insertWithNewID(s.nextZoneID, ErrHostedZoneAlreadyExists, func(id string) error {
+		zone.ID = "/hostedzone/" + id
+
+		return s.storage.CreateHostedZone(zone)
+	})
+}
+
 // CreateHostedZone handles the CreateHostedZone API.
 func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
 	var req CreateHostedZoneRequest
@@ -116,20 +131,13 @@ func (s *Service) CreateHostedZone(w http.ResponseWriter, r *http.Request) {
 	name := normalizeDNSName(req.Name)
 
 	zone := &HostedZone{
-		ID:                     "/hostedzone/" + newHostedZoneID(),
 		Name:                   name,
 		CallerReference:        req.CallerReference,
 		Config:                 req.HostedZoneConfig,
 		ResourceRecordSetCount: 0,
 	}
 
-	if err := s.storage.CreateHostedZone(zone); err != nil {
-		if errors.Is(err, ErrHostedZoneAlreadyExists) {
-			writeErrorResponse(w, http.StatusConflict, "HostedZoneAlreadyExists", "Hosted zone already exists")
-
-			return
-		}
-
+	if err := s.insertHostedZone(zone); err != nil {
 		writeErrorResponse(w, http.StatusInternalServerError, "InternalError", err.Error())
 
 		return

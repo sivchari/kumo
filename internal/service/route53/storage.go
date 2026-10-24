@@ -25,6 +25,9 @@ var (
 	ErrInvalidInput = errors.New("invalid input")
 	// ErrChangeNotFound is returned when a change is not found.
 	ErrChangeNotFound = errors.New("change not found")
+	// ErrChangeAlreadyExists is returned when a change with the same ID is
+	// already stored.
+	ErrChangeAlreadyExists = errors.New("change already exists")
 )
 
 // Storage defines the interface for Route 53 storage operations.
@@ -292,12 +295,17 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 	return nil
 }
 
-// PutChange stores a change.
+// PutChange stores a new change. It returns ErrChangeAlreadyExists, leaving
+// the stored change as is, when a change with the same ID exists.
 func (s *MemoryStorage) PutChange(change *ChangeInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	id := strings.TrimPrefix(change.ID, "/change/")
+	if _, exists := s.Changes[id]; exists {
+		return ErrChangeAlreadyExists
+	}
+
 	s.Changes[id] = change
 
 	s.saveLocked()

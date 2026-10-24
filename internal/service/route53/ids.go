@@ -1,6 +1,10 @@
 package route53
 
-import "crypto/rand"
+import (
+	"crypto/rand"
+	"errors"
+	"fmt"
+)
 
 const (
 	// idAlphabet is the character set of the IDs in the Route 53 API
@@ -15,7 +19,28 @@ const (
 	// idRejectThreshold is the largest multiple of len(idAlphabet) that fits
 	// in a byte; random bytes at or above it are discarded to avoid modulo bias.
 	idRejectThreshold = 256 - 256%len(idAlphabet)
+	// maxIDAttempts bounds how many generated IDs insertWithNewID tries. With
+	// 36^13 possible IDs even one collision is unlikely; the bound only turns
+	// a generator that keeps returning taken IDs into an error instead of an
+	// endless loop.
+	maxIDAttempts = 5
 )
+
+// errNoFreeID is returned when every generated ID was already taken.
+var errNoFreeID = errors.New("every generated ID was already taken")
+
+// insertWithNewID calls insert with IDs from next until insert returns
+// something other than taken, the error storage reports for an ID that is
+// already in use, and returns that result. It gives up after maxIDAttempts.
+func insertWithNewID(next func() string, taken error, insert func(id string) error) error {
+	for range maxIDAttempts {
+		if err := insert(next()); !errors.Is(err, taken) {
+			return err
+		}
+	}
+
+	return fmt.Errorf("%w after %d attempts", errNoFreeID, maxIDAttempts)
+}
 
 // newHostedZoneID returns a bare hosted zone ID such as Z1PA6795UKMFR9.
 func newHostedZoneID() string {
