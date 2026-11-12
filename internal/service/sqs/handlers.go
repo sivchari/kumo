@@ -35,7 +35,7 @@ func (s *Service) CreateQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, CreateQueueResponse{
-		QueueURL: queue.URL,
+		QueueURL: requestQueueURL(r, queue.URL),
 	})
 }
 
@@ -164,6 +164,10 @@ func (s *Service) ListQueues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for i, u := range urls {
+		urls[i] = requestQueueURL(r, u)
+	}
+
 	writeJSONResponse(w, ListQueuesResponse{
 		QueueUrls: urls,
 	})
@@ -195,7 +199,7 @@ func (s *Service) GetQueueURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, GetQueueURLResponse{
-		QueueURL: url,
+		QueueURL: requestQueueURL(r, url),
 	})
 }
 

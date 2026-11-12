@@ -1276,3 +1276,57 @@ func TestSQS_GetQueueAttributes_ReceivedMessageIsNotVisible(t *testing.T) {
 		t.Errorf("ApproximateNumberOfMessagesNotVisible after receive = %q, want %q", got, "1")
 	}
 }
+
+// TestSQS_QueueURLMatchesEndpoint verifies that every QueueUrl kumo returns
+// points back at the endpoint that served the request.
+func TestSQS_QueueURLMatchesEndpoint(t *testing.T) {
+	const accountID = "000000000000"
+
+	client := newSQSClient(t)
+	ctx := t.Context()
+	queueName := "test-queue-url-endpoint"
+	want := testEndpoint() + "/" + accountID + "/" + queueName
+
+	createOutput, err := client.CreateQueue(ctx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteQueue(context.Background(), &sqs.DeleteQueueInput{
+			QueueUrl: createOutput.QueueUrl,
+		})
+	})
+
+	if got := aws.ToString(createOutput.QueueUrl); got != want {
+		t.Errorf("CreateQueue QueueUrl = %q, want %q", got, want)
+	}
+
+	getOutput, err := client.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := aws.ToString(getOutput.QueueUrl); got != want {
+		t.Errorf("GetQueueUrl QueueUrl = %q, want %q", got, want)
+	}
+
+	listOutput, err := client.ListQueues(ctx, &sqs.ListQueuesInput{
+		QueueNamePrefix: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(listOutput.QueueUrls) != 1 {
+		t.Fatalf("ListQueues returned %d queue URLs, want 1: %v", len(listOutput.QueueUrls), listOutput.QueueUrls)
+	}
+
+	if got := listOutput.QueueUrls[0]; got != want {
+		t.Errorf("ListQueues QueueUrl = %q, want %q", got, want)
+	}
+}
