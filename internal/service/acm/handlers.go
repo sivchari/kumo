@@ -43,6 +43,12 @@ func (s *Service) DispatchAction(w http.ResponseWriter, r *http.Request) {
 		s.GetCertificate(w, r)
 	case "ImportCertificate":
 		s.ImportCertificate(w, r)
+	case "ListTagsForCertificate":
+		s.ListTagsForCertificate(w, r)
+	case "AddTagsToCertificate":
+		s.AddTagsToCertificate(w, r)
+	case "RemoveTagsFromCertificate":
+		s.RemoveTagsFromCertificate(w, r)
 	default:
 		writeError(w, errInvalidParameter, fmt.Sprintf("Unknown operation: %s", operation), http.StatusBadRequest)
 	}
@@ -199,9 +205,7 @@ func (s *Service) DeleteCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
-	w.WriteHeader(http.StatusOK)
+	writeEmptyResponse(w)
 }
 
 // GetCertificate handles the GetCertificate operation.
@@ -253,7 +257,101 @@ func (s *Service) ImportCertificate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListTagsForCertificate handles the ListTagsForCertificate operation.
+func (s *Service) ListTagsForCertificate(w http.ResponseWriter, r *http.Request) {
+	var req ListTagsForCertificateInput
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.CertificateArn == "" {
+		writeError(w, errInvalidParameter, "CertificateArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	tags, err := s.storage.ListTagsForCertificate(r.Context(), req.CertificateArn)
+	if err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeJSONResponse(w, ListTagsForCertificateOutput{
+		Tags: tags,
+	})
+}
+
+// AddTagsToCertificate handles the AddTagsToCertificate operation.
+func (s *Service) AddTagsToCertificate(w http.ResponseWriter, r *http.Request) {
+	var req AddTagsToCertificateInput
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.CertificateArn == "" {
+		writeError(w, errInvalidParameter, "CertificateArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.Tags) == 0 {
+		writeError(w, errInvalidParameter, "Tags is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.AddTagsToCertificate(r.Context(), req.CertificateArn, req.Tags); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
+// RemoveTagsFromCertificate handles the RemoveTagsFromCertificate operation.
+func (s *Service) RemoveTagsFromCertificate(w http.ResponseWriter, r *http.Request) {
+	var req RemoveTagsFromCertificateInput
+	if err := service.ReadJSONRequest(r, &req); err != nil {
+		writeError(w, errInvalidParameter, "Invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.CertificateArn == "" {
+		writeError(w, errInvalidParameter, "CertificateArn is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.Tags) == 0 {
+		writeError(w, errInvalidParameter, "Tags is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := s.storage.RemoveTagsFromCertificate(r.Context(), req.CertificateArn, req.Tags); err != nil {
+		handleStorageError(w, err)
+
+		return
+	}
+
+	writeEmptyResponse(w)
+}
+
 // Helper functions.
+
+// writeEmptyResponse writes an HTTP 200 OK response with an empty body.
+func writeEmptyResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("x-amzn-RequestId", uuid.New().String())
+	w.WriteHeader(http.StatusOK)
+}
 
 // writeJSONResponse writes a JSON response with HTTP 200 OK.
 func writeJSONResponse(w http.ResponseWriter, v any) {
@@ -266,15 +364,12 @@ func writeError(w http.ResponseWriter, code, message string, status int) {
 }
 
 // handleStorageError handles storage errors and writes appropriate response.
+// The ACM API reference lists the operation-specific exceptions returned
+// here, including ResourceNotFoundException, with HTTP 400.
 func handleStorageError(w http.ResponseWriter, err error) {
 	var acmErr *Error
 	if errors.As(err, &acmErr) {
-		status := http.StatusBadRequest
-		if acmErr.Code == errNotFound {
-			status = http.StatusNotFound
-		}
-
-		writeError(w, acmErr.Code, acmErr.Message, status)
+		writeError(w, acmErr.Code, acmErr.Message, http.StatusBadRequest)
 
 		return
 	}

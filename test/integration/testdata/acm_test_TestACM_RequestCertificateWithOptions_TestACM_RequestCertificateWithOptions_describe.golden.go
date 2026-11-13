@@ -9,27 +9,27 @@
         "DomainName": "options-test.example.com",
         "HttpRedirect": null,
         "ResourceRecord": {
-          "Name": "_acme-challenge.options-test.example.com",
+          "Name": "_fdc0993c0af2610b1aeb01d0163b89bc.options-test.example.com.",
           "Type": "CNAME",
-          "Value": "_17106d9f.acm-validations.aws."
+          "Value": "_4d7bcd744612c89633122abd1c3ea615.acm-validations.aws."
         },
         "ValidationDomain": "options-test.example.com",
         "ValidationEmails": null,
         "ValidationMethod": "DNS",
-        "ValidationStatus": "PENDING_VALIDATION"
+        "ValidationStatus": "SUCCESS"
       }
     ],
     "ExtendedKeyUsages": null,
     "FailureReason": "",
     "ImportedAt": null,
     "InUseBy": null,
-    "IssuedAt": null,
-    "Issuer": null,
+    "IssuedAt": "2026-03-23T07:45:24.814Z",
+    "Issuer": "kumo local CA",
     "KeyAlgorithm": "EC_prime256v1",
     "KeyUsages": null,
     "ManagedBy": "",
-    "NotAfter": null,
-    "NotBefore": null,
+    "NotAfter": "2027-03-23T07:45:24Z",
+    "NotBefore": "2026-03-23T07:45:24Z",
     "Options": {
       "CertificateTransparencyLoggingPreference": "ENABLED",
       "Export": ""
@@ -39,8 +39,8 @@
     "RevocationReason": "",
     "RevokedAt": null,
     "Serial": "d4f59677b399c61fa428759b27299d6b",
-    "SignatureAlgorithm": null,
-    "Status": "PENDING_VALIDATION",
+    "SignatureAlgorithm": "SHA256WITHECDSA",
+    "Status": "ISSUED",
     "Subject": "CN=options-test.example.com",
     "SubjectAlternativeNames": null,
     "Type": "AMAZON_ISSUED"

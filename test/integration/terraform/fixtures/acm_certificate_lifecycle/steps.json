@@ -1,0 +1,14 @@
+[
+  {
+    "name": "initial",
+    "dir": "initial"
+  },
+  {
+    "name": "add_tags",
+    "dir": "add_tags"
+  },
+  {
+    "name": "update_tags",
+    "dir": "update_tags"
+  }
+]
