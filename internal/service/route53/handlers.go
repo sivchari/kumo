@@ -366,6 +366,7 @@ var changeRecordSetsErrors = []struct {
 	{ErrHostedZoneNotFound, http.StatusNotFound, "NoSuchHostedZone", "Hosted zone not found"},
 	{ErrRecordSetAlreadyExists, http.StatusBadRequest, "ResourceRecordAlreadyExists", "Resource record already exists"},
 	{ErrRecordSetNotFound, http.StatusBadRequest, "InvalidChangeBatch", "Resource record not found"},
+	{ErrRoutingPolicyConflict, http.StatusBadRequest, "InvalidChangeBatch", "A weighted, latency or failover record set can't share its name and type with a record set of another routing policy"},
 	{ErrInvalidInput, http.StatusBadRequest, "InvalidInput", "Invalid change action"},
 }
 
@@ -401,6 +402,14 @@ func (s *Service) ChangeResourceRecordSets(w http.ResponseWriter, r *http.Reques
 		writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "At least one change is required")
 
 		return
+	}
+
+	for i := range req.ChangeBatch.Changes {
+		if req.ChangeBatch.Changes[i].ResourceRecordSet.Name == "" {
+			writeErrorResponse(w, http.StatusBadRequest, "InvalidInput", "ResourceRecordSet Name is required")
+
+			return
+		}
 	}
 
 	zoneID := "/hostedzone/" + id

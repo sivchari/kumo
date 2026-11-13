@@ -52,6 +52,13 @@ type Change struct {
 	ResourceRecordSet ResourceRecordSet `xml:"ResourceRecordSet"`
 }
 
+// Actions of a change in a ChangeResourceRecordSets change batch.
+const (
+	changeActionCreate = "CREATE"
+	changeActionDelete = "DELETE"
+	changeActionUpsert = "UPSERT"
+)
+
 // ChangeBatch represents a batch of changes.
 type ChangeBatch struct {
 	Comment string   `xml:"Comment,omitempty"`
