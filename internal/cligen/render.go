@@ -32,6 +32,7 @@ type serviceView struct {
 	HasOverrides bool
 	StdImports   []string
 	ThirdParty   []string
+	LocalModule  []string
 	Actions      []actionView
 }
 
@@ -137,7 +138,7 @@ func renderService(name string, actions []Action) (string, []Diagnostic, error) 
 		HasOverrides: overrideServices[name],
 		Actions:      actionViews,
 	}
-	view.StdImports, view.ThirdParty = imports.sorted()
+	view.StdImports, view.ThirdParty, view.LocalModule = imports.sorted()
 
 	content, err := executeTemplate(&view)
 	if err != nil {

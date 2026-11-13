@@ -6,13 +6,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
-	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"reflect"
-	"time"
+
+	"github.com/sivchari/kumo/internal/cligen"
 )
 
 func newKinesisCmd() *cobra.Command {

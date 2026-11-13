@@ -5,12 +5,14 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/firehose"
 	"github.com/aws/aws-sdk-go-v2/service/firehose/types"
-	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"reflect"
+
+	"github.com/sivchari/kumo/internal/cligen"
 )
 
 func newFirehoseCmd() *cobra.Command {

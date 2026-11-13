@@ -5,12 +5,14 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/athena/types"
-	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"reflect"
+
+	"github.com/sivchari/kumo/internal/cligen"
 )
 
 func newAthenaCmd() *cobra.Command {

@@ -5,12 +5,14 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"reflect"
+
+	"github.com/sivchari/kumo/internal/cligen"
 )
 
 func newSSMCmd() *cobra.Command {
