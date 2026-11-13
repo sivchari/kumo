@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.33.2](https://github.com/sivchari/kumo/compare/v0.33.1...v0.33.2) - 2026-11-13
+- ci: switch read-only checks from pull_request_target to pull_request by @sivchari in https://github.com/sivchari/kumo/pull/1035
+- fix(sqs): return QueueUrl on the endpoint that served the request by @sivchari in https://github.com/sivchari/kumo/pull/1037
+- fix(cli-gen): group generated imports as standard, third-party, local module by @sivchari in https://github.com/sivchari/kumo/pull/1038
+- docs(readme): add measured footprint numbers by @sivchari in https://github.com/sivchari/kumo/pull/1039
+- ci: build and smoke test docker/Dockerfile when it or go.mod changes by @wakame1367 in https://github.com/sivchari/kumo/pull/1020
+- fix(server): pass the request path as sent to handlers by @wakame1367 in https://github.com/sivchari/kumo/pull/1023
+- ci(terraform-e2e): upload the kumo log as an artifact by @wakame1367 in https://github.com/sivchari/kumo/pull/1024
+- fix(route53): store hosted zone names in lowercase by @wakame1367 in https://github.com/sivchari/kumo/pull/1026
+- fix(route53): generate hosted zone and change IDs within 32 characters by @wakame1367 in https://github.com/sivchari/kumo/pull/1022
+- fix(dynamodb): paginate index queries reliably by @frodeaa in https://github.com/sivchari/kumo/pull/1010
+- fix(dynamodb): compare lists, maps and sets in conditions by @frodeaa in https://github.com/sivchari/kumo/pull/1011
+- fix(cloudfront): derive edge TTLs from the behavior's cache policy by @wakame1367 in https://github.com/sivchari/kumo/pull/1019
+- feat(cloudfront): apply custom error responses at the edge by @wakame1367 in https://github.com/sivchari/kumo/pull/1021
+- feat(route53): honour ListResourceRecordSets start and paging parameters by @wakame1367 in https://github.com/sivchari/kumo/pull/1025
+
 ## [v0.33.1](https://github.com/sivchari/kumo/compare/v0.33.0...v0.33.1) - 2026-10-23
 - fix(docker): build with Go 1.26.8 to match go.mod toolchain by @sivchari in https://github.com/sivchari/kumo/pull/1030
 - release v0.33.1 by @sivchari in https://github.com/sivchari/kumo/pull/1032
