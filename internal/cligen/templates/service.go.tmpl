@@ -6,9 +6,13 @@ import (
 {{- range .StdImports}}
 	"{{.}}"
 {{- end}}
-
-{{- range .ThirdParty}}
+{{range .ThirdParty}}
 	"{{.}}"
+{{- end}}
+{{- if .LocalModule}}
+{{range .LocalModule}}
+	"{{.}}"
+{{- end}}
 {{- end}}
 )
 

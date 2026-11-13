@@ -4,12 +4,14 @@ package cli
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go-v2/service/sts/types"
-	"github.com/sivchari/kumo/internal/cligen"
 	"github.com/spf13/cobra"
-	"reflect"
+
+	"github.com/sivchari/kumo/internal/cligen"
 )
 
 func newSTSCmd() *cobra.Command {
