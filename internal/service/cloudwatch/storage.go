@@ -236,9 +236,9 @@ func (s *MemoryStorage) PutMetricData(_ context.Context, namespace string, metri
 			s.Metrics[key] = metric
 		}
 
-		timestamp := datum.Timestamp
-		if timestamp == "" {
-			timestamp = time.Now().UTC().Format(time.RFC3339)
+		timestamp := datum.Timestamp.UTC()
+		if timestamp.IsZero() {
+			timestamp = time.Now().UTC()
 		}
 
 		s.appendDatapoints(metric, datum, timestamp)
@@ -250,7 +250,7 @@ func (s *MemoryStorage) PutMetricData(_ context.Context, namespace string, metri
 }
 
 // appendDatapoints adds datapoints to the metric based on the datum type.
-func (s *MemoryStorage) appendDatapoints(metric *StoredMetric, datum *MetricDatum, timestamp string) {
+func (s *MemoryStorage) appendDatapoints(metric *StoredMetric, datum *MetricDatum, timestamp time.Time) {
 	switch {
 	case datum.Value != nil:
 		metric.Datapoints = append(metric.Datapoints, MetricDatapoint{
@@ -304,12 +304,12 @@ func (s *MemoryStorage) GetMetricData(_ context.Context, req *GetMetricDataReque
 			continue
 		}
 
-		timestamps := make([]string, 0)
+		timestamps := make([]jsonTimestamp, 0)
 		values := make([]float64, 0)
 
 		for _, dp := range metric.Datapoints {
-			if s.isInTimeRange(dp.Timestamp, req.StartTime, req.EndTime) {
-				timestamps = append(timestamps, dp.Timestamp)
+			if isInTimeRange(dp.Timestamp, req.StartTime.Time, req.EndTime.Time) {
+				timestamps = append(timestamps, jsonTimestamp{dp.Timestamp})
 				values = append(values, dp.Value)
 			}
 		}
@@ -351,7 +351,7 @@ func (s *MemoryStorage) GetMetricStatistics(_ context.Context, req *GetMetricSta
 	var filteredPoints []MetricDatapoint
 
 	for _, dp := range metric.Datapoints {
-		if s.isInTimeRange(dp.Timestamp, req.StartTime, req.EndTime) {
+		if isInTimeRange(dp.Timestamp, req.StartTime.Time, req.EndTime.Time) {
 			filteredPoints = append(filteredPoints, dp)
 		}
 	}
@@ -424,8 +424,8 @@ func (s *MemoryStorage) PutMetricAlarm(_ context.Context, req *PutMetricAlarmReq
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	alarmARN := fmt.Sprintf("arn:aws:cloudwatch:us-east-1:%s:alarm:%s", defaultAccountID, req.AlarmName)
+	now := time.Now().UTC()
+	alarmARN := fmt.Sprintf("arn:aws:cloudwatch:%s:%s:alarm:%s", s.region, defaultAccountID, req.AlarmName)
 
 	actionsEnabled := true
 	if req.ActionsEnabled != nil {
@@ -502,7 +502,7 @@ func (s *MemoryStorage) SetAlarmState(ctx context.Context, alarmName, stateValue
 	previousState := alarm.StateValue
 	alarm.StateValue = stateValue
 	alarm.StateReason = stateReason
-	alarm.StateUpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	alarm.StateUpdatedAt = time.Now().UTC()
 
 	// Determine which actions to fire based on the new state.
 	var actionARNs []string
@@ -584,7 +584,7 @@ func (s *MemoryStorage) buildAlarmNotification(alarm *Alarm, previousState strin
 		NewStateValue:    alarm.StateValue,
 		NewStateReason:   alarm.StateReason,
 		OldStateValue:    previousState,
-		StateChangeTime:  alarm.StateUpdatedAt,
+		StateChangeTime:  alarm.StateUpdatedAt.Format(time.RFC3339),
 		Region:           s.region,
 		AlarmARN:         alarm.AlarmARN,
 		Trigger: alarmNotificationTrigger{
@@ -669,8 +669,8 @@ func convertAlarmToJSON(alarm *Alarm) MetricAlarm {
 		OKActions:                          alarm.OKActions,
 		StateValue:                         alarm.StateValue,
 		StateReason:                        alarm.StateReason,
-		StateUpdatedTimestamp:              alarm.StateUpdatedAt,
-		AlarmConfigurationUpdatedTimestamp: alarm.CreatedAt,
+		StateUpdatedTimestamp:              jsonTimestamp{alarm.StateUpdatedAt},
+		AlarmConfigurationUpdatedTimestamp: jsonTimestamp{alarm.CreatedAt},
 	}
 }
 
@@ -695,25 +695,15 @@ func (s *MemoryStorage) makeMetricKey(namespace, metricName string, dimensions [
 	}
 }
 
-// isInTimeRange checks if a timestamp is within the given range.
-func (s *MemoryStorage) isInTimeRange(timestamp, startTime, endTime string) bool {
-	ts, err := time.Parse(time.RFC3339, timestamp)
-	if err != nil {
+// isInTimeRange checks if a timestamp is within the given range. A zero
+// bound leaves that side of the range open.
+func isInTimeRange(timestamp, start, end time.Time) bool {
+	if !start.IsZero() && timestamp.Before(start) {
 		return false
 	}
 
-	if startTime != "" {
-		start, err := time.Parse(time.RFC3339, startTime)
-		if err == nil && ts.Before(start) {
-			return false
-		}
-	}
-
-	if endTime != "" {
-		end, err := time.Parse(time.RFC3339, endTime)
-		if err == nil && ts.After(end) {
-			return false
-		}
+	if !end.IsZero() && timestamp.After(end) {
+		return false
 	}
 
 	return true
@@ -775,7 +765,7 @@ func (s *MemoryStorage) calculateStatistics(points []MetricDatapoint, statistics
 	average := sum / count
 
 	dp := Datapoint{
-		Timestamp: timestamp,
+		Timestamp: jsonTimestamp{timestamp},
 		Unit:      unit,
 	}
 

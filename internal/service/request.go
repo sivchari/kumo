@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,4 +26,19 @@ func ReadJSONRequest(r *http.Request, v any) error {
 	}
 
 	return nil
+}
+
+type queryProtocolKey struct{}
+
+// WithQueryProtocol marks r as having arrived over the AWS Query protocol,
+// for services that also accept AWS JSON on the same handlers.
+func WithQueryProtocol(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), queryProtocolKey{}, true))
+}
+
+// IsQueryProtocol reports whether r was marked by WithQueryProtocol.
+func IsQueryProtocol(r *http.Request) bool {
+	marked, _ := r.Context().Value(queryProtocolKey{}).(bool)
+
+	return marked
 }
