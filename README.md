@@ -15,9 +15,21 @@
 - **No authentication required** - Perfect for CI environments
 - **Single binary** - Easy to distribute and deploy
 - **Docker support** - Run as a container
-- **Lightweight** - Fast startup, minimal resource usage
+- **Lightweight** - Fast startup, minimal resource usage (see [Footprint](#footprint))
 - **AWS SDK v2 compatible** - Works seamlessly with Go AWS SDK v2
 - **Optional data persistence** - Survive restarts with `KUMO_DATA_DIR`
+
+### Footprint
+
+| Metric | Value |
+|--------|-------|
+| Container image | ~17 MB compressed (~72 MB on disk) |
+| Binary | ~44 MB |
+| Cold start (`docker run` to first API response) | ~0.12 s |
+| Idle memory | ~9 MiB |
+| Memory after 1,000 S3 objects + 1,000 SQS messages + 1,000 DynamoDB items | ~20 MiB |
+
+Measured with the image built from `docker/Dockerfile` on an arm64 Docker host (4 CPU / 8 GiB VM); memory is from `docker stats`.
 
 ## Supported Services (83 services)
 
