@@ -2125,3 +2125,377 @@ func TestDynamoDB_ScanInvalidFilterEmptyTable(t *testing.T) {
 		t.Fatalf("expected ValidationException, got: %T: %v", err, err)
 	}
 }
+
+// dynamoDBErrorSummary reduces err to its API error code and message so that
+// error cases can be compared against golden files.
+func dynamoDBErrorSummary(t *testing.T, err error) map[string]string {
+	t.Helper()
+
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected an API error, got: %T: %v", err, err)
+	}
+
+	return map[string]string{"Code": apiErr.ErrorCode(), "Message": apiErr.ErrorMessage()}
+}
+
+func createIndexedTable(t *testing.T, client *dynamodb.Client, tableName string) {
+	t.Helper()
+
+	_, err := client.CreateTable(t.Context(), &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+			{AttributeName: aws.String("sk"), KeyType: types.KeyTypeRange},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+			{AttributeName: aws.String("sk"), AttributeType: types.ScalarAttributeTypeS},
+			{AttributeName: aws.String("gsi_pk"), AttributeType: types.ScalarAttributeTypeS},
+			{AttributeName: aws.String("gsi_sk"), AttributeType: types.ScalarAttributeTypeN},
+		},
+		GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
+			{
+				IndexName: aws.String("gsi-index"),
+				KeySchema: []types.KeySchemaElement{
+					{AttributeName: aws.String("gsi_pk"), KeyType: types.KeyTypeHash},
+					{AttributeName: aws.String("gsi_sk"), KeyType: types.KeyTypeRange},
+				},
+				Projection: &types.Projection{ProjectionType: types.ProjectionTypeAll},
+			},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{TableName: aws.String(tableName)})
+	})
+}
+
+// queryAllPages follows LastEvaluatedKey until the query is exhausted and
+// returns every page, failing if it never is.
+func queryAllPages(t *testing.T, client *dynamodb.Client, input *dynamodb.QueryInput) []*dynamodb.QueryOutput {
+	t.Helper()
+
+	const maxPages = 20
+
+	var pages []*dynamodb.QueryOutput
+
+	for range maxPages {
+		out, err := client.Query(t.Context(), input)
+		if err != nil {
+			t.Fatalf("failed to query: %v", err)
+		}
+
+		pages = append(pages, out)
+
+		if out.LastEvaluatedKey == nil {
+			return pages
+		}
+
+		input.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+
+	t.Fatalf("pagination did not terminate after %d pages", maxPages)
+
+	return nil
+}
+
+// TestDynamoDB_QueryIndexPagination verifies that paging through a global
+// secondary index returns every item once, in index order, even when index
+// key values repeat and sort numerically rather than lexically.
+func TestDynamoDB_QueryIndexPagination(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-gsi-pagination"
+
+	createIndexedTable(t, client, tableName)
+
+	for _, item := range []struct{ pk, sk, gsiPK, gsiSK string }{
+		{"user-1", "a", "group", "10"},
+		{"user-2", "a", "group", "2"},
+		{"user-1", "b", "group", "2"},
+		{"user-3", "a", "group", "1"},
+		{"user-2", "b", "group", "3"},
+		{"user-9", "z", "other-group", "1"},
+	} {
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item: map[string]types.AttributeValue{
+				"pk":     &types.AttributeValueMemberS{Value: item.pk},
+				"sk":     &types.AttributeValueMemberS{Value: item.sk},
+				"gsi_pk": &types.AttributeValueMemberS{Value: item.gsiPK},
+				"gsi_sk": &types.AttributeValueMemberN{Value: item.gsiSK},
+			},
+		}); err != nil {
+			t.Fatalf("failed to put item: %v", err)
+		}
+	}
+
+	newInput := func(forward bool) *dynamodb.QueryInput {
+		return &dynamodb.QueryInput{
+			TableName:              aws.String(tableName),
+			IndexName:              aws.String("gsi-index"),
+			KeyConditionExpression: aws.String("gsi_pk = :g"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":g": &types.AttributeValueMemberS{Value: "group"},
+			},
+			Limit:            aws.Int32(2),
+			ScanIndexForward: aws.Bool(forward),
+		}
+	}
+
+	opts := golden.WithIgnoreFields("ResultMetadata")
+
+	golden.New(t, opts).Assert(t.Name()+"_forward", queryAllPages(t, client, newInput(true)))
+	golden.New(t, opts).Assert(t.Name()+"_reverse", queryAllPages(t, client, newInput(false)))
+}
+
+// TestDynamoDB_QueryIndexInvalidExclusiveStartKey verifies that a start key
+// that is not a key of the queried partition or index is rejected.
+func TestDynamoDB_QueryIndexInvalidExclusiveStartKey(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-gsi-invalid-start-key"
+
+	createIndexedTable(t, client, tableName)
+
+	for _, gsiPK := range []string{"group", "other-group"} {
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item: map[string]types.AttributeValue{
+				"pk":     &types.AttributeValueMemberS{Value: "user-" + gsiPK},
+				"sk":     &types.AttributeValueMemberS{Value: "a"},
+				"gsi_pk": &types.AttributeValueMemberS{Value: gsiPK},
+				"gsi_sk": &types.AttributeValueMemberN{Value: "1"},
+			},
+		}); err != nil {
+			t.Fatalf("failed to put item: %v", err)
+		}
+	}
+
+	str := func(v string) types.AttributeValue { return &types.AttributeValueMemberS{Value: v} }
+
+	tests := []struct {
+		name     string
+		startKey map[string]types.AttributeValue
+	}{
+		{
+			name: "other_partition",
+			startKey: map[string]types.AttributeValue{
+				"gsi_pk": str("other-group"), "gsi_sk": &types.AttributeValueMemberN{Value: "1"},
+				"pk": str("user-other-group"), "sk": str("a"),
+			},
+		},
+		{
+			name:     "table_key_only",
+			startKey: map[string]types.AttributeValue{"pk": str("user-group"), "sk": str("a")},
+		},
+		{
+			name: "extra_attribute",
+			startKey: map[string]types.AttributeValue{
+				"gsi_pk": str("group"), "gsi_sk": &types.AttributeValueMemberN{Value: "1"},
+				"pk": str("user-group"), "sk": str("a"), "extra": str("x"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.Query(ctx, &dynamodb.QueryInput{
+				TableName:              aws.String(tableName),
+				IndexName:              aws.String("gsi-index"),
+				KeyConditionExpression: aws.String("gsi_pk = :g"),
+				ExpressionAttributeValues: map[string]types.AttributeValue{
+					":g": str("group"),
+				},
+				ExclusiveStartKey: tt.startKey,
+			})
+			if err == nil {
+				t.Fatal("expected ValidationException for the start key")
+			}
+
+			golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+		})
+	}
+}
+
+// TestDynamoDB_ConditionCompareCollections verifies that =, <> compare lists,
+// maps and sets by value: lists by order, sets without regard to order, and
+// numbers by magnitude rather than spelling.
+func TestDynamoDB_ConditionCompareCollections(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-condition-collections"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	str := func(v string) types.AttributeValue { return &types.AttributeValueMemberS{Value: v} }
+	num := func(v string) types.AttributeValue { return &types.AttributeValueMemberN{Value: v} }
+	list := func(v ...types.AttributeValue) types.AttributeValue { return &types.AttributeValueMemberL{Value: v} }
+	mapOf := func(v map[string]types.AttributeValue) types.AttributeValue {
+		return &types.AttributeValueMemberM{Value: v}
+	}
+
+	for pk, attrs := range map[string]map[string]types.AttributeValue{
+		"match": {
+			"l":  list(str("a"), num("1")),
+			"m":  mapOf(map[string]types.AttributeValue{"k": str("v"), "n": num("1")}),
+			"ss": &types.AttributeValueMemberSS{Value: []string{"a", "b"}},
+			"ns": &types.AttributeValueMemberNS{Value: []string{"1", "2"}},
+		},
+		"decoy": {
+			"l":  list(num("1"), str("a")),
+			"m":  mapOf(map[string]types.AttributeValue{"k": str("v")}),
+			"ss": &types.AttributeValueMemberSS{Value: []string{"a", "c"}},
+			"ns": &types.AttributeValueMemberNS{Value: []string{"1", "3"}},
+		},
+	} {
+		attrs["pk"] = str(pk)
+
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{TableName: aws.String(tableName), Item: attrs}); err != nil {
+			t.Fatalf("failed to put item: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		expr  string
+		value types.AttributeValue
+	}{
+		{"list_equal", "l = :v", list(str("a"), num("1"))},
+		{"list_equal_numbers_by_value", "l = :v", list(str("a"), num("1.0"))},
+		{"list_different_order", "l = :v", list(num("1"), str("a"))},
+		{"list_not_equal", "l <> :v", list(str("a"), num("1"))},
+		{"map_equal", "m = :v", mapOf(map[string]types.AttributeValue{"n": num("1.00"), "k": str("v")})},
+		{"map_missing_key", "m = :v", mapOf(map[string]types.AttributeValue{"k": str("v")})},
+		{"string_set_any_order", "ss = :v", &types.AttributeValueMemberSS{Value: []string{"b", "a"}}},
+		{"string_set_subset", "ss = :v", &types.AttributeValueMemberSS{Value: []string{"a"}}},
+		{"number_set_by_value", "ns = :v", &types.AttributeValueMemberNS{Value: []string{"2.0", "1"}}},
+		{"number_set_not_equal", "ns <> :v", &types.AttributeValueMemberNS{Value: []string{"2", "1"}}},
+		{"type_mismatch", "ss = :v", list(str("a"), str("b"))},
+	}
+
+	matches := make(map[string][]string, len(tests))
+
+	for _, tt := range tests {
+		out, err := client.Scan(ctx, &dynamodb.ScanInput{
+			TableName:                 aws.String(tableName),
+			FilterExpression:          aws.String(tt.expr),
+			ExpressionAttributeValues: map[string]types.AttributeValue{":v": tt.value},
+			ProjectionExpression:      aws.String("pk"),
+		})
+		if err != nil {
+			t.Fatalf("%s: failed to scan: %v", tt.name, err)
+		}
+
+		pks := make([]string, 0, len(out.Items))
+		for _, item := range out.Items {
+			pks = append(pks, itemPKValue(item))
+		}
+
+		sort.Strings(pks)
+
+		matches[tt.name] = pks
+	}
+
+	golden.New(t).Assert(t.Name()+"_scan", matches)
+
+	// A conditional write compares the same way.
+	put := func(cond string, value types.AttributeValue) error {
+		_, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName:                 aws.String(tableName),
+			Item:                      map[string]types.AttributeValue{"pk": str("match"), "l": list(str("replaced"))},
+			ConditionExpression:       aws.String(cond),
+			ExpressionAttributeValues: map[string]types.AttributeValue{":v": value},
+		})
+
+		return err
+	}
+
+	err := put("ss = :v", &types.AttributeValueMemberSS{Value: []string{"a", "c"}})
+	if err == nil {
+		t.Fatal("expected ConditionalCheckFailedException")
+	}
+
+	golden.New(t).Assert(t.Name()+"_put_failed", dynamoDBErrorSummary(t, err))
+
+	if err := put("ss = :v", &types.AttributeValueMemberSS{Value: []string{"b", "a"}}); err != nil {
+		t.Fatalf("expected the conditional put to succeed: %v", err)
+	}
+}
+
+// TestDynamoDB_NumberRange verifies that numbers DynamoDB cannot store are
+// rejected, wherever in a request they appear.
+func TestDynamoDB_NumberRange(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-number-range"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	const (
+		largest  = "9.9999999999999999999999999999999999999E+125"
+		smallest = "1E-130"
+	)
+
+	for _, n := range []string{largest, smallest} {
+		if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item: map[string]types.AttributeValue{
+				"pk": &types.AttributeValueMemberS{Value: n},
+				"n":  &types.AttributeValueMemberN{Value: n},
+			},
+		}); err != nil {
+			t.Fatalf("expected %s to be accepted: %v", n, err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		value types.AttributeValue
+	}{
+		{"overflow", &types.AttributeValueMemberN{Value: "1E+126"}},
+		{"huge_exponent", &types.AttributeValueMemberN{Value: "1e1000000000"}},
+		{"underflow", &types.AttributeValueMemberN{Value: "9E-131"}},
+		{"too_many_digits", &types.AttributeValueMemberN{Value: "123456789012345678901234567890123456789"}},
+		{"number_set", &types.AttributeValueMemberNS{Value: []string{"1", "1e1000000000"}}},
+		{"nested", &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{
+			"l": &types.AttributeValueMemberL{Value: []types.AttributeValue{&types.AttributeValueMemberN{Value: "1e126"}}},
+		}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+				TableName: aws.String(tableName),
+				Item: map[string]types.AttributeValue{
+					"pk": &types.AttributeValueMemberS{Value: "out-of-range"},
+					"n":  tt.value,
+				},
+			})
+			if err == nil {
+				t.Fatal("expected ValidationException for the number")
+			}
+
+			golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+		})
+	}
+
+	// A comparison operand is checked as well.
+	_, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String("n > :v"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":v": &types.AttributeValueMemberN{Value: "1e1000000000"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected ValidationException for the filter value")
+	}
+
+	golden.New(t).Assert(t.Name()+"_filter_value", dynamoDBErrorSummary(t, err))
+}
