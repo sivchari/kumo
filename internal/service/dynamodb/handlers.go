@@ -554,6 +554,13 @@ func writeDynamoDBError(w http.ResponseWriter, code, message string, status int)
 // standard DynamoDB decode-failure error and returning false on failure.
 func decodeDynamoDBRequest(w http.ResponseWriter, r *http.Request, req any) bool {
 	if err := service.ReadJSONRequest(r, req); err != nil {
+		var tErr *TableError
+		if errors.As(err, &tErr) {
+			writeDynamoDBError(w, tErr.Code, tErr.Message, http.StatusBadRequest)
+
+			return false
+		}
+
 		writeDynamoDBError(w, "SerializationException", "Failed to parse request body", http.StatusBadRequest)
 
 		return false

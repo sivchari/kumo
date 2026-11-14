@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
-	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -697,8 +696,8 @@ func equalityOnly(equal bool, op string) bool {
 // compareNumbers compares two DynamoDB numbers exactly, since they carry up to
 // 38 digits of precision. ok is false if either is not a valid number.
 func compareNumbers(a, b string) (order int, ok bool) {
-	x, okA := new(big.Rat).SetString(a)
-	y, okB := new(big.Rat).SetString(b)
+	x, okA := parseNumber(a)
+	y, okB := parseNumber(b)
 
 	if !okA || !okB {
 		return 0, false
@@ -710,7 +709,7 @@ func compareNumbers(a, b string) (order int, ok bool) {
 // numberKey returns a canonical form of n, so numbers equal by value share a
 // key; an invalid number is its own key.
 func numberKey(n string) string {
-	r, ok := new(big.Rat).SetString(n)
+	r, ok := parseNumber(n)
 	if !ok {
 		return n
 	}
