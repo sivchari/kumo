@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"math/big"
 	"os"
 	"slices"
 	"sort"
@@ -944,8 +943,8 @@ func compareKeys(names []string, a, b Item) int {
 func compareKeyValues(a, b *AttributeValue) int {
 	switch {
 	case a.N != nil && b.N != nil:
-		x, okA := new(big.Rat).SetString(*a.N)
-		y, okB := new(big.Rat).SetString(*b.N)
+		x, okA := parseNumber(*a.N)
+		y, okB := parseNumber(*b.N)
 
 		if okA && okB {
 			return x.Cmp(y)

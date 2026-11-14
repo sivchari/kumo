@@ -111,6 +111,10 @@ func (av *AttributeValue) UnmarshalJSON(data []byte) error {
 		return err //nolint:wrapcheck // internal deserialization
 	}
 
+	if err := validateNumbers(raw.N, raw.NS); err != nil {
+		return err
+	}
+
 	av.S = raw.S
 	av.N = raw.N
 	av.B = raw.B
@@ -121,6 +125,24 @@ func (av *AttributeValue) UnmarshalJSON(data []byte) error {
 	av.L = raw.L
 	av.NULL = raw.NULL
 	av.BOOL = raw.BOOL
+
+	return nil
+}
+
+// validateNumbers rejects the first of a number attribute's values that
+// DynamoDB cannot store, so no out-of-range number ever enters a request.
+func validateNumbers(n *string, ns []string) error {
+	if n != nil {
+		if err := validateNumber(*n); err != nil {
+			return err
+		}
+	}
+
+	for _, v := range ns {
+		if err := validateNumber(v); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
