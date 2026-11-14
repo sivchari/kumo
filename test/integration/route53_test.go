@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/sivchari/golden"
 )
+
+// maxRoute53IDLength is the length limit the Route 53 API reference sets for
+// HostedZone.Id and ChangeInfo.Id, measured without the path prefix.
+const maxRoute53IDLength = 32
+
+// route53IDPattern matches the characters Route 53 uses in IDs.
+var route53IDPattern = regexp.MustCompile(`^[A-Z0-9]+$`)
 
 func newRoute53Client(t *testing.T) *route53.Client {
 	t.Helper()
@@ -376,6 +384,97 @@ func TestRoute53_ChangeResourceRecordSets(t *testing.T) {
 		"SubmittedAt",
 		"ResultMetadata",
 	)).Assert(t.Name(), changeResult)
+}
+
+// IDs are generated per request, so they are checked structurally instead of
+// against golden values.
+func TestRoute53_GeneratedIDs(t *testing.T) {
+	t.Parallel()
+
+	client := newRoute53Client(t)
+	ctx := t.Context()
+
+	createResult, err := client.CreateHostedZone(ctx, &route53.CreateHostedZoneInput{
+		Name:            aws.String("ids-test.example.com"),
+		CallerReference: aws.String("test-generated-ids"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	record := &types.ResourceRecordSet{
+		Name: aws.String("www.ids-test.example.com."),
+		Type: types.RRTypeA,
+		TTL:  aws.Int64(300),
+		ResourceRecords: []types.ResourceRecord{
+			{Value: aws.String("192.0.2.1")},
+		},
+	}
+
+	t.Cleanup(func() {
+		// Delete records first.
+		_, _ = client.ChangeResourceRecordSets(context.Background(), &route53.ChangeResourceRecordSetsInput{
+			HostedZoneId: createResult.HostedZone.Id,
+			ChangeBatch: &types.ChangeBatch{
+				Changes: []types.Change{
+					{Action: types.ChangeActionDelete, ResourceRecordSet: record},
+				},
+			},
+		})
+		_, _ = client.DeleteHostedZone(context.Background(), &route53.DeleteHostedZoneInput{
+			Id: createResult.HostedZone.Id,
+		})
+	})
+
+	changeResult, err := client.ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
+		HostedZoneId: createResult.HostedZone.Id,
+		ChangeBatch: &types.ChangeBatch{
+			Changes: []types.Change{
+				{Action: types.ChangeActionCreate, ResourceRecordSet: record},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		id     *string
+		prefix string
+	}{
+		{"CreateHostedZone_HostedZoneId", createResult.HostedZone.Id, "/hostedzone/"},
+		{"CreateHostedZone_ChangeInfoId", createResult.ChangeInfo.Id, "/change/"},
+		{"ChangeResourceRecordSets_ChangeInfoId", changeResult.ChangeInfo.Id, "/change/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assertRoute53ID(t, aws.ToString(tt.id), tt.prefix)
+		})
+	}
+}
+
+// assertRoute53ID checks that id starts with prefix and that the remainder is
+// non-empty, at most maxRoute53IDLength characters, and uppercase letters and
+// digits only.
+func assertRoute53ID(t *testing.T, id, prefix string) {
+	t.Helper()
+
+	bare, ok := strings.CutPrefix(id, prefix)
+	if !ok {
+		t.Fatalf("ID %q does not start with %q", id, prefix)
+	}
+
+	if bare == "" || len(bare) > maxRoute53IDLength {
+		t.Errorf("ID %q has %d characters after %q, want 1 to %d", id, len(bare), prefix, maxRoute53IDLength)
+	}
+
+	if !route53IDPattern.MatchString(bare) {
+		t.Errorf("ID %q contains characters other than uppercase letters and digits after %q", id, prefix)
+	}
 }
 
 func TestRoute53_ListResourceRecordSets(t *testing.T) {
