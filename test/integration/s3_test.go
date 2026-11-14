@@ -1826,6 +1826,88 @@ func TestS3_KeysWithPathSegmentsStayDistinct(t *testing.T) {
 	}
 }
 
+// TestS3_KeysWithEncodedCharactersStayDistinct verifies that keys holding
+// unicode, spaces, plus signs, percent signs and repeated slashes are stored,
+// listed, read and deleted under exactly the key sent, so "a b", "a+b" and
+// "a%20b" are three different objects.
+func TestS3_KeysWithEncodedCharactersStayDistinct(t *testing.T) {
+	client := newS3Client(t)
+	ctx := t.Context()
+	bucket := "test-encoded-character-keys"
+	keys := []string{
+		"a b", "a+b", "a%20b", "a%2Fb", "100%", "what?",
+		"日本語/ключ", "🐧", "my dir//a b+c", "ünï/ /+/ ",
+	}
+
+	if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		for _, key := range keys {
+			_, _ = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		}
+
+		_, _ = client.DeleteBucket(context.Background(), &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	})
+
+	for _, key := range keys {
+		if _, err := client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   strings.NewReader("body of " + key),
+		}); err != nil {
+			t.Fatalf("PutObject(%q): %v", key, err)
+		}
+	}
+
+	listed, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gotKeys := make([]string, 0, len(listed.Contents))
+	for _, obj := range listed.Contents {
+		gotKeys = append(gotKeys, aws.ToString(obj.Key))
+	}
+
+	wantKeys := slices.Clone(keys)
+	slices.Sort(wantKeys)
+
+	if !slices.Equal(gotKeys, wantKeys) {
+		t.Fatalf("listed keys = %q, want %q", gotKeys, wantKeys)
+	}
+
+	for _, key := range keys {
+		got, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
+		if err != nil {
+			t.Fatalf("GetObject(%q): %v", key, err)
+		}
+
+		body, _ := io.ReadAll(got.Body)
+		_ = got.Body.Close()
+
+		if want := "body of " + key; string(body) != want {
+			t.Errorf("GetObject(%q) body = %q, want %q", key, body, want)
+		}
+	}
+
+	for _, key := range keys {
+		if _, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)}); err != nil {
+			t.Fatalf("DeleteObject(%q): %v", key, err)
+		}
+	}
+
+	remaining, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(remaining.Contents) != 0 {
+		t.Errorf("objects left after delete: %d", len(remaining.Contents))
+	}
+}
+
 // TestS3_DotSegmentsOutOfAnotherPrefixUseCleanedPath verifies that a path
 // starting under another service's prefix whose ".." segments resolve to an
 // S3 object is still served from the cleaned path.
