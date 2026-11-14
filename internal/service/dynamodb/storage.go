@@ -749,7 +749,11 @@ func (m *MemoryStorage) Query(_ context.Context, tableName, indexName, keyCondEx
 	}
 
 	pageKeyNames := keyNames(keySchema, td.Table.KeySchema)
-	if err := validateStartKey(exclusiveStartKey, pageKeyNames); err != nil {
+	if err := validateStartKey(td.Table, exclusiveStartKey, pageKeyNames); err != nil {
+		return nil, nil, 0, err
+	}
+
+	if err := m.validateStartKeyPartition(exclusiveStartKey, partitionKeyName, partitionKeyValue); err != nil {
 		return nil, nil, 0, err
 	}
 
@@ -839,23 +843,48 @@ func keyNames(schemas ...[]KeySchemaElement) []string {
 	return names
 }
 
-// validateStartKey rejects an ExclusiveStartKey that lacks any of names, the
-// attributes needed to locate its position.
-func validateStartKey(exclusiveStartKey Item, names []string) error {
+// validateStartKey rejects an ExclusiveStartKey that is not exactly a key of
+// the table or index being read: it must hold every attribute in names, each
+// of the declared type, and nothing else.
+func validateStartKey(table *Table, exclusiveStartKey Item, names []string) error {
 	if exclusiveStartKey == nil {
 		return nil
 	}
 
+	if len(exclusiveStartKey) != len(names) {
+		return newInvalidStartKeyException()
+	}
+
+	attrTypes := keyAttributeTypes(table)
+
 	for _, name := range names {
-		if _, ok := exclusiveStartKey[name]; !ok {
-			return &TableError{
-				Code:    errCodeValidation,
-				Message: "The provided starting key is invalid: The provided key element does not match the schema",
-			}
+		av, ok := exclusiveStartKey[name]
+		if !ok {
+			return newInvalidStartKeyException()
+		}
+
+		if attrType, defined := attrTypes[name]; defined && !matchesKeyAttributeType(av, attrType) {
+			return newInvalidStartKeyException()
 		}
 	}
 
 	return nil
+}
+
+func newInvalidStartKeyException() *TableError {
+	return newValidationException("The provided starting key is invalid: The provided key element does not match the schema")
+}
+
+// validateStartKeyPartition rejects an ExclusiveStartKey of a Query whose
+// partition key differs from the queried one, since it could not have been
+// returned as a LastEvaluatedKey of that Query. A nil partitionKeyValue
+// (no partition key in the condition) accepts any start key.
+func (m *MemoryStorage) validateStartKeyPartition(exclusiveStartKey Item, partitionKeyName string, partitionKeyValue *AttributeValue) error {
+	if exclusiveStartKey == nil || m.matchesPartitionKey(exclusiveStartKey, partitionKeyName, partitionKeyValue) {
+		return nil
+	}
+
+	return newValidationException("The provided starting key is outside query boundaries based on provided conditions")
 }
 
 // orderAfterStartKey sorts items in place by the attributes in names,
@@ -1026,7 +1055,7 @@ func (m *MemoryStorage) Scan(_ context.Context, tableName, filterExpr string, ex
 // to Limit items against the filter via evaluatePage.
 func (m *MemoryStorage) sortByKeyAndEvaluate(table *Table, candidates []Item, exclusiveStartKey Item, filterExpr string, exprNames map[string]string, exprValues map[string]AttributeValue, limit int) ([]Item, Item, int, error) {
 	pageKeyNames := keyNames(table.KeySchema)
-	if err := validateStartKey(exclusiveStartKey, pageKeyNames); err != nil {
+	if err := validateStartKey(table, exclusiveStartKey, pageKeyNames); err != nil {
 		return nil, nil, 0, err
 	}
 
