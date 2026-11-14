@@ -7,11 +7,13 @@ on:
     paths:
       - 'docker/Dockerfile'
       - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/docker-build.yaml'
   pull_request:
     paths:
       - 'docker/Dockerfile'
       - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/docker-build.yaml'
 
 permissions:
@@ -39,7 +41,7 @@ jobs:
           curl -fsS --max-time 5 --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:4566/health
           # On SIGTERM kumo snapshots every service into KUMO_DATA_DIR, so
           # s3.json only exists if the image's non-root user can write /data.
-          docker stop kumo-smoke
+          docker stop -t 30 kumo-smoke
           docker cp kumo-smoke:/data/s3.json - > /dev/null
 
       - name: Show kumo logs
