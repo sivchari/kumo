@@ -2,6 +2,11 @@
 package cloudwatch
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/sivchari/kumo/internal/service"
@@ -16,6 +21,50 @@ type CBORTime struct {
 // ToRFC3339 returns the time as an RFC3339 string.
 func (t CBORTime) ToRFC3339() string {
 	return t.Format(time.RFC3339)
+}
+
+// jsonTimestamp is a timestamp on the AWS JSON wire: epoch seconds with
+// millisecond precision. Requests may also send it as a string, which is what
+// the Query protocol's form-to-JSON conversion produces.
+type jsonTimestamp struct {
+	time.Time
+}
+
+func (t *jsonTimestamp) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, []byte("null")) {
+		return nil
+	}
+
+	if bytes.HasPrefix(data, []byte(`"`)) {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return fmt.Errorf("invalid timestamp string: %w", err)
+		}
+
+		parsed, err := parseTimestamp(s)
+		if err != nil {
+			return err
+		}
+
+		t.Time = parsed
+
+		return nil
+	}
+
+	seconds, err := strconv.ParseFloat(string(data), 64)
+	if err != nil {
+		return fmt.Errorf("invalid epoch timestamp: %w", err)
+	}
+
+	t.Time = time.UnixMilli(int64(math.Round(seconds * 1000))).UTC()
+
+	return nil
+}
+
+func (t jsonTimestamp) MarshalJSON() ([]byte, error) {
+	millis := t.Round(time.Millisecond).UnixMilli()
+
+	return strconv.AppendFloat(nil, float64(millis)/1000, 'f', -1, 64), nil
 }
 
 // Metric represents a CloudWatch metric.
@@ -35,7 +84,7 @@ type Dimension struct {
 type MetricDatum struct {
 	MetricName        string        `json:"MetricName"`
 	Dimensions        []Dimension   `json:"Dimensions,omitempty"`
-	Timestamp         string        `json:"Timestamp,omitempty"`
+	Timestamp         jsonTimestamp `json:"Timestamp,omitzero"`
 	Value             *float64      `json:"Value,omitempty"`
 	StatisticValues   *StatisticSet `json:"StatisticValues,omitempty"`
 	Values            []float64     `json:"Values,omitempty"`
@@ -54,7 +103,7 @@ type StatisticSet struct {
 
 // MetricDatapoint represents a metric data point in storage.
 type MetricDatapoint struct {
-	Timestamp string
+	Timestamp time.Time
 	Value     float64
 	Unit      string
 }
@@ -77,8 +126,8 @@ type Alarm struct {
 	OKActions          []string
 	StateValue         string
 	StateReason        string
-	StateUpdatedAt     string
-	CreatedAt          string
+	StateUpdatedAt     time.Time
+	CreatedAt          time.Time
 }
 
 // PutMetricDataRequest is the request for PutMetricData.
@@ -90,8 +139,8 @@ type PutMetricDataRequest struct {
 // GetMetricDataRequest is the request for GetMetricData.
 type GetMetricDataRequest struct {
 	MetricDataQueries []MetricDataQuery `json:"MetricDataQueries"`
-	StartTime         string            `json:"StartTime"`
-	EndTime           string            `json:"EndTime"`
+	StartTime         jsonTimestamp     `json:"StartTime,omitzero"`
+	EndTime           jsonTimestamp     `json:"EndTime,omitzero"`
 	NextToken         string            `json:"NextToken,omitempty"`
 	MaxDatapoints     *int32            `json:"MaxDatapoints,omitempty"`
 }
@@ -116,14 +165,14 @@ type MetricStat struct {
 
 // GetMetricStatisticsRequest is the request for GetMetricStatistics.
 type GetMetricStatisticsRequest struct {
-	Namespace  string      `json:"Namespace"`
-	MetricName string      `json:"MetricName"`
-	Dimensions []Dimension `json:"Dimensions,omitempty"`
-	StartTime  string      `json:"StartTime"`
-	EndTime    string      `json:"EndTime"`
-	Period     int32       `json:"Period"`
-	Statistics []string    `json:"Statistics,omitempty"`
-	Unit       string      `json:"Unit,omitempty"`
+	Namespace  string        `json:"Namespace"`
+	MetricName string        `json:"MetricName"`
+	Dimensions []Dimension   `json:"Dimensions,omitempty"`
+	StartTime  jsonTimestamp `json:"StartTime,omitzero"`
+	EndTime    jsonTimestamp `json:"EndTime,omitzero"`
+	Period     int32         `json:"Period"`
+	Statistics []string      `json:"Statistics,omitempty"`
+	Unit       string        `json:"Unit,omitempty"`
 }
 
 // ListMetricsRequest is the request for ListMetrics.
@@ -199,11 +248,11 @@ type GetMetricDataResponse struct {
 
 // MetricDataResult represents a single metric data result.
 type MetricDataResult struct {
-	ID         string    `json:"Id"`
-	Label      string    `json:"Label"`
-	Timestamps []string  `json:"Timestamps"`
-	Values     []float64 `json:"Values"`
-	StatusCode string    `json:"StatusCode"`
+	ID         string          `json:"Id"`
+	Label      string          `json:"Label"`
+	Timestamps []jsonTimestamp `json:"Timestamps"`
+	Values     []float64       `json:"Values"`
+	StatusCode string          `json:"StatusCode"`
 }
 
 // GetMetricStatisticsResponse is the response for GetMetricStatistics.
@@ -214,13 +263,13 @@ type GetMetricStatisticsResponse struct {
 
 // Datapoint represents a single datapoint.
 type Datapoint struct {
-	Timestamp   string   `json:"Timestamp"`
-	SampleCount *float64 `json:"SampleCount,omitempty"`
-	Average     *float64 `json:"Average,omitempty"`
-	Sum         *float64 `json:"Sum,omitempty"`
-	Minimum     *float64 `json:"Minimum,omitempty"`
-	Maximum     *float64 `json:"Maximum,omitempty"`
-	Unit        string   `json:"Unit,omitempty"`
+	Timestamp   jsonTimestamp `json:"Timestamp,omitzero"`
+	SampleCount *float64      `json:"SampleCount,omitempty"`
+	Average     *float64      `json:"Average,omitempty"`
+	Sum         *float64      `json:"Sum,omitempty"`
+	Minimum     *float64      `json:"Minimum,omitempty"`
+	Maximum     *float64      `json:"Maximum,omitempty"`
+	Unit        string        `json:"Unit,omitempty"`
 }
 
 // ListMetricsResponse is the response for ListMetrics.
@@ -238,24 +287,29 @@ type DescribeAlarmsResponse struct {
 
 // MetricAlarm represents a single metric alarm in JSON response.
 type MetricAlarm struct {
-	AlarmName                          string      `json:"AlarmName"`
-	AlarmArn                           string      `json:"AlarmArn"`
-	AlarmDescription                   string      `json:"AlarmDescription,omitempty"`
-	MetricName                         string      `json:"MetricName"`
-	Namespace                          string      `json:"Namespace"`
-	Statistic                          string      `json:"Statistic,omitempty"`
-	Dimensions                         []Dimension `json:"Dimensions,omitempty"`
-	Period                             int32       `json:"Period"`
-	EvaluationPeriods                  int32       `json:"EvaluationPeriods"`
-	Threshold                          float64     `json:"Threshold"`
-	ComparisonOperator                 string      `json:"ComparisonOperator"`
-	ActionsEnabled                     bool        `json:"ActionsEnabled"`
-	AlarmActions                       []string    `json:"AlarmActions,omitempty"`
-	OKActions                          []string    `json:"OKActions,omitempty"`
-	StateValue                         string      `json:"StateValue"`
-	StateReason                        string      `json:"StateReason"`
-	StateUpdatedTimestamp              string      `json:"StateUpdatedTimestamp"`
-	AlarmConfigurationUpdatedTimestamp string      `json:"AlarmConfigurationUpdatedTimestamp"`
+	AlarmName                          string        `json:"AlarmName"`
+	AlarmArn                           string        `json:"AlarmArn"`
+	AlarmDescription                   string        `json:"AlarmDescription,omitempty"`
+	MetricName                         string        `json:"MetricName"`
+	Namespace                          string        `json:"Namespace"`
+	Statistic                          string        `json:"Statistic,omitempty"`
+	Dimensions                         []Dimension   `json:"Dimensions,omitempty"`
+	Period                             int32         `json:"Period"`
+	EvaluationPeriods                  int32         `json:"EvaluationPeriods"`
+	Threshold                          float64       `json:"Threshold"`
+	ComparisonOperator                 string        `json:"ComparisonOperator"`
+	ActionsEnabled                     bool          `json:"ActionsEnabled"`
+	AlarmActions                       []string      `json:"AlarmActions,omitempty"`
+	OKActions                          []string      `json:"OKActions,omitempty"`
+	StateValue                         string        `json:"StateValue"`
+	StateReason                        string        `json:"StateReason"`
+	StateUpdatedTimestamp              jsonTimestamp `json:"StateUpdatedTimestamp,omitzero"`
+	AlarmConfigurationUpdatedTimestamp jsonTimestamp `json:"AlarmConfigurationUpdatedTimestamp,omitzero"`
+}
+
+// ListTagsForResourceResponse is the response for ListTagsForResource.
+type ListTagsForResourceResponse struct {
+	Tags []Tag `json:"Tags"`
 }
 
 // ErrorResponse represents a CloudWatch error response in JSON format.

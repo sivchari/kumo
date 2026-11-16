@@ -3,14 +3,19 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/sivchari/kumo/internal/service"
 )
 
 // QueryServiceHandler handles Query protocol requests for a specific service.
@@ -88,7 +93,7 @@ func (d *QueryProtocolDispatcher) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	r.ContentLength = int64(len(jsonBody))
 	r.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	r.Header.Set("X-Amz-Target", entry.servicePrefix+"."+action)
-	entry.handler(w, r)
+	entry.handler(w, service.WithQueryProtocol(r))
 }
 
 // queryResolveError represents an error during handler resolution.
@@ -308,27 +313,90 @@ func flattenMemberStructs(data map[string]any) map[string]any {
 	}
 
 	for base, byIndex := range groups {
-		indices := make([]int, 0, len(byIndex))
-		for i := range byIndex {
-			indices = append(indices, i)
-		}
-
-		sort.Ints(indices)
-
-		arr := make([]map[string]any, 0, len(indices))
-		for _, i := range indices {
-			arr = append(arr, byIndex[i])
-		}
-
-		result[base] = arr
+		result[base] = membersInOrder(byIndex)
 	}
 
 	return result
 }
 
-// parseMemberStructKey parses a "<Base>.member.<N>.<Field>" key, where Field
-// is a single path segment with no further dots. ok is false for any other
-// shape of key.
+// membersInOrder returns the members sorted by index, each with its dotted
+// field paths expanded by nestFields.
+func membersInOrder(byIndex map[int]map[string]any) []map[string]any {
+	indices := slices.Sorted(maps.Keys(byIndex))
+
+	arr := make([]map[string]any, 0, len(indices))
+	for _, i := range indices {
+		arr = append(arr, nestFields(byIndex[i]))
+	}
+
+	return arr
+}
+
+// nestFields expands the dotted field paths of a member into nested objects,
+// and "<Name>.member.<N>.<Field>" paths into lists of objects, e.g.
+// MetricStat.Metric.Dimensions.member.1.Name becomes
+// {"MetricStat": {"Metric": {"Dimensions": [{"Name": ...}]}}}.
+func nestFields(fields map[string]any) map[string]any {
+	result := make(map[string]any, len(fields))
+	children := make(map[string]map[string]any)
+
+	for key, value := range fields {
+		head, rest, found := strings.Cut(key, ".")
+		if !found {
+			result[key] = value
+
+			continue
+		}
+
+		if children[head] == nil {
+			children[head] = make(map[string]any)
+		}
+
+		children[head][rest] = value
+	}
+
+	for head, child := range children {
+		if members, ok := groupMembers(child); ok {
+			result[head] = membersInOrder(members)
+		} else {
+			result[head] = nestFields(child)
+		}
+	}
+
+	return result
+}
+
+// groupMembers groups "member.<N>.<Field>" keys by index. ok is false unless
+// every key has that shape.
+func groupMembers(fields map[string]any) (map[int]map[string]any, bool) {
+	byIndex := make(map[int]map[string]any)
+
+	for key, value := range fields {
+		rest, found := strings.CutPrefix(key, "member.")
+		if !found {
+			return nil, false
+		}
+
+		idxStr, field, found := strings.Cut(rest, ".")
+
+		n, err := strconv.Atoi(idxStr)
+		if !found || err != nil {
+			return nil, false
+		}
+
+		if byIndex[n] == nil {
+			byIndex[n] = make(map[string]any)
+		}
+
+		byIndex[n][field] = value
+	}
+
+	return byIndex, true
+}
+
+// parseMemberStructKey parses a "<Base>.member.<N>.<Field>" key. Field may be
+// a dotted path into nested structures, which nestFields expands. ok is false
+// for any other shape of key.
 func parseMemberStructKey(key string) (base string, index int, field string, ok bool) {
 	const marker = ".member."
 
@@ -347,10 +415,6 @@ func parseMemberStructKey(key string) (base string, index int, field string, ok 
 
 	idxStr := rest[:dotIdx]
 	field = rest[dotIdx+1:]
-
-	if strings.Contains(field, ".") {
-		return "", 0, "", false
-	}
 
 	n, err := strconv.Atoi(idxStr)
 	if err != nil {
@@ -519,13 +583,29 @@ func (e *messageAttributeEntry) attribute() map[string]string {
 	return attr
 }
 
-// writeQueryError writes an AWS Query protocol error response.
+// writeQueryError writes an AWS Query protocol ErrorResponse. It is written
+// before any service is chosen, so it carries no service namespace.
 func writeQueryError(w http.ResponseWriter, code, message string) {
-	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-	w.Header().Set("x-amzn-RequestId", uuid.New().String())
+	requestID := uuid.New().String()
+
+	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+	w.Header().Set("x-amzn-RequestId", requestID)
 	w.WriteHeader(http.StatusBadRequest)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		errFieldType:    code,
-		errFieldMessage: message,
+	_, _ = w.Write([]byte(xml.Header))
+	_ = xml.NewEncoder(w).Encode(queryErrorResponse{
+		Error:     queryError{Type: "Sender", Code: code, Message: message},
+		RequestID: requestID,
 	})
+}
+
+type queryErrorResponse struct {
+	XMLName   xml.Name   `xml:"ErrorResponse"`
+	Error     queryError `xml:"Error"`
+	RequestID string     `xml:"RequestId"`
+}
+
+type queryError struct {
+	Type    string `xml:"Type"`
+	Code    string `xml:"Code"`
+	Message string `xml:"Message"`
 }
