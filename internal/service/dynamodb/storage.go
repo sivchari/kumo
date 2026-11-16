@@ -1563,9 +1563,9 @@ func parseUpdateClauses(expr string) []updateClause {
 
 			absIdx := idx + found
 
-			if absIdx == 0 || upper[absIdx-1] == ' ' {
+			if absIdx == 0 || isExpressionSpace(upper[absIdx-1]) {
 				endIdx := absIdx + len(kw)
-				if endIdx >= len(upper) || upper[endIdx] == ' ' {
+				if endIdx >= len(upper) || isExpressionSpace(upper[endIdx]) {
 					positions = append(positions, pos{idx: absIdx, action: kw})
 				}
 			}
@@ -1593,6 +1593,13 @@ func parseUpdateClauses(expr string) []updateClause {
 	}
 
 	return clauses
+}
+
+// isExpressionSpace reports whether b separates the parts of an update
+// expression. The AWS SDK's expression builder joins clauses with a newline, so
+// a clause keyword is not always surrounded by spaces.
+func isExpressionSpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\r' || b == '\n'
 }
 
 func asciiUpper(s string) string {
