@@ -851,6 +851,11 @@ func (s *Service) BatchWriteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DynamoDB always returns UnprocessedItems, as {} when everything was written.
+	if unprocessed == nil {
+		unprocessed = map[string][]WriteRequest{}
+	}
+
 	writeJSONResponse(w, BatchWriteItemResponse{UnprocessedItems: unprocessed})
 }
 

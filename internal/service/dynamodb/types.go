@@ -663,7 +663,7 @@ type BatchDeleteRequest struct {
 
 // BatchWriteItemResponse is the response for BatchWriteItem.
 type BatchWriteItemResponse struct {
-	UnprocessedItems map[string][]WriteRequest `json:"UnprocessedItems,omitempty"`
+	UnprocessedItems map[string][]WriteRequest `json:"UnprocessedItems"`
 }
 
 // BatchGetItemRequest is the request for BatchGetItem.
