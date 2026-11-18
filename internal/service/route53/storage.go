@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -246,7 +247,10 @@ func (s *MemoryStorage) GetRecordSets(hostedZoneID string) ([]ResourceRecordSet,
 	return records, nil
 }
 
-// ChangeRecordSets applies changes to record sets.
+// ChangeRecordSets applies a change batch to record sets. Route 53 makes all
+// or none of the changes in a batch, so they are applied to a copy of the
+// zone's record sets that replaces the stored ones only if every change
+// succeeds.
 func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -255,7 +259,7 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 		return ErrHostedZoneNotFound
 	}
 
-	records := s.RecordSets[hostedZoneID]
+	records := slices.Clone(s.RecordSets[hostedZoneID])
 
 	for i := range changes {
 		switch changes[i].Action {
