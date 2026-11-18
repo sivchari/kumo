@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -193,5 +194,33 @@ func assertProjectedItem(t *testing.T, item Item, names ...string) {
 		if _, ok := item[name]; !ok {
 			t.Fatalf("projected item = %v, missing %q", item, name)
 		}
+	}
+}
+
+func TestProjectionExpressionNestedPaths(t *testing.T) {
+	t.Parallel()
+
+	const settings = "settings"
+
+	item := Item{
+		"id": {S: new("1")},
+		settings: {M: map[string]*AttributeValue{
+			"theme": {S: new("dark")},
+			"lang":  {S: new("en")},
+		}},
+		"tags": {L: []*AttributeValue{{S: new("a")}, {S: new("b")}, {S: new("c")}}},
+	}
+
+	got := projectItemForExpression(item, "#s.theme, tags[2], tags[0], settings.missing, tags[9]",
+		map[string]string{"#s": settings})
+
+	want := Item{
+		settings: {M: map[string]*AttributeValue{"theme": {S: new("dark")}}},
+		"tags":   {L: []*AttributeValue{{S: new("a")}, {S: new("c")}}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		gotJSON, _ := json.Marshal(got)
+		wantJSON, _ := json.Marshal(want)
+		t.Fatalf("projected item = %s, want %s", gotJSON, wantJSON)
 	}
 }
