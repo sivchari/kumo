@@ -262,26 +262,32 @@ func (s *MemoryStorage) ChangeRecordSets(hostedZoneID string, changes []Change) 
 	records := slices.Clone(s.RecordSets[hostedZoneID])
 
 	for i := range changes {
+		// Route 53 treats a record name with and without the trailing dot as
+		// identical and returns it fully qualified, and stores letters in
+		// lower case however they are sent.
+		rrset := changes[i].ResourceRecordSet
+		rrset.Name = normalizeDNSName(rrset.Name)
+
 		switch changes[i].Action {
 		case "CREATE":
-			if s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type) >= 0 {
+			if findRecordIndex(records, rrset.Name, rrset.Type) >= 0 {
 				return ErrRecordSetAlreadyExists
 			}
 
-			records = append(records, changes[i].ResourceRecordSet)
+			records = append(records, rrset)
 		case "DELETE":
-			idx := s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type)
+			idx := findRecordIndex(records, rrset.Name, rrset.Type)
 			if idx < 0 {
 				return ErrRecordSetNotFound
 			}
 
 			records = append(records[:idx], records[idx+1:]...)
 		case "UPSERT":
-			idx := s.findRecordIndex(records, changes[i].ResourceRecordSet.Name, changes[i].ResourceRecordSet.Type)
+			idx := findRecordIndex(records, rrset.Name, rrset.Type)
 			if idx >= 0 {
-				records[idx] = changes[i].ResourceRecordSet
+				records[idx] = rrset
 			} else {
-				records = append(records, changes[i].ResourceRecordSet)
+				records = append(records, rrset)
 			}
 		default:
 			return ErrInvalidInput
@@ -330,10 +336,12 @@ func (s *MemoryStorage) GetChange(id string) (*ChangeInfo, error) {
 	return c, nil
 }
 
-// findRecordIndex finds the index of a record set by name and type.
-func (s *MemoryStorage) findRecordIndex(records []ResourceRecordSet, name, recordType string) int {
+// findRecordIndex finds the index of a record set by name and type. name is
+// normalized; the stored name is normalized before comparing, because
+// snapshots written before record names were normalized hold names as sent.
+func findRecordIndex(records []ResourceRecordSet, name, recordType string) int {
 	for i := range records {
-		if records[i].Name == name && records[i].Type == recordType {
+		if records[i].Type == recordType && normalizeDNSName(records[i].Name) == name {
 			return i
 		}
 	}
