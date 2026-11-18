@@ -5,12 +5,18 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -74,6 +80,23 @@ func acmErrorOf(t *testing.T, err error) *acmError {
 	return &acmError{Code: apiErr.ErrorCode(), HTTPStatus: respErr.HTTPStatusCode()}
 }
 
+// describePublicKey names the algorithm and size of a certificate's public
+// key, such as "RSA 2048" or "ECDSA P-256".
+func describePublicKey(t *testing.T, key any) string {
+	t.Helper()
+
+	switch k := key.(type) {
+	case *rsa.PublicKey:
+		return fmt.Sprintf("RSA %d", k.N.BitLen())
+	case *ecdsa.PublicKey:
+		return "ECDSA " + k.Curve.Params().Name
+	default:
+		t.Fatalf("unexpected public key type %T", key)
+
+		return ""
+	}
+}
+
 func TestACM_RequestAndDescribeCertificate(t *testing.T) {
 	client := newACMClient(t)
 	ctx := t.Context()
@@ -103,7 +126,7 @@ func TestACM_RequestAndDescribeCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "Value", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "NotBefore", "NotAfter", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
 }
 
 func TestACM_ListCertificates(t *testing.T) {
@@ -148,9 +171,10 @@ func TestACM_ListCertificatesWithStatusFilter(t *testing.T) {
 	client := newACMClient(t)
 	ctx := t.Context()
 
-	// Request a certificate.
+	// Request an email-validated certificate, which stays PENDING_VALIDATION.
 	_, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
-		DomainName: aws.String("filter-test.example.com"),
+		DomainName:       aws.String("filter-test.example.com"),
+		ValidationMethod: types.ValidationMethodEmail,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -261,7 +285,83 @@ func TestACM_RequestCertificateWithOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "Serial", "Value", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+	golden.New(t, golden.WithIgnoreFields("CertificateArn", "CreatedAt", "IssuedAt", "NotBefore", "NotAfter", "Serial", "ResultMetadata")).Assert(t.Name()+"_describe", describeOutput)
+}
+
+// TestACM_RequestCertificateKeyAlgorithms requests a certificate with each
+// KeyAlgorithm value, plus an empty and an undefined one, and records the
+// algorithm DescribeCertificate reports and the key of the certificate
+// GetCertificate returns, or the error.
+func TestACM_RequestCertificateKeyAlgorithms(t *testing.T) {
+	client := newACMClient(t)
+	ctx := t.Context()
+
+	type outcome struct {
+		KeyAlgorithm string
+		Described    string    `json:",omitempty"`
+		PublicKey    string    `json:",omitempty"`
+		Error        *acmError `json:",omitempty"`
+	}
+
+	algorithms := []types.KeyAlgorithm{
+		"", // the default
+		types.KeyAlgorithmRsa2048,
+		types.KeyAlgorithmEcPrime256v1,
+		types.KeyAlgorithmEcSecp384r1,
+		types.KeyAlgorithmRsa1024,
+		types.KeyAlgorithmRsa3072,
+		types.KeyAlgorithmRsa4096,
+		types.KeyAlgorithmEcSecp521r1,
+		"RSA_9999", // not a KeyAlgorithm value
+	}
+
+	outcomes := make([]outcome, 0, len(algorithms))
+
+	for _, algorithm := range algorithms {
+		requested, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
+			DomainName:   aws.String("key-algorithm.example.com"),
+			KeyAlgorithm: algorithm,
+		})
+		if err != nil {
+			outcomes = append(outcomes, outcome{KeyAlgorithm: string(algorithm), Error: acmErrorOf(t, err)})
+
+			continue
+		}
+
+		t.Cleanup(func() {
+			_, _ = client.DeleteCertificate(context.Background(), &acm.DeleteCertificateInput{
+				CertificateArn: requested.CertificateArn,
+			})
+		})
+
+		described, err := client.DescribeCertificate(ctx, &acm.DescribeCertificateInput{CertificateArn: requested.CertificateArn})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := client.GetCertificate(ctx, &acm.GetCertificateInput{CertificateArn: requested.CertificateArn})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		block, _ := pem.Decode([]byte(aws.ToString(got.Certificate)))
+		if block == nil {
+			t.Fatalf("Certificate is not PEM: %q", aws.ToString(got.Certificate))
+		}
+
+		leaf, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatalf("parse certificate: %v", err)
+		}
+
+		outcomes = append(outcomes, outcome{
+			KeyAlgorithm: string(algorithm),
+			Described:    string(described.Certificate.KeyAlgorithm),
+			PublicKey:    describePublicKey(t, leaf.PublicKey),
+		})
+	}
+
+	golden.New(t).Assert(t.Name(), outcomes)
 }
 
 func TestACM_DescribeNonExistentCertificate(t *testing.T) {
@@ -317,9 +417,10 @@ func TestACM_GetCertificatePendingValidation(t *testing.T) {
 	client := newACMClient(t)
 	ctx := t.Context()
 
-	// Request a certificate (will be in PENDING_VALIDATION state).
+	// Request an email-validated certificate (will be in PENDING_VALIDATION state).
 	requestOutput, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
-		DomainName: aws.String("pending.example.com"),
+		DomainName:       aws.String("pending.example.com"),
+		ValidationMethod: types.ValidationMethodEmail,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -333,6 +434,102 @@ func TestACM_GetCertificatePendingValidation(t *testing.T) {
 	})
 
 	requireACMError[*types.RequestInProgressException](t, err)
+}
+
+func TestACM_GetIssuedCertificate(t *testing.T) {
+	client := newACMClient(t)
+	ctx := t.Context()
+
+	requestOutput, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
+		DomainName:              aws.String("get-issued.example.com"),
+		SubjectAlternativeNames: []string{"*.get-issued.example.com"},
+		ValidationMethod:        types.ValidationMethodDns,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	arn := requestOutput.CertificateArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteCertificate(context.Background(), &acm.DeleteCertificateInput{
+			CertificateArn: arn,
+		})
+	})
+
+	waiter := acm.NewCertificateValidatedWaiter(client)
+	if err := waiter.Wait(ctx, &acm.DescribeCertificateInput{CertificateArn: arn}, 30*time.Second); err != nil {
+		t.Fatalf("wait for certificate validation: %v", err)
+	}
+
+	getOutput, err := client.GetCertificate(ctx, &acm.GetCertificateInput{CertificateArn: arn})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	block, _ := pem.Decode([]byte(aws.ToString(getOutput.Certificate)))
+	if block == nil {
+		t.Fatalf("Certificate is not PEM: %q", aws.ToString(getOutput.Certificate))
+	}
+
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+
+	if want := []string{"get-issued.example.com", "*.get-issued.example.com"}; !slices.Equal(leaf.DNSNames, want) {
+		t.Errorf("DNSNames: got %v, want %v", leaf.DNSNames, want)
+	}
+
+	chainBlock, _ := pem.Decode([]byte(aws.ToString(getOutput.CertificateChain)))
+	if chainBlock == nil {
+		t.Fatalf("CertificateChain is not PEM: %q", aws.ToString(getOutput.CertificateChain))
+	}
+
+	ca, err := x509.ParseCertificate(chainBlock.Bytes)
+	if err != nil {
+		t.Fatalf("parse chain: %v", err)
+	}
+
+	if err := leaf.CheckSignatureFrom(ca); err != nil {
+		t.Errorf("certificate is not signed by its chain: %v", err)
+	}
+
+	describeOutput, err := client.DescribeCertificate(ctx, &acm.DescribeCertificateInput{CertificateArn: arn})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if notAfter := aws.ToTime(describeOutput.Certificate.NotAfter); !notAfter.Equal(leaf.NotAfter) {
+		t.Errorf("NotAfter: describe %v, certificate %v", notAfter, leaf.NotAfter)
+	}
+}
+
+func TestACM_DNSValidatedCertificateIsIssued(t *testing.T) {
+	client := newACMClient(t)
+	ctx := t.Context()
+
+	requestOutput, err := client.RequestCertificate(ctx, &acm.RequestCertificateInput{
+		DomainName:       aws.String("issued.example.com"),
+		ValidationMethod: types.ValidationMethodDns,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	arn := requestOutput.CertificateArn
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteCertificate(context.Background(), &acm.DeleteCertificateInput{
+			CertificateArn: arn,
+		})
+	})
+
+	// The SDK waiter polls DescribeCertificate until the certificate is ISSUED.
+	waiter := acm.NewCertificateValidatedWaiter(client)
+	if err := waiter.Wait(ctx, &acm.DescribeCertificateInput{CertificateArn: arn}, 30*time.Second); err != nil {
+		t.Fatalf("wait for certificate validation: %v", err)
+	}
 }
 
 func TestACM_CertificateTags(t *testing.T) {
