@@ -3,10 +3,18 @@ package acm
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"time"
 
 	"github.com/sivchari/kumo/internal/service"
 )
+
+// dnsValidationDelayEnvVar is the env var holding how long a DNS-validated
+// certificate stays PENDING_VALIDATION before it is issued, as a Go
+// duration such as "30s". Unset, DNS-validated certificates are issued as
+// soon as they are requested.
+const dnsValidationDelayEnvVar = "KUMO_ACM_DNS_VALIDATION_DELAY"
 
 // Compile-time check that Service implements io.Closer.
 var _ io.Closer = (*Service)(nil)
@@ -17,7 +25,30 @@ func init() {
 		opts = append(opts, WithDataDir(dir))
 	}
 
+	if delay, ok := dnsValidationDelay(os.Getenv(dnsValidationDelayEnvVar)); ok {
+		opts = append(opts, WithDNSValidationDelay(delay))
+	}
+
 	service.Register(New(NewMemoryStorage(opts...)))
+}
+
+// dnsValidationDelay parses the value of dnsValidationDelayEnvVar. An empty
+// value is not set; a value that is not a non-negative duration is ignored
+// with a warning, keeping the default of issuing right away.
+func dnsValidationDelay(value string) (time.Duration, bool) {
+	if value == "" {
+		return 0, false
+	}
+
+	delay, err := time.ParseDuration(value)
+	if err != nil || delay < 0 {
+		slog.Warn("ignoring invalid ACM DNS validation delay; DNS-validated certificates are issued immediately",
+			"env", dnsValidationDelayEnvVar, "value", value)
+
+		return 0, false
+	}
+
+	return delay, true
 }
 
 // Service implements the ACM service.

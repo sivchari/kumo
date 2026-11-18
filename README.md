@@ -414,6 +414,7 @@ Environment variables:
 | `KUMO_PORT` | `4566` | Server port |
 | `KUMO_LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 | `KUMO_DATA_DIR` | (unset) | Directory for persistent storage. When unset, data is in-memory only. |
+| `KUMO_ACM_DNS_VALIDATION_DELAY` | (unset) | How long a DNS-validated ACM certificate stays `PENDING_VALIDATION` before it is issued, as a Go duration such as `30s`. When unset, it is issued as soon as it is requested. |
 
 ## Logging
 
