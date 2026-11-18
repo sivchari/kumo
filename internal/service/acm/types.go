@@ -242,6 +242,35 @@ type ImportCertificateOutput struct {
 	CertificateArn string `json:"CertificateArn,omitempty"`
 }
 
+// ListTagsForCertificateInput is the request for ListTagsForCertificate.
+type ListTagsForCertificateInput struct {
+	CertificateArn string `json:"CertificateArn"`
+}
+
+// ListTagsForCertificateOutput is the response for ListTagsForCertificate.
+type ListTagsForCertificateOutput struct {
+	Tags []Tag `json:"Tags,omitempty"`
+}
+
+// AddTagsToCertificateInput is the request for AddTagsToCertificate.
+type AddTagsToCertificateInput struct {
+	CertificateArn string `json:"CertificateArn"`
+	Tags           []Tag  `json:"Tags"`
+}
+
+// RemoveTagsFromCertificateInput is the request for RemoveTagsFromCertificate.
+type RemoveTagsFromCertificateInput struct {
+	CertificateArn string        `json:"CertificateArn"`
+	Tags           []TagToRemove `json:"Tags"`
+}
+
+// TagToRemove is a tag in a RemoveTagsFromCertificate request. A nil Value
+// removes the key regardless of its value.
+type TagToRemove struct {
+	Key   string  `json:"Key"`
+	Value *string `json:"Value,omitempty"`
+}
+
 // ErrorResponse represents an ACM error response.
 type ErrorResponse struct {
 	Type    string `json:"__type"`
