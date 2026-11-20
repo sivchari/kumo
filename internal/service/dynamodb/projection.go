@@ -1,40 +1,92 @@
 package dynamodb
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
 	"strings"
 )
 
-func projectItemsForExpression(items []Item, projectionExpression string, exprNames map[string]string) []Item {
-	if strings.TrimSpace(projectionExpression) == "" {
+// errMalformedProjectionPath marks a document path that cannot be parsed; the
+// path is skipped rather than rejected.
+var errMalformedProjectionPath = errors.New("dynamodb: malformed projection path")
+
+// projection is a parsed ProjectionExpression: the document paths to keep.
+// The zero value keeps every attribute.
+type projection struct {
+	active bool
+	paths  [][]projectionSegment
+}
+
+// parseProjectionExpression parses and validates a ProjectionExpression,
+// returning a ValidationException for an undefined expression attribute name
+// or for document paths that overlap. An empty expression yields a projection
+// that keeps every attribute.
+func parseProjectionExpression(expression string, exprNames map[string]string) (projection, error) {
+	if strings.TrimSpace(expression) == "" {
+		return projection{}, nil
+	}
+
+	var paths [][]projectionSegment
+
+	for _, token := range strings.Split(expression, ",") {
+		path, err := parseProjectionPath(strings.TrimSpace(token), exprNames)
+		if errors.Is(err, errMalformedProjectionPath) {
+			continue
+		}
+
+		if err != nil {
+			return projection{}, err
+		}
+
+		paths = append(paths, path)
+	}
+
+	for i, one := range paths {
+		for _, two := range paths[i+1:] {
+			if pathsOverlap(one, two) {
+				return projection{}, newValidationException(fmt.Sprintf(
+					"Invalid ProjectionExpression: Two document paths overlap with each other; "+
+						"must remove or rewrite one of these paths; path one: %s, path two: %s",
+					formatProjectionPath(one), formatProjectionPath(two)))
+			}
+		}
+	}
+
+	return projection{active: true, paths: paths}, nil
+}
+
+// projectAll applies the projection to every item.
+func (p projection) projectAll(items []Item) []Item {
+	if !p.active {
 		return items
 	}
 
 	projected := make([]Item, len(items))
 	for i, item := range items {
-		projected[i] = projectItemForExpression(item, projectionExpression, exprNames)
+		projected[i] = p.project(item)
 	}
 
 	return projected
 }
 
-func projectItemForExpression(item Item, projectionExpression string, exprNames map[string]string) Item {
-	if item == nil || strings.TrimSpace(projectionExpression) == "" {
+// project returns the parts of item selected by the projection. Paths that do
+// not exist in the item are skipped, as DynamoDB does.
+func (p projection) project(item Item) Item {
+	if !p.active || item == nil {
 		return item
 	}
 
 	root := &projectionNode{}
 
-	for _, token := range strings.Split(projectionExpression, ",") {
-		path := parseProjectionPath(strings.TrimSpace(token), exprNames)
-		if len(path) == 0 || path[0].index >= 0 {
+	for _, path := range p.paths {
+		if path[0].index >= 0 {
 			continue
 		}
 
 		value, ok := item[path[0].name]
-		// Paths missing from the item are skipped, as DynamoDB does.
 		if !ok || !pathExists(&value, path[1:]) {
 			continue
 		}
@@ -50,6 +102,29 @@ func projectItemForExpression(item Item, projectionExpression string, exprNames 
 	return projected
 }
 
+// pathsOverlap reports whether one path is equal to, or a prefix of, the other.
+func pathsOverlap(a, b []projectionSegment) bool {
+	n := min(len(a), len(b))
+
+	return slices.Equal(a[:n], b[:n])
+}
+
+// formatProjectionPath renders a path as DynamoDB reports it in validation
+// messages, e.g. "[a, [0], b]".
+func formatProjectionPath(path []projectionSegment) string {
+	parts := make([]string, len(path))
+
+	for i, seg := range path {
+		if seg.index >= 0 {
+			parts[i] = "[" + strconv.Itoa(seg.index) + "]"
+		} else {
+			parts[i] = seg.name
+		}
+	}
+
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
 // projectionSegment is one step of a document path: a map key, or a list
 // index when index >= 0.
 type projectionSegment struct {
@@ -58,10 +133,12 @@ type projectionSegment struct {
 }
 
 // parseProjectionPath splits a document path such as "#m.a[1].b" into
-// segments, resolving expression attribute names per segment.
-func parseProjectionPath(token string, exprNames map[string]string) []projectionSegment {
+// segments, resolving expression attribute names per segment. It returns
+// errMalformedProjectionPath for an unparseable path and a ValidationException
+// for a "#name" placeholder missing from exprNames.
+func parseProjectionPath(token string, exprNames map[string]string) ([]projectionSegment, error) {
 	if token == "" {
-		return nil
+		return nil, errMalformedProjectionPath
 	}
 
 	var path []projectionSegment
@@ -70,12 +147,18 @@ func parseProjectionPath(token string, exprNames map[string]string) []projection
 		name, rest, _ := strings.Cut(part, "[")
 		name = strings.TrimSpace(name)
 
-		if resolved, ok := exprNames[name]; ok {
+		if strings.HasPrefix(name, "#") {
+			resolved, ok := exprNames[name]
+			if !ok {
+				return nil, newValidationException(
+					"Invalid ProjectionExpression: An expression attribute name used in the document path is not defined; attribute name: " + name)
+			}
+
 			name = resolved
 		}
 
 		if name == "" {
-			return nil
+			return nil, errMalformedProjectionPath
 		}
 
 		path = append(path, projectionSegment{name: name, index: -1})
@@ -83,12 +166,12 @@ func parseProjectionPath(token string, exprNames map[string]string) []projection
 		for rest != "" {
 			idx, after, ok := strings.Cut(rest, "]")
 			if !ok {
-				return nil
+				return nil, errMalformedProjectionPath
 			}
 
 			n, err := strconv.Atoi(strings.TrimSpace(idx))
 			if err != nil || n < 0 {
-				return nil
+				return nil, errMalformedProjectionPath
 			}
 
 			path = append(path, projectionSegment{index: n})
@@ -96,7 +179,7 @@ func parseProjectionPath(token string, exprNames map[string]string) []projection
 		}
 	}
 
-	return path
+	return path, nil
 }
 
 // projectionNode collects the parts of one attribute selected by a

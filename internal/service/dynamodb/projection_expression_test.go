@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -211,8 +212,13 @@ func TestProjectionExpressionNestedPaths(t *testing.T) {
 		"tags": {L: []*AttributeValue{{S: new("a")}, {S: new("b")}, {S: new("c")}}},
 	}
 
-	got := projectItemForExpression(item, "#s.theme, tags[2], tags[0], settings.missing, tags[9]",
+	proj, err := parseProjectionExpression("#s.theme, tags[2], tags[0], settings.missing, tags[9]",
 		map[string]string{"#s": settings})
+	if err != nil {
+		t.Fatalf("parseProjectionExpression: %v", err)
+	}
+
+	got := proj.project(item)
 
 	want := Item{
 		settings: {M: map[string]*AttributeValue{"theme": {S: new("dark")}}},
@@ -222,5 +228,89 @@ func TestProjectionExpressionNestedPaths(t *testing.T) {
 		gotJSON, _ := json.Marshal(got)
 		wantJSON, _ := json.Marshal(want)
 		t.Fatalf("projected item = %s, want %s", gotJSON, wantJSON)
+	}
+}
+
+var invalidProjectionTests = []struct {
+	name  string
+	expr  string
+	names map[string]string
+	want  string
+}{
+	{
+		name: "parent and child",
+		expr: "m, m.a",
+		want: "Invalid ProjectionExpression: Two document paths overlap with each other; " +
+			"must remove or rewrite one of these paths; path one: [m], path two: [m, a]",
+	},
+	{
+		name: "duplicate",
+		expr: "a, a",
+		want: "Invalid ProjectionExpression: Two document paths overlap with each other; " +
+			"must remove or rewrite one of these paths; path one: [a], path two: [a]",
+	},
+	{
+		name: "list element and its member",
+		expr: "l[0], l[0].x",
+		want: "Invalid ProjectionExpression: Two document paths overlap with each other; " +
+			"must remove or rewrite one of these paths; path one: [l, [0]], path two: [l, [0], x]",
+	},
+	{
+		name:  "overlap through placeholder",
+		expr:  "#m.a, m",
+		names: map[string]string{"#m": "m"},
+		want: "Invalid ProjectionExpression: Two document paths overlap with each other; " +
+			"must remove or rewrite one of these paths; path one: [m, a], path two: [m]",
+	},
+	{
+		name: "undefined placeholder",
+		expr: "a, #u",
+		want: "Invalid ProjectionExpression: An expression attribute name used in the document path " +
+			"is not defined; attribute name: #u",
+	},
+	{
+		name:  "undefined placeholder in nested path",
+		expr:  "#m.#u",
+		names: map[string]string{"#m": "m"},
+		want: "Invalid ProjectionExpression: An expression attribute name used in the document path " +
+			"is not defined; attribute name: #u",
+	},
+}
+
+func TestParseProjectionExpression_Invalid(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range invalidProjectionTests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := parseProjectionExpression(tt.expr, tt.names)
+
+			var tErr *TableError
+			if !errors.As(err, &tErr) {
+				t.Fatalf("error = %v, want *TableError", err)
+			}
+
+			if tErr.Code != errCodeValidation || tErr.Message != tt.want {
+				t.Fatalf("error = %s: %s, want %s: %s", tErr.Code, tErr.Message, errCodeValidation, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseProjectionExpression_Valid(t *testing.T) {
+	t.Parallel()
+
+	for _, expr := range []string{
+		"",
+		"m.a, m.b",
+		"l[0], l[1]",
+		"l[0].x, l[0].y, l[1]",
+		"a, ab",
+		"m.a, n.a",
+	} {
+		if _, err := parseProjectionExpression(expr, nil); err != nil {
+			t.Errorf("parseProjectionExpression(%q) = %v, want nil", expr, err)
+		}
 	}
 }

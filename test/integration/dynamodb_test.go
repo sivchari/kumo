@@ -2621,3 +2621,61 @@ func TestDynamoDB_NumberRange(t *testing.T) {
 
 	golden.New(t).Assert(t.Name()+"_filter_value", dynamoDBErrorSummary(t, err))
 }
+
+func TestDynamoDB_ProjectionExpressionInvalid(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-projection-invalid"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	_, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item: map[string]types.AttributeValue{
+			"pk": &types.AttributeValueMemberS{Value: "id-1"},
+			"m":  &types.AttributeValueMemberM{Value: map[string]types.AttributeValue{"a": &types.AttributeValueMemberS{Value: "x"}}},
+			"l":  &types.AttributeValueMemberL{Value: []types.AttributeValue{&types.AttributeValueMemberS{Value: "y"}}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name  string
+		expr  string
+		names map[string]string
+	}{
+		{name: "overlap_parent_child", expr: "m, m.a"},
+		{name: "overlap_duplicate", expr: "pk, pk"},
+		{name: "overlap_list_element", expr: "l[0], l[0].x"},
+		{name: "undefined_placeholder", expr: "pk, #u", names: map[string]string{"#m": "m"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.GetItem(ctx, &dynamodb.GetItemInput{
+				TableName:                aws.String(tableName),
+				Key:                      map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "id-1"}},
+				ProjectionExpression:     aws.String(tt.expr),
+				ExpressionAttributeNames: tt.names,
+			})
+			if err == nil {
+				t.Fatal("expected ValidationException from GetItem")
+			}
+
+			golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+
+			_, err = client.Scan(ctx, &dynamodb.ScanInput{
+				TableName:                aws.String(tableName),
+				ProjectionExpression:     aws.String(tt.expr),
+				ExpressionAttributeNames: tt.names,
+			})
+			if err == nil {
+				t.Fatal("expected ValidationException from Scan")
+			}
+
+			golden.New(t).Assert(t.Name()+"_scan", dynamoDBErrorSummary(t, err))
+		})
+	}
+}
