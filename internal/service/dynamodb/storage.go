@@ -657,7 +657,7 @@ func checkWriteCondition(condItem Item, cond ConditionInput) error {
 func (m *MemoryStorage) conditionCheckFailedItem(existingItem Item, cond ConditionInput, err error) Item {
 	var tErr *TableError
 	if !errors.As(err, &tErr) || tErr.Code != ErrCodeConditionalCheckFailed ||
-		cond.ReturnValuesOnConditionCheckFailure != ReturnValuesAllOld {
+		cond.ReturnValuesOnConditionCheckFailure != ReturnValuesOnConditionCheckFailureAllOld {
 		return nil
 	}
 
@@ -2063,7 +2063,10 @@ func (m *MemoryStorage) validateTransactPut(put *TransactPut) (*CancellationReas
 	}
 
 	return m.checkTransactCondition(put.TableName, put.Item, ConditionInput{
-		Expression: put.ConditionExpression, ExprNames: put.ExpressionAttributeNames, ExprValues: put.ExpressionAttributeValues,
+		Expression:                          put.ConditionExpression,
+		ExprNames:                           put.ExpressionAttributeNames,
+		ExprValues:                          put.ExpressionAttributeValues,
+		ReturnValuesOnConditionCheckFailure: put.ReturnValuesOnConditionCheckFailure,
 	})
 }
 
@@ -2079,7 +2082,10 @@ func (m *MemoryStorage) validateTransactDelete(del *TransactDelete) (*Cancellati
 	}
 
 	return m.checkTransactCondition(del.TableName, del.Key, ConditionInput{
-		Expression: del.ConditionExpression, ExprNames: del.ExpressionAttributeNames, ExprValues: del.ExpressionAttributeValues,
+		Expression:                          del.ConditionExpression,
+		ExprNames:                           del.ExpressionAttributeNames,
+		ExprValues:                          del.ExpressionAttributeValues,
+		ReturnValuesOnConditionCheckFailure: del.ReturnValuesOnConditionCheckFailure,
 	})
 }
 
@@ -2099,7 +2105,10 @@ func (m *MemoryStorage) validateTransactUpdate(upd *TransactUpdate) (*Cancellati
 	}
 
 	return m.checkTransactCondition(upd.TableName, upd.Key, ConditionInput{
-		Expression: upd.ConditionExpression, ExprNames: upd.ExpressionAttributeNames, ExprValues: upd.ExpressionAttributeValues,
+		Expression:                          upd.ConditionExpression,
+		ExprNames:                           upd.ExpressionAttributeNames,
+		ExprValues:                          upd.ExpressionAttributeValues,
+		ReturnValuesOnConditionCheckFailure: upd.ReturnValuesOnConditionCheckFailure,
 	})
 }
 
@@ -2115,7 +2124,10 @@ func (m *MemoryStorage) validateTransactConditionCheck(cc *TransactConditionChec
 	}
 
 	return m.checkTransactCondition(cc.TableName, cc.Key, ConditionInput{
-		Expression: cc.ConditionExpression, ExprNames: cc.ExpressionAttributeNames, ExprValues: cc.ExpressionAttributeValues,
+		Expression:                          cc.ConditionExpression,
+		ExprNames:                           cc.ExpressionAttributeNames,
+		ExprValues:                          cc.ExpressionAttributeValues,
+		ReturnValuesOnConditionCheckFailure: cc.ReturnValuesOnConditionCheckFailure,
 	})
 }
 
@@ -2140,7 +2152,12 @@ func (m *MemoryStorage) checkTransactCondition(tableName string, keyOrItem Item,
 	}
 
 	if !ok {
-		return &CancellationReason{Code: "ConditionalCheckFailed"}, nil
+		reason := &CancellationReason{Code: "ConditionalCheckFailed"}
+		if cond.ReturnValuesOnConditionCheckFailure == ReturnValuesOnConditionCheckFailureAllOld && existing != nil {
+			reason.Item = m.copyItem(existing)
+		}
+
+		return reason, nil
 	}
 
 	return nil, nil //nolint:nilnil // Condition passed, no cancellation reason.

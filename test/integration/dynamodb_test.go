@@ -2679,3 +2679,205 @@ func TestDynamoDB_ProjectionExpressionInvalid(t *testing.T) {
 		})
 	}
 }
+
+func TestDynamoDB_ReturnValuesOnConditionCheckFailureInvalid(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-return-values-invalid"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	key := map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "id-1"}}
+	invalid := types.ReturnValuesOnConditionCheckFailure("ALL_NEW")
+
+	t.Run("PutItem", func(t *testing.T) {
+		_, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName:                           aws.String(tableName),
+			Item:                                key,
+			ReturnValuesOnConditionCheckFailure: invalid,
+		})
+		if err == nil {
+			t.Fatal("expected ValidationException")
+		}
+
+		golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+	})
+
+	t.Run("UpdateItem", func(t *testing.T) {
+		_, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+			TableName:                           aws.String(tableName),
+			Key:                                 key,
+			ReturnValuesOnConditionCheckFailure: invalid,
+		})
+		if err == nil {
+			t.Fatal("expected ValidationException")
+		}
+
+		golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+	})
+
+	t.Run("DeleteItem", func(t *testing.T) {
+		_, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName:                           aws.String(tableName),
+			Key:                                 key,
+			ReturnValuesOnConditionCheckFailure: invalid,
+		})
+		if err == nil {
+			t.Fatal("expected ValidationException")
+		}
+
+		golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+	})
+
+	t.Run("TransactWriteItems", func(t *testing.T) {
+		_, err := client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+			TransactItems: []types.TransactWriteItem{
+				{Put: &types.Put{TableName: aws.String(tableName), Item: key}},
+				{Delete: &types.Delete{
+					TableName:                           aws.String(tableName),
+					Key:                                 key,
+					ReturnValuesOnConditionCheckFailure: invalid,
+				}},
+			},
+		})
+		if err == nil {
+			t.Fatal("expected ValidationException")
+		}
+
+		golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+	})
+}
+
+func TestDynamoDB_TransactWriteItemsReturnValuesOnConditionCheckFailure(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-transact-return-values"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	pk := func(v string) map[string]types.AttributeValue {
+		return map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: v}}
+	}
+
+	for _, id := range []string{"id-1", "id-2"} {
+		_, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item: map[string]types.AttributeValue{
+				"pk":     &types.AttributeValueMemberS{Value: id},
+				"status": &types.AttributeValueMemberS{Value: "active"},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	condition := aws.String("#s = :expected")
+	names := map[string]string{"#s": "status"}
+	values := map[string]types.AttributeValue{":expected": &types.AttributeValueMemberS{Value: "deleted"}}
+	allOld := types.ReturnValuesOnConditionCheckFailureAllOld
+
+	// reasonsOf returns the cancellation reasons of a canceled transaction.
+	reasonsOf := func(t *testing.T, err error) []types.CancellationReason {
+		t.Helper()
+
+		var txErr *types.TransactionCanceledException
+		if !errors.As(err, &txErr) {
+			t.Fatalf("expected TransactionCanceledException, got: %T: %v", err, err)
+		}
+
+		return txErr.CancellationReasons
+	}
+
+	// assertExistingItem checks that reason carries the stored item.
+	assertExistingItem := func(t *testing.T, reason types.CancellationReason) {
+		t.Helper()
+
+		status, ok := reason.Item["status"].(*types.AttributeValueMemberS)
+		if !ok || status.Value != "active" {
+			t.Fatalf("expected existing item with status=active, got: %v", reason.Item)
+		}
+	}
+
+	tests := []struct {
+		name string
+		item types.TransactWriteItem
+	}{
+		{name: "ConditionCheck", item: types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
+			TableName: aws.String(tableName), Key: pk("id-1"), ConditionExpression: condition,
+			ExpressionAttributeNames: names, ExpressionAttributeValues: values,
+			ReturnValuesOnConditionCheckFailure: allOld,
+		}}},
+		{name: "Put", item: types.TransactWriteItem{Put: &types.Put{
+			TableName: aws.String(tableName), Item: pk("id-1"), ConditionExpression: condition,
+			ExpressionAttributeNames: names, ExpressionAttributeValues: values,
+			ReturnValuesOnConditionCheckFailure: allOld,
+		}}},
+		{name: "Update", item: types.TransactWriteItem{Update: &types.Update{
+			TableName: aws.String(tableName), Key: pk("id-1"), UpdateExpression: aws.String("SET #s = :expected"),
+			ConditionExpression: condition, ExpressionAttributeNames: names, ExpressionAttributeValues: values,
+			ReturnValuesOnConditionCheckFailure: allOld,
+		}}},
+		{name: "Delete", item: types.TransactWriteItem{Delete: &types.Delete{
+			TableName: aws.String(tableName), Key: pk("id-1"), ConditionExpression: condition,
+			ExpressionAttributeNames: names, ExpressionAttributeValues: values,
+			ReturnValuesOnConditionCheckFailure: allOld,
+		}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The passing first action must not carry an item.
+			_, err := client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+				TransactItems: []types.TransactWriteItem{
+					{ConditionCheck: &types.ConditionCheck{
+						TableName: aws.String(tableName), Key: pk("id-2"),
+						ReturnValuesOnConditionCheckFailure: allOld,
+						ConditionExpression:                 aws.String("attribute_exists(pk)"),
+					}},
+					tt.item,
+				},
+			})
+
+			reasons := reasonsOf(t, err)
+			if len(reasons) != 2 {
+				t.Fatalf("expected 2 cancellation reasons, got: %v", reasons)
+			}
+
+			if reasons[0].Item != nil {
+				t.Fatalf("expected no item on the passing action, got: %v", reasons[0].Item)
+			}
+
+			assertExistingItem(t, reasons[1])
+		})
+	}
+
+	t.Run("NoneOmitsItem", func(t *testing.T) {
+		_, err := client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+			TransactItems: []types.TransactWriteItem{{ConditionCheck: &types.ConditionCheck{
+				TableName: aws.String(tableName), Key: pk("id-1"), ConditionExpression: condition,
+				ExpressionAttributeNames: names, ExpressionAttributeValues: values,
+				ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureNone,
+			}}},
+		})
+
+		reasons := reasonsOf(t, err)
+		if len(reasons) != 1 || reasons[0].Item != nil {
+			t.Fatalf("expected one reason without an item, got: %v", reasons)
+		}
+	})
+
+	t.Run("MissingItemOmitsItem", func(t *testing.T) {
+		_, err := client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
+			TransactItems: []types.TransactWriteItem{{ConditionCheck: &types.ConditionCheck{
+				TableName: aws.String(tableName), Key: pk("missing"), ConditionExpression: aws.String("attribute_exists(pk)"),
+				ReturnValuesOnConditionCheckFailure: allOld,
+			}}},
+		})
+
+		reasons := reasonsOf(t, err)
+		if len(reasons) != 1 || reasons[0].Item != nil || aws.ToString(reasons[0].Code) != "ConditionalCheckFailed" {
+			t.Fatalf("expected a ConditionalCheckFailed reason without an item, got: %v", reasons)
+		}
+	})
+}

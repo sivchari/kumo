@@ -150,14 +150,16 @@ func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !requireValidReturnValuesOnConditionCheckFailure(
+		w, fieldReturnValuesOnConditionCheckFailure, req.ReturnValuesOnConditionCheckFailure) {
+		return
+	}
+
 	returnOld := req.ReturnValues == ReturnValuesAllOld
 
-	cond := ConditionInput{
-		Expression:                          req.ConditionExpression,
-		ExprNames:                           req.ExpressionAttributeNames,
-		ExprValues:                          req.ExpressionAttributeValues,
-		ReturnValuesOnConditionCheckFailure: req.ReturnValuesOnConditionCheckFailure,
-	}
+	cond := newConditionInput(
+		req.ConditionExpression, req.ExpressionAttributeNames, req.ExpressionAttributeValues,
+		req.ReturnValuesOnConditionCheckFailure)
 
 	oldItem, err := s.storage.PutItem(r.Context(), req.TableName, req.Item, returnOld, cond)
 	if err != nil {
@@ -240,14 +242,16 @@ func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !requireValidReturnValuesOnConditionCheckFailure(
+		w, fieldReturnValuesOnConditionCheckFailure, req.ReturnValuesOnConditionCheckFailure) {
+		return
+	}
+
 	returnOld := req.ReturnValues == ReturnValuesAllOld
 
-	cond := ConditionInput{
-		Expression:                          req.ConditionExpression,
-		ExprNames:                           req.ExpressionAttributeNames,
-		ExprValues:                          req.ExpressionAttributeValues,
-		ReturnValuesOnConditionCheckFailure: req.ReturnValuesOnConditionCheckFailure,
-	}
+	cond := newConditionInput(
+		req.ConditionExpression, req.ExpressionAttributeNames, req.ExpressionAttributeValues,
+		req.ReturnValuesOnConditionCheckFailure)
 
 	oldItem, err := s.storage.DeleteItem(r.Context(), req.TableName, req.Key, returnOld, cond)
 	if err != nil {
@@ -291,16 +295,18 @@ func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !requireValidReturnValuesOnConditionCheckFailure(
+		w, fieldReturnValuesOnConditionCheckFailure, req.ReturnValuesOnConditionCheckFailure) {
+		return
+	}
+
 	if req.UpdateExpression == "" && len(req.AttributeUpdates) > 0 {
 		convertAttributeUpdates(&req)
 	}
 
-	cond := ConditionInput{
-		Expression:                          req.ConditionExpression,
-		ExprNames:                           req.ExpressionAttributeNames,
-		ExprValues:                          req.ExpressionAttributeValues,
-		ReturnValuesOnConditionCheckFailure: req.ReturnValuesOnConditionCheckFailure,
-	}
+	cond := newConditionInput(
+		req.ConditionExpression, req.ExpressionAttributeNames, req.ExpressionAttributeValues,
+		req.ReturnValuesOnConditionCheckFailure)
 
 	result, err := s.storage.UpdateItem(
 		r.Context(),
@@ -584,6 +590,51 @@ func writeDynamoDBError(w http.ResponseWriter, code, message string, status int)
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
 }
 
+// fieldReturnValuesOnConditionCheckFailure is the parameter path DynamoDB
+// names in validation messages for a single-item write.
+const fieldReturnValuesOnConditionCheckFailure = "returnValuesOnConditionCheckFailure"
+
+// requireValidTransactReturnValues validates ReturnValuesOnConditionCheckFailure
+// on every action of a TransactWriteItems request, writing the validation
+// error and returning false on the first invalid value.
+func requireValidTransactReturnValues(w http.ResponseWriter, items []TransactWriteItem) bool {
+	for i, twi := range items {
+		var action, value string
+
+		switch {
+		case twi.ConditionCheck != nil:
+			action, value = "conditionCheck", twi.ConditionCheck.ReturnValuesOnConditionCheckFailure
+		case twi.Put != nil:
+			action, value = "put", twi.Put.ReturnValuesOnConditionCheckFailure
+		case twi.Update != nil:
+			action, value = "update", twi.Update.ReturnValuesOnConditionCheckFailure
+		case twi.Delete != nil:
+			action, value = "delete", twi.Delete.ReturnValuesOnConditionCheckFailure
+		default:
+			continue
+		}
+
+		field := fmt.Sprintf("transactItems.%d.member.%s.%s", i+1, action, fieldReturnValuesOnConditionCheckFailure)
+		if !requireValidReturnValuesOnConditionCheckFailure(w, field, value) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// newConditionInput bundles a write request's condition parameters.
+func newConditionInput(
+	expression string, names map[string]string, values map[string]AttributeValue, returnValues string,
+) ConditionInput {
+	return ConditionInput{
+		Expression:                          expression,
+		ExprNames:                           names,
+		ExprValues:                          values,
+		ReturnValuesOnConditionCheckFailure: returnValues,
+	}
+}
+
 // parseProjectionOrWriteError parses a ProjectionExpression, writing the
 // ValidationException and returning false when it is invalid.
 func parseProjectionOrWriteError(w http.ResponseWriter, expression string, exprNames map[string]string) (projection, bool) {
@@ -602,6 +653,34 @@ func parseProjectionOrWriteError(w http.ResponseWriter, expression string, exprN
 	}
 
 	return proj, true
+}
+
+// validateReturnValuesOnConditionCheckFailure reports a ValidationException
+// when value is neither empty nor a ReturnValuesOnConditionCheckFailure enum
+// member. field is the parameter path DynamoDB names in the message.
+func validateReturnValuesOnConditionCheckFailure(field, value string) *TableError {
+	switch value {
+	case "", ReturnValuesOnConditionCheckFailureAllOld, ReturnValuesOnConditionCheckFailureNone:
+		return nil
+	}
+
+	return newValidationException(fmt.Sprintf(
+		"1 validation error detected: Value '%s' at '%s' failed to satisfy constraint: "+
+			"Member must satisfy enum value set: [%s, %s]",
+		value, field, ReturnValuesOnConditionCheckFailureAllOld, ReturnValuesOnConditionCheckFailureNone))
+}
+
+// requireValidReturnValuesOnConditionCheckFailure writes the validation error
+// and returns false when value is not a valid enum member.
+func requireValidReturnValuesOnConditionCheckFailure(w http.ResponseWriter, field, value string) bool {
+	tErr := validateReturnValuesOnConditionCheckFailure(field, value)
+	if tErr == nil {
+		return true
+	}
+
+	writeDynamoDBError(w, tErr.Code, tErr.Message, http.StatusBadRequest)
+
+	return false
 }
 
 // writeConditionalCheckFailedError writes a ConditionalCheckFailedException
@@ -740,6 +819,10 @@ func (s *Service) TransactWriteItems(w http.ResponseWriter, r *http.Request) {
 	if len(req.TransactItems) > 100 {
 		writeDynamoDBError(w, errCodeValidation, "Member must have length less than or equal to 100", http.StatusBadRequest)
 
+		return
+	}
+
+	if !requireValidTransactReturnValues(w, req.TransactItems) {
 		return
 	}
 
