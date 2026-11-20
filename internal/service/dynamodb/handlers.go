@@ -201,6 +201,11 @@ func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	proj, ok := parseProjectionOrWriteError(w, req.ProjectionExpression, req.ExpressionAttributeNames)
+	if !ok {
+		return
+	}
+
 	item, err := s.storage.GetItem(r.Context(), req.TableName, req.Key)
 	if err != nil {
 		var tErr *TableError
@@ -215,10 +220,8 @@ func (s *Service) GetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item = projectItemForExpression(item, req.ProjectionExpression, req.ExpressionAttributeNames)
-
 	writeJSONResponse(w, GetItemResponse{
-		Item: item,
+		Item: proj.project(item),
 	})
 }
 
@@ -346,6 +349,11 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	proj, ok := parseProjectionOrWriteError(w, req.ProjectionExpression, req.ExpressionAttributeNames)
+	if !ok {
+		return
+	}
+
 	applyLegacyKeyConditions(&req)
 
 	scanForward := true
@@ -378,7 +386,7 @@ func (s *Service) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items = projectItemsForExpression(items, req.ProjectionExpression, req.ExpressionAttributeNames)
+	items = proj.projectAll(items)
 
 	writeJSONResponse(w, QueryResponse{
 		Items:            items,
@@ -396,6 +404,11 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !requireDynamoDBField(w, req.TableName == "", "TableName is required") {
+		return
+	}
+
+	proj, ok := parseProjectionOrWriteError(w, req.ProjectionExpression, req.ExpressionAttributeNames)
+	if !ok {
 		return
 	}
 
@@ -423,7 +436,7 @@ func (s *Service) Scan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items = projectItemsForExpression(items, req.ProjectionExpression, req.ExpressionAttributeNames)
+	items = proj.projectAll(items)
 
 	writeJSONResponse(w, ScanResponse{
 		Items:            items,
@@ -569,6 +582,26 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 // writeDynamoDBError writes a DynamoDB error response in JSON format.
 func writeDynamoDBError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
+}
+
+// parseProjectionOrWriteError parses a ProjectionExpression, writing the
+// ValidationException and returning false when it is invalid.
+func parseProjectionOrWriteError(w http.ResponseWriter, expression string, exprNames map[string]string) (projection, bool) {
+	proj, err := parseProjectionExpression(expression, exprNames)
+	if err != nil {
+		var tErr *TableError
+		if errors.As(err, &tErr) {
+			writeDynamoDBError(w, tErr.Code, tErr.Message, http.StatusBadRequest)
+
+			return projection{}, false
+		}
+
+		writeDynamoDBError(w, "InternalServerError", "Internal server error", http.StatusInternalServerError)
+
+		return projection{}, false
+	}
+
+	return proj, true
 }
 
 // writeConditionalCheckFailedError writes a ConditionalCheckFailedException
@@ -756,6 +789,21 @@ func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	projections := make([]projection, len(req.TransactItems))
+
+	for i, ti := range req.TransactItems {
+		if ti.Get == nil {
+			continue
+		}
+
+		proj, ok := parseProjectionOrWriteError(w, ti.Get.ProjectionExpression, ti.Get.ExpressionAttributeNames)
+		if !ok {
+			return
+		}
+
+		projections[i] = proj
+	}
+
 	items, err := s.storage.TransactGetItems(r.Context(), req.TransactItems)
 	if err != nil {
 		var tErr *TableError
@@ -773,15 +821,7 @@ func (s *Service) TransactGetItems(w http.ResponseWriter, r *http.Request) {
 	responses := make([]TransactGetItemResponse, len(items))
 
 	for i, item := range items {
-		if req.TransactItems[i].Get != nil {
-			item = projectItemForExpression(
-				item,
-				req.TransactItems[i].Get.ProjectionExpression,
-				req.TransactItems[i].Get.ExpressionAttributeNames,
-			)
-		}
-
-		responses[i] = TransactGetItemResponse{Item: item}
+		responses[i] = TransactGetItemResponse{Item: projections[i].project(item)}
 	}
 
 	writeJSONResponse(w, TransactGetItemsResponse{Responses: responses})
@@ -881,6 +921,17 @@ func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	projections := make(map[string]projection, len(req.RequestItems))
+
+	for tableName, ka := range req.RequestItems {
+		proj, ok := parseProjectionOrWriteError(w, ka.ProjectionExpression, ka.ExpressionAttributeNames)
+		if !ok {
+			return
+		}
+
+		projections[tableName] = proj
+	}
+
 	responses, err := s.storage.BatchGetItem(r.Context(), req.RequestItems)
 	if err != nil {
 		var tErr *TableError
@@ -895,13 +946,9 @@ func (s *Service) BatchGetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for tableName, keysAndAttributes := range req.RequestItems {
+	for tableName, proj := range projections {
 		if items, ok := responses[tableName]; ok {
-			responses[tableName] = projectItemsForExpression(
-				items,
-				keysAndAttributes.ProjectionExpression,
-				keysAndAttributes.ExpressionAttributeNames,
-			)
+			responses[tableName] = proj.projectAll(items)
 		}
 	}
 
