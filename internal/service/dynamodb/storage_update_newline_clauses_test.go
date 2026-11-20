@@ -28,6 +28,7 @@ func TestUpdateItemSplitsClausesOnNewlines(t *testing.T) {
 	}
 
 	key := Item{"pk": {S: new("newline-clauses")}}
+
 	_, err = s.PutItem(ctx, "test-newline-clauses", Item{
 		"pk":    {S: new("newline-clauses")},
 		"Flag":  {BOOL: new(true)},
