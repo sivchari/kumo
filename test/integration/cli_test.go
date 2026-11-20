@@ -248,6 +248,34 @@ func TestCLI_ACM_RequestAndDescribeCertificate(t *testing.T) {
 	)).Assert(t.Name()+"_describe", describeOut)
 }
 
+func TestCLI_ACM_TagLifecycle(t *testing.T) {
+	requestOut := runCLI(t, "acm", "request-certificate", "--domain-name", "cli-tags.example.com")
+	requested := decodeCLIJSON(t, requestOut)
+
+	arn, _ := requested["CertificateArn"].(string)
+	if arn == "" {
+		t.Fatalf("request-certificate: no CertificateArn in output: %s", requestOut)
+	}
+
+	client := newACMClient(t)
+	t.Cleanup(func() {
+		_, _ = client.DeleteCertificate(context.Background(), &acm.DeleteCertificateInput{
+			CertificateArn: aws.String(arn),
+		})
+	})
+
+	runCLI(t, "acm", "add-tags-to-certificate", "--certificate-arn", arn,
+		"--tags", "Key=env,Value=prod", "--tags", "Key=team,Value=web")
+
+	listOut := runCLI(t, "acm", "list-tags-for-certificate", "--certificate-arn", arn)
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list", listOut)
+
+	runCLI(t, "acm", "remove-tags-from-certificate", "--certificate-arn", arn, "--tags", "Key=team")
+
+	listAfterOut := runCLI(t, "acm", "list-tags-for-certificate", "--certificate-arn", arn)
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name()+"_list_after_remove", listAfterOut)
+}
+
 func TestCLI_Lambda_FunctionLifecycle(t *testing.T) {
 	functionName := "test-cli-lambda-function"
 	code := `{"ZipFile":"` + base64.StdEncoding.EncodeToString([]byte("fake-zip-content")) + `"}`
