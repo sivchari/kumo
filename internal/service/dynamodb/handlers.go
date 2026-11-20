@@ -153,15 +153,22 @@ func (s *Service) PutItem(w http.ResponseWriter, r *http.Request) {
 	returnOld := req.ReturnValues == ReturnValuesAllOld
 
 	cond := ConditionInput{
-		Expression: req.ConditionExpression,
-		ExprNames:  req.ExpressionAttributeNames,
-		ExprValues: req.ExpressionAttributeValues,
+		Expression:                          req.ConditionExpression,
+		ExprNames:                           req.ExpressionAttributeNames,
+		ExprValues:                          req.ExpressionAttributeValues,
+		ReturnValuesOnConditionCheckFailure: req.ReturnValuesOnConditionCheckFailure,
 	}
 
 	oldItem, err := s.storage.PutItem(r.Context(), req.TableName, req.Item, returnOld, cond)
 	if err != nil {
 		var tErr *TableError
 		if errors.As(err, &tErr) {
+			if tErr.Code == ErrCodeConditionalCheckFailed && oldItem != nil {
+				writeConditionalCheckFailedError(w, tErr.Message, oldItem)
+
+				return
+			}
+
 			status := http.StatusBadRequest
 
 			writeDynamoDBError(w, tErr.Code, tErr.Message, status)
@@ -233,15 +240,22 @@ func (s *Service) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	returnOld := req.ReturnValues == ReturnValuesAllOld
 
 	cond := ConditionInput{
-		Expression: req.ConditionExpression,
-		ExprNames:  req.ExpressionAttributeNames,
-		ExprValues: req.ExpressionAttributeValues,
+		Expression:                          req.ConditionExpression,
+		ExprNames:                           req.ExpressionAttributeNames,
+		ExprValues:                          req.ExpressionAttributeValues,
+		ReturnValuesOnConditionCheckFailure: req.ReturnValuesOnConditionCheckFailure,
 	}
 
 	oldItem, err := s.storage.DeleteItem(r.Context(), req.TableName, req.Key, returnOld, cond)
 	if err != nil {
 		var tErr *TableError
 		if errors.As(err, &tErr) {
+			if tErr.Code == ErrCodeConditionalCheckFailed && oldItem != nil {
+				writeConditionalCheckFailedError(w, tErr.Message, oldItem)
+
+				return
+			}
+
 			status := http.StatusBadRequest
 
 			writeDynamoDBError(w, tErr.Code, tErr.Message, status)
@@ -279,9 +293,10 @@ func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cond := ConditionInput{
-		Expression: req.ConditionExpression,
-		ExprNames:  req.ExpressionAttributeNames,
-		ExprValues: req.ExpressionAttributeValues,
+		Expression:                          req.ConditionExpression,
+		ExprNames:                           req.ExpressionAttributeNames,
+		ExprValues:                          req.ExpressionAttributeValues,
+		ReturnValuesOnConditionCheckFailure: req.ReturnValuesOnConditionCheckFailure,
 	}
 
 	result, err := s.storage.UpdateItem(
@@ -297,6 +312,12 @@ func (s *Service) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var tErr *TableError
 		if errors.As(err, &tErr) {
+			if tErr.Code == ErrCodeConditionalCheckFailed && result != nil {
+				writeConditionalCheckFailedError(w, tErr.Message, result)
+
+				return
+			}
+
 			status := http.StatusBadRequest
 
 			writeDynamoDBError(w, tErr.Code, tErr.Message, status)
@@ -548,6 +569,20 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 // writeDynamoDBError writes a DynamoDB error response in JSON format.
 func writeDynamoDBError(w http.ResponseWriter, code, message string, status int) {
 	service.WriteJSONError(w, service.ContentTypeAmzJSON10, code, message, status)
+}
+
+// writeConditionalCheckFailedError writes a ConditionalCheckFailedException
+// that carries the existing item, as DynamoDB does for a write that set
+// ReturnValuesOnConditionCheckFailure to ALL_OLD.
+func writeConditionalCheckFailedError(w http.ResponseWriter, message string, item Item) {
+	w.Header().Set("Content-Type", service.ContentTypeAmzJSON10)
+	w.Header().Set("X-Amzn-Requestid", uuid.New().String())
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(ConditionalCheckFailedResponse{
+		Type:    ErrCodeConditionalCheckFailed,
+		Message: message,
+		Item:    item,
+	})
 }
 
 // decodeDynamoDBRequest decodes the JSON request body into req, writing the

@@ -934,6 +934,128 @@ func TestDynamoDB_UpdateItem_ConditionExpression(t *testing.T) {
 	}
 }
 
+func TestDynamoDB_ReturnValuesOnConditionCheckFailure(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-condition-return-values"
+
+	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
+		},
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	})
+
+	key := map[string]types.AttributeValue{
+		"pk": &types.AttributeValueMemberS{Value: "id-1"},
+	}
+
+	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item: map[string]types.AttributeValue{
+			"pk":     &types.AttributeValueMemberS{Value: "id-1"},
+			"status": &types.AttributeValueMemberS{Value: "active"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	condition := aws.String("#s = :expected")
+	names := map[string]string{"#s": "status"}
+	values := map[string]types.AttributeValue{
+		":expected": &types.AttributeValueMemberS{Value: "deleted"},
+	}
+
+	// assertExistingItem checks that err is a ConditionalCheckFailedException
+	// carrying the stored item.
+	assertExistingItem := func(t *testing.T, err error) {
+		t.Helper()
+
+		var ccfe *types.ConditionalCheckFailedException
+		if !errors.As(err, &ccfe) {
+			t.Fatalf("expected ConditionalCheckFailedException, got: %T: %v", err, err)
+		}
+
+		status, ok := ccfe.Item["status"].(*types.AttributeValueMemberS)
+		if !ok || status.Value != "active" {
+			t.Fatalf("expected existing item with status=active, got: %v", ccfe.Item)
+		}
+	}
+
+	t.Run("PutItem", func(t *testing.T) {
+		_, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(tableName),
+			Item: map[string]types.AttributeValue{
+				"pk":     &types.AttributeValueMemberS{Value: "id-1"},
+				"status": &types.AttributeValueMemberS{Value: "replaced"},
+			},
+			ConditionExpression:                 condition,
+			ExpressionAttributeNames:            names,
+			ExpressionAttributeValues:           values,
+			ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
+		})
+		assertExistingItem(t, err)
+	})
+
+	t.Run("UpdateItem", func(t *testing.T) {
+		_, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+			TableName:                           aws.String(tableName),
+			Key:                                 key,
+			UpdateExpression:                    aws.String("SET #s = :expected"),
+			ConditionExpression:                 condition,
+			ExpressionAttributeNames:            names,
+			ExpressionAttributeValues:           values,
+			ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
+		})
+		assertExistingItem(t, err)
+	})
+
+	t.Run("DeleteItem", func(t *testing.T) {
+		_, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName:                           aws.String(tableName),
+			Key:                                 key,
+			ConditionExpression:                 condition,
+			ExpressionAttributeNames:            names,
+			ExpressionAttributeValues:           values,
+			ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
+		})
+		assertExistingItem(t, err)
+	})
+
+	t.Run("NoneOmitsItem", func(t *testing.T) {
+		_, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName:                 aws.String(tableName),
+			Key:                       key,
+			ConditionExpression:       condition,
+			ExpressionAttributeNames:  names,
+			ExpressionAttributeValues: values,
+		})
+
+		var ccfe *types.ConditionalCheckFailedException
+		if !errors.As(err, &ccfe) {
+			t.Fatalf("expected ConditionalCheckFailedException, got: %T: %v", err, err)
+		}
+
+		if ccfe.Item != nil {
+			t.Fatalf("expected no item without ReturnValuesOnConditionCheckFailure, got: %v", ccfe.Item)
+		}
+	})
+}
+
 func TestDynamoDB_TransactWriteItems(t *testing.T) {
 	client := newDynamoDBClient(t)
 	ctx := t.Context()
