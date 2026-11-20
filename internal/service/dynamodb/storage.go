@@ -579,7 +579,7 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 		}
 	}
 
-	if err := validateKey(td.Table, key); err != nil {
+	if err := validateUpdateRequest(td.Table, key, updateExpr); err != nil {
 		return nil, err
 	}
 
@@ -625,6 +625,23 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 	m.saveLocked()
 
 	return m.returnUpdateResult(returnValues, oldItem, item), nil
+}
+
+// validateUpdateRequest validates the key and checks the update expression
+// syntax, so a malformed expression is rejected before the condition is
+// evaluated.
+func validateUpdateRequest(table *Table, key Item, updateExpr string) error {
+	if err := validateKey(table, key); err != nil {
+		return err
+	}
+
+	if updateExpr == "" {
+		return nil
+	}
+
+	_, err := parseUpdateClauses(updateExpr)
+
+	return err
 }
 
 // checkWriteCondition evaluates a write's ConditionExpression against the
@@ -1434,29 +1451,30 @@ func (m *MemoryStorage) attributeValuesEqual(a, b AttributeValue) bool {
 }
 
 // applyUpdateExpression applies an update expression to an item.
-// Supports SET, ADD, DELETE, and REMOVE clauses.
-func (m *MemoryStorage) applyUpdateExpression(item Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) Item {
-	expr := updateExpr
-	for placeholder, name := range exprNames {
-		expr = strings.ReplaceAll(expr, placeholder, name)
+// Supports SET, ADD, DELETE, and REMOVE clauses. A malformed expression is a
+// ValidationException and leaves the item untouched.
+func (m *MemoryStorage) applyUpdateExpression(item Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) (Item, error) {
+	clauses, err := parseUpdateClauses(updateExpr)
+	if err != nil {
+		return nil, err
 	}
 
-	clauses := parseUpdateClauses(expr)
-
 	for _, clause := range clauses {
+		body := resolveUpdateNames(clause.body, exprNames)
+
 		switch clause.action {
 		case updateActionSet:
-			item = applySetClause(item, clause.body, exprValues)
+			item = applySetClause(item, body, exprValues)
 		case updateActionAdd:
-			item = applyAddClause(item, clause.body, exprValues)
+			item = applyAddClause(item, body, exprValues)
 		case updateActionDel:
-			item = applyDeleteClause(item, clause.body, exprValues)
+			item = applyDeleteClause(item, body, exprValues)
 		case updateActionRem:
-			item = applyRemoveClause(item, clause.body)
+			item = applyRemoveClause(item, body)
 		}
 	}
 
-	return item
+	return item, nil
 }
 
 func (m *MemoryStorage) applyValidatedUpdateExpression(table *Table, item Item, updateExpr string, exprNames map[string]string, exprValues map[string]AttributeValue) (Item, error) {
@@ -1464,21 +1482,29 @@ func (m *MemoryStorage) applyValidatedUpdateExpression(table *Table, item Item, 
 		return nil, err
 	}
 
-	return m.applyUpdateExpression(item, updateExpr, exprNames, exprValues), nil
+	return m.applyUpdateExpression(item, updateExpr, exprNames, exprValues)
 }
 
+// validateUpdateExpressionDoesNotTouchKeys rejects an update expression that is
+// malformed or that modifies a key attribute.
 func validateUpdateExpressionDoesNotTouchKeys(updateExpr string, exprNames map[string]string, keySchema []KeySchemaElement) error {
+	if updateExpr == "" {
+		return nil
+	}
+
+	clauses, err := parseUpdateClauses(updateExpr)
+	if err != nil {
+		return err
+	}
+
 	keyNames := make(map[string]struct{}, len(keySchema))
 	for _, key := range keySchema {
 		keyNames[key.AttributeName] = struct{}{}
 	}
 
-	if len(keyNames) == 0 {
-		return nil
-	}
+	for _, clause := range clauses {
+		clause.body = resolveUpdateNames(clause.body, exprNames)
 
-	expr := resolveNames(updateExpr, exprNames)
-	for _, clause := range parseUpdateClauses(expr) {
 		for _, path := range updatedAttributePaths(clause) {
 			attrName := topLevelAttribute(path)
 			if _, ok := keyNames[attrName]; ok {
@@ -1533,84 +1559,6 @@ func topLevelAttribute(path string) string {
 	}
 
 	return path
-}
-
-type updateClause struct {
-	action string // SET, ADD, DELETE, REMOVE
-	body   string
-}
-
-// parseUpdateClauses splits an update expression into individual clauses.
-func parseUpdateClauses(expr string) []updateClause {
-	keywords := []string{updateActionSet, updateActionAdd, updateActionDel, updateActionRem}
-	upper := asciiUpper(expr)
-
-	type pos struct {
-		idx    int
-		action string
-	}
-
-	var positions []pos
-
-	for _, kw := range keywords {
-		idx := 0
-
-		for {
-			found := strings.Index(upper[idx:], kw)
-			if found == -1 {
-				break
-			}
-
-			absIdx := idx + found
-
-			if absIdx == 0 || isExpressionSpace(upper[absIdx-1]) {
-				endIdx := absIdx + len(kw)
-				if endIdx >= len(upper) || isExpressionSpace(upper[endIdx]) {
-					positions = append(positions, pos{idx: absIdx, action: kw})
-				}
-			}
-
-			idx = absIdx + len(kw)
-		}
-	}
-
-	sort.Slice(positions, func(i, j int) bool {
-		return positions[i].idx < positions[j].idx
-	})
-
-	clauses := make([]updateClause, 0, len(positions))
-
-	for i, p := range positions {
-		start := p.idx + len(p.action)
-
-		end := len(expr)
-		if i+1 < len(positions) {
-			end = positions[i+1].idx
-		}
-
-		body := strings.TrimSpace(expr[start:end])
-		clauses = append(clauses, updateClause{action: p.action, body: body})
-	}
-
-	return clauses
-}
-
-// isExpressionSpace reports whether b separates the parts of an update
-// expression. The AWS SDK's expression builder joins clauses with a newline, so
-// a clause keyword is not always surrounded by spaces.
-func isExpressionSpace(b byte) bool {
-	return b == ' ' || b == '\t' || b == '\r' || b == '\n'
-}
-
-func asciiUpper(s string) string {
-	out := []byte(s)
-	for i, b := range out {
-		if b >= 'a' && b <= 'z' {
-			out[i] = b - ('a' - 'A')
-		}
-	}
-
-	return string(out)
 }
 
 // applySetClause handles SET attr = :val, SET attr = if_not_exists(attr, :val).
@@ -2009,7 +1957,9 @@ func (m *MemoryStorage) TransactWriteItems(_ context.Context, items []TransactWr
 
 	// Phase 2: Apply all mutations atomically.
 	for _, twi := range items {
-		m.applyTransactWriteItem(twi)
+		if err := m.applyTransactWriteItem(twi); err != nil {
+			return nil, err
+		}
 	}
 
 	m.saveLocked()
@@ -2171,7 +2121,9 @@ func (m *MemoryStorage) checkTransactCondition(tableName string, keyOrItem Item,
 }
 
 // applyTransactWriteItem applies a single write item mutation. Must be called under lock.
-func (m *MemoryStorage) applyTransactWriteItem(twi TransactWriteItem) {
+// Update expressions are validated in the first transaction phase, so an error
+// here is not expected.
+func (m *MemoryStorage) applyTransactWriteItem(twi TransactWriteItem) error {
 	switch {
 	case twi.Put != nil:
 		td := m.Tables[twi.Put.TableName]
@@ -2193,12 +2145,19 @@ func (m *MemoryStorage) applyTransactWriteItem(twi TransactWriteItem) {
 		}
 
 		if twi.Update.UpdateExpression != "" {
-			item = m.applyUpdateExpression(item, twi.Update.UpdateExpression, twi.Update.ExpressionAttributeNames, twi.Update.ExpressionAttributeValues)
+			updated, err := m.applyUpdateExpression(item, twi.Update.UpdateExpression, twi.Update.ExpressionAttributeNames, twi.Update.ExpressionAttributeValues)
+			if err != nil {
+				return err
+			}
+
+			item = updated
 		}
 
 		td.Items[key] = item
 	case twi.ConditionCheck != nil:
 	}
+
+	return nil
 }
 
 // TransactGetItems retrieves multiple items transactionally.
