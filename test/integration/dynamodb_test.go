@@ -2881,3 +2881,94 @@ func TestDynamoDB_TransactWriteItemsReturnValuesOnConditionCheckFailure(t *testi
 		}
 	})
 }
+
+// TestDynamoDB_UpdateItemInvalidClauses verifies a repeated clause, an unknown
+// clause and trailing garbage are rejected with ValidationException instead of
+// being silently ignored, and that the item is left untouched.
+func TestDynamoDB_UpdateItemInvalidClauses(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-update-invalid-clauses"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	key := map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "id-1"}}
+
+	if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item:      map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "id-1"}},
+	}); err != nil {
+		t.Fatalf("failed to put item: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{name: "duplicate_set", expr: "SET a = :s SET c = :s"},
+		{name: "duplicate_remove_mixed_case", expr: "remove a\n\tREMOVE c"},
+		{name: "unknown_trailing_clause", expr: "SET a = :s FOO b"},
+		{name: "empty_clause_body", expr: "SET a = :s REMOVE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+				TableName:                 aws.String(tableName),
+				Key:                       key,
+				UpdateExpression:          aws.String(tt.expr),
+				ExpressionAttributeValues: map[string]types.AttributeValue{":s": &types.AttributeValueMemberS{Value: "v"}},
+			})
+			if err == nil {
+				t.Fatal("expected ValidationException from UpdateItem")
+			}
+
+			golden.New(t).Assert(t.Name(), dynamoDBErrorSummary(t, err))
+		})
+	}
+
+	got, err := client.GetItem(ctx, &dynamodb.GetItemInput{TableName: aws.String(tableName), Key: key})
+	if err != nil {
+		t.Fatalf("failed to get item: %v", err)
+	}
+
+	if len(got.Item) != 1 {
+		t.Errorf("item must be unchanged after rejected updates, got %v", got.Item)
+	}
+}
+
+// TestDynamoDB_UpdateItemKeywordNamedAttribute verifies a name placeholder that
+// resolves to a clause keyword is treated as an attribute name, not a clause.
+func TestDynamoDB_UpdateItemKeywordNamedAttribute(t *testing.T) {
+	client := newDynamoDBClient(t)
+	ctx := t.Context()
+	tableName := "test-table-update-keyword-attr"
+
+	createSimpleStringKeyTable(t, client, tableName)
+
+	key := map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "id-1"}}
+
+	if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item: map[string]types.AttributeValue{
+			"pk":  &types.AttributeValueMemberS{Value: "id-1"},
+			"Add": &types.AttributeValueMemberS{Value: "gone"},
+		},
+	}); err != nil {
+		t.Fatalf("failed to put item: %v", err)
+	}
+
+	out, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(tableName),
+		Key:                       key,
+		UpdateExpression:          aws.String("SET #n = :s, #m = :s REMOVE #r"),
+		ExpressionAttributeNames:  map[string]string{"#n": "Remove", "#m": "set", "#r": "Add"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{":s": &types.AttributeValueMemberS{Value: "v"}},
+		ReturnValues:              types.ReturnValueAllNew,
+	})
+	if err != nil {
+		t.Fatalf("UpdateItem failed: %v", err)
+	}
+
+	golden.New(t, golden.WithIgnoreFields("ResultMetadata")).Assert(t.Name(), out)
+}
