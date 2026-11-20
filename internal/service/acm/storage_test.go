@@ -1,6 +1,9 @@
 package acm
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -462,6 +465,62 @@ func TestUnmarshalJSON_IssuesPendingDNSCertificates(t *testing.T) {
 			if email := store.Certificates[emailARN]; email.Status != statusPendingValidation {
 				t.Errorf("email certificate Status %s, want PENDING_VALIDATION", email.Status)
 			}
+		})
+	}
+}
+
+// TestUnmarshalJSON_IssuesKeyAlgorithmsOfOlderSnapshots loads a snapshot
+// whose PENDING_VALIDATION DNS certificate has a KeyAlgorithm that
+// RequestCertificate does not accept, as older kumo stored it: the
+// certificate is issued on load and GetCertificate generates its material
+// with that algorithm.
+func TestUnmarshalJSON_IssuesKeyAlgorithmsOfOlderSnapshots(t *testing.T) {
+	t.Parallel()
+
+	const arn = "arn:aws:acm:us-east-1:000000000000:certificate/older"
+
+	cases := []struct {
+		keyAlgorithm string
+		check        func(t *testing.T, pub any)
+	}{
+		{keyAlgorithmRSA4096, func(t *testing.T, pub any) {
+			t.Helper()
+
+			if key, ok := pub.(*rsa.PublicKey); !ok || key.N.BitLen() != 4096 {
+				t.Errorf("public key %T, want a 4096-bit RSA key", pub)
+			}
+		}},
+		{keyAlgorithmECSecp521r1, func(t *testing.T, pub any) {
+			t.Helper()
+
+			if key, ok := pub.(*ecdsa.PublicKey); !ok || key.Curve != elliptic.P521() {
+				t.Errorf("public key %T, want an ECDSA key on P-521", pub)
+			}
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.keyAlgorithm, func(t *testing.T) {
+			t.Parallel()
+
+			snapshot := `{"certificates":{"` + arn + `":{
+  "CertificateArn":"` + arn + `",
+  "DomainName":"older.example.com","Status":"PENDING_VALIDATION","Type":"AMAZON_ISSUED",
+  "KeyAlgorithm":"` + tc.keyAlgorithm + `","Serial":"00112233445566778899aabbccddeeff","CreatedAt":"2026-10-01T00:00:00Z",
+  "DomainValidationOptions":[{"DomainName":"older.example.com","ValidationDomain":"older.example.com",
+    "ValidationStatus":"PENDING_VALIDATION","ValidationMethod":"DNS"}]}}}`
+
+			store, _ := newClockedStorage(0)
+			if err := json.Unmarshal([]byte(snapshot), store); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+
+			got, err := store.GetCertificate(t.Context(), arn)
+			if err != nil {
+				t.Fatalf("GetCertificate: %v", err)
+			}
+
+			tc.check(t, parsePEMCertificate(t, got.CertificateBody).PublicKey)
 		})
 	}
 }
