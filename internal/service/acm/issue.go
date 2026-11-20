@@ -212,11 +212,14 @@ func leafTemplate(cert *Certificate, key crypto.Signer) (*x509.Certificate, erro
 	}, nil
 }
 
-// Key algorithms that RequestCertificate issues certificates with, as
-// KeyAlgorithm values, besides keyAlgorithmRSA2048.
+// KeyAlgorithm values besides keyAlgorithmRSA2048.
 const (
+	keyAlgorithmRSA1024      = "RSA_1024"
+	keyAlgorithmRSA3072      = "RSA_3072"
+	keyAlgorithmRSA4096      = "RSA_4096"
 	keyAlgorithmECPrime256v1 = "EC_prime256v1"
 	keyAlgorithmECSecp384r1  = "EC_secp384r1"
+	keyAlgorithmECSecp521r1  = "EC_secp521r1"
 )
 
 // keySpec describes the private key of a key algorithm: an RSA key of
@@ -226,16 +229,29 @@ type keySpec struct {
 	curve   elliptic.Curve
 }
 
-// requestKeySpecs holds the key algorithms RequestCertificate issues
-// certificates with. KeyAlgorithm also takes RSA_1024, RSA_3072, RSA_4096
-// and EC_secp521r1, but the API reference supports only these three for a
-// certificate request: "Other listed algorithms are for imported
-// certificates only."
-// https://docs.aws.amazon.com/acm/latest/APIReference/API_RequestCertificate.html
-var requestKeySpecs = map[string]keySpec{
+// keySpecs holds every KeyAlgorithm value, so material can be generated for
+// any stored certificate, including one a snapshot written by an older kumo
+// holds with an algorithm RequestCertificate no longer accepts.
+// https://docs.aws.amazon.com/acm/latest/APIReference/API_CertificateDetail.html
+var keySpecs = map[string]keySpec{
+	keyAlgorithmRSA1024:      {rsaBits: 1024},
 	keyAlgorithmRSA2048:      {rsaBits: 2048},
+	keyAlgorithmRSA3072:      {rsaBits: 3072},
+	keyAlgorithmRSA4096:      {rsaBits: 4096},
 	keyAlgorithmECPrime256v1: {curve: elliptic.P256()},
 	keyAlgorithmECSecp384r1:  {curve: elliptic.P384()},
+	keyAlgorithmECSecp521r1:  {curve: elliptic.P521()},
+}
+
+// requestKeySpecs holds the key algorithms RequestCertificate issues
+// certificates with, a subset of keySpecs. The API reference supports only
+// these three for a certificate request: "Other listed algorithms are for
+// imported certificates only."
+// https://docs.aws.amazon.com/acm/latest/APIReference/API_RequestCertificate.html
+var requestKeySpecs = map[string]struct{}{
+	keyAlgorithmRSA2048:      {},
+	keyAlgorithmECPrime256v1: {},
+	keyAlgorithmECSecp384r1:  {},
 }
 
 // requestKeyAlgorithm returns the key algorithm a requested certificate is
@@ -259,10 +275,9 @@ func requestKeyAlgorithm(keyAlgorithm string) (string, error) {
 	return keyAlgorithm, nil
 }
 
-// generateKey generates a private key for a key algorithm in
-// requestKeySpecs.
+// generateKey generates a private key for any KeyAlgorithm value.
 func generateKey(keyAlgorithm string) (crypto.Signer, error) {
-	spec, ok := requestKeySpecs[keyAlgorithm]
+	spec, ok := keySpecs[keyAlgorithm]
 	if !ok {
 		return nil, fmt.Errorf("unsupported key algorithm %q", keyAlgorithm)
 	}
