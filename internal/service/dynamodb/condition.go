@@ -15,6 +15,9 @@ type ConditionInput struct {
 	Expression string
 	ExprNames  map[string]string
 	ExprValues map[string]AttributeValue
+	// ReturnValuesOnConditionCheckFailure is the write request's option of the
+	// same name; ALL_OLD returns the existing item when the condition fails.
+	ReturnValuesOnConditionCheckFailure string
 }
 
 // evaluateCondition evaluates a condition expression against an item.

@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -466,16 +467,8 @@ func (m *MemoryStorage) PutItem(_ context.Context, tableName string, item Item, 
 		existingItem = existing
 	}
 
-	if ok, err := evaluateCondition(existingItem, cond); err != nil {
-		return nil, &TableError{
-			Code:    errCodeValidation,
-			Message: fmt.Sprintf("Invalid ConditionExpression: %s", err),
-		}
-	} else if !ok {
-		return nil, &TableError{
-			Code:    ErrCodeConditionalCheckFailed,
-			Message: msgConditionalRequestFailed,
-		}
+	if err := checkWriteCondition(existingItem, cond); err != nil {
+		return m.conditionCheckFailedItem(existingItem, cond, err), err
 	}
 
 	var oldItem Item
@@ -550,16 +543,8 @@ func (m *MemoryStorage) DeleteItem(_ context.Context, tableName string, key Item
 		existingItem = existing
 	}
 
-	if ok, err := evaluateCondition(existingItem, cond); err != nil {
-		return nil, &TableError{
-			Code:    errCodeValidation,
-			Message: fmt.Sprintf("Invalid ConditionExpression: %s", err),
-		}
-	} else if !ok {
-		return nil, &TableError{
-			Code:    ErrCodeConditionalCheckFailed,
-			Message: msgConditionalRequestFailed,
-		}
+	if err := checkWriteCondition(existingItem, cond); err != nil {
+		return m.conditionCheckFailedItem(existingItem, cond, err), err
 	}
 
 	var oldItem Item
@@ -607,7 +592,7 @@ func (m *MemoryStorage) UpdateItem(_ context.Context, tableName string, key Item
 	}
 
 	if err := checkWriteCondition(condItem, cond); err != nil {
-		return nil, err
+		return m.conditionCheckFailedItem(condItem, cond, err), err
 	}
 
 	var oldItem Item
@@ -663,6 +648,20 @@ func checkWriteCondition(condItem Item, cond ConditionInput) error {
 	}
 
 	return nil
+}
+
+// conditionCheckFailedItem returns the item to report with a
+// ConditionalCheckFailedException from checkWriteCondition: a copy of the
+// existing item when the write set ReturnValuesOnConditionCheckFailure to
+// ALL_OLD, nil otherwise.
+func (m *MemoryStorage) conditionCheckFailedItem(existingItem Item, cond ConditionInput, err error) Item {
+	var tErr *TableError
+	if !errors.As(err, &tErr) || tErr.Code != ErrCodeConditionalCheckFailed ||
+		cond.ReturnValuesOnConditionCheckFailure != ReturnValuesAllOld {
+		return nil
+	}
+
+	return m.copyItem(existingItem)
 }
 
 // returnUpdateResult selects the item to return per the ReturnValues option.

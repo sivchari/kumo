@@ -1257,3 +1257,65 @@ func TestExpressionValidationEdgeCases(t *testing.T) {
 		t.Fatalf("query with invalid KeyConditionExpression: expected ValidationException, got: %v", err)
 	}
 }
+
+func TestConditionCheckFailureReturnsExistingItem(t *testing.T) {
+	t.Parallel()
+
+	s := NewMemoryStorage("http://localhost:4566")
+	ctx := context.Background()
+
+	_, err := s.CreateTable(ctx, &CreateTableRequest{
+		TableName: "test",
+		KeySchema: []KeySchemaElement{
+			{AttributeName: "pk", KeyType: keyTypeHash},
+		},
+		AttributeDefinitions: []AttributeDefinition{
+			{AttributeName: "pk", AttributeType: "S"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key := Item{"pk": {S: new("1")}}
+
+	_, err = s.PutItem(ctx, "test", Item{
+		"pk":           {S: new("1")},
+		testAttrStatus: {S: new("active")},
+	}, false, ConditionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allOld := ConditionInput{Expression: testCondAttrNotExistsPK, ReturnValuesOnConditionCheckFailure: ReturnValuesAllOld}
+
+	writes := map[string]func(cond ConditionInput) (Item, error){
+		"PutItem": func(cond ConditionInput) (Item, error) {
+			return s.PutItem(ctx, "test", key, false, cond)
+		},
+		"UpdateItem": func(cond ConditionInput) (Item, error) {
+			return s.UpdateItem(ctx, "test", key, "", nil, nil, "", cond)
+		},
+		"DeleteItem": func(cond ConditionInput) (Item, error) {
+			return s.DeleteItem(ctx, "test", key, false, cond)
+		},
+	}
+
+	for name, write := range writes {
+		item, err := write(allOld)
+
+		var tErr *TableError
+		if !errors.As(err, &tErr) || tErr.Code != ErrCodeConditionalCheckFailed {
+			t.Fatalf("%s: expected ConditionalCheckFailedException, got: %v", name, err)
+		}
+
+		if item[testAttrStatus].S == nil || *item[testAttrStatus].S != "active" {
+			t.Fatalf("%s: expected existing item with ALL_OLD, got: %v", name, item)
+		}
+
+		item, _ = write(ConditionInput{Expression: testCondAttrNotExistsPK})
+		if item != nil {
+			t.Fatalf("%s: expected no item without ALL_OLD, got: %v", name, item)
+		}
+	}
+}

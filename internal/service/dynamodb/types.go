@@ -368,12 +368,13 @@ type DescribeTableResponse struct {
 
 // PutItemRequest is the request for PutItem.
 type PutItemRequest struct {
-	TableName                 string                    `json:"TableName"`
-	Item                      Item                      `json:"Item"`
-	ConditionExpression       string                    `json:"ConditionExpression,omitempty"`
-	ExpressionAttributeNames  map[string]string         `json:"ExpressionAttributeNames,omitempty"`
-	ExpressionAttributeValues map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
-	ReturnValues              string                    `json:"ReturnValues,omitempty"`
+	TableName                           string                    `json:"TableName"`
+	Item                                Item                      `json:"Item"`
+	ConditionExpression                 string                    `json:"ConditionExpression,omitempty"`
+	ExpressionAttributeNames            map[string]string         `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues           map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	ReturnValues                        string                    `json:"ReturnValues,omitempty"`
+	ReturnValuesOnConditionCheckFailure string                    `json:"ReturnValuesOnConditionCheckFailure,omitempty"`
 }
 
 // PutItemResponse is the response for PutItem.
@@ -397,12 +398,13 @@ type GetItemResponse struct {
 
 // DeleteItemRequest is the request for DeleteItem.
 type DeleteItemRequest struct {
-	TableName                 string                    `json:"TableName"`
-	Key                       Item                      `json:"Key"`
-	ConditionExpression       string                    `json:"ConditionExpression,omitempty"`
-	ExpressionAttributeNames  map[string]string         `json:"ExpressionAttributeNames,omitempty"`
-	ExpressionAttributeValues map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
-	ReturnValues              string                    `json:"ReturnValues,omitempty"`
+	TableName                           string                    `json:"TableName"`
+	Key                                 Item                      `json:"Key"`
+	ConditionExpression                 string                    `json:"ConditionExpression,omitempty"`
+	ExpressionAttributeNames            map[string]string         `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues           map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	ReturnValues                        string                    `json:"ReturnValues,omitempty"`
+	ReturnValuesOnConditionCheckFailure string                    `json:"ReturnValuesOnConditionCheckFailure,omitempty"`
 }
 
 // DeleteItemResponse is the response for DeleteItem.
@@ -418,14 +420,15 @@ type AttributeValueUpdate struct {
 
 // UpdateItemRequest is the request for UpdateItem.
 type UpdateItemRequest struct {
-	TableName                 string                          `json:"TableName"`
-	Key                       Item                            `json:"Key"`
-	UpdateExpression          string                          `json:"UpdateExpression,omitempty"`
-	ConditionExpression       string                          `json:"ConditionExpression,omitempty"`
-	ExpressionAttributeNames  map[string]string               `json:"ExpressionAttributeNames,omitempty"`
-	ExpressionAttributeValues map[string]AttributeValue       `json:"ExpressionAttributeValues,omitempty"`
-	AttributeUpdates          map[string]AttributeValueUpdate `json:"AttributeUpdates,omitempty"`
-	ReturnValues              string                          `json:"ReturnValues,omitempty"`
+	TableName                           string                          `json:"TableName"`
+	Key                                 Item                            `json:"Key"`
+	UpdateExpression                    string                          `json:"UpdateExpression,omitempty"`
+	ConditionExpression                 string                          `json:"ConditionExpression,omitempty"`
+	ExpressionAttributeNames            map[string]string               `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues           map[string]AttributeValue       `json:"ExpressionAttributeValues,omitempty"`
+	AttributeUpdates                    map[string]AttributeValueUpdate `json:"AttributeUpdates,omitempty"`
+	ReturnValues                        string                          `json:"ReturnValues,omitempty"`
+	ReturnValuesOnConditionCheckFailure string                          `json:"ReturnValuesOnConditionCheckFailure,omitempty"`
 }
 
 // UpdateItemResponse is the response for UpdateItem.
@@ -626,6 +629,15 @@ type TransactionCanceledResponse struct {
 	Type                string               `json:"__type"`
 	Message             string               `json:"message"`
 	CancellationReasons []CancellationReason `json:"CancellationReasons"`
+}
+
+// ConditionalCheckFailedResponse is the error response for a failed write
+// condition. Item holds the existing item when the request set
+// ReturnValuesOnConditionCheckFailure to ALL_OLD.
+type ConditionalCheckFailedResponse struct {
+	Type    string `json:"__type"`
+	Message string `json:"message"`
+	Item    Item   `json:"Item,omitempty"`
 }
 
 // BatchWriteItemRequest is the request for BatchWriteItem.
