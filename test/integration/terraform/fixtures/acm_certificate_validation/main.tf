@@ -1,10 +1,10 @@
 resource "aws_acm_certificate" "site" {
-  domain_name               = "tf-acm-certificate-validation.example.com"
+  domain_name = "tf-acm-certificate-validation.example.com"
   subject_alternative_names = [
     "*.tf-acm-certificate-validation.example.com",
     "www.tf-acm-certificate-validation.example.com",
   ]
-  validation_method         = "DNS"
+  validation_method = "DNS"
 }
 
 # Without validation_record_fqdns the resource only waits for the
