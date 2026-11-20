@@ -16,6 +16,10 @@ import (
 	"github.com/sivchari/golden"
 )
 
+// invalidChangeBatchCode is the error code of a change batch Route 53 cannot
+// apply, such as a CREATE of a record set that already exists.
+const invalidChangeBatchCode = "InvalidChangeBatch"
+
 // zonePlaceholder stands in for a per-run hosted zone name in golden files.
 const zonePlaceholder = "{zone}"
 
@@ -106,14 +110,18 @@ func assertRecordSetsGolden(t *testing.T, client *route53.Client, name, zoneID, 
 	golden.New(t, golden.WithIgnoreOrder(false)).Assert(name, strings.ReplaceAll(string(data), zoneName, zonePlaceholder))
 }
 
-// assertDuplicateCreate fails unless err is the API error of a CREATE whose
-// record set already exists.
+// assertDuplicateCreate fails unless err is the InvalidChangeBatch API error
+// Route 53 returns for a CREATE whose record set already exists.
 func assertDuplicateCreate(t *testing.T, err error) {
 	t.Helper()
 
 	var apiErr smithy.APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected an API error for duplicate record, got %T: %v", err, err)
+	}
+
+	if got := apiErr.ErrorCode(); got != invalidChangeBatchCode {
+		t.Fatalf("duplicate record error code = %q, want %q", got, invalidChangeBatchCode)
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 const (
 	testZoneID        = "/hostedzone/test"
 	testZoneName      = "example.com."
-	testCreatedRecord = "www.example.com. 192.0.2.1"
 	testUpdatedRecord = "www.example.com. 192.0.2.2"
 	testAPIRecord     = "api.example.com. 192.0.2.10"
 	// testUndottedName is wwwName without the trailing dot.
@@ -44,86 +43,6 @@ func recordSummaries(t *testing.T, s *MemoryStorage) []string {
 	}
 
 	return summaries
-}
-
-var recordNameNormalizationTests = []struct {
-	name       string
-	createName string
-	change     Change
-	want       []string
-}{
-	{
-		name:       "delete with trailing dot",
-		createName: testUndottedName,
-		change:     Change{Action: actionDelete, ResourceRecordSet: newTestRecordSet(wwwName, "192.0.2.1")},
-		want:       []string{},
-	},
-	{
-		name:       "delete without trailing dot",
-		createName: "www.example.com.",
-		change:     Change{Action: actionDelete, ResourceRecordSet: newTestRecordSet(testUndottedName, "192.0.2.1")},
-		want:       []string{},
-	},
-	{
-		name:       "upsert with trailing dot",
-		createName: testUndottedName,
-		change:     Change{Action: actionUpsert, ResourceRecordSet: newTestRecordSet(wwwName, "192.0.2.2")},
-		want:       []string{testUpdatedRecord},
-	},
-	{
-		name:       "upsert without trailing dot",
-		createName: "www.example.com.",
-		change:     Change{Action: actionUpsert, ResourceRecordSet: newTestRecordSet(testUndottedName, "192.0.2.2")},
-		want:       []string{testUpdatedRecord},
-	},
-	{
-		name:       "delete in another case",
-		createName: "WWW.Example.com",
-		change:     Change{Action: actionDelete, ResourceRecordSet: newTestRecordSet(wwwName, "192.0.2.1")},
-		want:       []string{},
-	},
-	{
-		name:       "upsert in another case",
-		createName: "www.Example.COM.",
-		change:     Change{Action: actionUpsert, ResourceRecordSet: newTestRecordSet("WWW.EXAMPLE.COM", "192.0.2.2")},
-		want:       []string{testUpdatedRecord},
-	},
-}
-
-func TestChangeRecordSetsNormalizesRecordNames(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range recordNameNormalizationTests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			s := NewMemoryStorage()
-			if err := s.CreateHostedZone(&HostedZone{ID: testZoneID, Name: testZoneName}); err != nil {
-				t.Fatal(err)
-			}
-
-			create := Change{Action: actionCreate, ResourceRecordSet: newTestRecordSet(tt.createName, "192.0.2.1")}
-			if err := s.ChangeRecordSets(testZoneID, []Change{create}); err != nil {
-				t.Fatalf("CREATE: %v", err)
-			}
-
-			if got, want := recordSummaries(t, s), []string{testCreatedRecord}; !slices.Equal(got, want) {
-				t.Fatalf("records after CREATE = %q, want %q", got, want)
-			}
-
-			if err := s.ChangeRecordSets(testZoneID, []Change{create}); !errors.Is(err, ErrRecordSetAlreadyExists) {
-				t.Fatalf("duplicate CREATE error = %v, want %v", err, ErrRecordSetAlreadyExists)
-			}
-
-			if err := s.ChangeRecordSets(testZoneID, []Change{tt.change}); err != nil {
-				t.Fatalf("%s: %v", tt.change.Action, err)
-			}
-
-			if got := recordSummaries(t, s); !slices.Equal(got, tt.want) {
-				t.Fatalf("records after %s = %q, want %q", tt.change.Action, got, tt.want)
-			}
-		})
-	}
 }
 
 // loadSnapshot writes a snapshot holding records as an earlier version
@@ -230,6 +149,24 @@ func TestSnapshotSpellingsOfOneRecordSetAreKept(t *testing.T) {
 
 		if got := recordSummaries(t, s); !slices.Equal(got, want) {
 			t.Fatalf("records after DELETE = %q, want %q", got, want)
+		}
+	}
+}
+
+// TestEqualsNormalizedDNSName checks that the non-allocating comparison
+// agrees with normalizing the stored name, for every pair of spellings.
+func TestEqualsNormalizedDNSName(t *testing.T) {
+	t.Parallel()
+
+	names := []string{"", ".", "a", "a.", "A", "A.", "www.example.com", "www.example.com.", "WWW.Example.COM", "WWW.Example.COM.", "www.example.org.", "www.example.co", "\xff", "\xff."}
+
+	for _, stored := range names {
+		for _, query := range names {
+			normalized := normalizeDNSName(query)
+
+			if got, want := equalsNormalizedDNSName(stored, normalized), normalizeDNSName(stored) == normalized; got != want {
+				t.Errorf("equalsNormalizedDNSName(%q, %q) = %t, want %t", stored, normalized, got, want)
+			}
 		}
 	}
 }

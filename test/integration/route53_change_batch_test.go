@@ -47,6 +47,10 @@ func TestRoute53_ChangeBatchIsAtomic(t *testing.T) {
 		if !errors.As(err, &apiErr) {
 			t.Fatalf("%s then duplicate CREATE: expected an API error, got %T: %v", first.Action, err, err)
 		}
+
+		if got := apiErr.ErrorCode(); got != invalidChangeBatchCode {
+			t.Fatalf("%s then duplicate CREATE: error code = %q, want %q", first.Action, got, invalidChangeBatchCode)
+		}
 	}
 
 	listed, err := client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{HostedZoneId: zoneID})
