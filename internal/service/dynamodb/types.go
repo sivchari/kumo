@@ -17,6 +17,12 @@ const (
 	ReturnValuesUpdatedNew = "UPDATED_NEW"
 )
 
+// ReturnValuesOnConditionCheckFailure constants for DynamoDB write operations.
+const (
+	ReturnValuesOnConditionCheckFailureAllOld = "ALL_OLD"
+	ReturnValuesOnConditionCheckFailureNone   = "NONE"
+)
+
 // Error code constants.
 const (
 	ErrCodeConditionalCheckFailed = "ConditionalCheckFailedException"
@@ -549,39 +555,43 @@ type TransactWriteItem struct {
 
 // TransactConditionCheck represents a ConditionCheck action in a transaction.
 type TransactConditionCheck struct {
-	TableName                 string                    `json:"TableName"`
-	Key                       Item                      `json:"Key"`
-	ConditionExpression       string                    `json:"ConditionExpression"`
-	ExpressionAttributeNames  map[string]string         `json:"ExpressionAttributeNames,omitempty"`
-	ExpressionAttributeValues map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	TableName                           string                    `json:"TableName"`
+	Key                                 Item                      `json:"Key"`
+	ConditionExpression                 string                    `json:"ConditionExpression"`
+	ExpressionAttributeNames            map[string]string         `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues           map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	ReturnValuesOnConditionCheckFailure string                    `json:"ReturnValuesOnConditionCheckFailure,omitempty"`
 }
 
 // TransactDelete represents a Delete action in a transaction.
 type TransactDelete struct {
-	TableName                 string                    `json:"TableName"`
-	Key                       Item                      `json:"Key"`
-	ConditionExpression       string                    `json:"ConditionExpression,omitempty"`
-	ExpressionAttributeNames  map[string]string         `json:"ExpressionAttributeNames,omitempty"`
-	ExpressionAttributeValues map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	TableName                           string                    `json:"TableName"`
+	Key                                 Item                      `json:"Key"`
+	ConditionExpression                 string                    `json:"ConditionExpression,omitempty"`
+	ExpressionAttributeNames            map[string]string         `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues           map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	ReturnValuesOnConditionCheckFailure string                    `json:"ReturnValuesOnConditionCheckFailure,omitempty"`
 }
 
 // TransactPut represents a Put action in a transaction.
 type TransactPut struct {
-	TableName                 string                    `json:"TableName"`
-	Item                      Item                      `json:"Item"`
-	ConditionExpression       string                    `json:"ConditionExpression,omitempty"`
-	ExpressionAttributeNames  map[string]string         `json:"ExpressionAttributeNames,omitempty"`
-	ExpressionAttributeValues map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	TableName                           string                    `json:"TableName"`
+	Item                                Item                      `json:"Item"`
+	ConditionExpression                 string                    `json:"ConditionExpression,omitempty"`
+	ExpressionAttributeNames            map[string]string         `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues           map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	ReturnValuesOnConditionCheckFailure string                    `json:"ReturnValuesOnConditionCheckFailure,omitempty"`
 }
 
 // TransactUpdate represents an Update action in a transaction.
 type TransactUpdate struct {
-	TableName                 string                    `json:"TableName"`
-	Key                       Item                      `json:"Key"`
-	UpdateExpression          string                    `json:"UpdateExpression"`
-	ConditionExpression       string                    `json:"ConditionExpression,omitempty"`
-	ExpressionAttributeNames  map[string]string         `json:"ExpressionAttributeNames,omitempty"`
-	ExpressionAttributeValues map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	TableName                           string                    `json:"TableName"`
+	Key                                 Item                      `json:"Key"`
+	UpdateExpression                    string                    `json:"UpdateExpression"`
+	ConditionExpression                 string                    `json:"ConditionExpression,omitempty"`
+	ExpressionAttributeNames            map[string]string         `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues           map[string]AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	ReturnValuesOnConditionCheckFailure string                    `json:"ReturnValuesOnConditionCheckFailure,omitempty"`
 }
 
 // TransactWriteItemsResponse is the response for TransactWriteItems.
@@ -622,6 +632,9 @@ type TransactGetItemResponse struct {
 type CancellationReason struct {
 	Code    string `json:"Code"`
 	Message string `json:"Message,omitempty"`
+	// Item is the existing item, set for a failed condition when the action
+	// requested ReturnValuesOnConditionCheckFailure ALL_OLD.
+	Item Item `json:"Item,omitempty"`
 }
 
 // TransactionCanceledResponse represents the error response for canceled transactions.
