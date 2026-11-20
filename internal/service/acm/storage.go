@@ -267,6 +267,9 @@ func buildDomainValidations(req *RequestCertificateInput, validationMethod strin
 	return validations
 }
 
+// wildcardPrefix is the prefix of a wildcard domain name.
+const wildcardPrefix = "*."
+
 // validationRecordLabelLength is the length of the lowercase label between
 // the token and acm-validations.aws in a validation record's value.
 const validationRecordLabelLength = 10
@@ -278,7 +281,7 @@ const validationRecordLabelLength = 10
 // ACM returns, _<token>.<label>.acm-validations.aws.
 // https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html
 func validationRecord(domain string) *ResourceRecord {
-	base := strings.ToLower(strings.TrimPrefix(domain, "*."))
+	base := strings.ToLower(strings.TrimPrefix(domain, wildcardPrefix))
 
 	digest := func(kind string) [sha256.Size]byte {
 		return sha256.Sum256([]byte(kind + "/" + accountID + "/" + base))
