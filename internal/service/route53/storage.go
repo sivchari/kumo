@@ -336,17 +336,50 @@ func (s *MemoryStorage) GetChange(id string) (*ChangeInfo, error) {
 	return c, nil
 }
 
-// findRecordIndex finds the index of a record set by name and type. name is
-// normalized; the stored name is normalized before comparing, because
-// snapshots written before record names were normalized hold names as sent.
+// findRecordIndex finds the index of a record set by name and type. name must
+// be normalized; stored names are compared as if normalized, without
+// allocating, because snapshots written before record names were normalized
+// hold names as sent.
 func findRecordIndex(records []ResourceRecordSet, name, recordType string) int {
 	for i := range records {
-		if records[i].Type == recordType && normalizeDNSName(records[i].Name) == name {
+		if records[i].Type == recordType && equalsNormalizedDNSName(records[i].Name, name) {
 			return i
 		}
 	}
 
 	return -1
+}
+
+// equalsNormalizedDNSName reports whether normalizeDNSName(stored) equals
+// normalized, which must itself be normalized, without allocating.
+func equalsNormalizedDNSName(stored, normalized string) bool {
+	if stored == "" || normalized == "" {
+		return stored == normalized
+	}
+
+	// A stored name without the trailing dot is one byte shorter than its
+	// normalized form.
+	want := len(stored)
+	if stored[len(stored)-1] != '.' {
+		want++
+	}
+
+	if want != len(normalized) {
+		return false
+	}
+
+	for i := range len(stored) {
+		c := stored[i]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+
+		if c != normalized[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // ListTagsForResource returns the tags for the given resource.

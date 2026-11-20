@@ -367,8 +367,10 @@ func (s *Service) DeleteHostedZone(w http.ResponseWriter, r *http.Request) {
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
-// ChangeResourceRecordSets handles the ChangeResourceRecordSets API.
-//
+// errCodeInvalidChangeBatch is the code Route 53 returns for a change batch it
+// cannot apply, such as a CREATE of a record set that already exists.
+const errCodeInvalidChangeBatch = "InvalidChangeBatch"
+
 // changeRecordSetsErrors maps storage sentinels from ChangeRecordSets to their
 // HTTP error response, checked in order.
 var changeRecordSetsErrors = []struct {
@@ -378,8 +380,8 @@ var changeRecordSetsErrors = []struct {
 	message string
 }{
 	{ErrHostedZoneNotFound, http.StatusNotFound, "NoSuchHostedZone", "Hosted zone not found"},
-	{ErrRecordSetAlreadyExists, http.StatusBadRequest, "ResourceRecordAlreadyExists", "Resource record already exists"},
-	{ErrRecordSetNotFound, http.StatusBadRequest, "InvalidChangeBatch", "Resource record not found"},
+	{ErrRecordSetAlreadyExists, http.StatusBadRequest, errCodeInvalidChangeBatch, "Tried to create a resource record set that already exists"},
+	{ErrRecordSetNotFound, http.StatusBadRequest, errCodeInvalidChangeBatch, "Resource record not found"},
 	{ErrInvalidInput, http.StatusBadRequest, "InvalidInput", "Invalid change action"},
 }
 
