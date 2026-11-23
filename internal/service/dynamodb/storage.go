@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math/big"
 	"os"
 	"slices"
 	"sort"
@@ -1659,21 +1660,21 @@ func evaluateSetArithmetic(item Item, expr string, exprValues map[string]Attribu
 			return AttributeValue{}, false
 		}
 
-		leftNum, err1 := strconv.ParseFloat(*left.N, 64)
-		rightNum, err2 := strconv.ParseFloat(*right.N, 64)
+		leftNum, okLeft := parseNumber(*left.N)
+		rightNum, okRight := parseNumber(*right.N)
 
-		if err1 != nil || err2 != nil {
+		if !okLeft || !okRight {
 			return AttributeValue{}, false
 		}
 
-		var result float64
+		result := new(big.Rat)
 		if op == " + " {
-			result = leftNum + rightNum
+			result.Add(leftNum, rightNum)
 		} else {
-			result = leftNum - rightNum
+			result.Sub(leftNum, rightNum)
 		}
 
-		resultStr := strconv.FormatFloat(result, 'f', -1, 64)
+		resultStr := formatNumber(result)
 
 		return AttributeValue{N: &resultStr}, true
 	}
@@ -1872,20 +1873,14 @@ func applyRemoveClause(item Item, clause string) Item {
 
 // addNumbers adds two DynamoDB number strings.
 func addNumbers(a, b string) string {
-	fa, err1 := strconv.ParseFloat(a, 64)
-	fb, err2 := strconv.ParseFloat(b, 64)
+	x, okA := parseNumber(a)
+	y, okB := parseNumber(b)
 
-	if err1 != nil || err2 != nil {
+	if !okA || !okB {
 		return a
 	}
 
-	result := fa + fb
-
-	if result == float64(int64(result)) {
-		return strconv.FormatInt(int64(result), 10)
-	}
-
-	return strconv.FormatFloat(result, 'f', -1, 64)
+	return formatNumber(new(big.Rat).Add(x, y))
 }
 
 // mergeStringSet merges two string slices, removing duplicates.
