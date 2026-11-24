@@ -27,8 +27,8 @@ func TestSetListAppend(t *testing.T) {
 	key := Item{"pk": {S: new("a")}}
 
 	_, err = s.PutItem(ctx, "test-list-append", Item{
-		"pk":   {S: new("a")},
-		"tags": {L: []*AttributeValue{{S: new("x")}}},
+		"pk":         {S: new("a")},
+		testAttrTags: {L: []*AttributeValue{{S: new("x")}}},
 	}, false, ConditionInput{})
 	if err != nil {
 		t.Fatal(err)
@@ -48,8 +48,8 @@ func TestSetListAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if tags := result["tags"].L; len(tags) != 2 || *tags[0].S != "x" || *tags[1].S != "y" {
-		t.Errorf("tags = %v, want [x y]", result["tags"])
+	if tags := result[testAttrTags].L; len(tags) != 2 || *tags[0].S != "x" || *tags[1].S != "y" {
+		t.Errorf("tags = %v, want [x y]", result[testAttrTags])
 	}
 
 	if log := result["log"].L; len(log) != 1 || *log[0].S != "y" {
