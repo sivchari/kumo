@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"math/big"
+	"strings"
 )
 
 // DynamoDB number limits: up to 38 significant digits, with a magnitude from
@@ -192,4 +193,29 @@ func parseNumber(s string) (r *big.Rat, ok bool) {
 	}
 
 	return new(big.Rat).SetString(s)
+}
+
+// formatNumber writes an exact decimal r, such as a sum of two parsed numbers,
+// in plain decimal notation without trailing zeros.
+func formatNumber(r *big.Rat) string {
+	if r.IsInt() {
+		return r.Num().String()
+	}
+
+	// The denominator of a decimal is 2^a * 5^b; max(a, b) digits are exact.
+	digits := 0
+	d := new(big.Int).Set(r.Denom())
+
+	for ; d.Cmp(big.NewInt(1)) != 0; digits++ {
+		switch {
+		case new(big.Int).Mod(d, big.NewInt(10)).Sign() == 0:
+			d.Quo(d, big.NewInt(10))
+		case d.Bit(0) == 0:
+			d.Rsh(d, 1)
+		default:
+			d.Quo(d, big.NewInt(5))
+		}
+	}
+
+	return strings.TrimRight(strings.TrimRight(r.FloatString(digits), "0"), ".")
 }
