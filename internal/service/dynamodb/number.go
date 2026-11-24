@@ -204,12 +204,15 @@ func formatNumber(r *big.Rat) string {
 
 	// The denominator of a decimal is 2^a * 5^b; max(a, b) digits are exact.
 	digits := 0
-	for d := new(big.Int).Set(r.Denom()); d.Cmp(big.NewInt(1)) != 0; digits++ {
-		if new(big.Int).Mod(d, big.NewInt(10)).Sign() == 0 {
+	d := new(big.Int).Set(r.Denom())
+
+	for ; d.Cmp(big.NewInt(1)) != 0; digits++ {
+		switch {
+		case new(big.Int).Mod(d, big.NewInt(10)).Sign() == 0:
 			d.Quo(d, big.NewInt(10))
-		} else if d.Bit(0) == 0 {
+		case d.Bit(0) == 0:
 			d.Rsh(d, 1)
-		} else {
+		default:
 			d.Quo(d, big.NewInt(5))
 		}
 	}
