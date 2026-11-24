@@ -1561,7 +1561,8 @@ func topLevelAttribute(path string) string {
 	return path
 }
 
-// applySetClause handles SET attr = :val, SET attr = if_not_exists(attr, :val).
+// applySetClause handles SET attr = :val, SET attr = if_not_exists(attr, :val)
+// and SET attr = list_append(a, b).
 func applySetClause(item Item, clause string, exprValues map[string]AttributeValue) Item {
 	assignments := splitAssignments(clause)
 	for _, assignment := range assignments {
@@ -1580,6 +1581,14 @@ func applySetClause(item Item, clause string, exprValues map[string]AttributeVal
 			continue
 		}
 
+		if strings.HasPrefix(valueExpr, "list_append(") && strings.HasSuffix(valueExpr, ")") {
+			if val, ok := evaluateListAppend(item, valueExpr, exprValues); ok {
+				item[attrName] = val
+			}
+
+			continue
+		}
+
 		// Handle arithmetic: path + :val, path - :val, if_not_exists(...) + :val
 		if val, ok := evaluateSetArithmetic(item, valueExpr, exprValues); ok {
 			item[attrName] = val
@@ -1593,6 +1602,30 @@ func applySetClause(item Item, clause string, exprValues map[string]AttributeVal
 	}
 
 	return item
+}
+
+// evaluateListAppend handles list_append(a, b), where a and b are paths, placeholders
+// or if_not_exists(...), and both must resolve to lists.
+func evaluateListAppend(item Item, expr string, exprValues map[string]AttributeValue) (AttributeValue, bool) {
+	inner := strings.TrimSuffix(strings.TrimPrefix(expr, "list_append("), ")")
+
+	args := splitAssignments(inner)
+	if len(args) != 2 {
+		return AttributeValue{}, false
+	}
+
+	first := resolveSetOperand(item, strings.TrimSpace(args[0]), exprValues)
+	second := resolveSetOperand(item, strings.TrimSpace(args[1]), exprValues)
+
+	if first.L == nil || second.L == nil {
+		return AttributeValue{}, false
+	}
+
+	list := make([]*AttributeValue, 0, len(first.L)+len(second.L))
+	list = append(list, first.L...)
+	list = append(list, second.L...)
+
+	return AttributeValue{L: list}, true
 }
 
 // splitAssignments splits a SET clause into individual assignments, respecting parentheses.
