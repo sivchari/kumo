@@ -1949,6 +1949,8 @@ func (m *MemoryStorage) TransactWriteItems(_ context.Context, items []TransactWr
 	}
 
 	if hasFailure {
+		fillCancellationReasons(reasons)
+
 		return reasons, &TableError{
 			Code:    errCodeTransactionCanceled,
 			Message: "Transaction cancelled, please refer cancellation reasons for specific reasons [CancellationReason]",
@@ -1965,6 +1967,19 @@ func (m *MemoryStorage) TransactWriteItems(_ context.Context, items []TransactWr
 	m.saveLocked()
 
 	return nil, nil // Success: nil CancellationReasons means no failures.
+}
+
+// fillCancellationReasons completes the reasons the way DynamoDB reports them:
+// an item without an error has the code "None" and no message.
+func fillCancellationReasons(reasons []CancellationReason) {
+	for i := range reasons {
+		switch reasons[i].Code {
+		case "":
+			reasons[i].Code = "None"
+		case "ConditionalCheckFailed":
+			reasons[i].Message = "The conditional request failed"
+		}
+	}
 }
 
 func countTransactWriteActions(twi TransactWriteItem) int {
