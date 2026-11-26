@@ -266,9 +266,9 @@ func TestTransactWriteItems(t *testing.T) {
 		t.Fatalf("expected TransactionCanceledException, got: %v", err)
 	}
 
-	// Verify reasons: first should be empty, second should be ConditionalCheckFailed.
-	if reasons[0].Code != "" {
-		t.Fatalf("first reason should be empty, got: %s", reasons[0].Code)
+	// Verify reasons: first should be None, second should be ConditionalCheckFailed.
+	if reasons[0].Code != "None" {
+		t.Fatalf("first reason should be None, got: %s", reasons[0].Code)
 	}
 
 	if reasons[1].Code != "ConditionalCheckFailed" {
