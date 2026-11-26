@@ -216,7 +216,9 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 		markerID := "/hostedzone/" + marker
 		for i, z := range zones {
 			if z.ID == markerID {
-				startIdx = i + 1
+				// The marker names the first zone of this page: it is the
+				// NextMarker of the previous one.
+				startIdx = i
 
 				break
 			}
