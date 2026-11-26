@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -243,6 +244,34 @@ func (s *Service) ListHostedZones(w http.ResponseWriter, r *http.Request) {
 	writeXMLResponse(w, http.StatusOK, resp)
 }
 
+// reversedDNSName returns the name with its labels reversed, for example
+// "com.example.www." for "www.example.com.".
+func reversedDNSName(name string) string {
+	labels := strings.Split(strings.TrimSuffix(name, "."), ".")
+	slices.Reverse(labels)
+
+	return strings.Join(labels, ".") + "."
+}
+
+// byNameStartIndex returns the index of the first zone at or after dnsname. A
+// hosted zone ID selects where to start among zones that have that name.
+func byNameStartIndex(zones []*HostedZone, dnsname, hostedZoneID string) int {
+	start := reversedDNSName(dnsname)
+
+	for i, zone := range zones {
+		name := reversedDNSName(zone.Name)
+		if name > start {
+			return i
+		}
+
+		if name == start && (hostedZoneID == "" || strings.TrimPrefix(zone.ID, "/hostedzone/") >= hostedZoneID) {
+			return i
+		}
+	}
+
+	return len(zones)
+}
+
 // ListHostedZonesByName handles the ListHostedZonesByName API. Hosted zones
 // are sorted ASCII-ascending on Name (matching the AWS contract used by data
 // sources such as aws_route53_zone). The dnsname query parameter, when
@@ -260,22 +289,21 @@ func (s *Service) ListHostedZonesByName(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Route 53 orders by name with the labels reversed, and zones that share a
+	// name need a fixed order so that paging can resume between them.
 	sort.Slice(zones, func(i, j int) bool {
-		return zones[i].Name < zones[j].Name
+		left, right := reversedDNSName(zones[i].Name), reversedDNSName(zones[j].Name)
+		if left != right {
+			return left < right
+		}
+
+		return zones[i].ID < zones[j].ID
 	})
 
 	startIdx := 0
 
 	if dnsname != "" {
-		for i, z := range zones {
-			if z.Name >= dnsname {
-				startIdx = i
-
-				break
-			}
-
-			startIdx = len(zones) // beyond range
-		}
+		startIdx = byNameStartIndex(zones, dnsname, hostedZoneID)
 	}
 
 	hostedZones, endIdx, isTruncated := pageHostedZones(zones, startIdx, maxItems)
