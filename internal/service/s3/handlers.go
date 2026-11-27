@@ -696,12 +696,7 @@ func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 		startKey = continuationToken
 	}
 
-	objects = sliceObjectsAfterMarker(objects, startKey)
-
-	truncated := len(objects) > maxKeys
-	if truncated {
-		objects = objects[:maxKeys]
-	}
+	objects, commonPrefixes, truncated, lastEntry := paginateListing(objects, commonPrefixes, startKey, maxKeys)
 
 	contents := make([]ObjectInfo, len(objects))
 	for i := range objects {
@@ -720,15 +715,15 @@ func (s *Service) ListObjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nextContinuationToken string
-	if truncated && len(contents) > 0 {
-		nextContinuationToken = contents[len(contents)-1].Key
+	if truncated {
+		nextContinuationToken = lastEntry
 	}
 
 	result := ListBucketResult{
 		Xmlns:                 s3Namespace,
 		Name:                  bucket,
 		Prefix:                prefix,
-		KeyCount:              len(contents),
+		KeyCount:              len(contents) + len(prefixes),
 		MaxKeys:               maxKeys,
 		IsTruncated:           truncated,
 		Contents:              contents,
@@ -764,14 +759,9 @@ func (s *Service) ListObjectsV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	objects = sliceObjectsAfterMarker(objects, params.marker)
+	objects, commonPrefixes, truncated, lastEntry := paginateListing(objects, commonPrefixes, params.marker, params.maxKeys)
 
-	truncated := len(objects) > params.maxKeys
-	if truncated {
-		objects = objects[:params.maxKeys]
-	}
-
-	writeXMLResponse(w, buildListBucketResultV1(bucket, params, objects, commonPrefixes, truncated))
+	writeXMLResponse(w, buildListBucketResultV1(bucket, params, objects, commonPrefixes, truncated, lastEntry))
 }
 
 // listObjectsV1Params bundles the parsed query-string for a V1 list.
@@ -810,7 +800,7 @@ func writeListObjectsV1Error(w http.ResponseWriter, r *http.Request, err error) 
 	writeS3Error(w, r, "InternalError", "Internal server error", http.StatusInternalServerError)
 }
 
-func buildListBucketResultV1(bucket string, params listObjectsV1Params, objects []Object, commonPrefixes []string, truncated bool) ListBucketResultV1 {
+func buildListBucketResultV1(bucket string, params listObjectsV1Params, objects []Object, commonPrefixes []string, truncated bool, lastEntry string) ListBucketResultV1 {
 	contents := make([]ObjectInfo, len(objects))
 	for i := range objects {
 		contents[i] = ObjectInfo{
@@ -828,8 +818,8 @@ func buildListBucketResultV1(bucket string, params listObjectsV1Params, objects 
 	}
 
 	var nextMarker string
-	if truncated && params.delimiter != "" && len(contents) > 0 {
-		nextMarker = contents[len(contents)-1].Key
+	if truncated && params.delimiter != "" {
+		nextMarker = lastEntry
 	}
 
 	return ListBucketResultV1{
@@ -844,6 +834,51 @@ func buildListBucketResultV1(bucket string, params listObjectsV1Params, objects 
 		Contents:       contents,
 		CommonPrefixes: prefixes,
 	}
+}
+
+// paginateListing pages keys and common prefixes together, as S3 does: both
+// are merged in key order, everything up to and including marker (and every
+// prefix that marker falls under) is skipped, and maxKeys counts both kinds.
+// It returns the last entry of the page for use as the next marker/token.
+func paginateListing(objects []Object, prefixes []string, marker string, maxKeys int) ([]Object, []string, bool, string) {
+	objects = sliceObjectsAfterMarker(objects, marker)
+
+	if marker != "" {
+		kept := prefixes[:0:0]
+
+		for _, p := range prefixes {
+			if p > marker && !strings.HasPrefix(marker, p) {
+				kept = append(kept, p)
+			}
+		}
+
+		prefixes = kept
+	}
+
+	var (
+		pageObjects  []Object
+		pagePrefixes []string
+		last         string
+	)
+
+	oi, pi := 0, 0
+	for len(pageObjects)+len(pagePrefixes) < maxKeys && (oi < len(objects) || pi < len(prefixes)) {
+		if pi >= len(prefixes) || (oi < len(objects) && objects[oi].Key < prefixes[pi]) {
+			pageObjects = append(pageObjects, objects[oi])
+			last = objects[oi].Key
+			oi++
+
+			continue
+		}
+
+		pagePrefixes = append(pagePrefixes, prefixes[pi])
+		last = prefixes[pi]
+		pi++
+	}
+
+	truncated := oi < len(objects) || pi < len(prefixes)
+
+	return pageObjects, pagePrefixes, truncated, last
 }
 
 // sliceObjectsAfterMarker drops every entry whose Key is <= marker,
